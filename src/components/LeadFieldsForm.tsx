@@ -1,28 +1,35 @@
 import type { LeadFields, LeadSchema } from "@/lib/flow/types";
+import { LEAD_STATUSES, normalizeLeadStatus, type LeadStatusId } from "@/lib/ui";
 
 export function LeadFieldsForm({
   action,
   schema,
   fields,
   status,
+  statusLabels,
+  saveLabel,
 }: {
   action: string;
   schema: LeadSchema;
   fields: LeadFields;
   status?: string;
+  statusLabels?: Record<LeadStatusId, string>;
+  saveLabel?: string;
 }) {
+  const current = status !== undefined ? normalizeLeadStatus(status) : undefined;
   return (
     <form action={action} method="post" className="stack">
-      {status !== undefined ? (
-        <fieldset>
-          <legend>Lead status</legend>
-          {["open", "closed"].map((s) => (
-            <label key={s} className="choice">
-              <input type="radio" name="status" value={s} defaultChecked={status === s} />
-              {s}
-            </label>
-          ))}
-        </fieldset>
+      {current !== undefined ? (
+        <label className="stack">
+          Status
+          <select name="status" defaultValue={current}>
+            {LEAD_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {statusLabels?.[s] ?? s}
+              </option>
+            ))}
+          </select>
+        </label>
       ) : null}
       {Object.entries(schema.fields).map(([key, spec]) => {
         const value = fields[key] == null ? "" : String(fields[key]);
@@ -55,7 +62,7 @@ export function LeadFieldsForm({
           </label>
         );
       })}
-      <button type="submit">Save fields</button>
+      <button type="submit">{saveLabel ?? "Save"}</button>
     </form>
   );
 }

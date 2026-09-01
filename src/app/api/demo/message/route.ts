@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { persistInboundIfNew } from "@/lib/conversations";
 import { runTurnNow } from "@/lib/flow/run-turn";
 import { prisma } from "@/lib/db";
+import { ensureLocalDemoChannel } from "@/lib/provision-tenant";
 import { requireTenantId } from "@/lib/tenant";
 
 export async function POST(req: Request) {
@@ -10,12 +11,19 @@ export async function POST(req: Request) {
   const text = body.text?.trim() ?? "";
   if (!text) return NextResponse.json({ error: "Empty message" }, { status: 400 });
 
-  const channel = await prisma.channelConnection.findFirst({
+  let channel = await prisma.channelConnection.findFirst({
     where: { tenantId, enabled: true },
     orderBy: { createdAt: "asc" },
   });
   if (!channel) {
-    return NextResponse.json({ error: "No channel. Seed the DB or add Zernio keys." }, { status: 400 });
+    await ensureLocalDemoChannel(tenantId);
+    channel = await prisma.channelConnection.findFirst({
+      where: { tenantId, enabled: true },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+  if (!channel) {
+    return NextResponse.json({ error: "No channel" }, { status: 400 });
   }
 
   let from = body.from?.trim();

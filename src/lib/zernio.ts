@@ -99,6 +99,45 @@ export async function fetchZernioSandbox(): Promise<ZernioSandbox | null> {
   return data.sandbox ?? null;
 }
 
+function profileIdFrom(body: unknown): string {
+  if (!body || typeof body !== "object") return "";
+  const root = body as Record<string, unknown>;
+  const nested = (root.profile ?? root.data) as Record<string, unknown> | undefined;
+  const id =
+    (typeof root._id === "string" && root._id) ||
+    (typeof root.id === "string" && root.id) ||
+    (typeof nested?._id === "string" && nested._id) ||
+    (typeof nested?.id === "string" && nested.id) ||
+    "";
+  return id;
+}
+
+export async function createZernioProfile(name: string): Promise<string> {
+  const body = await zernio<unknown>("/profiles", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+  const id = profileIdFrom(body);
+  if (!id) throw new Error("Zernio profile create returned no id");
+  return id;
+}
+
+export async function zernioWhatsAppConnectUrl(opts: {
+  profileId: string;
+  redirectUrl: string;
+}): Promise<string> {
+  const qs = new URLSearchParams({
+    profileId: opts.profileId,
+    redirect_url: opts.redirectUrl,
+  });
+  const data = await zernio<{ authUrl?: string; auth_url?: string }>(
+    `/connect/whatsapp?${qs.toString()}`,
+  );
+  const url = data.authUrl || data.auth_url || "";
+  if (!url) throw new Error("Zernio did not return an auth URL");
+  return url;
+}
+
 export async function sendZernioInboxMessage(opts: {
   accountId: string;
   conversationId: string;

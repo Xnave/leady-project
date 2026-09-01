@@ -6,7 +6,10 @@ import { LeadFieldsForm } from "@/components/LeadFieldsForm";
 import { MeetingDecisionForm } from "@/components/MeetingDecisionForm";
 import { prisma } from "@/lib/db";
 import type { FlowDefinition, LeadFields, LeadSchema } from "@/lib/flow/types";
+import { getUiLang } from "@/lib/cookies";
+import { channelLabel, isDemoLead, leadDisplayName } from "@/lib/leads";
 import { requireTenantId } from "@/lib/tenant";
+import { uiCopy } from "@/lib/ui";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -18,9 +21,12 @@ export default async function LeadDetailPage({
 }) {
   const { id } = await params;
   const tenantId = await requireTenantId();
+  const lang = await getUiLang();
+  const ui = uiCopy(lang);
   const lead = await prisma.lead.findFirst({
     where: { id, tenantId },
     include: {
+      channel: true,
       conversations: {
         include: {
           messages: { orderBy: { createdAt: "asc" } },
@@ -41,23 +47,29 @@ export default async function LeadDetailPage({
     <div className="demo-grid">
       <div>
         <p>
-          <Link href="/leads">Leads</Link>
+          <Link href="/leads">{ui.nav.leads}</Link>
           {" · "}
-          <Link href={`/demo?leadId=${lead.id}`}>Open in chat preview</Link>
+          <Link href={`/demo?leadId=${lead.id}`}>{ui.nav.chat}</Link>
         </p>
-        <h1>{lead.displayName ?? lead.externalUserId}</h1>
+        <h1>{leadDisplayName(lead)}</h1>
+        <p className="muted">
+          {channelLabel(lang, lead.channel)}
+          {isDemoLead(lead.externalUserId) ? ` · ${ui.common.demo}` : ""}
+        </p>
         <div className="card">
-          <h3>Captured data</h3>
+          <h3>{ui.common.captured}</h3>
           <LeadFieldsForm
             action={`/api/leads/${lead.id}/fields`}
             schema={schema}
             fields={(lead.fields as LeadFields) ?? {}}
             status={lead.status}
+            statusLabels={ui.status}
+            saveLabel={ui.common.save}
           />
         </div>
         {lead.meetings.length > 0 ? (
           <div className="card">
-            <h3>Visits</h3>
+            <h3>{ui.common.visit}</h3>
             {lead.meetings.map((meeting) => (
               <div key={meeting.id} className="stage-node">
                 <p>
@@ -70,7 +82,7 @@ export default async function LeadDetailPage({
                   {meeting.contactPhone ? ` · ${meeting.contactPhone}` : ""}
                   {meeting.contactEmail ? ` · ${meeting.contactEmail}` : ""}
                 </p>
-                {meeting.needText ? <p className="muted">Need: {meeting.needText}</p> : null}
+                {meeting.needText ? <p className="muted">{meeting.needText}</p> : null}
                 <MeetingDecisionForm
                   meetingId={meeting.id}
                   pending={meeting.status === "pending"}
@@ -89,11 +101,11 @@ export default async function LeadDetailPage({
         ) : null}
       </div>
       <div className="card chat-panel">
-        <h2>Conversation</h2>
+        <h2>{ui.common.conversation}</h2>
         {convo ? (
           <>
             <p className="muted">
-              Stage <strong>{convo.flowState}</strong> · {convo.status}
+              {ui.common.stage} <strong>{convo.flowState}</strong> · {convo.status}
             </p>
             <ChatThread
               messages={convo.messages.map((m) => ({
@@ -109,12 +121,12 @@ export default async function LeadDetailPage({
             />
           </>
         ) : (
-          <p className="muted">No conversation yet.</p>
+          <p className="muted">{ui.common.empty}</p>
         )}
       </div>
       {flow ? (
         <div className="card">
-          <h2>Flow</h2>
+          <h2>{ui.common.flow}</h2>
           <FlowMap flow={flow} current={convo?.flowState} />
         </div>
       ) : null}

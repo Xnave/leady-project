@@ -1,13 +1,18 @@
 import { FlowMap } from "@/components/FlowMap";
+import { PageHeader } from "@/components/PageHeader";
 import { catalogMeta } from "@/lib/flow/catalog";
 import { prisma } from "@/lib/db";
 import type { FlowDefinition, HitlPolicy } from "@/lib/flow/types";
+import { getUiLang } from "@/lib/cookies";
 import { requireTenantId } from "@/lib/tenant";
+import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
 
 export default async function OpsPage() {
   const tenantId = await requireTenantId();
+  const lang = await getUiLang();
+  const ui = uiCopy(lang);
   const agent = await prisma.agent.findFirst({ where: { tenantId } });
   if (!agent) return <p>No agent. Seed the DB.</p>;
   const flow = agent.flow as FlowDefinition;
@@ -16,17 +21,16 @@ export default async function OpsPage() {
 
   return (
     <div>
-      <h1>Ops · {agent.name}</h1>
-      <p className="muted">Version {agent.flowVersion}. Owners never see this page.</p>
+      <PageHeader title={`${ui.page.opsTitle} · ${agent.name}`} blurb={`v${agent.flowVersion}`} />
       <div className="row">
         <div className="card">
-          <h2>Flow</h2>
+          <h2>{ui.common.flow}</h2>
           <FlowMap flow={flow} />
         </div>
         <form action="/api/ops/agent" method="post" className="card stack">
           <input type="hidden" name="agentId" value={agent.id} />
           <fieldset>
-            <legend>Catalog (re-clones the JSON flow)</legend>
+            <legend>Catalog</legend>
             {catalogMeta.map((item) => (
               <label key={item.id} className="choice">
                 <input
@@ -43,7 +47,7 @@ export default async function OpsPage() {
             ))}
           </fieldset>
           <label>
-            Knowledge (FAQ)
+            {ui.common.knowledge}
             <textarea name="knowledgeText" defaultValue={agent.knowledgeText} rows={5} />
           </label>
           <fieldset>
@@ -68,10 +72,7 @@ export default async function OpsPage() {
           </fieldset>
           <label>
             Fallback stage
-            <select
-              name="fallbackStage"
-              defaultValue={flow.restartPolicy.fallbackStage ?? ""}
-            >
+            <select name="fallbackStage" defaultValue={flow.restartPolicy.fallbackStage ?? ""}>
               <option value="">(none)</option>
               {stageIds.map((id) => (
                 <option key={id} value={id}>
@@ -115,7 +116,7 @@ export default async function OpsPage() {
               </label>
             ))}
           </fieldset>
-          <button type="submit">Save</button>
+          <button type="submit">{ui.common.save}</button>
         </form>
       </div>
     </div>

@@ -1,23 +1,18 @@
-import Link from "next/link";
+import type { ReactNode } from "react";
+import { AppNav } from "@/components/AppNav";
+import { getUiLang } from "@/lib/cookies";
 import "./globals.css";
 
 export const metadata = { title: "Leady" };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const lang = await getUiLang();
   return (
-    <html lang="en">
+    <html lang={lang} dir={lang === "he" ? "rtl" : "ltr"}>
       <body>
         <div className="shell">
-          <nav>
-            <Link href="/">Leady</Link>
-            <Link href="/onboard">Setup</Link>
-            <Link href="/demo">Chat</Link>
-            <Link href="/leads">Leads</Link>
-            <Link href="/inbox">Inbox</Link>
-            <Link href="/channels">Channels</Link>
-            <Link href="/ops">Ops</Link>
-          </nav>
-          {children}
+          <AppNav />
+          <main className="main">{children}</main>
         </div>
       </body>
     </html>

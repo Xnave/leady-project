@@ -1,8 +1,9 @@
-import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
 import type { LeadSchema } from "@/lib/flow/types";
+import { normalizeLeadStatus } from "@/lib/ui";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -18,7 +19,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const raw = form.get(`field_${key}`);
     if (typeof raw === "string") fields[key] = raw;
   }
-  const status = String(form.get("status") ?? lead.status);
+  const status = normalizeLeadStatus(String(form.get("status") ?? lead.status));
   await prisma.lead.update({
     where: { id },
     data: { fields: fields as Prisma.InputJsonValue, status },

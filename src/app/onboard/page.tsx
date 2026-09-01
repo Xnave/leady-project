@@ -1,25 +1,27 @@
 import { OnboardWizard } from "@/components/OnboardWizard";
+import { PageHeader } from "@/components/PageHeader";
 import { bookingCollectFromFlow } from "@/lib/flow/booking-collect";
 import { prisma } from "@/lib/db";
+import { getUiLang } from "@/lib/cookies";
 import { requireTenantId } from "@/lib/tenant";
 import type { FlowDefinition } from "@/lib/flow/types";
+import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
 
 export default async function OnboardPage() {
   const tenantId = await requireTenantId();
+  const lang = await getUiLang();
+  const ui = uiCopy(lang);
   const tenant = await prisma.tenant.findFirst({ where: { id: tenantId } });
   if (!tenant) return <p>No tenant. Seed the DB.</p>;
   const agent = await prisma.agent.findFirst({ where: { tenantId } });
 
   return (
     <div>
-      <h1>Setup</h1>
-      <p className="muted">
-        Bound to this logged-in tenant. Upload a knowledge file first — we extract setup fields
-        from it, then you review business details.
-      </p>
+      <PageHeader title={ui.page.setupTitle} blurb={ui.page.setupBlurb} />
       <OnboardWizard
+        uiLang={lang}
         name={tenant.name}
         phone={tenant.phone ?? ""}
         intro={tenant.intro ?? ""}

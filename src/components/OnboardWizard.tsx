@@ -12,6 +12,7 @@ import {
 } from "@/lib/flow/booking-collect";
 import { chatLanguageMeta, isChatLanguage, looksHebrew, type ChatLanguage } from "@/lib/flow/locale";
 import { copyFor } from "@/lib/copy";
+import { uiCopy, type UiLang } from "@/lib/ui";
 
 type Props = {
   name: string;
@@ -27,9 +28,11 @@ type Props = {
   bookingRequestTemplate?: string;
   bookingApprovedTemplate?: string;
   bookingRejectedTemplate?: string;
+  uiLang?: UiLang;
 };
 
 export function OnboardWizard(props: Props) {
+  const ui = uiCopy(props.uiLang === "en" ? "en" : "he");
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [name, setName] = useState(props.name);
@@ -188,10 +191,10 @@ export function OnboardWizard(props: Props) {
         ))}
       </fieldset>
       <div className="card stack">
-      <p className="muted">Step {Math.min(step + 1, 4)} of 4</p>
+      <p className="muted">{ui.common.step(Math.min(step + 1, 4), 4)}</p>
       {step === 0 ? (
         <>
-          <h2>Knowledge</h2>
+          <h2>{ui.common.knowledge}</h2>
           <p className="muted">
             Upload a .txt or .md file first. We fill name, phone, intro, address, and hours from
             it so you can skip typing if they are already in the document.
@@ -223,17 +226,17 @@ export function OnboardWizard(props: Props) {
               disabled={extracting || !knowledgeText.trim()}
               onClick={() => void extractFrom(knowledgeText)}
             >
-              {extracting ? "Extracting…" : "Extract details"}
+              {extracting ? ui.common.extracting : ui.common.extract}
             </button>
             <button type="button" onClick={() => setStep(1)} disabled={extracting}>
-              Next
+              {ui.common.next}
             </button>
           </div>
         </>
       ) : null}
       {step === 1 ? (
         <>
-          <h2>Business</h2>
+          <h2>{ui.common.business}</h2>
           <p className="muted">Review what we pulled from the file. Edit anything that is wrong or missing.</p>
           <label>
             Name
@@ -316,17 +319,17 @@ export function OnboardWizard(props: Props) {
           </p>
           <div className="row-actions">
             <button type="button" className="btn-secondary" onClick={() => setStep(0)}>
-              Back
+              {ui.common.back}
             </button>
             <button type="button" onClick={() => setStep(2)} disabled={!name.trim() || !intro.trim()}>
-              Next
+              {ui.common.next}
             </button>
           </div>
         </>
       ) : null}
       {step === 2 ? (
         <>
-          <h2>Flow</h2>
+          <h2>{ui.common.flow}</h2>
           <fieldset>
             <legend>Catalog</legend>
             {catalogMeta.map((item) => (
@@ -377,20 +380,20 @@ export function OnboardWizard(props: Props) {
           <FlowMap flow={flow} />
           <div className="row-actions">
             <button type="button" className="btn-secondary" onClick={() => setStep(1)}>
-              Back
+              {ui.common.back}
             </button>
             <button type="button" onClick={save} disabled={saving}>
-              {saving ? "Saving…" : "Save"}
+              {saving ? ui.common.saving : ui.common.save}
             </button>
           </div>
         </>
       ) : null}
       {step === 3 ? (
         <>
-          <h2>Done</h2>
+          <h2>{ui.common.done}</h2>
           <p>The first message is always your intro. The next message is when the agent starts talking.</p>
           <button type="button" onClick={() => router.push("/demo")}>
-            Open chat
+            {ui.page.homeChat}
           </button>
         </>
       ) : null}

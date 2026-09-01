@@ -87,7 +87,12 @@ export async function sendOnChannel(opts: {
   const zernio =
     opts.apiBase.includes("zernio.com") || Boolean(opts.zernioAccountId && opts.zernioConversationId);
   if (zernio) {
-    if (!opts.zernioAccountId || opts.zernioAccountId === "zernio-sandbox" || !opts.zernioConversationId) {
+    if (
+      !opts.zernioAccountId ||
+      opts.zernioAccountId === "zernio-sandbox" ||
+      opts.zernioAccountId.startsWith("local-") ||
+      !opts.zernioConversationId
+    ) {
       console.error("zernio send skipped: missing account or conversation id");
       return;
     }
