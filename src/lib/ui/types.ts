@@ -2,6 +2,8 @@ export type UiLang = "he" | "en";
 
 export type LeadStatusId = "new" | "open" | "in_progress" | "won" | "lost";
 
+export type CatalogUiId = "inbox" | "book" | "faq";
+
 export type UiCopy = {
   product: string;
   nav: {
@@ -15,7 +17,7 @@ export type UiCopy = {
     admin: string;
   };
   langToggle: { he: string; en: string };
-  actingAs: (name: string) => string;
+  actingAs: string;
   stopActing: string;
   page: {
     homeTitle: string;
@@ -30,6 +32,14 @@ export type UiCopy = {
     channelsTitle: string;
     opsTitle: string;
     adminTitle: string;
+  };
+  home: {
+    quickSetup: string;
+    quickChat: string;
+    quickLeads: string;
+    quickInbox: string;
+    quickChannels: string;
+    tenantLabel: string;
   };
   common: {
     save: string;
@@ -76,7 +86,110 @@ export type UiCopy = {
     knowledge: string;
     business: string;
     done: string;
-    step: (n: number, total: number) => string;
+    stepOf: string;
+    enabled: string;
+    disabled: string;
+    on: string;
+    off: string;
+    approve: string;
+    decline: string;
+    send: string;
+    sending: string;
+    need: string;
+    phone: string;
+    email: string;
+    version: string;
+    menu: string;
   };
   status: Record<LeadStatusId, string>;
+  roles: {
+    lead: string;
+    agent: string;
+    human: string;
+  };
+  chat: {
+    emptyThread: string;
+    placeholder: string;
+    waitingHuman: string;
+    pausedForHuman: string;
+    startNew: string;
+    noIntro: string;
+    flowLabel: string;
+    languageLabel: string;
+    sendFailed: string;
+  };
+  onboard: {
+    agentLanguageLegend: string;
+    agentLanguageHint: string;
+    knowledgeHint: string;
+    knowledgePlaceholder: string;
+    dropzoneIdle: string;
+    dropzoneBusy: string;
+    dropInvalid: string;
+    extractFailed: string;
+    noLlm: string;
+    saveFailed: string;
+    businessHint: string;
+    fieldName: string;
+    fieldPhone: string;
+    fieldIntro: string;
+    fieldIntroPlaceholder: string;
+    fieldAddress: string;
+    fieldAddressPlaceholder: string;
+    fieldHours: string;
+    fieldHoursPlaceholder: string;
+    fieldBookingRequest: string;
+    fieldBookingApproved: string;
+    fieldBookingRejected: string;
+    templatesHint: string;
+    fieldIdleDays: string;
+    idleHint: string;
+    doneHint: string;
+    catalogLegend: string;
+    collectLegend: string;
+    collectHint: string;
+  };
+  catalog: Record<CatalogUiId, { title: string; blurb: string }>;
+  chatLanguage: Record<"multi" | "en" | "he", { title: string; blurb: string }>;
+  bookingCollect: Record<string, { title: string; blurb: string }>;
+  inbox: {
+    decisionLegend: string;
+    approveOption: string;
+    needInfoOption: string;
+    notePlaceholder: string;
+    complete: string;
+    bookingApproval: string;
+  };
+  meeting: {
+    approve: string;
+    decline: string;
+    visitDefault: string;
+  };
+  ops: {
+    catalogLegend: string;
+    afterDoneLegend: string;
+    ignoreMessages: string;
+    restartFlow: string;
+    fallbackStage: string;
+    fallbackStageLabel: string;
+    noneOption: string;
+    hitlLegend: string;
+    allowHuman: string;
+    stagesLegend: string;
+    intentsLegend: string;
+    ownersNeverSee: string;
+  };
+  flow: {
+    start: string;
+    afterDone: string;
+    needFields: string;
+    transitions: string;
+  };
+  errors: {
+    badSecret: string;
+    createFailed: string;
+    connectFailed: string;
+    noAgent: string;
+    noTenant: string;
+  };
 };

@@ -3,16 +3,17 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FlowMap } from "@/components/FlowMap";
-import { catalogMeta, flowForCatalog, isCatalogId, type CatalogId } from "@/lib/flow/catalog";
+import { flowForCatalog, isCatalogId, type CatalogId } from "@/lib/flow/catalog";
 import {
-  bookingCollectMeta,
   defaultBookingCollect,
   sanitizeBookingCollect,
   type BookingCollectId,
 } from "@/lib/flow/booking-collect";
-import { chatLanguageMeta, isChatLanguage, looksHebrew, type ChatLanguage } from "@/lib/flow/locale";
+import { isChatLanguage, looksHebrew, type ChatLanguage } from "@/lib/flow/locale";
 import { copyFor } from "@/lib/copy";
-import { uiCopy, type UiLang } from "@/lib/ui";
+import { stepLabel, uiCopy, type UiLang } from "@/lib/ui";
+
+const WIZARD_STEPS = ["knowledge", "business", "flow", "done"] as const;
 
 type Props = {
   name: string;
@@ -72,6 +73,8 @@ export function OnboardWizard(props: Props) {
     [catalogId, bookingCollect],
   );
 
+  const stepTitles = [ui.common.knowledge, ui.common.business, ui.common.flow, ui.common.done];
+
   function applyExtracted(extracted: {
     name?: string;
     phone?: string;
@@ -109,14 +112,12 @@ export function OnboardWizard(props: Props) {
         llmConfigured?: boolean;
       };
       if (!res.ok) {
-        setError(data.error ?? "Could not extract from the file");
+        setError(data.error ?? ui.onboard.extractFailed);
         return false;
       }
       extractedSourceRef.current = trimmed;
       if (data.extracted) applyExtracted(data.extracted);
-      if (data.llmConfigured === false) {
-        setError("No LLM key configured — fill business details on the next step.");
-      }
+      if (data.llmConfigured === false) setError(ui.onboard.noLlm);
       return true;
     } finally {
       setExtracting(false);
@@ -131,7 +132,7 @@ export function OnboardWizard(props: Props) {
       chunks.push(await file.text());
     }
     if (!chunks.length) {
-      setError("Drop .txt or .md files only");
+      setError(ui.onboard.dropInvalid);
       return;
     }
     const next = chunks.join("\n\n");
@@ -164,240 +165,260 @@ export function OnboardWizard(props: Props) {
     setSaving(false);
     if (!res.ok) {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(data.error ?? "Could not save");
+      setError(data.error ?? ui.onboard.saveFailed);
       return;
     }
     setStep(3);
   }
 
+  const agentLang = chatLanguage === "he" ? "he" : "en";
+
   return (
     <div className="stack">
       <fieldset className="card language-card">
-        <legend>שפת הסוכן · Agent language</legend>
-        <p className="muted">חובה לבחור. זה קובע באיזו שפה הסוכן עונה בצ׳אט.</p>
-        {chatLanguageMeta.map((item) => (
-          <label key={item.id} className="choice">
+        <legend>{ui.onboard.agentLanguageLegend}</legend>
+        <p className="muted">{ui.onboard.agentLanguageHint}</p>
+        {(["multi", "he", "en"] as const).map((id) => (
+          <label key={id} className="choice">
             <input
               type="radio"
               name="chatLanguage"
-              checked={chatLanguage === item.id}
-              onChange={() => setChatLanguage(item.id)}
+              checked={chatLanguage === id}
+              onChange={() => setChatLanguage(id)}
             />
             <span>
-              <strong>{item.title}</strong>
-              <span className="muted"> — {item.blurb}</span>
+              <strong>{ui.chatLanguage[id].title}</strong>
+              <span className="muted"> — {ui.chatLanguage[id].blurb}</span>
             </span>
           </label>
         ))}
       </fieldset>
+
+      <div className="wizard-steps">
+        {WIZARD_STEPS.map((_, i) => (
+          <div
+            key={stepTitles[i]}
+            className={`wizard-step${i === step ? " active" : ""}${i < step ? " done" : ""}`}
+          >
+            {stepTitles[i]}
+          </div>
+        ))}
+      </div>
+
       <div className="card stack">
-      <p className="muted">{ui.common.step(Math.min(step + 1, 4), 4)}</p>
-      {step === 0 ? (
-        <>
-          <h2>{ui.common.knowledge}</h2>
-          <p className="muted">
-            Upload a .txt or .md file first. We fill name, phone, intro, address, and hours from
-            it so you can skip typing if they are already in the document.
-          </p>
-          <textarea
-            rows={8}
-            value={knowledgeText}
-            onChange={(e) => setKnowledgeText(e.target.value)}
-            placeholder="Or paste notes here, then extract."
-            disabled={extracting}
-          />
-          <label className="dropzone">
-            {extracting ? "Reading the file…" : "Drop a new .txt / .md file here"}
-            <input
-              type="file"
-              accept=".txt,.md,text/plain,text/markdown"
-              multiple
+        <p className="muted">{stepLabel(ui, Math.min(step + 1, 4), 4)}</p>
+
+        {step === 0 ? (
+          <>
+            <h2>{ui.common.knowledge}</h2>
+            <p className="muted">{ui.onboard.knowledgeHint}</p>
+            <textarea
+              rows={8}
+              value={knowledgeText}
+              onChange={(e) => setKnowledgeText(e.target.value)}
+              placeholder={ui.onboard.knowledgePlaceholder}
               disabled={extracting}
-              onChange={(e) => {
-                void onDrop(e.target.files);
-                e.target.value = "";
-              }}
             />
-          </label>
-          <div className="row-actions">
-            <button
-              type="button"
-              className="btn-secondary"
-              disabled={extracting || !knowledgeText.trim()}
-              onClick={() => void extractFrom(knowledgeText)}
-            >
-              {extracting ? ui.common.extracting : ui.common.extract}
-            </button>
-            <button type="button" onClick={() => setStep(1)} disabled={extracting}>
-              {ui.common.next}
-            </button>
-          </div>
-        </>
-      ) : null}
-      {step === 1 ? (
-        <>
-          <h2>{ui.common.business}</h2>
-          <p className="muted">Review what we pulled from the file. Edit anything that is wrong or missing.</p>
-          <label>
-            Name
-            <input value={name} onChange={(e) => setName(e.target.value)} required />
-          </label>
-          <label>
-            Public phone
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} />
-          </label>
-          <label>
-            Intro (what the agent should say it is)
-            <textarea
-              rows={4}
-              value={intro}
-              onChange={(e) => setIntro(e.target.value)}
-              placeholder="We help local customers book a visit with the team."
-            />
-          </label>
-          <label>
-            Address (shown after a visit is requested)
-            <input
-              value={venueAddress}
-              onChange={(e) => setVenueAddress(e.target.value)}
-              placeholder="Street, city"
-            />
-          </label>
-          <label>
-            Opening hours (included when asking for a time)
-            <input
-              value={venueHours}
-              onChange={(e) => setVenueHours(e.target.value)}
-              placeholder="Sun–Thu 09:00–19:00"
-            />
-          </label>
-          <label>
-            Tentative booking message
-            <textarea
-              rows={5}
-              value={bookingRequestTemplate}
-              onChange={(e) => setBookingRequestTemplate(e.target.value)}
-              placeholder={copyFor(chatLanguage === "he" ? "he" : "en").chat.bookingRequestTemplate}
-            />
-          </label>
-          <label>
-            Approved booking message
-            <textarea
-              rows={4}
-              value={bookingApprovedTemplate}
-              onChange={(e) => setBookingApprovedTemplate(e.target.value)}
-              placeholder={copyFor(chatLanguage === "he" ? "he" : "en").chat.bookingApprovedTemplate}
-            />
-          </label>
-          <label>
-            Declined booking message
-            <textarea
-              rows={3}
-              value={bookingRejectedTemplate}
-              onChange={(e) => setBookingRejectedTemplate(e.target.value)}
-              placeholder={copyFor(chatLanguage === "he" ? "he" : "en").chat.bookingRejected}
-            />
-          </label>
-          <p className="muted">
-            Leave templates empty to use the language defaults. Placeholders: {"{{slot}}"} {"{{address}}"}{" "}
-            {"{{hours}}"} {"{{name}}"} {"{{phone}}"} {"{{email}}"} {"{{need}}"} {"{{kind}}"}
-          </p>
-          <label>
-            Reset conversation after idle days
-            <input
-              type="number"
-              min={0}
-              max={365}
-              value={idleResetDays}
-              onChange={(e) => setIdleResetDays(Number(e.target.value))}
-            />
-          </label>
-          <p className="muted">
-            The first customer message always gets this intro (no AI). After a conversation is
-            done, or after this many days of silence, the next message gets the intro again. 0 =
-            do not reset on idle.
-          </p>
-          <div className="row-actions">
-            <button type="button" className="btn-secondary" onClick={() => setStep(0)}>
-              {ui.common.back}
-            </button>
-            <button type="button" onClick={() => setStep(2)} disabled={!name.trim() || !intro.trim()}>
-              {ui.common.next}
-            </button>
-          </div>
-        </>
-      ) : null}
-      {step === 2 ? (
-        <>
-          <h2>{ui.common.flow}</h2>
-          <fieldset>
-            <legend>Catalog</legend>
-            {catalogMeta.map((item) => (
-              <label key={item.id} className="choice">
-                <input
-                  type="radio"
-                  name="catalogId"
-                  checked={catalogId === item.id}
-                  onChange={() => setCatalogId(item.id)}
-                />
-                <span>
-                  <strong>{item.title}</strong>
-                  <span className="muted"> — {item.blurb}</span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
-          {catalogId !== "faq" ? (
+            <label className="dropzone">
+              {extracting ? ui.onboard.dropzoneBusy : ui.onboard.dropzoneIdle}
+              <input
+                type="file"
+                accept=".txt,.md,text/plain,text/markdown"
+                multiple
+                disabled={extracting}
+                onChange={(e) => {
+                  void onDrop(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <div className="row-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={extracting || !knowledgeText.trim()}
+                onClick={() => void extractFrom(knowledgeText)}
+              >
+                {extracting ? ui.common.extracting : ui.common.extract}
+              </button>
+              <button type="button" onClick={() => setStep(1)} disabled={extracting}>
+                {ui.common.next}
+              </button>
+            </div>
+          </>
+        ) : null}
+
+        {step === 1 ? (
+          <>
+            <h2>{ui.common.business}</h2>
+            <p className="muted">{ui.onboard.businessHint}</p>
+            <label>
+              {ui.onboard.fieldName}
+              <input value={name} onChange={(e) => setName(e.target.value)} required />
+            </label>
+            <label>
+              {ui.onboard.fieldPhone}
+              <input value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </label>
+            <label>
+              {ui.onboard.fieldIntro}
+              <textarea
+                rows={4}
+                value={intro}
+                onChange={(e) => setIntro(e.target.value)}
+                placeholder={ui.onboard.fieldIntroPlaceholder}
+              />
+            </label>
+            <label>
+              {ui.onboard.fieldAddress}
+              <input
+                value={venueAddress}
+                onChange={(e) => setVenueAddress(e.target.value)}
+                placeholder={ui.onboard.fieldAddressPlaceholder}
+              />
+            </label>
+            <label>
+              {ui.onboard.fieldHours}
+              <input
+                value={venueHours}
+                onChange={(e) => setVenueHours(e.target.value)}
+                placeholder={ui.onboard.fieldHoursPlaceholder}
+              />
+            </label>
+            <label>
+              {ui.onboard.fieldBookingRequest}
+              <textarea
+                rows={5}
+                value={bookingRequestTemplate}
+                onChange={(e) => setBookingRequestTemplate(e.target.value)}
+                placeholder={copyFor(agentLang).chat.bookingRequestTemplate}
+              />
+            </label>
+            <label>
+              {ui.onboard.fieldBookingApproved}
+              <textarea
+                rows={4}
+                value={bookingApprovedTemplate}
+                onChange={(e) => setBookingApprovedTemplate(e.target.value)}
+                placeholder={copyFor(agentLang).chat.bookingApprovedTemplate}
+              />
+            </label>
+            <label>
+              {ui.onboard.fieldBookingRejected}
+              <textarea
+                rows={3}
+                value={bookingRejectedTemplate}
+                onChange={(e) => setBookingRejectedTemplate(e.target.value)}
+                placeholder={copyFor(agentLang).chat.bookingRejected}
+              />
+            </label>
+            <p className="muted">{ui.onboard.templatesHint}</p>
+            <label>
+              {ui.onboard.fieldIdleDays}
+              <input
+                type="number"
+                min={0}
+                max={365}
+                value={idleResetDays}
+                onChange={(e) => setIdleResetDays(Number(e.target.value))}
+              />
+            </label>
+            <p className="muted">{ui.onboard.idleHint}</p>
+            <div className="row-actions">
+              <button type="button" className="btn-secondary" onClick={() => setStep(0)}>
+                {ui.common.back}
+              </button>
+              <button type="button" onClick={() => setStep(2)} disabled={!name.trim() || !intro.trim()}>
+                {ui.common.next}
+              </button>
+            </div>
+          </>
+        ) : null}
+
+        {step === 2 ? (
+          <>
+            <h2>{ui.common.flow}</h2>
             <fieldset>
-              <legend>What to collect for a visit</legend>
-              <p className="muted">
-                The agent asks only the checked items. WhatsApp already has their number — leave
-                Phone unchecked unless you also want a typed number.
-              </p>
-              {bookingCollectMeta.map((item) => (
-                <label key={item.id} className="choice">
+              <legend>{ui.onboard.catalogLegend}</legend>
+              {(["inbox", "book", "faq"] as const).map((id) => (
+                <label key={id} className="choice">
                   <input
-                    type="checkbox"
-                    checked={bookingCollect.includes(item.id)}
-                    disabled={item.locked}
-                    onChange={() => {
-                      if (item.locked) return;
-                      setBookingCollect((prev) =>
-                        prev.includes(item.id)
-                          ? prev.filter((id) => id !== item.id)
-                          : [...prev, item.id],
-                      );
-                    }}
+                    type="radio"
+                    name="catalogId"
+                    checked={catalogId === id}
+                    onChange={() => setCatalogId(id)}
                   />
                   <span>
-                    <strong>{item.title}</strong>
-                    <span className="muted"> — {item.blurb}</span>
+                    <strong>{ui.catalog[id].title}</strong>
+                    <span className="muted"> — {ui.catalog[id].blurb}</span>
                   </span>
                 </label>
               ))}
             </fieldset>
-          ) : null}
-          <FlowMap flow={flow} />
-          <div className="row-actions">
-            <button type="button" className="btn-secondary" onClick={() => setStep(1)}>
-              {ui.common.back}
+            {catalogId !== "faq" ? (
+              <fieldset>
+                <legend>{ui.onboard.collectLegend}</legend>
+                <p className="muted">{ui.onboard.collectHint}</p>
+                {(
+                  [
+                    "time_preference",
+                    "name",
+                    "need",
+                    "phone",
+                    "email",
+                    "visit_kind",
+                  ] as BookingCollectId[]
+                ).map((id) => {
+                  const meta = ui.bookingCollect[id];
+                  if (!meta) return null;
+                  const locked = id === "time_preference";
+                  return (
+                    <label key={id} className="choice">
+                      <input
+                        type="checkbox"
+                        checked={bookingCollect.includes(id)}
+                        disabled={locked}
+                        onChange={() => {
+                          if (locked) return;
+                          setBookingCollect((prev) =>
+                            prev.includes(id)
+                              ? prev.filter((x) => x !== id)
+                              : [...prev, id],
+                          );
+                        }}
+                      />
+                      <span>
+                        <strong>{meta.title}</strong>
+                        <span className="muted"> — {meta.blurb}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </fieldset>
+            ) : null}
+            <FlowMap flow={flow} labels={ui.flow} />
+            <div className="row-actions">
+              <button type="button" className="btn-secondary" onClick={() => setStep(1)}>
+                {ui.common.back}
+              </button>
+              <button type="button" onClick={save} disabled={saving}>
+                {saving ? ui.common.saving : ui.common.save}
+              </button>
+            </div>
+          </>
+        ) : null}
+
+        {step === 3 ? (
+          <>
+            <h2>{ui.common.done}</h2>
+            <p className="muted">{ui.onboard.doneHint}</p>
+            <button type="button" onClick={() => router.push("/demo")}>
+              {ui.page.homeChat}
             </button>
-            <button type="button" onClick={save} disabled={saving}>
-              {saving ? ui.common.saving : ui.common.save}
-            </button>
-          </div>
-        </>
-      ) : null}
-      {step === 3 ? (
-        <>
-          <h2>{ui.common.done}</h2>
-          <p>The first message is always your intro. The next message is when the agent starts talking.</p>
-          <button type="button" onClick={() => router.push("/demo")}>
-            {ui.page.homeChat}
-          </button>
-        </>
-      ) : null}
-      {error ? <p className="muted">{error}</p> : null}
+          </>
+        ) : null}
+
+        {error ? <p className="muted">{error}</p> : null}
       </div>
     </div>
   );

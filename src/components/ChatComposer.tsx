@@ -3,14 +3,24 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+type Labels = {
+  placeholder: string;
+  waitingHuman: string;
+  send: string;
+  sending: string;
+  sendFailed: string;
+};
+
 export function ChatComposer({
   leadId,
   from,
   disabled,
+  labels,
 }: {
   leadId?: string;
   from?: string;
   disabled?: boolean;
+  labels: Labels;
 }) {
   const router = useRouter();
   const [text, setText] = useState("");
@@ -29,7 +39,7 @@ export function ChatComposer({
         body: JSON.stringify({ leadId, from: from || undefined, text: text.trim() }),
       });
       const data = (await res.json()) as { error?: string; leadId?: string };
-      if (!res.ok) throw new Error(data.error ?? "Send failed");
+      if (!res.ok) throw new Error(data.error ?? labels.sendFailed);
       setText("");
       if (data.leadId && data.leadId !== leadId) {
         router.push(`/demo?leadId=${data.leadId}`);
@@ -37,7 +47,7 @@ export function ChatComposer({
         router.refresh();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Send failed");
+      setError(err instanceof Error ? err.message : labels.sendFailed);
     } finally {
       setPending(false);
     }
@@ -48,11 +58,12 @@ export function ChatComposer({
       <input
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={disabled ? "Waiting on a human…" : "Message as this customer"}
+        placeholder={disabled ? labels.waitingHuman : labels.placeholder}
         disabled={pending || disabled}
+        aria-label={labels.placeholder}
       />
       <button type="submit" disabled={pending || disabled}>
-        {pending ? "…" : "Send"}
+        {pending ? labels.sending : labels.send}
       </button>
       {error ? <p className="muted">{error}</p> : null}
     </form>

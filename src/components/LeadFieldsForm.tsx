@@ -7,6 +7,7 @@ export function LeadFieldsForm({
   fields,
   status,
   statusLabels,
+  statusLegend,
   saveLabel,
 }: {
   action: string;
@@ -14,14 +15,15 @@ export function LeadFieldsForm({
   fields: LeadFields;
   status?: string;
   statusLabels?: Record<LeadStatusId, string>;
+  statusLegend?: string;
   saveLabel?: string;
 }) {
   const current = status !== undefined ? normalizeLeadStatus(status) : undefined;
   return (
     <form action={action} method="post" className="stack">
       {current !== undefined ? (
-        <label className="stack">
-          Status
+        <label>
+          {statusLegend ?? statusLabels?.[current] ?? "Status"}
           <select name="status" defaultValue={current}>
             {LEAD_STATUSES.map((s) => (
               <option key={s} value={s}>
@@ -52,7 +54,7 @@ export function LeadFieldsForm({
           );
         }
         return (
-          <label key={key} className="stack">
+          <label key={key}>
             {key.replaceAll("_", " ")}
             <input
               name={`field_${key}`}

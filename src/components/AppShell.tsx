@@ -1,10 +1,10 @@
-import Link from "next/link";
 import { impersonatedTenantId, isAdminSession } from "@/lib/admin";
 import { getUiLang } from "@/lib/cookies";
 import { prisma } from "@/lib/db";
-import { uiCopy } from "@/lib/ui";
+import { actingAsLabel, uiCopy } from "@/lib/ui";
+import { SidebarNav } from "@/components/SidebarNav";
 
-export async function AppNav() {
+export async function AppShell({ children }: { children: React.ReactNode }) {
   const lang = await getUiLang();
   const ui = uiCopy(lang);
   const admin = await isAdminSession();
@@ -14,25 +14,13 @@ export async function AppNav() {
     : null;
 
   return (
-    <header className="topbar">
-      <div className="topbar-inner">
-        <Link href="/" className="brand">
-          {ui.product}
-        </Link>
-        <nav className="nav-links">
-          <Link href="/">{ui.nav.home}</Link>
-          <Link href="/onboard">{ui.nav.setup}</Link>
-          <Link href="/demo">{ui.nav.chat}</Link>
-          <Link href="/leads">{ui.nav.leads}</Link>
-          <Link href="/inbox">{ui.nav.inbox}</Link>
-          <Link href="/channels">{ui.nav.channels}</Link>
-          <Link href="/ops">{ui.nav.ops}</Link>
-          {admin ? <Link href="/admin">{ui.nav.admin}</Link> : null}
-        </nav>
-        <div className="topbar-actions">
+    <div className="app-shell">
+      <SidebarNav ui={ui} admin={admin} />
+      <div className="app-main">
+        <header className="topbar">
           {acting ? (
             <form action="/api/admin/impersonate" method="post" className="acting-chip">
-              <span>{ui.actingAs(acting.name)}</span>
+              <span>{actingAsLabel(ui, acting.name)}</span>
               <button type="submit" className="btn-ghost" name="clear" value="1">
                 {ui.stopActing}
               </button>
@@ -46,8 +34,9 @@ export async function AppNav() {
               {ui.langToggle.en}
             </button>
           </form>
-        </div>
+        </header>
+        <main className="main">{children}</main>
       </div>
-    </header>
+    </div>
   );
 }

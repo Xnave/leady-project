@@ -11,6 +11,8 @@ type Labels = {
   tenantName: string;
   tenantPhone: string;
   openAsTenant: string;
+  badSecret: string;
+  createFailed: string;
 };
 
 type TenantRow = { id: string; name: string; phone: string };
@@ -39,7 +41,7 @@ export function AdminClient({
       body: JSON.stringify({ secret }),
     });
     if (!res.ok) {
-      setError("Bad secret");
+      setError(labels.badSecret);
       return;
     }
     router.refresh();
@@ -55,7 +57,7 @@ export function AdminClient({
     });
     if (!res.ok) {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(data.error ?? "Could not create");
+      setError(data.error ?? labels.createFailed);
       return;
     }
     setName("");

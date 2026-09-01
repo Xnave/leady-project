@@ -26,6 +26,16 @@ export default async function InboxPage() {
     orderBy: { createdAt: "desc" },
   });
 
+  const meetingLabels = {
+    need: ui.common.need,
+    name: ui.common.name,
+    phone: ui.common.phone,
+    email: ui.common.email,
+    approve: ui.meeting.approve,
+    decline: ui.meeting.decline,
+    visitDefault: ui.meeting.visitDefault,
+  };
+
   return (
     <div>
       <PageHeader title={ui.page.inboxTitle} />
@@ -40,10 +50,11 @@ export default async function InboxPage() {
           kind?: string;
         };
         const isBooking = task.type === "booking_approval" && payload.meetingId;
+        const taskTitle = isBooking ? ui.inbox.bookingApproval : task.type;
         return (
           <div key={task.id} className="card">
             <p>
-              {task.type} · {leadDisplayName(task.lead)}
+              {taskTitle} · {leadDisplayName(task.lead)}
               {" · "}
               <span className="muted">{channelLabel(lang, task.lead.channel)}</span>
               {" · "}
@@ -54,6 +65,7 @@ export default async function InboxPage() {
               <MeetingDecisionForm
                 meetingId={payload.meetingId!}
                 pending
+                labels={meetingLabels}
                 summary={{
                   name:
                     String(
@@ -94,18 +106,18 @@ export default async function InboxPage() {
             ) : (
               <form action={`/api/hitl/${task.id}/complete`} method="post" className="stack">
                 <fieldset>
-                  <legend>Decision</legend>
+                  <legend>{ui.inbox.decisionLegend}</legend>
                   <label className="choice">
                     <input type="radio" name="approved" value="yes" defaultChecked />
-                    Approve
+                    {ui.inbox.approveOption}
                   </label>
                   <label className="choice">
                     <input type="radio" name="approved" value="no" />
-                    Need more info
+                    {ui.inbox.needInfoOption}
                   </label>
                 </fieldset>
-                <textarea name="note" placeholder="Note the agent should use" required />
-                <button type="submit">{ui.common.save}</button>
+                <textarea name="note" placeholder={ui.inbox.notePlaceholder} required />
+                <button type="submit">{ui.inbox.complete}</button>
               </form>
             )}
           </div>

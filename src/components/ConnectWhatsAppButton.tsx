@@ -5,9 +5,11 @@ import { useState } from "react";
 export function ConnectWhatsAppButton({
   label,
   disabled,
+  errorLabel,
 }: {
   label: string;
   disabled?: boolean;
+  errorLabel: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -19,7 +21,7 @@ export function ConnectWhatsAppButton({
       const res = await fetch("/api/channels/zernio/connect", { method: "POST" });
       const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
       if (!res.ok || !data.url) {
-        setError(data.error ?? "Could not start connect");
+        setError(data.error ?? errorLabel);
         return;
       }
       window.location.href = data.url;

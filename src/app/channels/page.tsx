@@ -51,6 +51,7 @@ export default async function ChannelsPage({
             )}
             <ConnectWhatsAppButton
               label={liveWa ? ui.common.reconnectWhatsApp : ui.common.connectWhatsApp}
+              errorLabel={ui.errors.connectFailed}
             />
           </>
         ) : (
@@ -69,7 +70,7 @@ export default async function ChannelsPage({
           {" · "}
           {ch.providerAccountId}
           <p className="muted">
-            {ch.agent.name} · {ch.enabled ? "on" : "off"}
+            {ch.agent.name} · {ch.enabled ? ui.common.on : ui.common.off}
           </p>
         </div>
       ))}

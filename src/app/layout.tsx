@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AppNav } from "@/components/AppNav";
+import { AppShell } from "@/components/AppShell";
 import { getUiLang } from "@/lib/cookies";
 import "./globals.css";
 
@@ -10,10 +10,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   return (
     <html lang={lang} dir={lang === "he" ? "rtl" : "ltr"}>
       <body>
-        <div className="shell">
-          <AppNav />
-          <main className="main">{children}</main>
-        </div>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

@@ -27,6 +27,8 @@ export default async function AdminPage() {
           tenantName: ui.common.tenantName,
           tenantPhone: ui.common.tenantPhone,
           openAsTenant: ui.common.openAsTenant,
+          badSecret: ui.errors.badSecret,
+          createFailed: ui.errors.createFailed,
         }}
         unlocked={unlocked}
         tenants={tenants}

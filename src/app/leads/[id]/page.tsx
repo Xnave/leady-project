@@ -43,6 +43,27 @@ export default async function LeadDetailPage({
   const flow = convo?.agent.flow as FlowDefinition | undefined;
   const schema = (convo?.agent.leadSchema ?? { fields: {} }) as LeadSchema;
 
+  const chatLabels = {
+    placeholder: ui.chat.placeholder,
+    waitingHuman: ui.chat.waitingHuman,
+    send: ui.common.send,
+    sending: ui.common.sending,
+    sendFailed: ui.chat.sendFailed,
+  };
+  const threadLabels = {
+    emptyThread: ui.chat.emptyThread,
+    roles: ui.roles,
+  };
+  const meetingLabels = {
+    need: ui.common.need,
+    name: ui.common.name,
+    phone: ui.common.phone,
+    email: ui.common.email,
+    approve: ui.meeting.approve,
+    decline: ui.meeting.decline,
+    visitDefault: ui.meeting.visitDefault,
+  };
+
   return (
     <div className="demo-grid">
       <div>
@@ -64,6 +85,7 @@ export default async function LeadDetailPage({
             fields={(lead.fields as LeadFields) ?? {}}
             status={lead.status}
             statusLabels={ui.status}
+            statusLegend={ui.common.status}
             saveLabel={ui.common.save}
           />
         </div>
@@ -86,6 +108,7 @@ export default async function LeadDetailPage({
                 <MeetingDecisionForm
                   meetingId={meeting.id}
                   pending={meeting.status === "pending"}
+                  labels={meetingLabels}
                   summary={{
                     name: meeting.contactName,
                     phone: meeting.contactPhone,
@@ -113,11 +136,13 @@ export default async function LeadDetailPage({
                 role: m.role,
                 text: m.text,
               }))}
+              labels={threadLabels}
             />
             <ChatComposer
               leadId={lead.id}
               from={lead.externalUserId}
               disabled={convo.status === "waiting_human"}
+              labels={chatLabels}
             />
           </>
         ) : (
@@ -127,7 +152,7 @@ export default async function LeadDetailPage({
       {flow ? (
         <div className="card">
           <h2>{ui.common.flow}</h2>
-          <FlowMap flow={flow} current={convo?.flowState} />
+          <FlowMap flow={flow} current={convo?.flowState} labels={ui.flow} />
         </div>
       ) : null}
     </div>

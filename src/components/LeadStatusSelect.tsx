@@ -7,10 +7,12 @@ export function LeadStatusSelect({
   leadId,
   value,
   labels,
+  ariaLabel,
 }: {
   leadId: string;
   value: LeadStatusId;
   labels: Record<LeadStatusId, string>;
+  ariaLabel?: string;
 }) {
   const router = useRouter();
   const statuses = Object.keys(labels) as LeadStatusId[];
@@ -29,7 +31,7 @@ export function LeadStatusSelect({
       className="status-select"
       value={value}
       onChange={(e) => void onChange(e.target.value)}
-      aria-label="status"
+      aria-label={ariaLabel ?? "status"}
     >
       {statuses.map((id) => (
         <option key={id} value={id}>

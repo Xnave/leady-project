@@ -1,7 +1,18 @@
+type Labels = {
+  need: string;
+  name: string;
+  phone: string;
+  email: string;
+  approve: string;
+  decline: string;
+  visitDefault: string;
+};
+
 export function MeetingDecisionForm({
   meetingId,
   pending,
   summary,
+  labels,
 }: {
   meetingId: string;
   pending: boolean;
@@ -13,6 +24,7 @@ export function MeetingDecisionForm({
     slot?: string;
     kind?: string;
   };
+  labels: Labels;
 }) {
   if (!pending) return null;
   return (
@@ -21,22 +33,38 @@ export function MeetingDecisionForm({
         <div className="stage-node">
           {summary.kind || summary.slot ? (
             <p>
-              <strong>{summary.kind ?? "visit"}</strong>
+              <strong>{summary.kind ?? labels.visitDefault}</strong>
               {summary.slot ? ` · ${summary.slot}` : ""}
             </p>
           ) : null}
-          {summary.need ? <p>Need: {summary.need}</p> : null}
-          {summary.name ? <p>Name: {summary.name}</p> : null}
-          {summary.phone ? <p>Phone: {summary.phone}</p> : null}
-          {summary.email ? <p>Email: {summary.email}</p> : null}
+          {summary.need ? (
+            <p>
+              {labels.need}: {summary.need}
+            </p>
+          ) : null}
+          {summary.name ? (
+            <p>
+              {labels.name}: {summary.name}
+            </p>
+          ) : null}
+          {summary.phone ? (
+            <p>
+              {labels.phone}: {summary.phone}
+            </p>
+          ) : null}
+          {summary.email ? (
+            <p>
+              {labels.email}: {summary.email}
+            </p>
+          ) : null}
         </div>
       ) : null}
       <div className="row-actions">
         <button type="submit" name="approved" value="yes">
-          Approve
+          {labels.approve}
         </button>
         <button type="submit" name="approved" value="no" className="btn-secondary">
-          Decline / suggest another time
+          {labels.decline}
         </button>
       </div>
     </form>

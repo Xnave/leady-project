@@ -99,6 +99,7 @@ export default async function LeadsPage() {
                       leadId={lead.id}
                       value={normalizeLeadStatus(lead.status)}
                       labels={ui.status}
+                      ariaLabel={ui.common.status}
                     />
                   </td>
                   <td>{stage}</td>

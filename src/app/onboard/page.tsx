@@ -14,7 +14,7 @@ export default async function OnboardPage() {
   const lang = await getUiLang();
   const ui = uiCopy(lang);
   const tenant = await prisma.tenant.findFirst({ where: { id: tenantId } });
-  if (!tenant) return <p>No tenant. Seed the DB.</p>;
+  if (!tenant) return <p className="empty-state">{ui.errors.noTenant}</p>;
   const agent = await prisma.agent.findFirst({ where: { tenantId } });
 
   return (

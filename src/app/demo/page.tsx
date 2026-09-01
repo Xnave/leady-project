@@ -4,8 +4,8 @@ import { ChatThread } from "@/components/ChatThread";
 import { LeadFieldsForm } from "@/components/LeadFieldsForm";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
-import { catalogMeta, isCatalogId } from "@/lib/flow/catalog";
-import { chatLanguageMeta, isChatLanguage } from "@/lib/flow/locale";
+import { isCatalogId } from "@/lib/flow/catalog";
+import { isChatLanguage } from "@/lib/flow/locale";
 import type { LeadFields, LeadSchema } from "@/lib/flow/types";
 import { getUiLang } from "@/lib/cookies";
 import { leadDisplayName } from "@/lib/leads";
@@ -45,11 +45,23 @@ export default async function DemoPage({
   const convo = lead?.conversations[0];
   const schema = (agent?.leadSchema ?? { fields: {} }) as LeadSchema;
   const catalogId = agent?.catalogId && isCatalogId(agent.catalogId) ? agent.catalogId : "inbox";
-  const catalogTitle = catalogMeta.find((c) => c.id === catalogId)?.title ?? catalogId;
+  const catalogTitle = ui.catalog[catalogId]?.title ?? catalogId;
   const languageId =
     tenant?.chatLanguage && isChatLanguage(tenant.chatLanguage) ? tenant.chatLanguage : "multi";
-  const languageTitle = chatLanguageMeta.find((c) => c.id === languageId)?.title ?? languageId;
+  const languageTitle = ui.chatLanguage[languageId]?.title ?? languageId;
   const setupIncomplete = !(tenant?.intro ?? "").trim();
+
+  const chatLabels = {
+    placeholder: ui.chat.placeholder,
+    waitingHuman: ui.chat.waitingHuman,
+    send: ui.common.send,
+    sending: ui.common.sending,
+    sendFailed: ui.chat.sendFailed,
+  };
+  const threadLabels = {
+    emptyThread: ui.chat.emptyThread,
+    roles: ui.roles,
+  };
 
   return (
     <div className="demo-grid">
@@ -75,36 +87,41 @@ export default async function DemoPage({
         ) : null}
         {lead && convo ? (
           <>
-            <ChatThread
-              messages={convo.messages.map((m) => ({
-                id: m.id,
-                role: m.role,
-                text: m.text,
-              }))}
-            />
+            <ChatThread messages={convo.messages.map((m) => ({
+              id: m.id,
+              role: m.role,
+              text: m.text,
+            }))} labels={threadLabels} />
             <ChatComposer
               leadId={lead.id}
               from={lead.externalUserId}
               disabled={convo.status === "waiting_human"}
+              labels={chatLabels}
             />
             {convo.status === "waiting_human" ? (
               <p className="muted">
+                {ui.chat.pausedForHuman}{" "}
                 <Link href="/inbox">{ui.nav.inbox}</Link>
               </p>
             ) : null}
           </>
         ) : (
-          <ChatComposer />
+          <>
+            <p className="muted">{ui.chat.startNew}</p>
+            <ChatComposer labels={chatLabels} />
+          </>
         )}
       </section>
       <aside>
         <div className="card">
           <h2>{tenant?.name}</h2>
-          <p className="muted">{tenant?.intro || ui.common.empty}</p>
+          <p className="muted">{tenant?.intro || ui.chat.noIntro}</p>
           <p className="muted">
-            {ui.common.flow}: {catalogTitle}
+            {ui.chat.flowLabel}: {catalogTitle}
           </p>
-          <p className="muted">{languageTitle}</p>
+          <p className="muted">
+            {ui.chat.languageLabel}: {languageTitle}
+          </p>
         </div>
         {lead ? (
           <div className="card">
@@ -115,6 +132,7 @@ export default async function DemoPage({
               fields={(lead.fields as LeadFields) ?? {}}
               status={lead.status}
               statusLabels={ui.status}
+              statusLegend={ui.common.status}
               saveLabel={ui.common.save}
             />
           </div>
