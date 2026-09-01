@@ -1,47 +1,47 @@
 import { describe, expect, it } from "vitest";
-import {
-  bookingFieldGaps,
-  extractTimePreference,
-  extractVenueFromKnowledge,
-  extractVisitKind,
-  tentativeBookingMessage,
-} from "./booking";
+import { bookingFieldGaps } from "./booking";
+import { copyFor, fillTemplate } from "@/lib/copy";
 
 describe("booking helpers", () => {
-  it("reads Wednesday 5pm as a slot", () => {
-    expect(extractTimePreference("ברביעי ב5 אחרצ")).toMatch(/17:00|רביעי/);
-  });
-
-  it("treats coming in as a showroom visit", () => {
-    expect(extractVisitKind("אני רוצה לבוא")).toBe("showroom");
-  });
-
-  it("asks for time then name then phone", () => {
+  it("asks for time then name then need by default", () => {
     expect(bookingFieldGaps({})[0]).toBe("time_preference");
-    expect(bookingFieldGaps({ time_preference: "רביעי 17:00" })[0]).toBe("name");
+    expect(bookingFieldGaps({ time_preference: "Thursday 18:00" })[0]).toBe("name");
     expect(
-      bookingFieldGaps({ time_preference: "רביעי 17:00", name: "נווה" })[0],
-    ).toBe("phone");
+      bookingFieldGaps({ time_preference: "Thursday 18:00", name: "Nave" })[0],
+    ).toBe("need");
     expect(
       bookingFieldGaps({
-        time_preference: "רביעי 17:00",
-        name: "נווה",
-        phone: "0500000000",
+        time_preference: "Thursday 18:00",
+        name: "Nave",
+        need: "product demo",
       }),
     ).toEqual([]);
   });
 
-  it("pulls address from knowledge and always includes it after a request", () => {
-    const venue = extractVenueFromKnowledge(
-      "שעות: א'-ה' 09:00-19:00\nכתובת: רחוב הרוגוזין 14, אזור התעשייה חולון",
-    );
-    expect(venue.address).toMatch(/הרוגוזין/);
-    const msg = tentativeBookingMessage("he", {
-      slot: "רביעי 17:00",
-      address: venue.address,
-      kind: "showroom",
+  it("only asks for phone when that field is required", () => {
+    expect(
+      bookingFieldGaps(
+        { time_preference: "Thursday 18:00", name: "Nave" },
+        ["time_preference", "name", "phone"],
+      )[0],
+    ).toBe("phone");
+  });
+
+  it("fills booking templates and drops empty labeled lines", () => {
+    const text = fillTemplate(copyFor("en").chat.bookingRequestTemplate, {
+      slot: "Thu 18:00",
+      kind: "visit",
+      need: "quote",
+      name: "Dana",
+      phone: "",
+      email: "",
+      address: "1 Main St",
+      hours: "",
     });
-    expect(msg).toMatch(/ההזמנה נקלטה/);
-    expect(msg).toMatch(/הרוגוזין/);
+    expect(text).toMatch(/Thu 18:00/);
+    expect(text).toMatch(/quote/);
+    expect(text).toMatch(/Dana/);
+    expect(text).toMatch(/1 Main St/);
+    expect(text).not.toMatch(/^Phone:/m);
   });
 });

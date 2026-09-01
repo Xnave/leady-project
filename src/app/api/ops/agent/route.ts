@@ -3,7 +3,8 @@ import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
 import { flowForCatalog, isCatalogId, type CatalogId } from "@/lib/flow/catalog";
 import { validateFlow } from "@/lib/flow/validate";
-import type { HitlPolicy, LeadSchema } from "@/lib/flow/types";
+import { bookingCollectFromFlow } from "@/lib/flow/booking-collect";
+import type { FlowDefinition, HitlPolicy, LeadSchema } from "@/lib/flow/types";
 import { FlowConfigError } from "@/lib/flow/types";
 
 export async function POST(req: Request) {
@@ -15,7 +16,10 @@ export async function POST(req: Request) {
   });
   const catalogRaw = String(form.get("catalogId") || agent.catalogId || "inbox");
   const catalogId: CatalogId = isCatalogId(catalogRaw) ? catalogRaw : "inbox";
-  const flow = flowForCatalog(catalogId);
+  const flow = flowForCatalog(
+    catalogId,
+    bookingCollectFromFlow(agent.flow as FlowDefinition),
+  );
   flow.restartPolicy = {
     onNewMessage: String(form.get("restartPolicy") ?? "fallback") as
       | "ignore"

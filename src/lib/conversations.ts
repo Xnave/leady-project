@@ -30,6 +30,11 @@ export async function persistInboundIfNew(opts: {
     include: { agent: true },
   });
 
+  const extraFields = { ...(opts.extraFields ?? {}) };
+  if (channel.provider === "whatsapp" && /^\+?\d[\d\s-]{7,}\d$/.test(opts.from.trim())) {
+    extraFields.phone = extraFields.phone ?? opts.from.trim();
+  }
+
   const lead = await prisma.lead.upsert({
     where: {
       tenantId_channelId_externalUserId: {
@@ -43,17 +48,19 @@ export async function persistInboundIfNew(opts: {
       channelId: opts.channelId,
       externalUserId: opts.from,
       displayName: opts.from,
-      fields: (opts.extraFields ?? {}) as Prisma.InputJsonValue,
+      fields: extraFields as Prisma.InputJsonValue,
     },
     update: {},
   });
 
-  if (opts.extraFields && Object.keys(opts.extraFields).length > 0) {
-    const current = (lead.fields as Record<string, unknown>) ?? {};
+  const current = (lead.fields as Record<string, unknown>) ?? {};
+  const patch = { ...extraFields };
+  if (current.phone) delete patch.phone;
+  if (Object.keys(patch).length > 0) {
     await prisma.lead.update({
       where: { id: lead.id },
       data: {
-        fields: { ...current, ...opts.extraFields } as Prisma.InputJsonValue,
+        fields: { ...current, ...patch } as Prisma.InputJsonValue,
       },
     });
   }
@@ -126,6 +133,10 @@ export async function loadTurnContext(
     calcomEventTypeId: conversation.agent.calcomEventTypeId,
   };
 
+  const fields = { ...((conversation.lead.fields as Record<string, unknown>) ?? {}) };
+  const leadPhone =
+    typeof fields.phone === "string" && fields.phone.trim() ? fields.phone.trim() : undefined;
+
   return {
     tenantId,
     tenant: {
@@ -136,6 +147,11 @@ export async function loadTurnContext(
         ? conversation.tenant.chatLanguage
         : "multi",
       idleResetDays: conversation.tenant.idleResetDays ?? 5,
+      venueAddress: conversation.tenant.venueAddress ?? "",
+      venueHours: conversation.tenant.venueHours ?? "",
+      bookingRequestTemplate: conversation.tenant.bookingRequestTemplate ?? "",
+      bookingApprovedTemplate: conversation.tenant.bookingApprovedTemplate ?? "",
+      bookingRejectedTemplate: conversation.tenant.bookingRejectedTemplate ?? "",
     },
     agent,
     conversation: {
@@ -148,20 +164,24 @@ export async function loadTurnContext(
     lead: {
       id: conversation.lead.id,
       externalUserId: conversation.lead.externalUserId,
-      fields: (conversation.lead.fields as Record<string, unknown>) ?? {},
+      fields,
     },
     messages: conversation.messages.map((m) => ({
       role: m.role as "lead" | "agent" | "human" | "system",
       text: m.text,
       createdAt: m.createdAt,
     })),
+    channel: {
+      provider: conversation.channel.provider,
+      customerPhone: leadPhone,
+    },
     connection: {
       id: conversation.channel.id,
       provider: conversation.channel.provider,
       providerAccountId: conversation.channel.providerAccountId,
       apiBase: conversation.channel.apiBase,
       accessToken: decryptSecret(conversation.channel.accessTokenEnc),
-      zernioAccountId: conversation.channel.hookmyappChannelId || undefined,
+      zernioAccountId: conversation.channel.providerExternalId || undefined,
     },
   };
 }

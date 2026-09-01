@@ -59,7 +59,7 @@ export async function syncHookMyAppChannels(tenantId: string) {
       update: {
         tenantId,
         agentId: agent.id,
-        hookmyappChannelId: parsed.channelId || channelId,
+        providerExternalId: parsed.channelId || channelId,
         apiBase: parsed.apiBase,
         accessTokenEnc: encryptSecret(accessToken),
         hmacSecretEnc: encryptSecret(hmac),
@@ -71,7 +71,7 @@ export async function syncHookMyAppChannels(tenantId: string) {
         agentId: agent.id,
         provider: parsed.provider,
         providerAccountId: parsed.providerAccountId,
-        hookmyappChannelId: parsed.channelId || channelId,
+        providerExternalId: parsed.channelId || channelId,
         apiBase: parsed.apiBase,
         accessTokenEnc: encryptSecret(accessToken),
         hmacSecretEnc: encryptSecret(hmac),

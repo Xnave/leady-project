@@ -1,3 +1,4 @@
+import { cannedFallbackIntro } from "@/lib/copy";
 import type { TurnContext } from "./types";
 
 export function hasAgentReplied(ctx: TurnContext): boolean {
@@ -12,12 +13,8 @@ export function idleResetDays(ctx: TurnContext): number {
   return Math.max(0, Math.min(365, Math.floor(n)));
 }
 
-/** Exact onboard intro. No LLM wrapping. */
 export function cannedIntroText(ctx: TurnContext): string {
-  const intro = ctx.tenant?.intro?.trim();
-  if (intro) return intro;
-  const name = ctx.tenant?.name?.trim();
-  return name ? `Hi, this is ${name}.` : "Hello.";
+  return cannedFallbackIntro(ctx);
 }
 
 function messageTime(value: Date | string | undefined): Date | undefined {

@@ -1,6 +1,5 @@
-import { assignBareReply } from "./extract";
 import { interpretTurn } from "./interpreter";
-import { heuristicPreviewClassify } from "./preview-helpers";
+import { heuristicPreviewClassify, previewExtract } from "./preview-helpers";
 import { heuristicTalk } from "./llm";
 import type { AgentSnapshot, LeadFields, TenantSnapshot, TurnContext } from "./types";
 import { validateFlow } from "./validate";
@@ -60,8 +59,7 @@ export async function previewFlow(
     ctx.messages.push({ role: "lead", text: line });
     await interpretTurn(ctx, {}, {
       classify: async (_c, stage) => heuristicPreviewClassify(line, stage.intents),
-      extract: async () =>
-        assignBareReply(line, ctx.lead.fields, ["name", "email", "service"], ["phone"]),
+      extract: async () => previewExtract(line),
       draftQuestion: async (_c, _s, missing) => `Need ${missing[0]}`,
       answerFaq: async () => {
         const resolved = Boolean(agent.knowledgeText) && !/cannot|unknown/i.test(line);

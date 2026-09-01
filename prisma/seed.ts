@@ -87,7 +87,7 @@ async function main() {
         agentId: agent.id,
         provider: "whatsapp",
         providerAccountId: "dev-phone",
-        hookmyappChannelId: "ch_dev",
+        providerExternalId: "ch_dev",
         accessTokenEnc: encryptSecret("dev"),
         hmacSecretEnc: encryptSecret("dev-hmac"),
         verifyToken: "dev-verify",

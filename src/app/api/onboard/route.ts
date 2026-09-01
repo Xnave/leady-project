@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import {
-  buildAgentSystemPrompt,
-  flowForCatalog,
-  hitlForCatalog,
-  isCatalogId,
-  type CatalogId,
-} from "@/lib/flow/catalog";
+import { buildAgentSystemPrompt, flowForCatalog, hitlForCatalog, isCatalogId, type CatalogId } from "@/lib/flow/catalog";
+import { sanitizeBookingCollect } from "@/lib/flow/booking-collect";
 import { isChatLanguage, type ChatLanguage } from "@/lib/flow/locale";
 import { defaultLeadSchema, validateFlow } from "@/lib/flow/validate";
 import { FlowConfigError } from "@/lib/flow/types";
@@ -22,6 +17,12 @@ export async function POST(req: Request) {
     catalogId?: string;
     chatLanguage?: string;
     idleResetDays?: number;
+    bookingCollect?: unknown;
+    venueAddress?: string;
+    venueHours?: string;
+    bookingRequestTemplate?: string;
+    bookingApprovedTemplate?: string;
+    bookingRejectedTemplate?: string;
   };
 
   const name = String(body.name ?? "").trim();
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
     ? Math.max(0, Math.min(365, Math.floor(idleRaw)))
     : 5;
 
-  const flow = flowForCatalog(catalogId);
+  const flow = flowForCatalog(catalogId, sanitizeBookingCollect(body.bookingCollect));
   const hitlPolicy = hitlForCatalog(catalogId);
   try {
     validateFlow(flow, defaultLeadSchema, hitlPolicy);
@@ -62,7 +63,18 @@ export async function POST(req: Request) {
   await prisma.$transaction(async (tx) => {
     await tx.tenant.update({
       where: { id: tenant.id },
-      data: { name, phone, intro, chatLanguage, idleResetDays },
+      data: {
+        name,
+        phone,
+        intro,
+        chatLanguage,
+        idleResetDays,
+        venueAddress: String(body.venueAddress ?? "").trim(),
+        venueHours: String(body.venueHours ?? "").trim(),
+        bookingRequestTemplate: String(body.bookingRequestTemplate ?? ""),
+        bookingApprovedTemplate: String(body.bookingApprovedTemplate ?? ""),
+        bookingRejectedTemplate: String(body.bookingRejectedTemplate ?? ""),
+      },
     });
 
     if (!agent) {

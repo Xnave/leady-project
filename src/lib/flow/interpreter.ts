@@ -1,6 +1,5 @@
 import { applyRestartPolicy, assertHitlAllowed, mergeAllowedFields, missingRequired } from "./helpers";
 import { cannedIntroText, shouldSendCannedIntro } from "./intro";
-import { customerReadyToBook } from "./locale";
 import type {
   ActionStage,
   CollectStage,
@@ -179,7 +178,7 @@ export async function interpretTurn(
         return { stage: "waiting_human", action: "request_human", ok: true };
       }
 
-      if (out.book && stage.allowBook !== false && customerReadyToBook(ctx.messages)) {
+      if (out.book && stage.allowBook !== false) {
         const booked = await ports.bookMeeting(ctx);
         await ports.sendAndSave(ctx, booked.reply);
         ports.log("exit", { stageId, action: "book_meeting", ok: booked.ok });

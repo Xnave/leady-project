@@ -70,9 +70,18 @@ export default async function LeadDetailPage({
                   {meeting.contactPhone ? ` · ${meeting.contactPhone}` : ""}
                   {meeting.contactEmail ? ` · ${meeting.contactEmail}` : ""}
                 </p>
+                {meeting.needText ? <p className="muted">Need: {meeting.needText}</p> : null}
                 <MeetingDecisionForm
                   meetingId={meeting.id}
                   pending={meeting.status === "pending"}
+                  summary={{
+                    name: meeting.contactName,
+                    phone: meeting.contactPhone,
+                    email: meeting.contactEmail,
+                    need: meeting.needText,
+                    slot: meeting.slotText,
+                    kind: meeting.kind,
+                  }}
                 />
               </div>
             ))}

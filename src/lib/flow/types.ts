@@ -116,6 +116,11 @@ export type TenantSnapshot = {
   intro: string;
   chatLanguage: ChatLanguage;
   idleResetDays?: number;
+  venueAddress?: string;
+  venueHours?: string;
+  bookingRequestTemplate?: string;
+  bookingApprovedTemplate?: string;
+  bookingRejectedTemplate?: string;
 };
 
 export type MessageSnapshot = {
@@ -133,6 +138,11 @@ export type TalkOutcome = {
   complete?: boolean;
 };
 
+export type ChannelSnapshot = {
+  provider: string;
+  customerPhone?: string;
+};
+
 export type TurnContext = {
   tenantId: string;
   tenant?: TenantSnapshot;
@@ -140,6 +150,7 @@ export type TurnContext = {
   conversation: ConversationSnapshot;
   lead: { id: string; externalUserId: string; fields: LeadFields };
   messages: MessageSnapshot[];
+  channel?: ChannelSnapshot;
 };
 
 export class FlowConfigError extends Error {

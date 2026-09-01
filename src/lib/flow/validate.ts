@@ -92,10 +92,11 @@ export const defaultLeadSchema: LeadSchema = {
     name: { type: "string" },
     email: { type: "email" },
     phone: { type: "string" },
-    service: { type: "enum", enum: ["remodel", "repair", "other"] },
+    service: { type: "string" },
     budget: { type: "string" },
     time_preference: { type: "string" },
     visit_kind: { type: "string" },
+    need: { type: "string" },
     booking: { type: "string" },
   },
 };

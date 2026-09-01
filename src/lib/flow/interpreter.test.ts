@@ -302,7 +302,7 @@ describe("interpretTurn", () => {
       talk: async () => ({
         reply: "תודה, נמשיך עם התכנון.",
         fields: { name: "נווה", email: "naveine@gmail.com" },
-        book: true,
+        book: false,
       }),
       sendAndSave: async (_c, text) => {
         replies.push(text);

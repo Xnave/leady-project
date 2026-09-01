@@ -13,6 +13,11 @@ model Tenant {
   name                   String
   phone                  String   @default("")
   intro                  String   @default("")
+  venueAddress           String   @default("")
+  venueHours             String   @default("")
+  bookingRequestTemplate String   @default("")
+  bookingApprovedTemplate String  @default("")
+  bookingRejectedTemplate String  @default("")
   chatLanguage           String   @default("multi")
   idleResetDays          Int      @default(5)
   mediaAnalysisEnabled   Boolean  @default(false)
@@ -82,7 +87,7 @@ model ChannelConnection {
   agent              Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
   provider           String
   providerAccountId  String
-  hookmyappChannelId String?
+  providerExternalId String? @map("hookmyappChannelId")
   apiBase            String   @default("https://gateway.hookmyapp.com/meta")
   accessTokenEnc     String
   hmacSecretEnc      String
@@ -170,13 +175,14 @@ model Meeting {
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   status         String    @default("pending")
-  kind           String    @default("showroom")
+  kind           String    @default("visit")
   slotText       String
   contactName    String    @default("")
   contactEmail   String    @default("")
   contactPhone   String    @default("")
   venueText      String    @default("")
   hoursText      String    @default("")
+  needText       String    @default("")
   decidedBy      String?
   decidedAt      DateTime?
   createdAt      DateTime  @default(now())

@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     return new Response("unknown channel", { status: 404 });
   }
   const channel = await prisma.channelConnection.findFirst({
-    where: { hookmyappChannelId: inbound.accountId, enabled: true },
+    where: { providerExternalId: inbound.accountId, enabled: true },
   });
   if (!channel) return new Response("unknown channel", { status: 404 });
 

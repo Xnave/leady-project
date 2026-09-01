@@ -1,6 +1,8 @@
 import { OnboardWizard } from "@/components/OnboardWizard";
+import { bookingCollectFromFlow } from "@/lib/flow/booking-collect";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
+import type { FlowDefinition } from "@/lib/flow/types";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +16,8 @@ export default async function OnboardPage() {
     <div>
       <h1>Setup</h1>
       <p className="muted">
-        Bound to this logged-in tenant. Choose the agent language at the top, then business details.
+        Bound to this logged-in tenant. Upload a knowledge file first — we extract setup fields
+        from it, then you review business details.
       </p>
       <OnboardWizard
         name={tenant.name}
@@ -28,6 +31,12 @@ export default async function OnboardPage() {
             : "multi"
         }
         idleResetDays={tenant.idleResetDays ?? 5}
+        venueAddress={tenant.venueAddress ?? ""}
+        venueHours={tenant.venueHours ?? ""}
+        bookingRequestTemplate={tenant.bookingRequestTemplate ?? ""}
+        bookingApprovedTemplate={tenant.bookingApprovedTemplate ?? ""}
+        bookingRejectedTemplate={tenant.bookingRejectedTemplate ?? ""}
+        bookingCollect={bookingCollectFromFlow(agent?.flow as FlowDefinition | undefined)}
       />
     </div>
   );
