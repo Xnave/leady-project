@@ -78,17 +78,24 @@ export async function persistInboundIfNew(opts: {
     });
   }
 
-  const message = await prisma.message.create({
-    data: {
-      tenantId: opts.tenantId,
-      conversationId: conversation.id,
-      role: "lead",
-      text: opts.text,
-      providerMessageId: opts.providerMessageId,
-    },
-  });
-
-  return { conversationId: conversation.id, messageId: message.id, leadId: lead.id };
+  try {
+    const message = await prisma.message.create({
+      data: {
+        tenantId: opts.tenantId,
+        conversationId: conversation.id,
+        role: "lead",
+        text: opts.text,
+        providerMessageId: opts.providerMessageId,
+      },
+    });
+    return { conversationId: conversation.id, messageId: message.id, leadId: lead.id };
+  } catch (err) {
+    //Unique Constraint Violation.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return null;
+    }
+    throw err;
+  }
 }
 
 export async function loadTurnContext(
@@ -221,7 +228,7 @@ export async function pauseForHuman(opts: {
     }),
     prisma.conversation.update({
       where: { id: opts.conversationId },
-      data: { status: "waiting_human", flowState: "waiting_human" },
+      data: { status: "waiting_human" },
     }),
   ]);
 }

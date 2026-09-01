@@ -92,6 +92,34 @@ describe("interpretTurn", () => {
     expect(result.skipped).toBe("waiting_human");
   });
 
+  it("resumes from HITL terminal instead of exiting immediately", async () => {
+    const replies: string[] = [];
+    const state = ctx({
+      agent: { ...ctx().agent, flow: defaultFlow() },
+      conversation: {
+        id: "c1",
+        status: "open",
+        flowState: "waiting_human",
+        flowVersion: 1,
+        nudgeCountByStage: {},
+      },
+      messages: [
+        { role: "lead", text: "I need a person" },
+        { role: "human", text: "Owner handled it — continue" },
+      ],
+    });
+    const result = await interpretTurn(state, { resume: true }, {
+      ...ports(),
+      talk: async () => ({ reply: "thanks, we are back" }),
+      sendAndSave: async (_c, text) => {
+        replies.push(text);
+      },
+    });
+    expect(result.skipped).toBeUndefined();
+    expect(result.stage).toBe("talk");
+    expect(replies[0]).toBe("thanks, we are back");
+  });
+
   it("sends intro after done instead of ignoring the new message", async () => {
     const replies: string[] = [];
     const flow = structuredClone(salesOrSupportFlow);

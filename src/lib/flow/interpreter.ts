@@ -89,7 +89,8 @@ export async function interpretTurn(
     ctx.conversation.flowState = stageId;
   }
 
-  const fromTerminal = stage.type === "terminal" && !event.resume;
+  const fromTerminal =
+    stage.type === "terminal" && (!event.resume || stageId === "waiting_human");
   if (fromTerminal) {
     const next = applyRestartPolicy(flow);
     const dest = next.kind === "ignore" ? flow.start : next.stageId;

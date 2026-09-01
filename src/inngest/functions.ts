@@ -107,17 +107,24 @@ export const nudgeIfSilent = inngest.createFunction(
       nudgeAt: string;
       template: string;
       maxTimes: number;
+      flowVersion?: number;
     };
     await step.sleepUntil("wait", new Date(data.nudgeAt));
     return step.run("maybe-send", async () => {
       const convo = await prisma.conversation.findFirst({
         where: { id: data.conversationId, tenantId: data.tenantId },
-        include: { lead: true, channel: true },
+        include: { lead: true, channel: true, agent: true },
       });
       if (!convo) return { skipped: "missing" };
       if (convo.status === "waiting_human") return { skipped: "hitl" };
       if (convo.updatedAt > new Date(data.nudgeAt)) return { skipped: "replied" };
       if (convo.flowState !== data.expectedStage) return { skipped: "moved-on" };
+      if (
+        data.flowVersion != null &&
+        convo.agent.flowVersion !== data.flowVersion
+      ) {
+        return { skipped: "stale-flow" };
+      }
       const counts = (convo.nudgeCountByStage as Record<string, number>) ?? {};
       if ((counts[data.expectedStage] ?? 0) >= data.maxTimes) return { skipped: "max" };
 

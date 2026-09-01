@@ -4,6 +4,18 @@ import { syncHookMyAppChannels } from "@/lib/hookmyapp-sync";
 
 /** HookMyApp POSTs here after a customer finishes Embedded Signup / IG OAuth. */
 export async function POST(req: Request) {
+  const secret = (process.env.HOOKMYAPP_WEBHOOK_SECRET ?? "").trim();
+  const provided =
+    req.headers.get("X-HookMyApp-Webhook-Secret") ??
+    req.headers.get("X-Webhook-Secret") ??
+    "";
+  const bypass = process.env.DEV_AUTH_BYPASS === "true";
+  if (!secret) {
+    if (!bypass) return new Response("unauthorized", { status: 401 });
+  } else if (provided !== secret) {
+    return new Response("unauthorized", { status: 401 });
+  }
+
   const body = (await req.json().catch(() => ({}))) as {
     type?: string;
     externalId?: string;

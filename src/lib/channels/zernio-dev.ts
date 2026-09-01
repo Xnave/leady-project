@@ -42,23 +42,47 @@ export async function ensureDevZernioChannel(tenantId: string): Promise<string |
     enabled: true,
   };
 
-  if (existingByDev) {
-    await prisma.channelConnection.update({
-      where: { id: existingByDev.id },
-      data,
-    });
-    return existingByDev.id;
-  }
-
-  const row = await prisma.channelConnection.upsert({
+  const taken = await prisma.channelConnection.findUnique({
     where: {
       provider_providerAccountId: {
         provider: "whatsapp",
         providerAccountId: phone,
       },
     },
-    update: data,
-    create: data,
   });
+  if (taken && taken.tenantId !== tenantId) {
+    console.error("zernio sandbox number already bound to another tenant");
+    return null;
+  }
+
+  const ownedUpdate = {
+    agentId: data.agentId,
+    provider: data.provider,
+    providerAccountId: data.providerAccountId,
+    hookmyappChannelId: data.hookmyappChannelId,
+    apiBase: data.apiBase,
+    accessTokenEnc: data.accessTokenEnc,
+    hmacSecretEnc: data.hmacSecretEnc,
+    verifyToken: data.verifyToken,
+    enabled: data.enabled,
+  };
+
+  if (taken) {
+    await prisma.channelConnection.update({
+      where: { id: taken.id },
+      data: ownedUpdate,
+    });
+    return taken.id;
+  }
+
+  if (existingByDev) {
+    await prisma.channelConnection.update({
+      where: { id: existingByDev.id },
+      data: ownedUpdate,
+    });
+    return existingByDev.id;
+  }
+
+  const row = await prisma.channelConnection.create({ data });
   return row.id;
 }
