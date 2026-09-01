@@ -1,0 +1,221 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id                     String   @id @default(cuid())
+  clerkOrgId             String   @unique
+  name                   String
+  phone                  String   @default("")
+  intro                  String   @default("")
+  chatLanguage           String   @default("multi")
+  idleResetDays          Int      @default(5)
+  mediaAnalysisEnabled   Boolean  @default(false)
+  hookmyappWorkspaceId   String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  agents               Agent[]
+  channelConnections   ChannelConnection[]
+  leads                Lead[]
+  conversations        Conversation[]
+  messages             Message[]
+  hitlTasks            HitlTask[]
+  meetings             Meeting[]
+  mediaAssets          MediaAsset[]
+  revisions            AgentConfigRevision[]
+}
+
+model Agent {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name                 String
+  catalogId            String   @default("inbox")
+  systemPrompt         String   @default("")
+  knowledgeText        String   @default("")
+  flow                 Json
+  flowVersion          Int      @default(1)
+  flowChangedAt        DateTime @default(now())
+  leadSchema           Json
+  leadSchemaVersion    Int      @default(1)
+  leadSchemaChangedAt  DateTime @default(now())
+  hitlPolicy           Json
+  mediaAnalysis        Boolean  @default(false)
+  n8nWebhookUrl        String?
+  calcomEventTypeId    String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  channelConnections ChannelConnection[]
+  conversations      Conversation[]
+  revisions          AgentConfigRevision[]
+
+  @@index([tenantId])
+}
+
+model AgentConfigRevision {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  kind      String
+  version   Int
+  payload   Json
+  savedBy   String?
+  savedAt   DateTime @default(now())
+
+  @@index([agentId, kind, version])
+}
+
+model ChannelConnection {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agentId            String
+  agent              Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  provider           String
+  providerAccountId  String
+  hookmyappChannelId String?
+  apiBase            String   @default("https://gateway.hookmyapp.com/meta")
+  accessTokenEnc     String
+  hmacSecretEnc      String
+  verifyToken        String
+  enabled            Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  leads         Lead[]
+  conversations Conversation[]
+
+  @@unique([provider, providerAccountId])
+  @@index([tenantId])
+}
+
+model Lead {
+  id             String   @id @default(cuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  channelId      String
+  channel        ChannelConnection @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  externalUserId String
+  displayName    String?
+  status         String   @default("open")
+  fields         Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversations Conversation[]
+  hitlTasks     HitlTask[]
+  meetings      Meeting[]
+  mediaAssets   MediaAsset[]
+
+  @@unique([tenantId, channelId, externalUserId])
+  @@index([tenantId])
+}
+
+model Conversation {
+  id               String   @id @default(cuid())
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leadId           String
+  lead             Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  channelId        String
+  channel          ChannelConnection @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  agentId          String
+  agent            Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  status           String   @default("open")
+  flowState        String
+  flowVersion      Int
+  nudgeCountByStage Json    @default("{}")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  messages  Message[]
+  hitlTasks HitlTask[]
+  meetings  Meeting[]
+
+  @@index([tenantId])
+  @@index([leadId])
+}
+
+model Message {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationId     String
+  conversation       Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role               String
+  text               String   @default("")
+  providerMessageId  String
+  metadata           Json     @default("{}")
+  createdAt          DateTime @default(now())
+
+  @@unique([tenantId, providerMessageId])
+  @@index([conversationId, createdAt])
+}
+
+model Meeting {
+  id             String    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leadId         String
+  lead           Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  status         String    @default("pending")
+  kind           String    @default("showroom")
+  slotText       String
+  contactName    String    @default("")
+  contactEmail   String    @default("")
+  contactPhone   String    @default("")
+  venueText      String    @default("")
+  hoursText      String    @default("")
+  decidedBy      String?
+  decidedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([tenantId, status])
+  @@index([leadId])
+}
+
+model HitlTask {
+  id             String    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  leadId         String
+  lead           Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  type           String
+  reason         String
+  payload        Json      @default("{}")
+  status         String    @default("open")
+  resolution     Json?
+  completedBy    String?
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  @@index([tenantId, status])
+}
+
+model MediaAsset {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leadId      String?
+  lead        Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  providerId  String
+  storageUrl  String?
+  analysis    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+}

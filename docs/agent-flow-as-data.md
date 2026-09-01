@@ -181,6 +181,7 @@ A simpler tenant:
 ```json
 {
   "start": "collect_lead",
+  "restartPolicy": { "onNewMessage": "ignore" },
   "stages": {
     "collect_lead": {
       "type": "collect",
@@ -215,7 +216,15 @@ export const runAgentTurn = inngest.createFunction(
   async ({ event, step }) => {
     const ctx = await step.run("load", () => loadTurnContext(event.data));
 
+    logTurn("enter", {
+      tenantId: ctx.tenantId,
+      conversationId: ctx.conversation.id,
+      flowState: ctx.conversation.flow_state,
+      flowVersion: ctx.agent.flow_version,
+    });
+
     if (ctx.conversation.status === "waiting_human" && !event.data.resume) {
+      logTurn("exit", { reason: "waiting_human" });
       return { skipped: "waiting_human" };
     }
 
@@ -223,9 +232,19 @@ export const runAgentTurn = inngest.createFunction(
     let stageId = ctx.conversation.flow_state || flow.start;
     let stage = flow.stages[stageId];
 
+    if (stage.type === "terminal" && !event.data.resume) {
+      const next = applyRestartPolicy(flow, stageId);
+      if (next.kind === "ignore") {
+        logTurn("exit", { reason: "terminal_ignore" });
+        return { skipped: "terminal" };
+      }
+      stageId = await persistStage(ctx, next.stageId);
+      stage = flow.stages[stageId];
+    }
+
     // --- 1. Classify (only if this stage says so) ---
     if (stage.type === "classify") {
-      const intent = await step.run("classify", () => classifyIntent(ctx, stage));
+      const intent = await step.run(`classify:${stageId}`, () => classifyIntent(ctx, stage));
       const next = stage.transitions[intent] ?? stage.transitions[stage.intents[0]];
       stageId = await persistStage(ctx, next);
       stage = flow.stages[stageId];
@@ -233,7 +252,7 @@ export const runAgentTurn = inngest.createFunction(
 
     // --- 2. FAQ / support ---
     if (stage.type === "faq") {
-      const faq = await step.run("faq", () => answerFaq(ctx, stage));
+      const faq = await step.run(`faq:${stageId}`, () => answerFaq(ctx, stage));
       const next = faq.resolved ? stage.on_resolved : stage.on_unresolved;
       await persistStage(ctx, next);
       await sendAndSave(ctx, faq.reply);
@@ -248,15 +267,17 @@ export const runAgentTurn = inngest.createFunction(
 
     // --- 3. Gather structured fields ---
     if (stage.type === "collect") {
-      const extracted = await step.run("extract", () => extractFields(ctx, stage));
-      await step.run("persist-fields", () => mergeLeadFields(ctx, extracted.fields));
+      const extracted = await step.run(`extract:${stageId}`, () => extractFields(ctx, stage));
+      await step.run(`persist-fields:${stageId}`, () => mergeLeadFields(ctx, extracted.fields));
 
       const missing = missingRequired(ctx.lead.fields, stage.required_fields);
       if (missing.length > 0) {
-        const question = await step.run("next-question", () =>
+        const question = await step.run(`next-question:${stageId}`, () =>
           draftQuestion(ctx, stage, missing),
         );
         await sendAndSave(ctx, question);
+        await maybeScheduleNudge(ctx, stageId, stage);
+        logTurn("exit", { stageId, stageType: stage.type, missing });
         return { stage: stageId, missing };
       }
 
@@ -267,8 +288,8 @@ export const runAgentTurn = inngest.createFunction(
 
     // --- 4. Actions once the graph says we are ready ---
     if (stage.type === "action") {
-      const result = await step.run(`action:${stage.action}`, () =>
-        runAction(ctx, stage.action),
+      const result = await step.run(`action:${stageId}:${stage.action}`, () =>
+        runAction(ctx, stage),
       );
       const next = result.ok ? stage.on_complete : stage.on_fail;
       await persistStage(ctx, next);
@@ -276,10 +297,7 @@ export const runAgentTurn = inngest.createFunction(
       return { stage: next, action: stage.action, ok: result.ok };
     }
 
-    if (stage.type === "terminal") {
-      return { stage: stageId };
-    }
-
+    logTurn("exit", { stageId, stageType: stage.type });
     return { stage: stageId };
   },
 );
@@ -320,15 +338,35 @@ function missingRequired(fields: Record<string, unknown>, required: string[]) {
   return required.filter((k) => fields[k] == null || fields[k] === "");
 }
 
-async function runAction(ctx: TurnContext, action: "book_meeting" | "request_human") {
-  if (action === "book_meeting") {
+async function runAction(ctx: TurnContext, stage: Extract<Stage, { type: "action" }>) {
+  if (stage.action === "book_meeting") {
     const booked = await bookOnCalcom(ctx);
     return booked.ok
       ? { ok: true, reply: `Booked for ${booked.when}. See you then.` }
       : { ok: false, reply: booked.error };
   }
+
+  assertHitlAllowed(ctx, ctx.conversation.flow_state);
   await pauseForHuman(ctx, { type: "more_info", reason: "Support could not resolve" });
   return { ok: true, reply: "A person from the team will take this from here." };
+}
+
+function applyRestartPolicy(flow: FlowDefinition, _current: string) {
+  const p = flow.restartPolicy;
+  if (p.onNewMessage === "ignore") return { kind: "ignore" as const };
+  if (p.onNewMessage === "restart") return { kind: "goto" as const, stageId: flow.start };
+  return { kind: "goto" as const, stageId: p.fallbackStage ?? flow.start };
+}
+
+function assertHitlAllowed(ctx: TurnContext, stageId: string) {
+  const p = ctx.agent.hitlPolicy;
+  if (!p?.allowRequestHuman) throw new Error("hitl_disabled");
+  if (!p.allowedFromStages.includes(stageId)) throw new Error("hitl_stage_not_allowed");
+  if (p.allowedIntents?.length && ctx.lead.fields.intent) {
+    if (!p.allowedIntents.includes(String(ctx.lead.fields.intent))) {
+      throw new Error("hitl_intent_not_allowed");
+    }
+  }
 }
 ```
 
@@ -344,46 +382,173 @@ Lead: “Hi, I want a kitchen quote”
 
 1. `flow_state` empty → `classify_intent`.
 2. LLM step → `sales` → persist `collect_lead`.
-3. Extract: no name/email/service yet. Ask: “What service — remodel or repair?”
-4. (Next webhook, hours later) “Full remodel. I’m Dana, [dana@x.com](mailto:dana@x.com)”
+3. Extract: no name/email/service yet. Ask: “What service — remodel or repair?” Schedule nudge from this stage’s `nudge` JSON.
+4. (Next webhook, hours later) “Full remodel. I’m Dana, dana@x.com”
 5. Extract merges `{ service, name, email }`. `missing` is `[]`. Transition `schedule`.
 6. `book_meeting` step. If Cal.com needs a slot, `on_fail` back to `collect_lead` and ask time preference.
-7. `flow_state = done`. Further messages can no-op or restart per tenant policy.
+7. `flow_state = done`. Next message follows `restartPolicy` (here: `fallback` → `answer_support`, not a new sales collect).
 
 Lead: “How do I reset the filter?”
 
 1. Classify → `support` → `answer_support`.
-2. FAQ hits knowledge → `done`, or miss → `escalate` → `request_human` → `waiting_human` (HITL, same as [agent-runtime.md](./agent-runtime.md)).
+2. FAQ hits knowledge → `done`, or miss → `escalate` → `request_human` only if `hitl_policy` allows that stage → `waiting_human`.
+
+`waiting_human` is **not** `restartPolicy`. Inbound still stores; the agent does not run until CRM resume.
 
 ---
 
+## Restart vs HITL pause
 
+Encode this in JSON so ops does not invent ad-hoc branches in the interpreter.
 
-## Delayed nudge (`sleepUntil`) — separate function
+| Situation | Field | Behavior |
+|---|---|---|
+| Stage `type: terminal` (e.g. `done`) + new lead message | `flow.restartPolicy.onNewMessage` | `ignore` (store, no reply) / `restart` (jump to `start`) / `fallback` (jump to `fallbackStage`, usually FAQ) |
+| `conversations.status = waiting_human` | HITL, not restart | Skip interpreter until `resume: true` |
+| Ops published a new `flow_version` mid-chat | `conversations.flow_version` | Stay on current `flow_state` if that id still exists; if the stage was deleted, jump to `start` and log `flow_version_mismatch` |
 
-Do **not** block the inbound turn for 24h. After sending a question, enqueue a reminder job:
+---
+
+## Per-stage nudge (not a global 24h)
+
+Do **not** block the inbound turn. After sending a question, if `stage.nudge` is set, enqueue a reminder. Collect might wait 24h; qualify might wait 72h; FAQ might have no nudge.
 
 ```ts
+async function maybeScheduleNudge(ctx: TurnContext, stageId: string, stage: Stage) {
+  if (!stage.nudge) return;
+  const nudgeAt = addDuration(new Date(), stage.nudge.after);
+  await inngest.send({
+    name: "agent/nudge.requested",
+    data: {
+      tenantId: ctx.tenantId,
+      conversationId: ctx.conversation.id,
+      expectedStage: stageId,
+      nudgeAt: nudgeAt.toISOString(),
+      template: stage.nudge.template,
+      maxTimes: stage.nudge.maxTimes ?? 1,
+      flowVersion: ctx.agent.flow_version,
+    },
+    id: `nudge-${ctx.conversation.id}-${stageId}-${ctx.agent.flow_version}`,
+  });
+}
+
 export const nudgeIfSilent = inngest.createFunction(
   { id: "nudge-if-silent" },
   { event: "agent/nudge.requested" },
   async ({ event, step }) => {
-    await step.sleepUntil("wait", event.data.nudgeAt); // now + 24h
+    await step.sleepUntil("wait", new Date(event.data.nudgeAt));
 
     const convo = await loadConversation(event.data);
-    if (convo.updatedAt > event.data.nudgeAt) return { skipped: "replied" };
+    if (convo.status === "waiting_human") return { skipped: "hitl" };
+    if (convo.updatedAt > new Date(event.data.nudgeAt)) return { skipped: "replied" };
     if (convo.flow_state !== event.data.expectedStage) return { skipped: "moved-on" };
+    if ((convo.nudgeCountByStage?.[event.data.expectedStage] ?? 0) >= event.data.maxTimes) {
+      return { skipped: "max" };
+    }
 
-    await sendOnChannel(convo, "Still happy to help — want to finish booking?");
+    await sendOnChannel(convo, event.data.template);
+    await incrementNudgeCount(convo.id, event.data.expectedStage);
   },
 );
 ```
 
-Fire `agent/nudge.requested` when you send a collect question. Cancel-by-condition on wake is enough; no Temporal.
+No Temporal. Template and duration come from JSON, not a hardcoded string in the worker.
 
 ---
 
+## Validate on write (reject bad JSON before runtime)
 
+Saving `agents.flow` or `agents.lead_schema` runs the same checks the interpreter would otherwise hit on a live lead.
+
+```ts
+function validateFlow(flow: FlowDefinition, leadSchema: LeadSchema, hitl: HitlPolicy) {
+  const ids = new Set(Object.keys(flow.stages));
+  const schemaKeys = new Set(Object.keys(leadSchema.fields));
+  const errors: string[] = [];
+
+  if (!ids.has(flow.start)) errors.push(`start ${flow.start} is not a stage`);
+  if (flow.restartPolicy.onNewMessage === "fallback" && !ids.has(flow.restartPolicy.fallbackStage ?? "")) {
+    errors.push("restartPolicy.fallbackStage missing");
+  }
+
+  for (const [id, stage] of Object.entries(flow.stages)) {
+    const targets = stageTargets(stage);
+    for (const t of targets) {
+      if (!ids.has(t)) errors.push(`${id} transitions to unknown stage ${t}`);
+    }
+    if (stage.type === "collect") {
+      for (const f of [...stage.required_fields, ...(stage.optional_fields ?? [])]) {
+        if (!schemaKeys.has(f)) errors.push(`${id} field ${f} not in leadSchema`);
+      }
+    }
+    if (stage.type === "action" && stage.action === "request_human") {
+      if (!hitl.allowRequestHuman || !hitl.allowedFromStages.includes(id)) {
+        errors.push(`${id} request_human not allowed by hitl_policy`);
+      }
+    }
+  }
+
+  if (errors.length) throw new FlowConfigError(errors);
+}
+```
+
+`mergeLeadFields` must not persist keys that are absent from `lead_schema`.
+
+---
+
+## Preview / test harness (ops, before enable)
+
+Internal only: pick an agent, paste or load canned transcripts, run the interpreter with **sends stubbed** (no HookMyApp). Report:
+
+- Stage path (`classify_intent → collect_lead → schedule → done`)
+- Dead ends (non-terminal stage with no outbound edge)
+- Unreachable stages (not `start` and never referenced)
+- Actions that would fire vs `hitl_policy`
+- Missing required fields at each step
+
+Enable-on-channel is gated on a last-green preview (ops checkbox). Cheaper than LangSmith for v1.
+
+---
+
+## HITL policy is the single source of truth
+
+`agents.hitl_policy` decides whether `request_human` may run — not the LLM. The flow JSON may point at an escalate stage; save-time validation plus `assertHitlAllowed` at runtime both consult the same object.
+
+```json
+{
+  "allowRequestHuman": true,
+  "allowedFromStages": ["escalate"],
+  "allowedIntents": ["sales", "support"],
+  "allowedDocumentTypes": ["quote", "id_photo"],
+  "minConfidence": 0.4
+}
+```
+
+Media analysis stays gated by Stripe; HITL `review_media` is only created if policy allows that stage/document type.
+
+---
+
+## Observability
+
+Replay is **DB (`messages`, `flow_state`, `fields`) + structured logs**, not hidden LLM state.
+
+Log `{ tenantId, conversationId, flowState, stage.type, flowVersion }` at enter/exit of `runAgentTurn`. Name Inngest steps `classify:{stageId}`, `extract:{stageId}`, `action:{stageId}:{action}` so the Inngest UI is the logical path per conversation. No second tracing product in v1.
+
+---
+
+## Thin ops UI (so JSON does not rot)
+
+Not a visual LangGraph editor. Internal pages:
+
+1. **Agent config** — form for stages, transitions, required fields, per-stage nudge, restart policy; raw JSON as advanced.
+2. **Schema** — `lead_schema` keys; save runs `validateFlow`.
+3. **Versions** — revisions, diff, restore.
+4. **Preview** — canned transcripts; enable-on-channel after green.
+5. **HITL policy** — allowed stages / document types.
+
+Owners never see this. Ops should not paste JSON into psql after v1.
+
+---
 
 ## What the LLM is *not* allowed to do
 
@@ -428,8 +593,9 @@ We copy the **data model** of a graph (nodes and edges). We do not copy the **fr
 
 ## Ops workflow
 
-1. Pick or clone a JSON template (`salesOrSupportFlow` vs two-stage collect).
-2. Edit `required_fields` / copy / transitions in DB or a simple internal form (not a visual LangGraph editor).
-3. Bind WhatsApp/IG channel to that agent.
-4. No deploy unless you add a new `stage.type` to the interpreter (`classify` | `collect` | `faq` | `action` | `terminal` covers v1).
+1. Clone a template in the ops UI (or JSON advanced).
+2. Save → `validateFlow` + new `agent_config_revisions` row + bump `flow_version`.
+3. Run preview on canned transcripts; fix dead ends.
+4. Set `hitl_policy` and `restartPolicy`; bind channel only after green preview.
+5. No deploy unless you add a new `stage.type` to the interpreter (`classify` | `collect` | `faq` | `action` | `terminal` covers v1). Rollback = restore a revision.
 

@@ -108,6 +108,7 @@ Do not adopt LangGraph as the platform. If a tenant needs more stages, add them 
 
 - Webhooks can retry. Processing must be **idempotent** on provider message id.
 - Respond to the HTTP request fast (verify signature, persist, enqueue). Do **not** call the LLM in the webhook handler.
+- WhatsApp (`POST /api/webhooks/zernio`) and Meta (`POST /api/webhooks/meta`) enqueue `agent/turn.requested`. Chat preview (`POST /api/demo/message`) still runs the turn in-process so the UI can wait for a reply. Without `INNGEST_DEV=1` and the Inngest Dev Server, webhook events never appear at `localhost:8288`.
 - Outbound replies go through HookMyApp’s gateway with a **per-channel** `hmat_` token.
 - Conversations are turn-based and slow. Load history from DB every turn; do not keep an agent “session” in RAM.
 
@@ -259,20 +260,28 @@ agents (
   id, tenant_id,
   name,
   system_prompt,
-  knowledge_text,          -- FAQs; not a vector index in v1
-  enabled_tools text[],    -- e.g. {update_lead_fields, book_meeting, request_human}
-  media_analysis boolean,  -- AND tenants.media_analysis_enabled
-  n8n_webhook_url,         -- optional escape hatch
-  hitl_policy jsonb        -- when to force request_human
+  knowledge_text,
+  flow jsonb,
+  flow_version int,
+  flow_changed_at timestamptz,
+  lead_schema jsonb,
+  lead_schema_version int,
+  lead_schema_changed_at timestamptz,
+  hitl_policy jsonb,         -- single source of truth for request_human
+  media_analysis boolean,
+  n8n_webhook_url
 )
 
-channel_connections (
-  ...,
-  agent_id  -- which agent answers this number / IG account
+agent_config_revisions (
+  id, agent_id, tenant_id,
+  kind,                      -- flow | lead_schema | hitl_policy
+  version int,
+  payload jsonb,
+  saved_by, saved_at
 )
 ```
 
-Ops edits `system_prompt` and `enabled_tools`. The runtime does not branch on tenant beyond “load this agent row and register those tools.” Complex tenants get extra tools (see below), not a second orchestrator.
+Ops edits flow JSON (or the ops form) under validation. Runtime: one interpreter + this row. See [agent-flow-as-data.md](./agent-flow-as-data.md).
 
 Worker jobs must pass `tenantId` explicitly and query with it (defense in depth even with RLS):
 
@@ -404,7 +413,7 @@ Simple vs complex is **which tools are enabled**, not a different engine.
 
 ## Human-in-the-loop
 
-HITL is a **conversation status + a task row**, not an LLM feature.
+HITL is a **conversation status + a task row**, not an LLM feature. **`agents.hitl_policy` is the only allow-list** for `request_human` (stages, intents, document types, min confidence). The flow may include an `escalate` stage; save-time validation and `assertHitlAllowed` both read this object. See [agent-flow-as-data.md](./agent-flow-as-data.md).
 
 ```ts
 async function pauseForHuman(
@@ -433,7 +442,7 @@ async function pauseForHuman(
 }
 ```
 
-**While paused:** inbound lead messages are still stored (the owner should see them) but `runAgentTurn` returns `skipped: waiting_human` unless `resume: true`.
+**While paused:** inbound lead messages are still stored (the owner should see them) but `runAgentTurn` returns `skipped: waiting_human` unless `resume: true`. This is not `restartPolicy` (that applies only to `type: terminal` like `done`).
 
 **Resume** from the CRM (owner writes a note, approves, or attaches a file):
 
@@ -499,13 +508,13 @@ This maps cleanly to LangGraph-style interrupts **at the product level** (pause,
 
 Tool side effects that must not double (Cal.com book, n8n POST) should use Inngest `step.run` so a retry of the function does not re-execute a completed step.
 
+Structured logs per turn: `{ tenantId, conversationId, flowState, stage.type, flowVersion }` on enter/exit of `runAgentTurn`. Name steps `classify:{stageId}` / `action:{stageId}:{action}` so Inngest UI is the logical path. Details in [agent-flow-as-data.md](./agent-flow-as-data.md).
+
 ---
-
-
 
 ## What we are not doing in v1
 
-- A visual workflow builder or LangGraph. Flows are JSON + one interpreter.
+- A visual LangGraph-style builder. Thin ops **form + preview + versioning** over JSON is in scope.
 - Multi-agent “researcher + closer + supervisor” loops on the customer thread.
 - OpenAI-hosted threads as the system of record.
 - RAG until knowledge outgrows `knowledge_text`.
@@ -520,10 +529,8 @@ Phone later: Vapi (or similar) writes a `messages` row with `channel = voice` an
 ## Implementation order
 
 1. Persist inbound + outbound without an LLM (echo) to prove HMAC, tenancy, and the transcript UI.
-2. `runAgentTurn` with `update_lead_fields` only.
-3. `request_human` + CRM inbox + resume.
-4. `book_meeting`.
-5. Gated `analyze_media`.
-6. `run_n8n_workflow` or a TypeScript tool pack for the first complex tenant.
-
-If a future tenant needs a longer script, extend `agents.flow` JSON. Do not invert the platform around LangGraph.
+2. Flow JSON interpreter + `validateFlow` on save + `lead_schema`.
+3. `request_human` gated by `hitl_policy` + CRM inbox + resume; `restartPolicy` on terminal.
+4. Per-stage nudge jobs; preview harness before channel bind.
+5. `book_meeting`; gated `analyze_media`.
+6. Thin ops UI (form, versions, preview). Optional n8n action after `done`.
