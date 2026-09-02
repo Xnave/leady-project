@@ -1,5 +1,40 @@
-import { describe, expect, it } from "vitest";
-import { parseZernioMessageReceived } from "./zernio";
+import { describe, expect, it, vi, afterEach } from "vitest";
+import { createZernioProfile, parseZernioMessageReceived, zernioProfileName } from "./zernio";
+
+describe("zernioProfileName", () => {
+  it("includes tenant id suffix for uniqueness", () => {
+    expect(zernioProfileName("Acme Spa", "tenant-abc12345")).toBe("Acme Spa · tenant-a");
+  });
+});
+
+describe("createZernioProfile", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.ZERNIO_API_KEY;
+  });
+
+  it("reuses existing profile id on name conflict", async () => {
+    process.env.ZERNIO_API_KEY = "sk_test_key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if (init?.method === "POST") {
+          return new Response(
+            JSON.stringify({
+              error: "A profile with this name already exists",
+              code: "profile_name_conflict",
+              details: { existingProfileId: "6a96d580da6b6eb49e827f67" },
+            }),
+            { status: 409, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
+
+    await expect(createZernioProfile("Acme · tenant-a")).resolves.toBe("6a96d580da6b6eb49e827f67");
+  });
+});
 
 describe("parseZernioMessageReceived", () => {
   it("reads an inbound WhatsApp DM", () => {

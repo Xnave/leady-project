@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FlowMap } from "@/components/FlowMap";
+import { RadioCard } from "@/components/RadioCard";
 import { flowForCatalog, isCatalogId, type CatalogId } from "@/lib/flow/catalog";
 import {
   defaultBookingCollect,
@@ -178,20 +179,19 @@ export function OnboardWizard(props: Props) {
       <fieldset className="card language-card">
         <legend>{ui.onboard.agentLanguageLegend}</legend>
         <p className="muted">{ui.onboard.agentLanguageHint}</p>
-        {(["multi", "he", "en"] as const).map((id) => (
-          <label key={id} className="choice">
-            <input
-              type="radio"
+        <div className="radio-card-grid">
+          {(["multi", "he", "en"] as const).map((id) => (
+            <RadioCard
+              key={id}
               name="chatLanguage"
+              value={id}
               checked={chatLanguage === id}
               onChange={() => setChatLanguage(id)}
+              title={ui.chatLanguage[id].title}
+              blurb={ui.chatLanguage[id].blurb}
             />
-            <span>
-              <strong>{ui.chatLanguage[id].title}</strong>
-              <span className="muted"> — {ui.chatLanguage[id].blurb}</span>
-            </span>
-          </label>
-        ))}
+          ))}
+        </div>
       </fieldset>
 
       <div className="wizard-steps">
@@ -340,42 +340,44 @@ export function OnboardWizard(props: Props) {
             <h2>{ui.common.flow}</h2>
             <fieldset>
               <legend>{ui.onboard.catalogLegend}</legend>
-              {(["inbox", "book", "faq"] as const).map((id) => (
-                <label key={id} className="choice">
-                  <input
-                    type="radio"
+              <div className="radio-card-grid">
+                {(["inbox", "book", "faq"] as const).map((id) => (
+                  <RadioCard
+                    key={id}
                     name="catalogId"
+                    value={id}
                     checked={catalogId === id}
                     onChange={() => setCatalogId(id)}
+                    title={ui.catalog[id].title}
+                    blurb={ui.catalog[id].blurb}
                   />
-                  <span>
-                    <strong>{ui.catalog[id].title}</strong>
-                    <span className="muted"> — {ui.catalog[id].blurb}</span>
-                  </span>
-                </label>
-              ))}
+                ))}
+              </div>
             </fieldset>
             {catalogId !== "faq" ? (
               <fieldset>
                 <legend>{ui.onboard.collectLegend}</legend>
                 <p className="muted">{ui.onboard.collectHint}</p>
-                {(
-                  [
-                    "time_preference",
-                    "name",
-                    "need",
-                    "phone",
-                    "email",
-                    "visit_kind",
-                  ] as BookingCollectId[]
-                ).map((id) => {
-                  const meta = ui.bookingCollect[id];
-                  if (!meta) return null;
-                  const locked = id === "time_preference";
-                  return (
-                    <label key={id} className="choice">
-                      <input
+                <div className="radio-card-grid compact">
+                  {(
+                    [
+                      "time_preference",
+                      "name",
+                      "need",
+                      "phone",
+                      "email",
+                      "visit_kind",
+                    ] as BookingCollectId[]
+                  ).map((id) => {
+                    const meta = ui.bookingCollect[id];
+                    if (!meta) return null;
+                    const locked = id === "time_preference";
+                    return (
+                      <RadioCard
+                        key={id}
                         type="checkbox"
+                        name={`collect_${id}`}
+                        value={id}
                         checked={bookingCollect.includes(id)}
                         disabled={locked}
                         onChange={() => {
@@ -386,17 +388,15 @@ export function OnboardWizard(props: Props) {
                               : [...prev, id],
                           );
                         }}
+                        title={meta.title}
+                        blurb={meta.blurb}
                       />
-                      <span>
-                        <strong>{meta.title}</strong>
-                        <span className="muted"> — {meta.blurb}</span>
-                      </span>
-                    </label>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </fieldset>
             ) : null}
-            <FlowMap flow={flow} labels={ui.flow} />
+            <FlowMap flow={flow} labels={ui.flow} ui={ui} />
             <div className="row-actions">
               <button type="button" className="btn-secondary" onClick={() => setStep(1)}>
                 {ui.common.back}

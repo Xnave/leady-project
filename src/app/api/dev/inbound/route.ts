@@ -3,6 +3,7 @@ import { runTurnNow } from "@/lib/flow/run-turn";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
 import { NextResponse } from "next/server";
+import { redirectPath } from "@/lib/request-url";
 
 export async function POST(req: Request) {
   if (process.env.DEV_AUTH_BYPASS !== "true") {
@@ -28,5 +29,5 @@ export async function POST(req: Request) {
   if (inserted) {
     await runTurnNow({ tenantId, conversationId: inserted.conversationId });
   }
-  return NextResponse.redirect(new URL("/leads", req.url), 303);
+  return NextResponse.redirect(redirectPath(req, "/leads"), 303);
 }

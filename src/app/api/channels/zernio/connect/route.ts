@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireTenantId } from "@/lib/tenant";
 import { ensureZernioProfile } from "@/lib/channels/zernio-connect";
 import { zernioConfigured, zernioWhatsAppConnectUrl } from "@/lib/zernio";
+import { appOrigin } from "@/lib/request-url";
 
 export async function POST() {
   const tenantId = await requireTenantId();
@@ -10,12 +11,13 @@ export async function POST() {
   }
   try {
     const profileId = await ensureZernioProfile(tenantId);
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+    const appUrl = appOrigin();
     const redirectUrl = `${appUrl}/api/channels/zernio/callback`;
     const url = await zernioWhatsAppConnectUrl({ profileId, redirectUrl });
     return NextResponse.json({ url });
   } catch (err) {
     console.error("zernio connect start failed", err);
-    return NextResponse.json({ error: "Could not start WhatsApp connect" }, { status: 502 });
+    const message = err instanceof Error ? err.message : "Could not start WhatsApp connect";
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }

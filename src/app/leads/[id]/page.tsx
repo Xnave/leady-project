@@ -1,13 +1,16 @@
 import Link from "next/link";
+import { ChannelBadge } from "@/components/ChannelBadge";
 import { ChatComposer } from "@/components/ChatComposer";
 import { ChatThread } from "@/components/ChatThread";
+import { FlowBreadcrumb } from "@/components/FlowBreadcrumb";
 import { FlowMap } from "@/components/FlowMap";
 import { LeadFieldsForm } from "@/components/LeadFieldsForm";
+import { LeadProfilePanel } from "@/components/LeadProfilePanel";
 import { MeetingDecisionForm } from "@/components/MeetingDecisionForm";
 import { prisma } from "@/lib/db";
 import type { FlowDefinition, LeadFields, LeadSchema } from "@/lib/flow/types";
 import { getUiLang } from "@/lib/cookies";
-import { channelLabel, isDemoLead, leadDisplayName } from "@/lib/leads";
+import { isDemoLead, leadDisplayName } from "@/lib/leads";
 import { requireTenantId } from "@/lib/tenant";
 import { uiCopy } from "@/lib/ui";
 import { notFound } from "next/navigation";
@@ -42,6 +45,7 @@ export default async function LeadDetailPage({
   const convo = lead.conversations[0];
   const flow = convo?.agent.flow as FlowDefinition | undefined;
   const schema = (convo?.agent.leadSchema ?? { fields: {} }) as LeadSchema;
+  const fields = (lead.fields as LeadFields) ?? {};
 
   const chatLabels = {
     placeholder: ui.chat.placeholder,
@@ -66,27 +70,39 @@ export default async function LeadDetailPage({
 
   return (
     <div className="demo-grid">
-      <div>
+      <div className="stack">
         <p>
           <Link href="/leads">{ui.nav.leads}</Link>
           {" · "}
           <Link href={`/demo?leadId=${lead.id}`}>{ui.nav.chat}</Link>
         </p>
-        <h1>{leadDisplayName(lead)}</h1>
-        <p className="muted">
-          {channelLabel(lang, lead.channel)}
-          {isDemoLead(lead.externalUserId) ? ` · ${ui.common.demo}` : ""}
-        </p>
+        <LeadProfilePanel
+          lang={lang}
+          ui={ui}
+          leadId={lead.id}
+          name={leadDisplayName(lead)}
+          phone={fields.phone ? String(fields.phone) : undefined}
+          email={fields.email ? String(fields.email) : undefined}
+          intent={fields.intent ? String(fields.intent) : undefined}
+          status={lead.status}
+          stage={convo?.flowState}
+          convoStatus={convo?.status}
+          isDemo={isDemoLead(lead.externalUserId)}
+          channel={lead.channel}
+          flow={flow}
+          waitingHuman={convo?.status === "waiting_human"}
+        />
         <div className="card">
           <h3>{ui.common.captured}</h3>
           <LeadFieldsForm
             action={`/api/leads/${lead.id}/fields`}
             schema={schema}
-            fields={(lead.fields as LeadFields) ?? {}}
+            fields={fields}
             status={lead.status}
             statusLabels={ui.status}
             statusLegend={ui.common.status}
             saveLabel={ui.common.save}
+            enumLabels={{ intent: ui.intents }}
           />
         </div>
         {lead.meetings.length > 0 ? (
@@ -124,12 +140,13 @@ export default async function LeadDetailPage({
         ) : null}
       </div>
       <div className="card chat-panel">
-        <h2>{ui.common.conversation}</h2>
+        <div className="chat-header">
+          <h2>{ui.common.conversation}</h2>
+          <ChannelBadge lang={lang} channel={lead.channel} />
+        </div>
         {convo ? (
           <>
-            <p className="muted">
-              {ui.common.stage} <strong>{convo.flowState}</strong> · {convo.status}
-            </p>
+            <FlowBreadcrumb flow={flow!} current={convo.flowState} ui={ui} />
             <ChatThread
               messages={convo.messages.map((m) => ({
                 id: m.id,
@@ -152,7 +169,7 @@ export default async function LeadDetailPage({
       {flow ? (
         <div className="card">
           <h2>{ui.common.flow}</h2>
-          <FlowMap flow={flow} current={convo?.flowState} labels={ui.flow} />
+          <FlowMap flow={flow} current={convo?.flowState} labels={ui.flow} ui={ui} />
         </div>
       ) : null}
     </div>

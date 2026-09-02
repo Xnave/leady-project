@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { isAdminSession } from "@/lib/admin";
 import { TENANT_COOKIE } from "@/lib/cookies";
 import { prisma } from "@/lib/db";
+import { redirectPath } from "@/lib/request-url";
 
 async function setActing(tenantId: string | null) {
   const jar = await cookies();
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
   try {
     await setActing(tenantId);
   } catch {
-    return NextResponse.redirect(new URL("/admin", req.url), 303);
+    return NextResponse.redirect(redirectPath(req, "/admin"), 303);
   }
-  return NextResponse.redirect(new URL(tenantId ? "/leads" : "/admin", req.url), 303);
+  return NextResponse.redirect(redirectPath(req, tenantId ? "/leads" : "/admin"), 303);
 }

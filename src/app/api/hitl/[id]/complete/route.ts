@@ -4,6 +4,7 @@ import { runTurnNow, sendAndSave } from "@/lib/flow/run-turn";
 import { markMeetingDecision } from "@/lib/meetings";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
+import { redirectPath } from "@/lib/request-url";
 
 export async function POST(
   req: Request,
@@ -32,7 +33,7 @@ export async function POST(
       if (result.reopenTalk) {
         await persistStage(tenantId, result.conversationId, "talk");
       }
-      return NextResponse.redirect(new URL("/inbox", req.url), 303);
+      return NextResponse.redirect(redirectPath(req, "/inbox"), 303);
     }
   }
 
@@ -48,5 +49,5 @@ export async function POST(
     conversationId: task.conversationId,
     resume: true,
   });
-  return NextResponse.redirect(new URL("/inbox", req.url), 303);
+  return NextResponse.redirect(redirectPath(req, "/inbox"), 303);
 }

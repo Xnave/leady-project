@@ -1,23 +1,41 @@
 import Link from "next/link";
+import { ChannelBadge } from "@/components/ChannelBadge";
+import { PageHeader } from "@/components/PageHeader";
+import { Pagination } from "@/components/Pagination";
 import { DeleteDemoLead } from "@/components/DeleteDemoLead";
 import { LeadStatusSelect } from "@/components/LeadStatusSelect";
-import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
 import { getUiLang } from "@/lib/cookies";
-import { channelLabel, isDemoLead, leadDisplayName } from "@/lib/leads";
+import { isDemoLead, leadDisplayName } from "@/lib/leads";
 import { requireTenantId } from "@/lib/tenant";
+import { intentLabel, stageLabel } from "@/lib/ui/labels";
 import { normalizeLeadStatus, uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
 
-export default async function LeadsPage() {
+const PAGE_SIZES = [10, 20, 50] as const;
+
+export default async function LeadsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; size?: string }>;
+}) {
+  const { page: pageParam, size: sizeParam } = await searchParams;
   const tenantId = await requireTenantId();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
-  const [leads, pendingMeetings] = await Promise.all([
+  const pageSize = PAGE_SIZES.includes(Number(sizeParam) as (typeof PAGE_SIZES)[number])
+    ? Number(sizeParam)
+    : 20;
+  const page = Math.max(1, Number(pageParam) || 1);
+
+  const [total, leads, pendingMeetings] = await Promise.all([
+    prisma.lead.count({ where: { tenantId } }),
     prisma.lead.findMany({
       where: { tenantId },
       orderBy: { updatedAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
       include: {
         channel: true,
         conversations: { take: 1, orderBy: { updatedAt: "desc" } },
@@ -28,6 +46,7 @@ export default async function LeadsPage() {
       where: { tenantId, status: "pending" },
       include: { lead: true },
       orderBy: { createdAt: "desc" },
+      take: 5,
     }),
   ]);
 
@@ -79,9 +98,11 @@ export default async function LeadsPage() {
           <tbody>
             {leads.map((lead) => {
               const fields = lead.fields as Record<string, unknown>;
-              const stage = lead.conversations[0]?.flowState ?? ui.common.empty;
+              const rawStage = lead.conversations[0]?.flowState;
+              const stage = rawStage ? stageLabel(ui, rawStage) : ui.common.empty;
               const pending = lead.meetings.length;
               const demo = isDemoLead(lead.externalUserId);
+              const intent = fields.intent ? intentLabel(ui, String(fields.intent)) : ui.common.empty;
               return (
                 <tr key={lead.id}>
                   <td>
@@ -89,11 +110,13 @@ export default async function LeadsPage() {
                     {demo ? (
                       <>
                         {" "}
-                        <span className="badge">{ui.common.demo}</span>
+                        <span className="badge badge-demo">{ui.common.demo}</span>
                       </>
                     ) : null}
                   </td>
-                  <td>{channelLabel(lang, lead.channel)}</td>
+                  <td>
+                    <ChannelBadge lang={lang} channel={lead.channel} />
+                  </td>
                   <td>
                     <LeadStatusSelect
                       leadId={lead.id}
@@ -105,14 +128,14 @@ export default async function LeadsPage() {
                   <td>{stage}</td>
                   <td>
                     {pending > 0 ? (
-                      <span className="badge">
+                      <span className="badge badge-warn">
                         {pending} {ui.common.pending}
                       </span>
                     ) : (
                       ui.common.empty
                     )}
                   </td>
-                  <td>{String(fields.intent ?? ui.common.empty)}</td>
+                  <td>{intent}</td>
                   <td>
                     {demo ? (
                       <DeleteDemoLead
@@ -128,7 +151,10 @@ export default async function LeadsPage() {
           </tbody>
         </table>
       </div>
-      {leads.length === 0 ? <p className="empty-state">{ui.common.noLeads}</p> : null}
+      {total > 0 ? (
+        <Pagination page={page} pageSize={pageSize} total={total} basePath="/leads" ui={ui} />
+      ) : null}
+      {total === 0 ? <p className="empty-state">{ui.common.noLeads}</p> : null}
     </div>
   );
 }

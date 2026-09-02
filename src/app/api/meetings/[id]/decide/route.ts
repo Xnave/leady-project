@@ -3,6 +3,7 @@ import { loadTurnContext, persistStage } from "@/lib/conversations";
 import { sendAndSave } from "@/lib/flow/run-turn";
 import { markMeetingDecision } from "@/lib/meetings";
 import { requireTenantId } from "@/lib/tenant";
+import { redirectPath } from "@/lib/request-url";
 
 export async function POST(
   req: Request,
@@ -23,5 +24,5 @@ export async function POST(
   if (result.reopenTalk) {
     await persistStage(tenantId, result.conversationId, "talk");
   }
-  return NextResponse.redirect(new URL("/leads", req.url), 303);
+  return NextResponse.redirect(redirectPath(req, "/leads"), 303);
 }

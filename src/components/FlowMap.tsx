@@ -1,41 +1,50 @@
 import { stageTargets } from "@/lib/flow/validate";
 import type { FlowDefinition } from "@/lib/flow/types";
+import {
+  actionLabel,
+  intentLabel,
+  restartPolicyLabel,
+  stageLabel,
+  stageTypeLabel,
+} from "@/lib/ui/labels";
+import type { UiCopy } from "@/lib/ui";
 
 type Labels = {
   start: string;
   afterDone: string;
   needFields: string;
+  transitions: string;
 };
 
 export function FlowMap({
   flow,
   current,
   labels,
+  ui,
 }: {
   flow: FlowDefinition;
   current?: string;
   labels?: Labels;
+  ui: UiCopy;
 }) {
-  const L = labels ?? {
-    start: "Start",
-    afterDone: "After done",
-    needFields: "Need",
-  };
+  const L = labels ?? ui.flow;
 
   return (
     <div className="flow-map">
       <p className="muted">
-        {L.start}: <strong>{flow.start}</strong> · {L.afterDone}:{" "}
-        <strong>{flow.restartPolicy.onNewMessage}</strong>
-        {flow.restartPolicy.fallbackStage ? ` → ${flow.restartPolicy.fallbackStage}` : ""}
+        {L.start}: <strong>{stageLabel(ui, flow.start)}</strong> · {L.afterDone}:{" "}
+        <strong>{restartPolicyLabel(ui, flow.restartPolicy.onNewMessage)}</strong>
+        {flow.restartPolicy.fallbackStage
+          ? ` → ${stageLabel(ui, flow.restartPolicy.fallbackStage)}`
+          : ""}
       </p>
       {Object.entries(flow.stages).map(([id, stage]) => {
         const next = stageTargets(stage);
         return (
           <div key={id} className={`stage-node${current === id ? " current" : ""}`}>
             <div>
-              <span className="badge">{stage.type}</span>
-              <strong> {id}</strong>
+              <span className="badge">{stageTypeLabel(ui, stage.type)}</span>
+              <strong> {stageLabel(ui, id)}</strong>
             </div>
             {stage.type === "collect" ? (
               <p className="muted">
@@ -45,16 +54,23 @@ export function FlowMap({
             {stage.type === "classify" ? (
               <p className="muted">
                 {Object.entries(stage.transitions)
-                  .map(([intent, to]) => `${intent} → ${to}`)
+                  .map(
+                    ([intent, to]) =>
+                      `${intentLabel(ui, intent)} → ${stageLabel(ui, to)}`,
+                  )
                   .join(" · ")}
               </p>
             ) : null}
             {stage.type === "talk" ? (
               <p className="muted">{stage.prompt.slice(0, 120)}</p>
             ) : null}
-            {stage.type === "action" ? <p className="muted">{stage.action}</p> : null}
+            {stage.type === "action" ? (
+              <p className="muted">{actionLabel(ui, stage.action)}</p>
+            ) : null}
             {next.length > 0 && stage.type !== "classify" ? (
-              <p className="muted">→ {next.join(", ")}</p>
+              <p className="muted">
+                → {next.map((n) => stageLabel(ui, n)).join(", ")}
+              </p>
             ) : null}
           </div>
         );

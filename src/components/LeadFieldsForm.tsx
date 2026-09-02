@@ -9,6 +9,7 @@ export function LeadFieldsForm({
   statusLabels,
   statusLegend,
   saveLabel,
+  enumLabels,
 }: {
   action: string;
   schema: LeadSchema;
@@ -17,6 +18,7 @@ export function LeadFieldsForm({
   statusLabels?: Record<LeadStatusId, string>;
   statusLegend?: string;
   saveLabel?: string;
+  enumLabels?: Record<string, Record<string, string>>;
 }) {
   const current = status !== undefined ? normalizeLeadStatus(status) : undefined;
   return (
@@ -47,7 +49,7 @@ export function LeadFieldsForm({
                     value={option}
                     defaultChecked={value === option}
                   />
-                  {option}
+                  {enumLabels?.[key]?.[option] ?? option}
                 </label>
               ))}
             </fieldset>

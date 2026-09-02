@@ -6,6 +6,7 @@ import { validateFlow } from "@/lib/flow/validate";
 import { bookingCollectFromFlow } from "@/lib/flow/booking-collect";
 import type { FlowDefinition, HitlPolicy, LeadSchema } from "@/lib/flow/types";
 import { FlowConfigError } from "@/lib/flow/types";
+import { redirectPath } from "@/lib/request-url";
 
 export async function POST(req: Request) {
   const tenantId = await requireTenantId();
@@ -67,5 +68,5 @@ export async function POST(req: Request) {
     }),
   ]);
 
-  return NextResponse.redirect(new URL("/ops", req.url), 303);
+  return NextResponse.redirect(redirectPath(req, "/ops"), 303);
 }

@@ -1,11 +1,12 @@
 import Link from "next/link";
+import { ChannelBadge } from "@/components/ChannelBadge";
 import { MeetingDecisionForm } from "@/components/MeetingDecisionForm";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
 import { getUiLang } from "@/lib/cookies";
-import { channelLabel, leadDisplayName } from "@/lib/leads";
+import { leadDisplayName } from "@/lib/leads";
 import { requireTenantId } from "@/lib/tenant";
-import { uiCopy } from "@/lib/ui";
+import { fillUi, uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,17 @@ export default async function InboxPage() {
 
   return (
     <div>
-      <PageHeader title={ui.page.inboxTitle} />
+      <PageHeader
+        title={ui.page.inboxTitle}
+        actions={
+          <Link href="/demo" className="btn-secondary">
+            {ui.inbox.openChat}
+          </Link>
+        }
+      />
+      <div className="inbox-stats">
+        <div className="stat-pill">{fillUi(ui.inbox.tasksWaiting, { count: tasks.length })}</div>
+      </div>
       {tasks.map((task) => {
         const payload = task.payload as {
           meetingId?: string;
@@ -50,17 +61,29 @@ export default async function InboxPage() {
           kind?: string;
         };
         const isBooking = task.type === "booking_approval" && payload.meetingId;
-        const taskTitle = isBooking ? ui.inbox.bookingApproval : task.type;
+        const taskTitle = isBooking ? ui.inbox.bookingApproval : ui.inbox.generalTask;
         return (
-          <div key={task.id} className="card">
-            <p>
-              {taskTitle} · {leadDisplayName(task.lead)}
-              {" · "}
-              <span className="muted">{channelLabel(lang, task.lead.channel)}</span>
-              {" · "}
-              <Link href={`/leads/${task.leadId}`}>{ui.common.openLead}</Link>
-            </p>
-            <p className="muted">{task.reason}</p>
+          <div key={task.id} className="card inbox-task">
+            <div className="inbox-task-header">
+              <div className="inbox-task-title">
+                <span className="badge badge-warn">{taskTitle}</span>
+                <span>{leadDisplayName(task.lead)}</span>
+                <ChannelBadge lang={lang} channel={task.lead.channel} />
+              </div>
+              <div className="row-actions">
+                <Link href={`/demo?leadId=${task.leadId}`} className="btn-secondary">
+                  {ui.inbox.openChat}
+                </Link>
+                <Link href={`/leads/${task.leadId}`} className="btn-ghost">
+                  {ui.common.openLead}
+                </Link>
+              </div>
+            </div>
+            {task.reason ? (
+              <p className="muted">
+                {ui.inbox.reason}: {task.reason}
+              </p>
+            ) : null}
             {isBooking ? (
               <MeetingDecisionForm
                 meetingId={payload.meetingId!}
@@ -107,14 +130,20 @@ export default async function InboxPage() {
               <form action={`/api/hitl/${task.id}/complete`} method="post" className="stack">
                 <fieldset>
                   <legend>{ui.inbox.decisionLegend}</legend>
-                  <label className="choice">
-                    <input type="radio" name="approved" value="yes" defaultChecked />
-                    {ui.inbox.approveOption}
-                  </label>
-                  <label className="choice">
-                    <input type="radio" name="approved" value="no" />
-                    {ui.inbox.needInfoOption}
-                  </label>
+                  <div className="radio-card-grid compact">
+                    <label className="radio-card selected">
+                      <input type="radio" name="approved" value="yes" defaultChecked />
+                      <div className="radio-card-body">
+                        <strong>{ui.inbox.approveOption}</strong>
+                      </div>
+                    </label>
+                    <label className="radio-card">
+                      <input type="radio" name="approved" value="no" />
+                      <div className="radio-card-body">
+                        <strong>{ui.inbox.needInfoOption}</strong>
+                      </div>
+                    </label>
+                  </div>
                 </fieldset>
                 <textarea name="note" placeholder={ui.inbox.notePlaceholder} required />
                 <button type="submit">{ui.inbox.complete}</button>
@@ -123,7 +152,12 @@ export default async function InboxPage() {
           </div>
         );
       })}
-      {tasks.length === 0 ? <p className="empty-state">{ui.common.nothingWaiting}</p> : null}
+      {tasks.length === 0 ? (
+        <div className="empty-state">
+          <p>{ui.common.nothingWaiting}</p>
+          <p className="muted">{ui.inbox.emptyHint}</p>
+        </div>
+      ) : null}
     </div>
   );
 }

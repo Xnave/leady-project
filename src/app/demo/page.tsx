@@ -1,15 +1,18 @@
 import Link from "next/link";
+import { ChannelBadge } from "@/components/ChannelBadge";
 import { ChatComposer } from "@/components/ChatComposer";
 import { ChatThread } from "@/components/ChatThread";
+import { FlowBreadcrumb } from "@/components/FlowBreadcrumb";
 import { LeadFieldsForm } from "@/components/LeadFieldsForm";
-import { PageHeader } from "@/components/PageHeader";
+import { LeadProfilePanel } from "@/components/LeadProfilePanel";
 import { prisma } from "@/lib/db";
-import { isCatalogId } from "@/lib/flow/catalog";
+import { flowForCatalog, isCatalogId } from "@/lib/flow/catalog";
 import { isChatLanguage } from "@/lib/flow/locale";
-import type { LeadFields, LeadSchema } from "@/lib/flow/types";
+import type { FlowDefinition, LeadFields, LeadSchema } from "@/lib/flow/types";
 import { getUiLang } from "@/lib/cookies";
-import { leadDisplayName } from "@/lib/leads";
+import { isDemoLead, leadDisplayName } from "@/lib/leads";
 import { requireTenantId } from "@/lib/tenant";
+import { convoStatusLabel } from "@/lib/ui/labels";
 import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
@@ -29,11 +32,13 @@ export default async function DemoPage({
     where: { tenantId },
     orderBy: { updatedAt: "desc" },
     take: 30,
+    include: { channel: true },
   });
   const lead = leadId
     ? await prisma.lead.findFirst({
         where: { id: leadId, tenantId },
         include: {
+          channel: true,
           conversations: {
             include: { messages: { orderBy: { createdAt: "asc" } }, agent: true },
             orderBy: { updatedAt: "desc" },
@@ -44,12 +49,15 @@ export default async function DemoPage({
     : null;
   const convo = lead?.conversations[0];
   const schema = (agent?.leadSchema ?? { fields: {} }) as LeadSchema;
+  const fields = (lead?.fields as LeadFields) ?? {};
   const catalogId = agent?.catalogId && isCatalogId(agent.catalogId) ? agent.catalogId : "inbox";
   const catalogTitle = ui.catalog[catalogId]?.title ?? catalogId;
   const languageId =
     tenant?.chatLanguage && isChatLanguage(tenant.chatLanguage) ? tenant.chatLanguage : "multi";
   const languageTitle = ui.chatLanguage[languageId]?.title ?? languageId;
   const setupIncomplete = !(tenant?.intro ?? "").trim();
+  const flow = flowForCatalog(catalogId) as FlowDefinition;
+  const agentFlow = (convo?.agent.flow ?? flow) as FlowDefinition;
 
   const chatLabels = {
     placeholder: ui.chat.placeholder,
@@ -73,25 +81,38 @@ export default async function DemoPage({
         <ul className="lead-list">
           {leads.map((item) => (
             <li key={item.id}>
-              <Link href={`/demo?leadId=${item.id}`}>{leadDisplayName(item)}</Link>
+              <Link
+                href={`/demo?leadId=${item.id}`}
+                className={leadId === item.id ? "active" : undefined}
+              >
+                {leadDisplayName(item)}
+              </Link>
             </li>
           ))}
         </ul>
       </aside>
+
       <section className="card chat-panel">
-        <PageHeader title={tenant?.name ?? ui.page.chatTitle} />
-        {setupIncomplete ? (
-          <p className="muted">
-            <Link href="/onboard">{ui.nav.setup}</Link>
-          </p>
-        ) : null}
         {lead && convo ? (
           <>
-            <ChatThread messages={convo.messages.map((m) => ({
-              id: m.id,
-              role: m.role,
-              text: m.text,
-            }))} labels={threadLabels} />
+            <div className="chat-header">
+              <div>
+                <h2>{leadDisplayName(lead)}</h2>
+                <p className="muted">
+                  {ui.demo.simulateAs} · {convoStatusLabel(ui, convo.status)}
+                </p>
+              </div>
+              <ChannelBadge lang={lang} channel={lead.channel} />
+            </div>
+            <FlowBreadcrumb flow={agentFlow} current={convo.flowState} ui={ui} />
+            <ChatThread
+              messages={convo.messages.map((m) => ({
+                id: m.id,
+                role: m.role,
+                text: m.text,
+              }))}
+              labels={threadLabels}
+            />
             <ChatComposer
               leadId={lead.id}
               from={lead.externalUserId}
@@ -107,14 +128,23 @@ export default async function DemoPage({
           </>
         ) : (
           <>
-            <p className="muted">{ui.chat.startNew}</p>
+            <div className="chat-header">
+              <h2>{tenant?.name ?? ui.page.chatTitle}</h2>
+            </div>
+            {setupIncomplete ? (
+              <p className="muted">
+                <Link href="/onboard">{ui.nav.setup}</Link>
+              </p>
+            ) : null}
+            <p className="muted">{ui.demo.noLeadSelected}</p>
             <ChatComposer labels={chatLabels} />
           </>
         )}
       </section>
-      <aside>
-        <div className="card">
-          <h2>{tenant?.name}</h2>
+
+      <aside className="stack">
+        <div className="card demo-sidebar-agent">
+          <h2>{ui.demo.agentContext}</h2>
           <p className="muted">{tenant?.intro || ui.chat.noIntro}</p>
           <p className="muted">
             {ui.chat.flowLabel}: {catalogTitle}
@@ -124,18 +154,37 @@ export default async function DemoPage({
           </p>
         </div>
         {lead ? (
-          <div className="card">
-            <h2>{ui.common.captured}</h2>
-            <LeadFieldsForm
-              action={`/api/leads/${lead.id}/fields`}
-              schema={schema}
-              fields={(lead.fields as LeadFields) ?? {}}
+          <>
+            <LeadProfilePanel
+              lang={lang}
+              ui={ui}
+              leadId={lead.id}
+              name={leadDisplayName(lead)}
+              phone={fields.phone ? String(fields.phone) : undefined}
+              email={fields.email ? String(fields.email) : undefined}
+              intent={fields.intent ? String(fields.intent) : undefined}
               status={lead.status}
-              statusLabels={ui.status}
-              statusLegend={ui.common.status}
-              saveLabel={ui.common.save}
+              stage={convo?.flowState}
+              convoStatus={convo?.status}
+              isDemo={isDemoLead(lead.externalUserId)}
+              channel={lead.channel}
+              flow={agentFlow}
+              waitingHuman={convo?.status === "waiting_human"}
             />
-          </div>
+            <div className="card">
+              <h2>{ui.common.captured}</h2>
+              <LeadFieldsForm
+                action={`/api/leads/${lead.id}/fields`}
+                schema={schema}
+                fields={fields}
+                status={lead.status}
+                statusLabels={ui.status}
+                statusLegend={ui.common.status}
+              saveLabel={ui.common.save}
+              enumLabels={{ intent: ui.intents }}
+            />
+            </div>
+          </>
         ) : null}
       </aside>
     </div>

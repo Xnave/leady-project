@@ -25,6 +25,15 @@ export function actingAsLabel(ui: UiCopy, name: string): string {
   return fillUi(ui.actingAs, { name });
 }
 
+export {
+  stageLabel,
+  intentLabel,
+  stageTypeLabel,
+  convoStatusLabel,
+  restartPolicyLabel,
+  actionLabel,
+} from "./labels";
+
 export function roleLabel(ui: UiCopy, role: string): string {
   if (role === "lead" || role === "agent" || role === "human") {
     return ui.roles[role];

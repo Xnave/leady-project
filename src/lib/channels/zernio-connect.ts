@@ -1,12 +1,33 @@
 import { encryptSecret } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
-import { createZernioProfile, zernioApiKey, zernioConfigured } from "@/lib/zernio";
+import {
+  createZernioProfile,
+  zernioApiKey,
+  zernioConfigured,
+  zernioProfileName,
+} from "@/lib/zernio";
+
+async function assertProfileAvailable(profileId: string, tenantId: string): Promise<void> {
+  const owner = await prisma.tenant.findFirst({
+    where: { zernioProfileId: profileId, NOT: { id: tenantId } },
+    select: { id: true, name: true },
+  });
+  if (owner) {
+    throw new Error(
+      `Zernio profile is already linked to another tenant (${owner.name}). Use a different business name or contact support.`,
+    );
+  }
+}
 
 export async function ensureZernioProfile(tenantId: string): Promise<string> {
   if (!zernioConfigured()) throw new Error("Zernio is not configured");
   const tenant = await prisma.tenant.findFirstOrThrow({ where: { id: tenantId } });
   if (tenant.zernioProfileId) return tenant.zernioProfileId;
-  const profileId = await createZernioProfile(tenant.name);
+
+  const profileName = zernioProfileName(tenant.name, tenantId);
+  const profileId = await createZernioProfile(profileName);
+  await assertProfileAvailable(profileId, tenantId);
+
   await prisma.tenant.update({
     where: { id: tenantId },
     data: { zernioProfileId: profileId },

@@ -33,6 +33,48 @@ export type UiCopy = {
     opsTitle: string;
     adminTitle: string;
   };
+  flow: {
+    start: string;
+    afterDone: string;
+    needFields: string;
+    transitions: string;
+    currentStage: string;
+    progress: string;
+  };
+  stages: Record<string, string>;
+  intents: Record<string, string>;
+  stageTypes: Record<string, string>;
+  convoStatus: Record<string, string>;
+  restartPolicy: Record<string, string>;
+  actions: Record<string, string>;
+  pagination: {
+    showing: string;
+    page: string;
+    perPage: string;
+    prev: string;
+    next: string;
+  };
+  channels: {
+    statusConnected: string;
+    statusDisconnected: string;
+    connectStepsTitle: string;
+    stepConnect: string;
+    stepVerify: string;
+    stepLive: string;
+    allConnections: string;
+    whatsAppPrimary: string;
+    connectedSuccess: string;
+    notConnectedHint: string;
+  };
+  demo: {
+    leadProfile: string;
+    simulateAs: string;
+    agentContext: string;
+    openFullLead: string;
+    activeNow: string;
+    noLeadSelected: string;
+    contactInfo: string;
+  };
   home: {
     quickSetup: string;
     quickChat: string;
@@ -40,6 +82,13 @@ export type UiCopy = {
     quickInbox: string;
     quickChannels: string;
     tenantLabel: string;
+    journeyTitle: string;
+    journeyBlurb: string;
+    stepSetup: string;
+    stepChannels: string;
+    stepChat: string;
+    stepLeads: string;
+    stepInbox: string;
   };
   common: {
     save: string;
@@ -159,6 +208,11 @@ export type UiCopy = {
     notePlaceholder: string;
     complete: string;
     bookingApproval: string;
+    tasksWaiting: string;
+    emptyHint: string;
+    generalTask: string;
+    openChat: string;
+    reason: string;
   };
   meeting: {
     approve: string;
@@ -178,12 +232,6 @@ export type UiCopy = {
     stagesLegend: string;
     intentsLegend: string;
     ownersNeverSee: string;
-  };
-  flow: {
-    start: string;
-    afterDone: string;
-    needFields: string;
-    transitions: string;
   };
   errors: {
     badSecret: string;

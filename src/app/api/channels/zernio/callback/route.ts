@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
 import { bindZernioWhatsApp } from "@/lib/channels/zernio-connect";
+import { appOrigin } from "@/lib/request-url";
 
 export async function GET(req: Request) {
   const tenantId = await requireTenantId();
@@ -9,7 +10,7 @@ export async function GET(req: Request) {
   const profileId = url.searchParams.get("profileId") ?? "";
   const accountId = url.searchParams.get("accountId") ?? "";
   const username = url.searchParams.get("username") ?? "";
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  const appUrl = appOrigin();
   const fail = (msg: string) =>
     NextResponse.redirect(`${appUrl}/channels?error=${encodeURIComponent(msg)}`);
 

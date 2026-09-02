@@ -60,6 +60,29 @@ export function zernioWebhookSecret(): string {
   return env("ZERNIO_WEBHOOK_SECRET");
 }
 
+export class ZernioApiError extends Error {
+  status: number;
+  code?: string;
+  details?: Record<string, unknown>;
+
+  constructor(status: number, body: unknown) {
+    const record =
+      body && typeof body === "object" ? (body as Record<string, unknown>) : undefined;
+    const message =
+      (typeof record?.error === "string" && record.error) ||
+      (typeof record?.message === "string" && record.message) ||
+      JSON.stringify(body);
+    super(`Zernio ${status}: ${message}`);
+    this.name = "ZernioApiError";
+    this.status = status;
+    this.code = typeof record?.code === "string" ? record.code : undefined;
+    this.details =
+      record?.details && typeof record.details === "object"
+        ? (record.details as Record<string, unknown>)
+        : undefined;
+  }
+}
+
 async function zernio<T>(path: string, init: RequestInit = {}): Promise<T> {
   const key = zernioApiKey();
   if (!key) throw new Error("Set ZERNIO_API_KEY or zerino_api_key in .env");
@@ -77,11 +100,7 @@ async function zernio<T>(path: string, init: RequestInit = {}): Promise<T> {
     /* raw */
   }
   if (!res.ok) {
-    const message =
-      typeof body === "object" && body && "message" in body
-        ? JSON.stringify((body as { message: unknown }).message)
-        : text;
-    throw new Error(`Zernio ${res.status}: ${message}`);
+    throw new ZernioApiError(res.status, body);
   }
   return body as T;
 }
@@ -112,14 +131,35 @@ function profileIdFrom(body: unknown): string {
   return id;
 }
 
+export function zernioProfileName(tenantName: string, tenantId: string): string {
+  const suffix = tenantId.slice(0, 8);
+  const base = tenantName.trim() || "tenant";
+  return `${base} · ${suffix}`;
+}
+
 export async function createZernioProfile(name: string): Promise<string> {
-  const body = await zernio<unknown>("/profiles", {
-    method: "POST",
-    body: JSON.stringify({ name }),
-  });
-  const id = profileIdFrom(body);
-  if (!id) throw new Error("Zernio profile create returned no id");
-  return id;
+  try {
+    const body = await zernio<unknown>("/profiles", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    const id = profileIdFrom(body);
+    if (!id) throw new Error("Zernio profile create returned no id");
+    return id;
+  } catch (err) {
+    if (
+      err instanceof ZernioApiError &&
+      err.status === 409 &&
+      err.code === "profile_name_conflict"
+    ) {
+      const existingProfileId =
+        typeof err.details?.existingProfileId === "string"
+          ? err.details.existingProfileId
+          : "";
+      if (existingProfileId) return existingProfileId;
+    }
+    throw err;
+  }
 }
 
 export async function zernioWhatsAppConnectUrl(opts: {

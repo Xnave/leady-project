@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import type { FlowDefinition, HitlPolicy } from "@/lib/flow/types";
 import { getUiLang } from "@/lib/cookies";
 import { requireTenantId } from "@/lib/tenant";
+import { intentLabel, stageLabel } from "@/lib/ui/labels";
 import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
@@ -34,26 +35,31 @@ export default async function OpsPage() {
       <div className="row">
         <div className="card">
           <h2>{ui.common.flow}</h2>
-          <FlowMap flow={flow} labels={ui.flow} />
+          <FlowMap flow={flow} labels={ui.flow} ui={ui} />
         </div>
         <form action="/api/ops/agent" method="post" className="card stack">
           <input type="hidden" name="agentId" value={agent.id} />
           <fieldset>
             <legend>{ui.ops.catalogLegend}</legend>
-            {(["inbox", "book", "faq"] as const).map((id) => (
-              <label key={id} className="choice">
-                <input
-                  type="radio"
-                  name="catalogId"
-                  value={id}
-                  defaultChecked={(agent.catalogId || "inbox") === id}
-                />
-                <span>
-                  <strong>{ui.catalog[id].title}</strong>
-                  <span className="muted"> — {ui.catalog[id].blurb}</span>
-                </span>
-              </label>
-            ))}
+            <div className="radio-card-grid">
+              {(["inbox", "book", "faq"] as const).map((id) => (
+                <label
+                  key={id}
+                  className={`radio-card${(agent.catalogId || "inbox") === id ? " selected" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name="catalogId"
+                    value={id}
+                    defaultChecked={(agent.catalogId || "inbox") === id}
+                  />
+                  <div className="radio-card-body">
+                    <strong>{ui.catalog[id].title}</strong>
+                    <span className="muted">{ui.catalog[id].blurb}</span>
+                  </div>
+                </label>
+              ))}
+            </div>
           </fieldset>
           <label>
             {ui.common.knowledge}
@@ -61,17 +67,24 @@ export default async function OpsPage() {
           </label>
           <fieldset>
             <legend>{ui.ops.afterDoneLegend}</legend>
-            {restartOptions.map(([value, label]) => (
-              <label key={value} className="choice">
-                <input
-                  type="radio"
-                  name="restartPolicy"
-                  value={value}
-                  defaultChecked={flow.restartPolicy.onNewMessage === value}
-                />
-                {label}
-              </label>
-            ))}
+            <div className="radio-card-grid compact">
+              {restartOptions.map(([value, label]) => (
+                <label
+                  key={value}
+                  className={`radio-card${flow.restartPolicy.onNewMessage === value ? " selected" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name="restartPolicy"
+                    value={value}
+                    defaultChecked={flow.restartPolicy.onNewMessage === value}
+                  />
+                  <div className="radio-card-body">
+                    <strong>{label}</strong>
+                  </div>
+                </label>
+              ))}
+            </div>
           </fieldset>
           <label>
             {ui.ops.fallbackStageLabel}
@@ -79,7 +92,7 @@ export default async function OpsPage() {
               <option value="">{ui.ops.noneOption}</option>
               {stageIds.map((id) => (
                 <option key={id} value={id}>
-                  {id}
+                  {stageLabel(ui, id)}
                 </option>
               ))}
             </select>
@@ -103,7 +116,7 @@ export default async function OpsPage() {
                   value={id}
                   defaultChecked={hitl.allowedFromStages.includes(id)}
                 />
-                {id}
+                {stageLabel(ui, id)}
               </label>
             ))}
             <p className="muted">{ui.ops.intentsLegend}</p>
@@ -115,7 +128,7 @@ export default async function OpsPage() {
                   value={intent}
                   defaultChecked={hitl.allowedIntents?.includes(intent)}
                 />
-                {intent}
+                {intentLabel(ui, intent)}
               </label>
             ))}
           </fieldset>
