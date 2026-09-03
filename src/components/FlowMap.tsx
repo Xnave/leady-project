@@ -61,9 +61,6 @@ export function FlowMap({
                   .join(" · ")}
               </p>
             ) : null}
-            {stage.type === "talk" ? (
-              <p className="muted">{stage.prompt.slice(0, 120)}</p>
-            ) : null}
             {stage.type === "action" ? (
               <p className="muted">{actionLabel(ui, stage.action)}</p>
             ) : null}

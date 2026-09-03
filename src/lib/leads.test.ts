@@ -18,6 +18,16 @@ describe("leads helpers", () => {
     ).toBe("Dana");
   });
 
+  it("does not show a numeric Instagram id as the name", () => {
+    expect(
+      leadDisplayName({
+        displayName: "1634072858426706",
+        externalUserId: "1634072858426706",
+        fields: { instagramUsername: "jane_doe", name: "Jane" },
+      }),
+    ).toBe("Jane (@jane_doe)");
+  });
+
   it("maps closed to lost", () => {
     expect(normalizeLeadStatus("closed")).toBe("lost");
     expect(normalizeLeadStatus("open")).toBe("open");

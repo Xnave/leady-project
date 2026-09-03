@@ -9,3 +9,5 @@ dist
 prisma/dev.db
 prisma/dev.db-journal
 coverage
+nginx/run/
+nginx/certs/

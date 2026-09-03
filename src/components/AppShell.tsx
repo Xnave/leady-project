@@ -16,35 +16,33 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     : null;
 
   let counts = null;
+  let tenantName: string | null = null;
   try {
     const tenantId = await requireTenantId();
-    counts = await getNavCounts(tenantId);
+    const [nav, tenant] = await Promise.all([
+      getNavCounts(tenantId),
+      prisma.tenant.findFirst({ where: { id: tenantId }, select: { name: true } }),
+    ]);
+    counts = nav;
+    tenantName = tenant?.name ?? null;
   } catch {
     counts = null;
   }
 
   return (
     <div className="app-shell">
-      <SidebarNav ui={ui} admin={admin} counts={counts} />
+      <SidebarNav ui={ui} admin={admin} counts={counts} tenantName={tenantName} lang={lang} />
       <div className="app-main">
-        <header className="topbar">
-          {acting ? (
+        {acting ? (
+          <header className="topbar">
             <form action="/api/admin/impersonate" method="post" className="acting-chip">
               <span>{actingAsLabel(ui, acting.name)}</span>
               <button type="submit" className="btn-ghost" name="clear" value="1">
                 {ui.stopActing}
               </button>
             </form>
-          ) : null}
-          <form action="/api/ui/lang" method="post" className="lang-toggle">
-            <button type="submit" name="lang" value="he" className={lang === "he" ? "active" : ""}>
-              {ui.langToggle.he}
-            </button>
-            <button type="submit" name="lang" value="en" className={lang === "en" ? "active" : ""}>
-              {ui.langToggle.en}
-            </button>
-          </form>
-        </header>
+          </header>
+        ) : null}
         <main className="main">{children}</main>
       </div>
     </div>

@@ -35,11 +35,12 @@ export async function ensureZernioProfile(tenantId: string): Promise<string> {
   return profileId;
 }
 
-export async function bindZernioWhatsApp(opts: {
+export async function bindZernioChannel(opts: {
   tenantId: string;
   profileId: string;
   accountId: string;
-  phone: string;
+  identity: string;
+  provider: "whatsapp" | "instagram";
 }): Promise<void> {
   const agent = await prisma.agent.findFirst({ where: { tenantId: opts.tenantId } });
   if (!agent) throw new Error("No agent");
@@ -47,14 +48,14 @@ export async function bindZernioWhatsApp(opts: {
   if (tenant.zernioProfileId && tenant.zernioProfileId !== opts.profileId) {
     throw new Error("Profile mismatch");
   }
-  const phone = opts.phone.trim() || opts.accountId;
+  const identity = opts.identity.trim() || opts.accountId;
   const token = encryptSecret(zernioApiKey());
   const hmac = encryptSecret(process.env.ZERNIO_WEBHOOK_SECRET || "zernio");
   const data = {
     tenantId: opts.tenantId,
     agentId: agent.id,
-    provider: "whatsapp",
-    providerAccountId: phone,
+    provider: opts.provider,
+    providerAccountId: identity,
     providerExternalId: opts.accountId,
     apiBase: "https://zernio.com/api/v1",
     accessTokenEnc: token,
@@ -65,11 +66,15 @@ export async function bindZernioWhatsApp(opts: {
 
   const taken = await prisma.channelConnection.findUnique({
     where: {
-      provider_providerAccountId: { provider: "whatsapp", providerAccountId: phone },
+      provider_providerAccountId: { provider: opts.provider, providerAccountId: identity },
     },
   });
   if (taken && taken.tenantId !== opts.tenantId) {
-    throw new Error("This WhatsApp number is already connected to another tenant");
+    throw new Error(
+      opts.provider === "instagram"
+        ? "This Instagram account is already connected to another tenant"
+        : "This WhatsApp number is already connected to another tenant",
+    );
   }
   if (taken) {
     await prisma.channelConnection.update({ where: { id: taken.id }, data });
@@ -77,7 +82,7 @@ export async function bindZernioWhatsApp(opts: {
   }
 
   const channels = await prisma.channelConnection.findMany({
-    where: { tenantId: opts.tenantId, provider: "whatsapp" },
+    where: { tenantId: opts.tenantId, provider: opts.provider },
   });
   const live = channels.find(
     (ch) => !ch.providerAccountId.startsWith("demo-") && !ch.providerExternalId?.startsWith("local-"),
@@ -87,4 +92,19 @@ export async function bindZernioWhatsApp(opts: {
     return;
   }
   await prisma.channelConnection.create({ data });
+}
+
+export async function bindZernioWhatsApp(opts: {
+  tenantId: string;
+  profileId: string;
+  accountId: string;
+  phone: string;
+}): Promise<void> {
+  await bindZernioChannel({
+    tenantId: opts.tenantId,
+    profileId: opts.profileId,
+    accountId: opts.accountId,
+    identity: opts.phone,
+    provider: "whatsapp",
+  });
 }

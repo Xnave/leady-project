@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FlowMap } from "@/components/FlowMap";
+import { FlowBreadcrumb } from "@/components/FlowBreadcrumb";
 import { RadioCard } from "@/components/RadioCard";
 import { flowForCatalog, isCatalogId, type CatalogId } from "@/lib/flow/catalog";
 import {
@@ -12,7 +12,7 @@ import {
 } from "@/lib/flow/booking-collect";
 import { isChatLanguage, looksHebrew, type ChatLanguage } from "@/lib/flow/locale";
 import { copyFor } from "@/lib/copy";
-import { stepLabel, uiCopy, type UiLang } from "@/lib/ui";
+import { fillUi, stepLabel, uiCopy, type UiLang } from "@/lib/ui";
 
 const WIZARD_STEPS = ["knowledge", "business", "flow", "done"] as const;
 
@@ -68,6 +68,7 @@ export function OnboardWizard(props: Props) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [extracting, setExtracting] = useState(false);
+  const [filledCount, setFilledCount] = useState<number | null>(null);
   const extractedSourceRef = useRef("");
   const flow = useMemo(
     () => flowForCatalog(catalogId, bookingCollect),
@@ -117,7 +118,14 @@ export function OnboardWizard(props: Props) {
         return false;
       }
       extractedSourceRef.current = trimmed;
-      if (data.extracted) applyExtracted(data.extracted);
+      if (data.extracted) {
+        applyExtracted(data.extracted);
+        const e = data.extracted;
+        const n = [e.name, e.phone, e.intro, e.venueAddress, e.venueHours].filter(
+          (v) => (v ?? "").trim(),
+        ).length;
+        setFilledCount(n);
+      }
       if (data.llmConfigured === false) setError(ui.onboard.noLlm);
       return true;
     } finally {
@@ -173,27 +181,14 @@ export function OnboardWizard(props: Props) {
   }
 
   const agentLang = chatLanguage === "he" ? "he" : "en";
+  const tokens = ["{{slot}}", "{{address}}", "{{hours}}", "{{name}}", "{{phone}}", "{{email}}", "{{need}}", "{{kind}}"];
+
+  function appendToken(current: string, set: (v: string) => void, token: string) {
+    set(`${current}${current ? " " : ""}${token}`);
+  }
 
   return (
-    <div className="stack">
-      <fieldset className="card language-card">
-        <legend>{ui.onboard.agentLanguageLegend}</legend>
-        <p className="muted">{ui.onboard.agentLanguageHint}</p>
-        <div className="radio-card-grid">
-          {(["multi", "he", "en"] as const).map((id) => (
-            <RadioCard
-              key={id}
-              name="chatLanguage"
-              value={id}
-              checked={chatLanguage === id}
-              onChange={() => setChatLanguage(id)}
-              title={ui.chatLanguage[id].title}
-              blurb={ui.chatLanguage[id].blurb}
-            />
-          ))}
-        </div>
-      </fieldset>
-
+    <div className="stack form-narrow">
       <div className="wizard-steps">
         {WIZARD_STEPS.map((_, i) => (
           <div
@@ -212,27 +207,32 @@ export function OnboardWizard(props: Props) {
           <>
             <h2>{ui.common.knowledge}</h2>
             <p className="muted">{ui.onboard.knowledgeHint}</p>
-            <textarea
-              rows={8}
-              value={knowledgeText}
-              onChange={(e) => setKnowledgeText(e.target.value)}
-              placeholder={ui.onboard.knowledgePlaceholder}
-              disabled={extracting}
-            />
-            <label className="dropzone">
-              {extracting ? ui.onboard.dropzoneBusy : ui.onboard.dropzoneIdle}
-              <input
-                type="file"
-                accept=".txt,.md,text/plain,text/markdown"
-                multiple
+            <div className="knowledge-split">
+              <textarea
+                rows={10}
+                value={knowledgeText}
+                onChange={(e) => setKnowledgeText(e.target.value)}
+                placeholder={ui.onboard.knowledgePlaceholder}
                 disabled={extracting}
-                onChange={(e) => {
-                  void onDrop(e.target.files);
-                  e.target.value = "";
-                }}
               />
-            </label>
-            <div className="row-actions">
+              <label className="dropzone">
+                {extracting ? ui.onboard.dropzoneBusy : ui.onboard.dropzoneIdle}
+                <input
+                  type="file"
+                  accept=".txt,.md,text/plain,text/markdown"
+                  multiple
+                  disabled={extracting}
+                  onChange={(e) => {
+                    void onDrop(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+            {filledCount != null ? (
+              <p className="muted">{fillUi(ui.onboard.filledFields, { count: filledCount })}</p>
+            ) : null}
+            <div className="wizard-footer">
               <button
                 type="button"
                 className="btn-secondary"
@@ -241,7 +241,7 @@ export function OnboardWizard(props: Props) {
               >
                 {extracting ? ui.common.extracting : ui.common.extract}
               </button>
-              <button type="button" onClick={() => setStep(1)} disabled={extracting}>
+              <button type="button" className="btn" onClick={() => setStep(1)} disabled={extracting}>
                 {ui.common.next}
               </button>
             </div>
@@ -252,52 +252,80 @@ export function OnboardWizard(props: Props) {
           <>
             <h2>{ui.common.business}</h2>
             <p className="muted">{ui.onboard.businessHint}</p>
-            <label>
-              {ui.onboard.fieldName}
-              <input value={name} onChange={(e) => setName(e.target.value)} required />
-            </label>
-            <label>
-              {ui.onboard.fieldPhone}
-              <input value={phone} onChange={(e) => setPhone(e.target.value)} />
-            </label>
+            <fieldset>
+              <legend>{ui.onboard.agentLanguageLegend}</legend>
+              <p className="muted">{ui.onboard.agentLanguageHint}</p>
+              <div className="segmented">
+                {(["multi", "he", "en"] as const).map((id) => (
+                  <label key={id} className={chatLanguage === id ? "selected" : ""}>
+                    <input
+                      type="radio"
+                      name="chatLanguage"
+                      checked={chatLanguage === id}
+                      onChange={() => setChatLanguage(id)}
+                    />
+                    {ui.chatLanguage[id].title}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <div className="row">
+              <label>
+                {ui.onboard.fieldName}
+                <input value={name} onChange={(e) => setName(e.target.value)} required />
+              </label>
+              <label>
+                {ui.onboard.fieldPhone}
+                <input value={phone} onChange={(e) => setPhone(e.target.value)} />
+              </label>
+            </div>
             <label>
               {ui.onboard.fieldIntro}
               <textarea
-                rows={4}
+                rows={3}
                 value={intro}
                 onChange={(e) => setIntro(e.target.value)}
                 placeholder={ui.onboard.fieldIntroPlaceholder}
               />
             </label>
-            <label>
-              {ui.onboard.fieldAddress}
-              <input
-                value={venueAddress}
-                onChange={(e) => setVenueAddress(e.target.value)}
-                placeholder={ui.onboard.fieldAddressPlaceholder}
-              />
-            </label>
-            <label>
-              {ui.onboard.fieldHours}
-              <input
-                value={venueHours}
-                onChange={(e) => setVenueHours(e.target.value)}
-                placeholder={ui.onboard.fieldHoursPlaceholder}
-              />
-            </label>
+            <div className="row">
+              <label>
+                {ui.onboard.fieldAddress}
+                <input
+                  value={venueAddress}
+                  onChange={(e) => setVenueAddress(e.target.value)}
+                  placeholder={ui.onboard.fieldAddressPlaceholder}
+                />
+              </label>
+              <label>
+                {ui.onboard.fieldHours}
+                <input
+                  value={venueHours}
+                  onChange={(e) => setVenueHours(e.target.value)}
+                  placeholder={ui.onboard.fieldHoursPlaceholder}
+                />
+              </label>
+            </div>
             <label>
               {ui.onboard.fieldBookingRequest}
               <textarea
-                rows={5}
+                rows={3}
                 value={bookingRequestTemplate}
                 onChange={(e) => setBookingRequestTemplate(e.target.value)}
                 placeholder={copyFor(agentLang).chat.bookingRequestTemplate}
               />
             </label>
+            <div className="token-chips">
+              {tokens.map((t) => (
+                <button key={t} type="button" onClick={() => appendToken(bookingRequestTemplate, setBookingRequestTemplate, t)}>
+                  {t}
+                </button>
+              ))}
+            </div>
             <label>
               {ui.onboard.fieldBookingApproved}
               <textarea
-                rows={4}
+                rows={3}
                 value={bookingApprovedTemplate}
                 onChange={(e) => setBookingApprovedTemplate(e.target.value)}
                 placeholder={copyFor(agentLang).chat.bookingApprovedTemplate}
@@ -306,7 +334,7 @@ export function OnboardWizard(props: Props) {
             <label>
               {ui.onboard.fieldBookingRejected}
               <textarea
-                rows={3}
+                rows={2}
                 value={bookingRejectedTemplate}
                 onChange={(e) => setBookingRejectedTemplate(e.target.value)}
                 placeholder={copyFor(agentLang).chat.bookingRejected}
@@ -324,11 +352,11 @@ export function OnboardWizard(props: Props) {
               />
             </label>
             <p className="muted">{ui.onboard.idleHint}</p>
-            <div className="row-actions">
+            <div className="wizard-footer">
               <button type="button" className="btn-secondary" onClick={() => setStep(0)}>
                 {ui.common.back}
               </button>
-              <button type="button" onClick={() => setStep(2)} disabled={!name.trim() || !intro.trim()}>
+              <button type="button" className="btn" onClick={() => setStep(2)} disabled={!name.trim() || !intro.trim()}>
                 {ui.common.next}
               </button>
             </div>
@@ -340,7 +368,7 @@ export function OnboardWizard(props: Props) {
             <h2>{ui.common.flow}</h2>
             <fieldset>
               <legend>{ui.onboard.catalogLegend}</legend>
-              <div className="radio-card-grid">
+              <div className="radio-card-grid compact">
                 {(["inbox", "book", "faq"] as const).map((id) => (
                   <RadioCard
                     key={id}
@@ -358,50 +386,42 @@ export function OnboardWizard(props: Props) {
               <fieldset>
                 <legend>{ui.onboard.collectLegend}</legend>
                 <p className="muted">{ui.onboard.collectHint}</p>
-                <div className="radio-card-grid compact">
-                  {(
-                    [
-                      "time_preference",
-                      "name",
-                      "need",
-                      "phone",
-                      "email",
-                      "visit_kind",
-                    ] as BookingCollectId[]
-                  ).map((id) => {
+                <div className="chip-row">
+                  {(["time_preference", "name", "need", "phone", "email", "visit_kind"] as BookingCollectId[]).map((id) => {
                     const meta = ui.bookingCollect[id];
                     if (!meta) return null;
                     const locked = id === "time_preference";
+                    const checked = bookingCollect.includes(id);
                     return (
-                      <RadioCard
-                        key={id}
-                        type="checkbox"
-                        name={`collect_${id}`}
-                        value={id}
-                        checked={bookingCollect.includes(id)}
-                        disabled={locked}
-                        onChange={() => {
-                          if (locked) return;
-                          setBookingCollect((prev) =>
-                            prev.includes(id)
-                              ? prev.filter((x) => x !== id)
-                              : [...prev, id],
-                          );
-                        }}
-                        title={meta.title}
-                        blurb={meta.blurb}
-                      />
+                      <label key={id} className={`chip-toggle${checked ? " selected" : ""}`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={locked}
+                          onChange={() => {
+                            if (locked) return;
+                            setBookingCollect((prev) =>
+                              prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+                            );
+                          }}
+                        />
+                        {meta.title}
+                      </label>
                     );
                   })}
                 </div>
               </fieldset>
             ) : null}
-            <FlowMap flow={flow} labels={ui.flow} ui={ui} />
-            <div className="row-actions">
+            <FlowBreadcrumb flow={flow} current={flow.start} ui={ui} />
+            <p className="muted">
+              {ui.flow.start}: <strong>{flow.start}</strong> · {ui.flow.afterDone}:{" "}
+              <strong>{flow.restartPolicy.onNewMessage}</strong>
+            </p>
+            <div className="wizard-footer">
               <button type="button" className="btn-secondary" onClick={() => setStep(1)}>
                 {ui.common.back}
               </button>
-              <button type="button" onClick={save} disabled={saving}>
+              <button type="button" className="btn" onClick={save} disabled={saving}>
                 {saving ? ui.common.saving : ui.common.save}
               </button>
             </div>
@@ -412,9 +432,22 @@ export function OnboardWizard(props: Props) {
           <>
             <h2>{ui.common.done}</h2>
             <p className="muted">{ui.onboard.doneHint}</p>
-            <button type="button" onClick={() => router.push("/demo")}>
-              {ui.page.homeChat}
-            </button>
+            <dl className="detail-list">
+              <dt>{ui.onboard.fieldName}</dt>
+              <dd>{name}</dd>
+              <dt>{ui.onboard.agentLanguageLegend}</dt>
+              <dd>{ui.chatLanguage[chatLanguage].title}</dd>
+              <dt>{ui.onboard.catalogLegend}</dt>
+              <dd>{ui.catalog[catalogId].title}</dd>
+            </dl>
+            <div className="wizard-footer">
+              <button type="button" className="btn-secondary" onClick={() => router.push("/inbox")}>
+                {ui.nav.inbox}
+              </button>
+              <button type="button" className="btn" onClick={() => router.push("/demo")}>
+                {ui.page.homeChat}
+              </button>
+            </div>
           </>
         ) : null}
 

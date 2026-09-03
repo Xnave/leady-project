@@ -29,19 +29,14 @@ export default async function OpsPage() {
     <div>
       <PageHeader
         title={`${ui.page.opsTitle} · ${agent.name}`}
-        blurb={`${ui.common.version} ${agent.flowVersion}`}
+        blurb={`${ui.common.version} ${agent.flowVersion} · ${ui.ops.ownersNeverSee}`}
       />
-      <p className="muted">{ui.ops.ownersNeverSee}</p>
-      <div className="row">
-        <div className="card">
-          <h2>{ui.common.flow}</h2>
-          <FlowMap flow={flow} labels={ui.flow} ui={ui} />
-        </div>
+      <div className="ops-layout">
         <form action="/api/ops/agent" method="post" className="card stack">
           <input type="hidden" name="agentId" value={agent.id} />
           <fieldset>
             <legend>{ui.ops.catalogLegend}</legend>
-            <div className="radio-card-grid">
+            <div className="radio-card-grid compact">
               {(["inbox", "book", "faq"] as const).map((id) => (
                 <label
                   key={id}
@@ -63,7 +58,7 @@ export default async function OpsPage() {
           </fieldset>
           <label>
             {ui.common.knowledge}
-            <textarea name="knowledgeText" defaultValue={agent.knowledgeText} rows={5} />
+            <textarea name="knowledgeText" defaultValue={agent.knowledgeText} rows={6} />
           </label>
           <fieldset>
             <legend>{ui.ops.afterDoneLegend}</legend>
@@ -85,55 +80,63 @@ export default async function OpsPage() {
                 </label>
               ))}
             </div>
+            <label>
+              {ui.ops.fallbackStageLabel}
+              <select name="fallbackStage" defaultValue={flow.restartPolicy.fallbackStage ?? ""}>
+                <option value="">{ui.ops.noneOption}</option>
+                {stageIds.map((id) => (
+                  <option key={id} value={id}>
+                    {stageLabel(ui, id)}
+                  </option>
+                ))}
+              </select>
+            </label>
           </fieldset>
-          <label>
-            {ui.ops.fallbackStageLabel}
-            <select name="fallbackStage" defaultValue={flow.restartPolicy.fallbackStage ?? ""}>
-              <option value="">{ui.ops.noneOption}</option>
-              {stageIds.map((id) => (
-                <option key={id} value={id}>
-                  {stageLabel(ui, id)}
-                </option>
-              ))}
-            </select>
-          </label>
           <fieldset>
             <legend>{ui.ops.hitlLegend}</legend>
             <label className="choice">
-              <input
-                type="checkbox"
-                name="allowRequestHuman"
-                defaultChecked={hitl.allowRequestHuman}
-              />
+              <input type="checkbox" name="allowRequestHuman" defaultChecked={hitl.allowRequestHuman} />
               {ui.ops.allowHuman}
             </label>
-            <p className="muted">{ui.ops.stagesLegend}</p>
-            {stageIds.map((id) => (
-              <label key={id} className="choice">
-                <input
-                  type="checkbox"
-                  name="allowedFromStages"
-                  value={id}
-                  defaultChecked={hitl.allowedFromStages.includes(id)}
-                />
-                {stageLabel(ui, id)}
-              </label>
-            ))}
-            <p className="muted">{ui.ops.intentsLegend}</p>
-            {["sales", "support", "other"].map((intent) => (
-              <label key={intent} className="choice">
-                <input
-                  type="checkbox"
-                  name="allowedIntents"
-                  value={intent}
-                  defaultChecked={hitl.allowedIntents?.includes(intent)}
-                />
-                {intentLabel(ui, intent)}
-              </label>
-            ))}
+            <div className="hitl-grid">
+              <div>
+                <p className="muted">{ui.ops.stagesLegend}</p>
+                {stageIds.map((id) => (
+                  <label key={id} className="choice">
+                    <input
+                      type="checkbox"
+                      name="allowedFromStages"
+                      value={id}
+                      defaultChecked={hitl.allowedFromStages.includes(id)}
+                    />
+                    {stageLabel(ui, id)}
+                  </label>
+                ))}
+              </div>
+              <div>
+                <p className="muted">{ui.ops.intentsLegend}</p>
+                {["sales", "support", "other"].map((intent) => (
+                  <label key={intent} className="choice">
+                    <input
+                      type="checkbox"
+                      name="allowedIntents"
+                      value={intent}
+                      defaultChecked={hitl.allowedIntents?.includes(intent)}
+                    />
+                    {intentLabel(ui, intent)}
+                  </label>
+                ))}
+              </div>
+            </div>
           </fieldset>
-          <button type="submit">{ui.common.save}</button>
+          <div>
+            <button type="submit">{ui.common.save}</button>
+          </div>
         </form>
+        <div className="card">
+          <h2>{ui.common.flow}</h2>
+          <FlowMap flow={flow} labels={ui.flow} ui={ui} />
+        </div>
       </div>
     </div>
   );

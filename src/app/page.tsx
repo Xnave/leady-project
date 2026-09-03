@@ -26,38 +26,7 @@ export default async function HomePage() {
   ]);
   const needsSetup = !(tenant?.intro ?? "").trim();
   const hasChannel = Boolean(liveChannel);
-
-  const cards = [
-    {
-      href: "/onboard",
-      title: ui.home.quickSetup,
-      blurb: ui.page.setupBlurb,
-      count: needsSetup ? 1 : 0,
-    },
-    {
-      href: "/demo",
-      title: ui.home.quickChat,
-      blurb: ui.chat.startNew,
-    },
-    {
-      href: "/leads",
-      title: ui.home.quickLeads,
-      blurb: ui.page.leadsTitle,
-      count: counts.leads,
-    },
-    {
-      href: "/inbox",
-      title: ui.home.quickInbox,
-      blurb: ui.page.inboxTitle,
-      count: counts.inbox,
-    },
-    {
-      href: "/channels",
-      title: ui.home.quickChannels,
-      blurb: ui.page.channelsTitle,
-      count: hasChannel ? 0 : 1,
-    },
-  ];
+  const setupIncomplete = needsSetup || !hasChannel;
 
   const journey = [
     { href: "/onboard", label: ui.home.stepSetup, done: !needsSetup },
@@ -67,38 +36,36 @@ export default async function HomePage() {
     { href: "/inbox", label: ui.home.stepInbox, done: counts.inbox === 0, count: counts.inbox },
   ];
 
+  const cta =
+    counts.inbox > 0
+      ? { href: "/inbox", label: ui.home.ctaInbox }
+      : !hasChannel
+        ? { href: "/channels", label: ui.home.ctaConnect }
+        : needsSetup
+          ? { href: "/onboard", label: ui.nav.setup }
+          : { href: "/leads", label: ui.home.quickLeads };
+
   return (
     <div>
-      <PageHeader
-        title={ui.page.homeTitle}
-        blurb={
-          tenant
-            ? `${ui.home.tenantLabel}: ${tenant.name}${needsSetup ? ` · ${ui.page.homeSetup}` : ""}`
-            : ui.page.homeBlurb
-        }
-      />
-      <SetupJourney ui={ui} steps={journey} />
-      {needsSetup ? (
-        <div className="card">
-          <p>
-            {ui.page.homeSetup}{" "}
-            <Link href="/onboard">{ui.nav.setup}</Link>
-          </p>
-        </div>
-      ) : null}
-      <div className="dashboard-grid">
-        {cards.map((card) => (
-          <Link key={card.href} href={card.href} className="card card-interactive dashboard-card">
-            <div className="channel-row">
-              <h3>{card.title}</h3>
-              {card.count && card.count > 0 ? (
-                <span className="nav-badge">{card.count > 99 ? "99+" : card.count}</span>
-              ) : null}
-            </div>
-            <p>{card.blurb}</p>
-          </Link>
-        ))}
+      <PageHeader title={ui.page.homeTitle} blurb={needsSetup ? ui.page.homeSetup : ui.page.homeBlurb} />
+      <div className="work-strip">
+        <Link href="/leads" className="card stat-card">
+          <span className="stat-value">{counts.leads}</span>
+          <span className="stat-label">{ui.home.quickLeads}</span>
+        </Link>
+        <Link href="/inbox" className="card stat-card">
+          <span className="stat-value">{counts.inbox}</span>
+          <span className="stat-label">{ui.home.quickInbox}</span>
+        </Link>
+        <Link href="/channels" className="card stat-card">
+          <span className="stat-value">{hasChannel ? "●" : "○"}</span>
+          <span className="stat-label">{hasChannel ? ui.home.whatsappOk : ui.home.whatsappOff}</span>
+        </Link>
+        <Link href={cta.href} className="btn">
+          {cta.label}
+        </Link>
       </div>
+      {setupIncomplete ? <SetupJourney ui={ui} steps={journey} /> : null}
     </div>
   );
 }

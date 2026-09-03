@@ -2,31 +2,57 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { NavCounts } from "@/lib/nav-counts";
-import type { UiCopy } from "@/lib/ui";
+import type { UiCopy, UiLang } from "@/lib/ui";
 
 type NavKey = keyof UiCopy["nav"];
 
-const NAV_ITEMS: { href: string; key: NavKey; adminOnly?: boolean; countKey?: keyof NavCounts }[] = [
+const OWNER_ITEMS: { href: string; key: NavKey; countKey?: keyof NavCounts }[] = [
   { href: "/", key: "home" },
-  { href: "/leads", key: "leads", countKey: "leads" },
   { href: "/inbox", key: "inbox", countKey: "inbox" },
-  { href: "/demo", key: "chat" },
+  { href: "/leads", key: "leads", countKey: "leads" },
   { href: "/onboard", key: "setup" },
   { href: "/channels", key: "channels" },
+  { href: "/demo", key: "chat" },
+];
+
+const STAFF_ITEMS: { href: string; key: NavKey; adminOnly?: boolean }[] = [
   { href: "/ops", key: "ops" },
   { href: "/admin", key: "admin", adminOnly: true },
 ];
+
+function Icon({ d }: { d: string }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d={d} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+const ICONS: Partial<Record<NavKey, ReactNode>> = {
+  home: <Icon d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z" />,
+  inbox: <Icon d="M4 6h16v12H4zM4 12h4l2 3h4l2-3h4" />,
+  leads: <Icon d="M8 7a4 4 0 1 0 8 0 4 4 0 0 0-8 0M5 20a7 7 0 0 1 14 0" />,
+  setup: <Icon d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19.4 15a7.7 7.7 0 0 0 .1-2l2-1.5-2-3.4-2.4.5a8 8 0 0 0-1.7-1L15 5h-4l-.4 2.6a8 8 0 0 0-1.7 1L6.5 8.1l-2 3.4 2 1.5a7.7 7.7 0 0 0 .1 2l-2 1.5 2 3.4 2.4-.5a8 8 0 0 0 1.7 1L11 21h4l.4-2.6a8 8 0 0 0 1.7-1l2.4.5 2-3.4z" />,
+  channels: <Icon d="M5 8a4 3 0 0 1 8 0c0 4-4 5-4 9M9 21h.01M15 8a4 3 0 0 1 6 2c0 3-3 4-3 7M18 21h.01" />,
+  chat: <Icon d="M5 6h14v9H8l-3 4z" />,
+  ops: <Icon d="M4 6h16M4 12h10M4 18h7" />,
+  admin: <Icon d="M12 3 4 7v5c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V7z" />,
+};
 
 export function SidebarNav({
   ui,
   admin,
   counts,
+  tenantName,
+  lang,
 }: {
   ui: UiCopy;
   admin: boolean;
   counts: NavCounts | null;
+  tenantName?: string | null;
+  lang: UiLang;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -34,6 +60,24 @@ export function SidebarNav({
   function isActive(href: string) {
     if (href === "/") return pathname === "/";
     return pathname.startsWith(href);
+  }
+
+  function renderItem(item: { href: string; key: NavKey; countKey?: keyof NavCounts }) {
+    const count = item.countKey && counts ? counts[item.countKey] : 0;
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        className={`nav-item${isActive(item.href) ? " active" : ""}`}
+        onClick={() => setOpen(false)}
+      >
+        <span className="nav-item-label">
+          {ICONS[item.key]}
+          <span>{ui.nav[item.key]}</span>
+        </span>
+        {count > 0 ? <span className="nav-badge">{count > 99 ? "99+" : count}</span> : null}
+      </Link>
+    );
   }
 
   return (
@@ -45,12 +89,7 @@ export function SidebarNav({
         aria-label={ui.common.menu}
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path
-            d="M4 7h16M4 12h16M4 17h16"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
+          <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         </svg>
       </button>
       <aside className={`sidebar${open ? " open" : ""}`}>
@@ -58,25 +97,23 @@ export function SidebarNav({
           <span className="sidebar-brand-mark">L</span>
           {ui.product}
         </Link>
+        {tenantName ? <div className="sidebar-tenant">{tenantName}</div> : null}
         <nav className="sidebar-nav">
-          {NAV_ITEMS.filter((item) => !item.adminOnly || admin).map((item) => {
-            const count =
-              item.countKey && counts ? counts[item.countKey] : 0;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`nav-item${isActive(item.href) ? " active" : ""}`}
-                onClick={() => setOpen(false)}
-              >
-                <span>{ui.nav[item.key]}</span>
-                {count > 0 ? (
-                  <span className="nav-badge">{count > 99 ? "99+" : count}</span>
-                ) : null}
-              </Link>
-            );
-          })}
+          {OWNER_ITEMS.map(renderItem)}
+          <div className="nav-group-label">{ui.common.staff}</div>
+          {STAFF_ITEMS.filter((item) => !item.adminOnly || admin).map(renderItem)}
         </nav>
+        <div className="sidebar-footer">
+          <span className="lang-toggle-label">{ui.langToggle.uiLanguage}</span>
+          <form action="/api/ui/lang" method="post" className="lang-toggle">
+            <button type="submit" name="lang" value="he" className={lang === "he" ? "active" : ""}>
+              {ui.langToggle.he}
+            </button>
+            <button type="submit" name="lang" value="en" className={lang === "en" ? "active" : ""}>
+              {ui.langToggle.en}
+            </button>
+          </form>
+        </div>
       </aside>
     </>
   );

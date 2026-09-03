@@ -5,6 +5,13 @@ import { isChatLanguage } from "@/lib/flow/locale";
 import { defaultFlow, defaultHitlPolicy, defaultLeadSchema } from "@/lib/flow/validate";
 import type { AgentSnapshot, TurnContext } from "@/lib/flow/types";
 import type { FlowDefinition, HitlPolicy, LeadSchema } from "@/lib/flow/types";
+import {
+  contactDisplayName,
+  instagramIdentityFields,
+  leadInstagramUsername,
+  looksLikePlatformUserId,
+} from "@/lib/leads";
+import { fetchZernioInboxContact } from "@/lib/zernio";
 
 export async function persistInboundIfNew(opts: {
   tenantId: string;
@@ -13,6 +20,7 @@ export async function persistInboundIfNew(opts: {
   providerMessageId: string;
   from: string;
   text: string;
+  displayName?: string;
   extraFields?: Record<string, unknown>;
 }): Promise<{ conversationId: string; messageId: string; leadId: string } | null> {
   const existing = await prisma.message.findUnique({
@@ -35,6 +43,8 @@ export async function persistInboundIfNew(opts: {
     extraFields.phone = extraFields.phone ?? opts.from.trim();
   }
 
+  const displayName = opts.displayName?.trim() || opts.from;
+
   const lead = await prisma.lead.upsert({
     where: {
       tenantId_channelId_externalUserId: {
@@ -47,7 +57,7 @@ export async function persistInboundIfNew(opts: {
       tenantId: opts.tenantId,
       channelId: opts.channelId,
       externalUserId: opts.from,
-      displayName: opts.from,
+      displayName,
       fields: extraFields as Prisma.InputJsonValue,
     },
     update: {},
@@ -56,11 +66,26 @@ export async function persistInboundIfNew(opts: {
   const current = (lead.fields as Record<string, unknown>) ?? {};
   const patch = { ...extraFields };
   if (current.phone) delete patch.phone;
-  if (Object.keys(patch).length > 0) {
+  if (typeof current.name === "string" && current.name.trim()) delete patch.name;
+  if (typeof current.instagramUsername === "string" && current.instagramUsername.trim()) {
+    delete patch.instagramUsername;
+  }
+
+  const shouldRename =
+    displayName !== opts.from &&
+    (!lead.displayName ||
+      lead.displayName === opts.from ||
+      lead.displayName === lead.externalUserId ||
+      looksLikePlatformUserId(lead.displayName));
+
+  if (Object.keys(patch).length > 0 || shouldRename) {
     await prisma.lead.update({
       where: { id: lead.id },
       data: {
-        fields: { ...current, ...patch } as Prisma.InputJsonValue,
+        ...(shouldRename ? { displayName } : {}),
+        ...(Object.keys(patch).length > 0
+          ? { fields: { ...current, ...patch } as Prisma.InputJsonValue }
+          : {}),
       },
     });
   }
@@ -289,4 +314,57 @@ export async function completeHitlTask(opts: {
     }),
   ]);
   return task;
+}
+
+export async function enrichInstagramLeadIdentity(opts: {
+  leadId: string;
+  tenantId: string;
+}): Promise<boolean> {
+  const lead = await prisma.lead.findFirst({
+    where: { id: opts.leadId, tenantId: opts.tenantId },
+    include: { channel: true },
+  });
+  if (!lead || lead.channel.provider !== "instagram") return false;
+
+  const fields = (lead.fields ?? {}) as Record<string, unknown>;
+  const hasName =
+    typeof fields.name === "string" &&
+    Boolean(fields.name.trim()) &&
+    !looksLikePlatformUserId(fields.name);
+  const hasUser = Boolean(leadInstagramUsername(fields));
+  const hasDisplay =
+    Boolean(lead.displayName?.trim()) && !looksLikePlatformUserId(lead.displayName ?? "");
+  if (hasName && hasUser && hasDisplay) return false;
+
+  const conversationId =
+    typeof fields.zernioConversationId === "string" ? fields.zernioConversationId : "";
+  const accountId = lead.channel.providerExternalId ?? "";
+  if (!conversationId || !accountId) return false;
+
+  const contact = await fetchZernioInboxContact({ accountId, conversationId });
+  if (!contact) return false;
+
+  const patch = instagramIdentityFields(
+    hasName ? undefined : contact.name,
+    hasUser ? undefined : contact.username,
+  );
+  const displayName = contactDisplayName({
+    name: (typeof fields.name === "string" ? fields.name : "") || contact.name,
+    username: leadInstagramUsername(fields) || contact.username,
+    fallback: lead.externalUserId,
+  });
+  const shouldRename = (!hasDisplay || looksLikePlatformUserId(lead.displayName ?? "")) &&
+    displayName !== lead.externalUserId;
+  if (Object.keys(patch).length === 0 && !shouldRename) return false;
+
+  await prisma.lead.update({
+    where: { id: lead.id },
+    data: {
+      ...(shouldRename ? { displayName } : {}),
+      ...(Object.keys(patch).length > 0
+        ? { fields: { ...fields, ...patch } as Prisma.InputJsonValue }
+        : {}),
+    },
+  });
+  return true;
 }

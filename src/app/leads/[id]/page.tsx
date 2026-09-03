@@ -10,7 +10,13 @@ import { MeetingDecisionForm } from "@/components/MeetingDecisionForm";
 import { prisma } from "@/lib/db";
 import type { FlowDefinition, LeadFields, LeadSchema } from "@/lib/flow/types";
 import { getUiLang } from "@/lib/cookies";
-import { isDemoLead, leadDisplayName } from "@/lib/leads";
+import { enrichInstagramLeadIdentity } from "@/lib/conversations";
+import {
+  instagramProfileUrl,
+  isDemoLead,
+  leadDisplayName,
+  leadInstagramUsername,
+} from "@/lib/leads";
 import { requireTenantId } from "@/lib/tenant";
 import { uiCopy } from "@/lib/ui";
 import { notFound } from "next/navigation";
@@ -26,7 +32,7 @@ export default async function LeadDetailPage({
   const tenantId = await requireTenantId();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
-  const lead = await prisma.lead.findFirst({
+  let lead = await prisma.lead.findFirst({
     where: { id, tenantId },
     include: {
       channel: true,
@@ -42,10 +48,32 @@ export default async function LeadDetailPage({
     },
   });
   if (!lead) notFound();
+  if (lead.channel.provider === "instagram") {
+    const changed = await enrichInstagramLeadIdentity({ leadId: lead.id, tenantId });
+    if (changed) {
+      const fresh = await prisma.lead.findFirst({
+        where: { id, tenantId },
+        include: {
+          channel: true,
+          conversations: {
+            include: {
+              messages: { orderBy: { createdAt: "asc" } },
+              agent: true,
+            },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+          meetings: { orderBy: { createdAt: "desc" } },
+        },
+      });
+      if (fresh) lead = fresh;
+    }
+  }
   const convo = lead.conversations[0];
   const flow = convo?.agent.flow as FlowDefinition | undefined;
   const schema = (convo?.agent.leadSchema ?? { fields: {} }) as LeadSchema;
   const fields = (lead.fields as LeadFields) ?? {};
+  const igHandle = leadInstagramUsername(fields);
 
   const chatLabels = {
     placeholder: ui.chat.placeholder,
@@ -89,8 +117,9 @@ export default async function LeadDetailPage({
           convoStatus={convo?.status}
           isDemo={isDemoLead(lead.externalUserId)}
           channel={lead.channel}
-          flow={flow}
           waitingHuman={convo?.status === "waiting_human"}
+          instagramHandle={igHandle || undefined}
+          instagramUrl={instagramProfileUrl(igHandle) || undefined}
         />
         <div className="card">
           <h3>{ui.common.captured}</h3>

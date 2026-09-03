@@ -1,7 +1,5 @@
 import Link from "next/link";
 import { ChannelBadge } from "@/components/ChannelBadge";
-import { FlowBreadcrumb } from "@/components/FlowBreadcrumb";
-import type { FlowDefinition } from "@/lib/flow/types";
 import {
   convoStatusLabel,
   intentLabel,
@@ -22,8 +20,9 @@ type Props = {
   convoStatus?: string;
   isDemo?: boolean;
   channel: { provider: string; providerAccountId: string } | null | undefined;
-  flow?: FlowDefinition;
   waitingHuman?: boolean;
+  instagramUrl?: string;
+  instagramHandle?: string;
 };
 
 export function LeadProfilePanel({
@@ -39,8 +38,9 @@ export function LeadProfilePanel({
   convoStatus,
   isDemo,
   channel,
-  flow,
   waitingHuman,
+  instagramUrl,
+  instagramHandle,
 }: Props) {
   const statusId = status ? normalizeLeadStatus(status) : undefined;
 
@@ -63,12 +63,6 @@ export function LeadProfilePanel({
           <span className="muted">{convoStatusLabel(ui, convoStatus)}</span>
         ) : null}
       </div>
-      {flow && stage ? (
-        <div className="lead-profile-flow">
-          <p className="muted">{ui.flow.currentStage}</p>
-          <FlowBreadcrumb flow={flow} current={stage} ui={ui} />
-        </div>
-      ) : null}
       <dl className="detail-list">
         {phone ? (
           <>
@@ -80,6 +74,16 @@ export function LeadProfilePanel({
           <>
             <dt>{ui.common.email}</dt>
             <dd>{email}</dd>
+          </>
+        ) : null}
+        {instagramUrl ? (
+          <>
+            <dt>{ui.common.instagramProfile}</dt>
+            <dd>
+              <a href={instagramUrl} target="_blank" rel="noopener noreferrer">
+                {instagramHandle ? `@${instagramHandle}` : ui.common.instagramProfile}
+              </a>
+            </dd>
           </>
         ) : null}
         {intent ? (

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { createZernioProfile, parseZernioMessageReceived, zernioProfileName } from "./zernio";
+import { createZernioProfile, parseZernioInboxContact, parseZernioMessageReceived, zernioProfileName } from "./zernio";
 
 describe("zernioProfileName", () => {
   it("includes tenant id suffix for uniqueness", () => {
@@ -59,6 +59,90 @@ describe("parseZernioMessageReceived", () => {
       conversationId: "conv-9",
       accountId: "acc_sandbox",
       platformMessageId: "wamid.abc",
+    });
+  });
+
+  it("reads Instagram name and username from the sender", () => {
+    const parsed = parseZernioMessageReceived({
+      id: "evt-ig-name",
+      event: "message.received",
+      account: { id: "acc_ig", platform: "instagram" },
+      conversation: { id: "conv-ig" },
+      message: {
+        id: "m-ig",
+        conversationId: "conv-ig",
+        platform: "instagram",
+        platformMessageId: "mid.ig",
+        direction: "incoming",
+        text: "hi",
+        sender: {
+          id: "1634072858426706",
+          name: "Jane",
+          username: "jane_doe",
+        },
+      },
+    });
+    expect(parsed).toMatchObject({
+      from: "1634072858426706",
+      senderName: "Jane",
+      senderUsername: "jane_doe",
+      platform: "instagram",
+    });
+  });
+
+  it("reads a username-only Instagram sender", () => {
+    const parsed = parseZernioMessageReceived({
+      id: "evt-ig-user",
+      event: "message.received",
+      account: { id: "acc_ig", platform: "instagram" },
+      conversation: { id: "conv-ig" },
+      message: {
+        id: "m-ig2",
+        conversationId: "conv-ig",
+        direction: "incoming",
+        text: "hi",
+        sender: { name: "Jane", username: "jane_doe" },
+      },
+    });
+    expect(parsed).toMatchObject({
+      from: "jane_doe",
+      senderName: "Jane",
+      senderUsername: "jane_doe",
+    });
+  });
+
+  it("extracts Instagram username from an inbox conversation", () => {
+    expect(
+      parseZernioInboxContact({
+        data: {
+          participantName: "Jane",
+          participantUsername: "jane_doe",
+          url: "https://instagram.com/jane_doe",
+        },
+      }),
+    ).toMatchObject({ name: "Jane", username: "jane_doe" });
+  });
+
+  it("reads an inbound Instagram DM sender id", () => {
+    const parsed = parseZernioMessageReceived({
+      id: "evt-ig",
+      event: "message.received",
+      account: { id: "acc_ig", platform: "instagram" },
+      conversation: { id: "conv-ig" },
+      message: {
+        id: "m-ig",
+        conversationId: "conv-ig",
+        platform: "instagram",
+        platformMessageId: "mid.ig",
+        direction: "incoming",
+        text: "hi",
+        sender: { id: "17841400000" },
+      },
+    });
+    expect(parsed).toMatchObject({
+      from: "17841400000",
+      accountId: "acc_ig",
+      platform: "instagram",
     });
   });
 

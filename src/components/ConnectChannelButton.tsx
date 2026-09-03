@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 
-export function ConnectWhatsAppButton({
+export function ConnectChannelButton({
+  provider,
   label,
   disabled,
   errorLabel,
 }: {
+  provider: "whatsapp" | "instagram";
   label: string;
   disabled?: boolean;
   errorLabel: string;
@@ -18,7 +20,11 @@ export function ConnectWhatsAppButton({
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/channels/zernio/connect", { method: "POST" });
+      const res = await fetch("/api/channels/zernio/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
       const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
       if (!res.ok || !data.url) {
         setError(data.error ?? errorLabel);
@@ -32,7 +38,12 @@ export function ConnectWhatsAppButton({
 
   return (
     <div className="stack">
-      <button type="button" onClick={() => void onClick()} disabled={disabled || busy}>
+      <button
+        type="button"
+        className="btn-secondary"
+        onClick={() => void onClick()}
+        disabled={disabled || busy}
+      >
         {busy ? "…" : label}
       </button>
       {error ? <p className="muted">{error}</p> : null}

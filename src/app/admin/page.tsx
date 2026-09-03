@@ -29,6 +29,7 @@ export default async function AdminPage() {
           openAsTenant: ui.common.openAsTenant,
           badSecret: ui.errors.badSecret,
           createFailed: ui.errors.createFailed,
+          search: ui.common.search,
         }}
         unlocked={unlocked}
         tenants={tenants}

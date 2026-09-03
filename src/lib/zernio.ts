@@ -162,7 +162,8 @@ export async function createZernioProfile(name: string): Promise<string> {
   }
 }
 
-export async function zernioWhatsAppConnectUrl(opts: {
+export async function zernioConnectUrl(opts: {
+  platform: "whatsapp" | "instagram";
   profileId: string;
   redirectUrl: string;
 }): Promise<string> {
@@ -171,11 +172,18 @@ export async function zernioWhatsAppConnectUrl(opts: {
     redirect_url: opts.redirectUrl,
   });
   const data = await zernio<{ authUrl?: string; auth_url?: string }>(
-    `/connect/whatsapp?${qs.toString()}`,
+    `/connect/${opts.platform}?${qs.toString()}`,
   );
   const url = data.authUrl || data.auth_url || "";
   if (!url) throw new Error("Zernio did not return an auth URL");
   return url;
+}
+
+export async function zernioWhatsAppConnectUrl(opts: {
+  profileId: string;
+  redirectUrl: string;
+}): Promise<string> {
+  return zernioConnectUrl({ ...opts, platform: "whatsapp" });
 }
 
 export async function sendZernioInboxMessage(opts: {
@@ -192,6 +200,10 @@ export async function sendZernioInboxMessage(opts: {
   });
 }
 
+function asTrimmedString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 export type ZernioInbound = {
   eventId: string;
   platformMessageId: string;
@@ -200,7 +212,69 @@ export type ZernioInbound = {
   from: string;
   text: string;
   platform?: string;
+  senderName?: string;
+  senderUsername?: string;
 };
+
+export type ZernioInboxContact = {
+  name: string;
+  username: string;
+  participantId: string;
+};
+
+export function parseZernioInboxContact(payload: unknown): ZernioInboxContact {
+  const root =
+    payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const data =
+    root.data && typeof root.data === "object"
+      ? (root.data as Record<string, unknown>)
+      : root;
+  const profile =
+    data.instagramProfile && typeof data.instagramProfile === "object"
+      ? (data.instagramProfile as Record<string, unknown>)
+      : {};
+  const participants = Array.isArray(data.participants) ? data.participants : [];
+  const firstParticipant =
+    participants[0] && typeof participants[0] === "object"
+      ? (participants[0] as Record<string, unknown>)
+      : {};
+  const url =
+    asTrimmedString(data.url) ||
+    asTrimmedString(data.profileUrl) ||
+    asTrimmedString(profile.url);
+  const usernameFromUrl = url.match(/instagram\.com\/([^/?#]+)/i)?.[1] ?? "";
+  const username = (
+    asTrimmedString(data.participantUsername) ||
+    asTrimmedString(data.username) ||
+    asTrimmedString(profile.username) ||
+    asTrimmedString(firstParticipant.username) ||
+    usernameFromUrl
+  ).replace(/^@/, "");
+  const name =
+    asTrimmedString(data.participantName) ||
+    asTrimmedString(data.name) ||
+    asTrimmedString(firstParticipant.name);
+  const participantId =
+    asTrimmedString(data.participantId) || asTrimmedString(firstParticipant.id);
+  return { name, username, participantId };
+}
+
+export async function fetchZernioInboxContact(opts: {
+  accountId: string;
+  conversationId: string;
+}): Promise<ZernioInboxContact | null> {
+  const qs = new URLSearchParams({ accountId: opts.accountId });
+  try {
+    const body = await zernio<unknown>(
+      `/inbox/conversations/${encodeURIComponent(opts.conversationId)}?${qs.toString()}`,
+    );
+    const contact = parseZernioInboxContact(body);
+    if (!contact.name && !contact.username && !contact.participantId) return null;
+    return contact;
+  } catch {
+    return null;
+  }
+}
 
 export function parseZernioMessageReceived(payload: unknown): ZernioInbound | null {
   if (!payload || typeof payload !== "object") return null;
@@ -212,29 +286,35 @@ export function parseZernioMessageReceived(payload: unknown): ZernioInbound | nu
   const account = (root.account as Record<string, unknown> | undefined) ?? {};
   const sender = (message.sender as Record<string, unknown> | undefined) ?? {};
   const conversation = (root.conversation as Record<string, unknown> | undefined) ?? {};
+  const senderUsername = (
+    asTrimmedString(sender.username) || asTrimmedString(conversation.participantUsername)
+  ).replace(/^@/, "");
+  const senderName =
+    asTrimmedString(sender.name) || asTrimmedString(conversation.participantName);
   const from =
-    (typeof sender.phoneNumber === "string" && sender.phoneNumber) ||
-    (typeof sender.id === "string" && sender.id) ||
-    "";
-  const text = typeof message.text === "string" ? message.text : "";
+    asTrimmedString(sender.phoneNumber) ||
+    asTrimmedString(sender.id) ||
+    asTrimmedString(sender._id) ||
+    senderUsername;
   const conversationId =
-    (typeof message.conversationId === "string" && message.conversationId) ||
-    (typeof conversation.id === "string" && conversation.id) ||
-    "";
-  const accountId = typeof account.id === "string" ? account.id : "";
+    asTrimmedString(message.conversationId) || asTrimmedString(conversation.id);
+  const accountId = asTrimmedString(account.id);
   const platformMessageId =
-    (typeof message.platformMessageId === "string" && message.platformMessageId) ||
-    (typeof message.id === "string" && message.id) ||
-    (typeof root.id === "string" && root.id) ||
-    "";
+    asTrimmedString(message.platformMessageId) ||
+    asTrimmedString(message.id) ||
+    asTrimmedString(root.id);
+  const platform =
+    asTrimmedString(message.platform) || asTrimmedString(account.platform) || undefined;
   if (!from || !platformMessageId || !conversationId) return null;
   return {
-    eventId: typeof root.id === "string" ? root.id : platformMessageId,
+    eventId: asTrimmedString(root.id) || platformMessageId,
     platformMessageId,
     accountId,
     conversationId,
     from,
-    text,
-    platform: typeof message.platform === "string" ? message.platform : undefined,
+    text: typeof message.text === "string" ? message.text : "",
+    platform,
+    senderName: senderName || undefined,
+    senderUsername: senderUsername || undefined,
   };
 }

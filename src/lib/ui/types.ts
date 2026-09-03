@@ -16,7 +16,7 @@ export type UiCopy = {
     ops: string;
     admin: string;
   };
-  langToggle: { he: string; en: string };
+  langToggle: { he: string; en: string; uiLanguage: string };
   actingAs: string;
   stopActing: string;
   page: {
@@ -27,6 +27,7 @@ export type UiCopy = {
     setupTitle: string;
     setupBlurb: string;
     chatTitle: string;
+    chatBlurb: string;
     leadsTitle: string;
     inboxTitle: string;
     channelsTitle: string;
@@ -64,7 +65,10 @@ export type UiCopy = {
     allConnections: string;
     whatsAppPrimary: string;
     connectedSuccess: string;
+    instagramConnectedSuccess: string;
     notConnectedHint: string;
+    identity: string;
+    actions: string;
   };
   demo: {
     leadProfile: string;
@@ -74,6 +78,7 @@ export type UiCopy = {
     activeNow: string;
     noLeadSelected: string;
     contactInfo: string;
+    banner: string;
   };
   home: {
     quickSetup: string;
@@ -89,6 +94,10 @@ export type UiCopy = {
     stepChat: string;
     stepLeads: string;
     stepInbox: string;
+    ctaInbox: string;
+    ctaConnect: string;
+    whatsappOk: string;
+    whatsappOff: string;
   };
   common: {
     save: string;
@@ -114,8 +123,11 @@ export type UiCopy = {
     comingSoon: string;
     connectWhatsApp: string;
     reconnectWhatsApp: string;
+    connectInstagram: string;
+    reconnectInstagram: string;
     instagram: string;
     whatsapp: string;
+    instagramProfile: string;
     zernioMissing: string;
     connectedNumber: string;
     accountId: string;
@@ -149,6 +161,11 @@ export type UiCopy = {
     email: string;
     version: string;
     menu: string;
+    search: string;
+    all: string;
+    live: string;
+    lastActive: string;
+    staff: string;
   };
   status: Record<LeadStatusId, string>;
   roles: {
@@ -197,6 +214,8 @@ export type UiCopy = {
     catalogLegend: string;
     collectLegend: string;
     collectHint: string;
+    filledFields: string;
+    insertToken: string;
   };
   catalog: Record<CatalogUiId, { title: string; blurb: string }>;
   chatLanguage: Record<"multi" | "en" | "he", { title: string; blurb: string }>;
@@ -213,6 +232,7 @@ export type UiCopy = {
     generalTask: string;
     openChat: string;
     reason: string;
+    reasons: Record<string, string>;
   };
   meeting: {
     approve: string;

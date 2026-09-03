@@ -1,4 +1,4 @@
-/** Build the public origin for redirects behind Cloudflare / reverse proxies. */
+/** Build the public origin for redirects behind nginx / reverse proxies. */
 export function requestOrigin(req: Request): string {
   const forwardedHost = req.headers.get("x-forwarded-host");
   const hostHeader = req.headers.get("host");

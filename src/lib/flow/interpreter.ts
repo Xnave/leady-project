@@ -225,7 +225,7 @@ async function runAction(
     return ports.bookMeeting(ctx);
   }
   assertHitlAllowed(ctx, ctx.conversation.flowState);
-  await ports.requestHuman(ctx, "Support could not resolve");
+  await ports.requestHuman(ctx, "support_unresolved");
   return {
     ok: true,
     reply: "A person from the team will take this from here.",

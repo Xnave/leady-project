@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
-import { bindZernioWhatsApp } from "@/lib/channels/zernio-connect";
+import { bindZernioChannel } from "@/lib/channels/zernio-connect";
 import { appOrigin } from "@/lib/request-url";
 
 export async function GET(req: Request) {
@@ -10,6 +10,8 @@ export async function GET(req: Request) {
   const profileId = url.searchParams.get("profileId") ?? "";
   const accountId = url.searchParams.get("accountId") ?? "";
   const username = url.searchParams.get("username") ?? "";
+  const connected = url.searchParams.get("connected") ?? "whatsapp";
+  const provider = connected === "instagram" ? "instagram" : "whatsapp";
   const appUrl = appOrigin();
   const fail = (msg: string) =>
     NextResponse.redirect(`${appUrl}/channels?error=${encodeURIComponent(msg)}`);
@@ -20,15 +22,17 @@ export async function GET(req: Request) {
     return fail("profile_mismatch");
   }
   try {
-    await bindZernioWhatsApp({
+    await bindZernioChannel({
       tenantId,
       profileId,
       accountId,
-      phone: username,
+      identity: username,
+      provider,
     });
   } catch (err) {
     console.error("zernio callback bind failed", err);
     return fail("bind_failed");
   }
-  return NextResponse.redirect(`${appUrl}/channels?connected=1`);
+  const flag = provider === "instagram" ? "instagram" : "1";
+  return NextResponse.redirect(`${appUrl}/channels?connected=${flag}`);
 }

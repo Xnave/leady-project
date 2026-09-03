@@ -18,8 +18,8 @@ export function DeleteDemoLead({
     if (res.ok) router.refresh();
   }
   return (
-    <button type="button" className="btn-ghost" onClick={() => void onClick()}>
-      {label}
+    <button type="button" className="btn-ghost" onClick={() => void onClick()} aria-label={label} title={label}>
+      ×
     </button>
   );
 }

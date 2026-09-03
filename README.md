@@ -36,3 +36,24 @@ Outbound replies use the Zernio inbox API once a WhatsApp conversation id is sto
 Inngest is only required for delayed nudges (`npx inngest-cli@latest dev`).
 
 `npm test` covers flow validation and the interpreter.
+
+### Public HTTPS (Zernio / any device) — ngrok
+
+```bash
+pnpm dev      # terminal 1
+pnpm proxy    # terminal 2 — ngrok tunnel, prints NEXT_PUBLIC_APP_URL banner
+```
+
+1. Install ngrok: `brew install ngrok/ngrok/ngrok`
+2. Add `NGROK_AUTHTOKEN=…` to `.env` ([dashboard](https://dashboard.ngrok.com/get-started/your-authtoken))
+3. Copy the `https://…` URL from the banner into `NEXT_PUBLIC_APP_URL`, restart `pnpm dev`
+4. Open `/admin` or `/channels` from any device
+
+For a **stable URL** across restarts, set `NGROK_DOMAIN=your-name.ngrok.app` (reserved domain on a paid ngrok plan).
+
+```bash
+pnpm proxy:stop
+pnpm proxy:status
+```
+
+Production on a VPS with your own domain: see `nginx/leady-ssl.example.conf`.

@@ -32,6 +32,7 @@ export {
   convoStatusLabel,
   restartPolicyLabel,
   actionLabel,
+  hitlReasonLabel,
 } from "./labels";
 
 export function roleLabel(ui: UiCopy, role: string): string {

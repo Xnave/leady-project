@@ -3,7 +3,15 @@ import { persistInboundIfNew } from "@/lib/conversations";
 import { verifyZernioSignature } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { enqueueAgentTurn } from "@/lib/flow/run-turn";
-import { parseZernioMessageReceived, zernioWebhookSecret } from "@/lib/zernio";
+import {
+  contactDisplayName,
+  instagramIdentityFields,
+} from "@/lib/leads";
+import {
+  fetchZernioInboxContact,
+  parseZernioMessageReceived,
+  zernioWebhookSecret,
+} from "@/lib/zernio";
 
 export async function POST(req: Request) {
   const raw = await req.text();
@@ -36,6 +44,22 @@ export async function POST(req: Request) {
   });
   if (!channel) return new Response("unknown channel", { status: 404 });
 
+  let senderName = inbound.senderName;
+  let senderUsername = inbound.senderUsername;
+  const wantsIdentity =
+    channel.provider === "instagram" || inbound.platform === "instagram";
+  if (wantsIdentity && (!senderName || !senderUsername)) {
+    const accountId = channel.providerExternalId || inbound.accountId;
+    if (accountId) {
+      const contact = await fetchZernioInboxContact({
+        accountId,
+        conversationId: inbound.conversationId,
+      });
+      senderName = senderName || contact?.name;
+      senderUsername = senderUsername || contact?.username;
+    }
+  }
+
   const inserted = await persistInboundIfNew({
     tenantId: channel.tenantId,
     channelId: channel.id,
@@ -43,7 +67,15 @@ export async function POST(req: Request) {
     providerMessageId: inbound.platformMessageId,
     from: inbound.from,
     text: inbound.text,
-    extraFields: { zernioConversationId: inbound.conversationId },
+    displayName: contactDisplayName({
+      name: senderName,
+      username: senderUsername,
+      fallback: inbound.from,
+    }),
+    extraFields: {
+      zernioConversationId: inbound.conversationId,
+      ...instagramIdentityFields(senderName, senderUsername),
+    },
   });
   if (!inserted) return new Response("ok", { status: 200 });
 

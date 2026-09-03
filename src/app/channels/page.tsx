@@ -1,4 +1,4 @@
-import { ConnectWhatsAppButton } from "@/components/ConnectWhatsAppButton";
+import { ConnectChannelButton } from "@/components/ConnectChannelButton";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
 import { getUiLang } from "@/lib/cookies";
@@ -7,6 +7,16 @@ import { requireTenantId } from "@/lib/tenant";
 import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
+
+function isLiveChannel(ch: {
+  providerAccountId: string;
+  providerExternalId: string | null;
+}) {
+  return (
+    !ch.providerAccountId.startsWith("demo-") &&
+    !String(ch.providerExternalId ?? "").startsWith("local-")
+  );
+}
 
 export default async function ChannelsPage({
   searchParams,
@@ -22,52 +32,36 @@ export default async function ChannelsPage({
     include: { agent: true },
   });
   const ready = zernioConfigured();
-  const liveWa = channels.find(
-    (ch) =>
-      ch.provider === "whatsapp" &&
-      !ch.providerAccountId.startsWith("demo-") &&
-      !String(ch.providerExternalId ?? "").startsWith("local-"),
-  );
-  const isConnected = Boolean(liveWa);
+  const liveWa = channels.find((ch) => ch.provider === "whatsapp" && isLiveChannel(ch));
+  const liveIg = channels.find((ch) => ch.provider === "instagram" && isLiveChannel(ch));
+
+  const rows = [
+    {
+      provider: "whatsapp" as const,
+      label: ui.common.whatsapp,
+      live: liveWa,
+      connectLabel: liveWa ? ui.common.reconnectWhatsApp : ui.common.connectWhatsApp,
+    },
+    {
+      provider: "instagram" as const,
+      label: ui.common.instagram,
+      live: liveIg,
+      connectLabel: liveIg ? ui.common.reconnectInstagram : ui.common.connectInstagram,
+    },
+  ];
 
   return (
     <div>
       <PageHeader title={ui.page.channelsTitle} />
-      {connected ? (
+      {connected === "instagram" ? (
+        <div className="status-banner ok">{ui.channels.instagramConnectedSuccess}</div>
+      ) : connected ? (
         <div className="status-banner ok">{ui.channels.connectedSuccess}</div>
       ) : null}
       {error ? <div className="status-banner warn">{error}</div> : null}
+      {!ready ? <p className="muted">{ui.common.zernioMissing}</p> : null}
 
-      <div className="channels-hero">
-        <div className="card stack">
-          <div className="channel-row">
-            <h2>{ui.channels.whatsAppPrimary}</h2>
-            <span className={`badge${isConnected ? "" : " badge-warn"}`}>
-              {isConnected ? ui.channels.statusConnected : ui.channels.statusDisconnected}
-            </span>
-          </div>
-          {ready ? (
-            <>
-              {liveWa ? (
-                <p>
-                  {ui.common.connectedNumber}: <strong>{liveWa.providerAccountId}</strong>
-                  <br />
-                  <span className="muted">
-                    {ui.common.accountId}: {liveWa.providerExternalId}
-                  </span>
-                </p>
-              ) : (
-                <p className="muted">{ui.channels.notConnectedHint}</p>
-              )}
-              <ConnectWhatsAppButton
-                label={liveWa ? ui.common.reconnectWhatsApp : ui.common.connectWhatsApp}
-                errorLabel={ui.errors.connectFailed}
-              />
-            </>
-          ) : (
-            <p className="muted">{ui.common.zernioMissing}</p>
-          )}
-        </div>
+      {!liveWa && ready ? (
         <div className="card">
           <h2>{ui.channels.connectStepsTitle}</h2>
           <ol className="connect-steps">
@@ -76,36 +70,46 @@ export default async function ChannelsPage({
             <li>{ui.channels.stepLive}</li>
           </ol>
         </div>
-      </div>
-
-      <div className="card stack">
-        <h2>{ui.common.instagram}</h2>
-        <p className="muted">{ui.common.comingSoon}</p>
-        <button type="button" disabled>
-          {ui.common.comingSoon}
-        </button>
-      </div>
-
-      {channels.length > 0 ? (
-        <div className="card">
-          <h2>{ui.channels.allConnections}</h2>
-          {channels.map((ch) => (
-            <div key={ch.id} className="channel-row stage-node">
-              <div>
-                <strong>{ch.provider === "instagram" ? ui.common.instagram : ui.common.whatsapp}</strong>
-                {" · "}
-                {ch.providerAccountId}
-                <p className="muted">
-                  {ch.agent.name} · {ch.enabled ? ui.common.on : ui.common.off}
-                </p>
-              </div>
-              <span className={`badge${ch.enabled ? "" : " badge-demo"}`}>
-                {ch.enabled ? ui.common.on : ui.common.off}
-              </span>
-            </div>
-          ))}
-        </div>
       ) : null}
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{ui.common.channel}</th>
+              <th>{ui.channels.identity}</th>
+              <th>{ui.common.status}</th>
+              <th>{ui.common.flow}</th>
+              <th>{ui.channels.actions}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.provider}>
+                <td>{row.label}</td>
+                <td>{row.live?.providerAccountId ?? ui.common.empty}</td>
+                <td>
+                  <span className={`badge${row.live?.enabled ? "" : " badge-warn"}`}>
+                    {row.live?.enabled
+                      ? ui.channels.statusConnected
+                      : ui.channels.statusDisconnected}
+                  </span>
+                </td>
+                <td className="muted">{row.live?.agent.name ?? ui.common.empty}</td>
+                <td className="table-actions">
+                  {ready ? (
+                    <ConnectChannelButton
+                      provider={row.provider}
+                      label={row.connectLabel}
+                      errorLabel={ui.errors.connectFailed}
+                    />
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

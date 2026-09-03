@@ -27,3 +27,7 @@ export function restartPolicyLabel(ui: UiCopy, policy: string): string {
 export function actionLabel(ui: UiCopy, action: string): string {
   return lookupLabel(ui.actions, action);
 }
+
+export function hitlReasonLabel(ui: UiCopy, reason: string): string {
+  return ui.inbox.reasons[reason] ?? reason;
+}
