@@ -12,9 +12,9 @@ async function main() {
     update: {},
     create: {
       clerkOrgId: "dev-org",
-      name: "Demo Kitchen Co",
+      name: "מטבחי דמו בע״מ",
       phone: "",
-      intro: "We design and install kitchens.",
+      intro: "אנחנו מתכננים ומתקינים מטבחים.",
       chatLanguage: "multi",
     },
   });
@@ -23,7 +23,7 @@ async function main() {
   const inboxHitl = hitlForCatalog("inbox");
   const systemPrompt = buildAgentSystemPrompt(
     tenant.name,
-    tenant.intro || "We design and install kitchens.",
+    tenant.intro || "אנחנו מתכננים ומתקינים מטבחים.",
     tenant.phone,
     isChatLanguage(tenant.chatLanguage) ? tenant.chatLanguage : "multi",
   );
@@ -32,12 +32,12 @@ async function main() {
     await prisma.agent.update({
       where: { id: existing.id },
       data: {
-        name: "Inbox agent",
+        name: "סוכן תיבה",
         catalogId: "inbox",
         systemPrompt,
         knowledgeText:
           existing.knowledgeText ||
-          "Filters reset by holding the side button for 5 seconds. Warranty is 2 years.",
+          "איפוס מסננים: לחיצה ארוכה על הכפתור הצדדי במשך 5 שניות. האחריות היא לשנתיים.",
         flow: inboxFlow,
         leadSchema: defaultLeadSchema,
         hitlPolicy: inboxHitl,
@@ -47,11 +47,11 @@ async function main() {
     await prisma.agent.create({
       data: {
         tenantId: tenant.id,
-        name: "Inbox agent",
+        name: "סוכן תיבה",
         catalogId: "inbox",
         systemPrompt,
         knowledgeText:
-          "Filters reset by holding the side button for 5 seconds. Warranty is 2 years.",
+          "איפוס מסננים: לחיצה ארוכה על הכפתור הצדדי במשך 5 שניות. האחריות היא לשנתיים.",
         flow: inboxFlow,
         leadSchema: defaultLeadSchema,
         hitlPolicy: inboxHitl,

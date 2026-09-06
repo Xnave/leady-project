@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChannelBadge } from "@/components/ChannelBadge";
 import { PageHeader } from "@/components/PageHeader";
+import { FormSelect } from "@/components/Select";
 import { Pagination } from "@/components/Pagination";
 import { DeleteDemoLead } from "@/components/DeleteDemoLead";
 import { LeadStatusSelect } from "@/components/LeadStatusSelect";
@@ -88,11 +89,16 @@ export default async function LeadsPage({
         </label>
         <label>
           {ui.common.demo}
-          <select name="kind" defaultValue={filterKind}>
-            <option value="all">{ui.common.all}</option>
-            <option value="live">{ui.common.live}</option>
-            <option value="demo">{ui.common.demo}</option>
-          </select>
+          <FormSelect
+            name="kind"
+            defaultValue={filterKind}
+            ariaLabel={ui.common.demo}
+            options={[
+              { value: "all", label: ui.common.all },
+              { value: "live", label: ui.common.live },
+              { value: "demo", label: ui.common.demo },
+            ]}
+          />
         </label>
         <button type="submit" className="btn-secondary">
           {ui.common.search}

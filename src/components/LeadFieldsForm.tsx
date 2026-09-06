@@ -1,3 +1,4 @@
+import { FormSelect } from "@/components/Select";
 import type { LeadFields, LeadSchema } from "@/lib/flow/types";
 import {
   LEAD_STATUSES,
@@ -34,13 +35,12 @@ export function LeadFieldsForm({
       {current !== undefined ? (
         <label>
           {statusLegend ?? ui.common.status}
-          <select name="status" defaultValue={current}>
-            {LEAD_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {statusLabels?.[s] ?? s}
-              </option>
-            ))}
-          </select>
+          <FormSelect
+            name="status"
+            defaultValue={current}
+            ariaLabel={statusLegend ?? ui.common.status}
+            options={LEAD_STATUSES.map((s) => ({ value: s, label: statusLabels?.[s] ?? s }))}
+          />
         </label>
       ) : null}
       {Object.entries(schema.fields).map(([key, spec]) => {

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { Select } from "@/components/Select";
 import type { LeadStatusId } from "@/lib/ui";
 
 export function LeadStatusSelect({
@@ -51,21 +52,16 @@ export function LeadStatusSelect({
 
   return (
     <span className="status-select-wrap">
-      <select
-        className={`status-select${failed ? " has-error" : ""}`}
+      <Select
+        className="select-inline"
         value={shown}
         disabled={saving}
-        aria-busy={saving}
-        aria-invalid={failed || undefined}
-        aria-label={ariaLabel}
-        onChange={(e) => void onChange(e.target.value as LeadStatusId)}
-      >
-        {statuses.map((id) => (
-          <option key={id} value={id}>
-            {labels[id]}
-          </option>
-        ))}
-      </select>
+        busy={saving}
+        invalid={failed}
+        ariaLabel={ariaLabel}
+        options={statuses.map((id) => ({ value: id, label: labels[id] }))}
+        onChange={(next) => void onChange(next as LeadStatusId)}
+      />
       {failed && failedLabel ? (
         <span className="status-select-error" role="alert">
           {failedLabel}

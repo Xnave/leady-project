@@ -1,4 +1,5 @@
 import { FlowMap } from "@/components/FlowMap";
+import { FormSelect } from "@/components/Select";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
 import type { FlowDefinition, HitlPolicy } from "@/lib/flow/types";
@@ -87,14 +88,15 @@ export default async function OpsPage() {
             </div>
             <label>
               {ui.ops.fallbackStageLabel}
-              <select name="fallbackStage" defaultValue={flow.restartPolicy.fallbackStage ?? ""}>
-                <option value="">{ui.ops.noneOption}</option>
-                {stageIds.map((id) => (
-                  <option key={id} value={id}>
-                    {stageLabel(ui, id)}
-                  </option>
-                ))}
-              </select>
+              <FormSelect
+                name="fallbackStage"
+                defaultValue={flow.restartPolicy.fallbackStage ?? ""}
+                ariaLabel={ui.ops.fallbackStageLabel}
+                options={[
+                  { value: "", label: ui.ops.noneOption },
+                  ...stageIds.map((id) => ({ value: id, label: stageLabel(ui, id) })),
+                ]}
+              />
             </label>
           </fieldset>
           <fieldset>

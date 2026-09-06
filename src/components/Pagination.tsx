@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FormSelect } from "@/components/Select";
 import { fillUi, type UiCopy } from "@/lib/ui";
 
 type Props = {
@@ -62,13 +63,13 @@ export function Pagination({ page, pageSize, total, basePath, ui, extraParams }:
       <form method="get" action={basePath} className="pagination-size">
         <label>
           {ui.pagination.perPage}
-          <select name="size" defaultValue={String(pageSize)}>
-            {[10, 20, 50].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
+          <FormSelect
+            name="size"
+            defaultValue={String(pageSize)}
+            ariaLabel={ui.pagination.perPage}
+            className="select-inline"
+            options={[10, 20, 50].map((n) => ({ value: String(n), label: String(n) }))}
+          />
         </label>
         <input type="hidden" name="page" value="1" />
         <button type="submit" className="btn-ghost">
