@@ -6,6 +6,7 @@ import { getUiLang } from "@/lib/cookies";
 import { requireTenantId } from "@/lib/tenant";
 import { intentLabel, stageLabel } from "@/lib/ui/labels";
 import { uiCopy } from "@/lib/ui";
+import { isCatalogId } from "@/lib/flow/catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,10 @@ export default async function OpsPage() {
   const flow = agent.flow as FlowDefinition;
   const hitl = agent.hitlPolicy as HitlPolicy;
   const stageIds = Object.keys(flow.stages);
+  // The stored agent name is free text (the seed writes an English one), so the
+  // header uses the localized catalog title instead of leaking it into a Hebrew UI.
+  const catalogId = agent.catalogId && isCatalogId(agent.catalogId) ? agent.catalogId : "inbox";
+  const catalogTitle = ui.catalog[catalogId]?.title ?? catalogId;
 
   const restartOptions = [
     ["ignore", ui.ops.ignoreMessages],
@@ -28,8 +33,8 @@ export default async function OpsPage() {
   return (
     <div>
       <PageHeader
-        title={`${ui.page.opsTitle} · ${agent.name}`}
-        blurb={`${ui.common.version} ${agent.flowVersion} · ${ui.ops.ownersNeverSee}`}
+        title={ui.page.opsTitle}
+        blurb={`${catalogTitle} · ${ui.common.version} ${agent.flowVersion} · ${ui.ops.ownersNeverSee}`}
       />
       <div className="ops-layout">
         <form action="/api/ops/agent" method="post" className="card stack">

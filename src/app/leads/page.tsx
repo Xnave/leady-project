@@ -9,7 +9,7 @@ import { getUiLang } from "@/lib/cookies";
 import { instagramProfileUrl, isDemoLead, leadDisplayName, leadInstagramUsername } from "@/lib/leads";
 import { requireTenantId } from "@/lib/tenant";
 import { intentLabel, stageLabel } from "@/lib/ui/labels";
-import { normalizeLeadStatus, uiCopy } from "@/lib/ui";
+import { meetingKindLabel, normalizeLeadStatus, uiCopy } from "@/lib/ui";
 import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -108,7 +108,7 @@ export default async function LeadsPage({
                 {" · "}
                 <span className="badge">{ui.common.pending}</span>
                 {" · "}
-                {m.kind} · {m.slotText}
+                {meetingKindLabel(ui, m.kind)} · {m.slotText}
               </li>
             ))}
           </ul>
@@ -169,6 +169,7 @@ export default async function LeadsPage({
                       value={normalizeLeadStatus(lead.status)}
                       labels={ui.status}
                       ariaLabel={ui.common.status}
+                      failedLabel={ui.common.saveFailed}
                     />
                   </td>
                   <td>{stage}</td>

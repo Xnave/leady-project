@@ -13,6 +13,7 @@ export const en: UiCopy = {
     admin: "Admin",
   },
   langToggle: { he: "עברית", en: "English", uiLanguage: "UI language" },
+  themeToggle: { appearance: "Appearance", system: "Match system", light: "Light", dark: "Dark" },
   actingAs: "Acting as {name}",
   stopActing: "Stop acting as tenant",
   page: {
@@ -116,6 +117,7 @@ export const en: UiCopy = {
     live: "Live",
     lastActive: "Last active",
     staff: "Staff",
+    saveFailed: "Save failed",
   },
   status: {
     new: "New",
@@ -227,6 +229,7 @@ export const en: UiCopy = {
     reason: "Reason",
     reasons: {
       support_unresolved: "The agent could not resolve this and asked for a human.",
+      escalation_requested: "The customer asked to speak with a person.",
     },
   },
   meeting: {
@@ -256,6 +259,19 @@ export const en: UiCopy = {
     currentStage: "Current stage",
     progress: "Flow progress",
   },
+  leadFields: {
+    name: "Name",
+    need: "Need",
+    email: "Email",
+    phone: "Phone",
+    budget: "Budget",
+    intent: "Intent",
+    booking: "Booking",
+    service: "Service",
+    visit_kind: "Visit kind",
+    time_preference: "Preferred time",
+  },
+  meetingKinds: { visit: "Visit", showroom: "Showroom", online: "Online", phone: "Phone call" },
   stages: {
     talk: "Conversation",
     escalate: "Escalate to human",

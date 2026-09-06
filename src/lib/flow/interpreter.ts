@@ -172,7 +172,7 @@ export async function interpretTurn(
 
       if (out.escalate) {
         assertHitlAllowed(ctx, stageId);
-        await ports.requestHuman(ctx, "Customer asked for a person");
+        await ports.requestHuman(ctx, "escalation_requested");
         await ports.sendAndSave(ctx, out.reply);
         ports.log("exit", { stageId: "waiting_human", stageType: "talk", escalate: true });
         return { stage: "waiting_human", action: "request_human", ok: true };
