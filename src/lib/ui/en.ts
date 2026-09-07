@@ -364,6 +364,7 @@ export const en: UiCopy = {
     emptyBody: "Widen the dates, or clear the filters to see everything.",
     emptyAction: "Show all conversations",
     openConversation: "Open conversation with {name}",
+    loading: "Loading conversations",
   },
   takeover: {
     legend: "Who answers",

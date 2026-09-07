@@ -364,6 +364,7 @@ export const he: UiCopy = {
     emptyBody: "הרחיבו את הטווח או נקו את הסינון כדי לראות הכל.",
     emptyAction: "הצגת כל השיחות",
     openConversation: "פתיחת השיחה עם {name}",
+    loading: "טוען שיחות",
   },
   takeover: {
     legend: "מי עונה",

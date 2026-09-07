@@ -288,6 +288,7 @@ export type UiCopy = {
     emptyBody: string;
     emptyAction: string;
     openConversation: string;
+    loading: string;
   };
   takeover: {
     legend: string;

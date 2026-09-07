@@ -2512,11 +2512,17 @@ td .muted { font-size: var(--fs-xs); }
   text-overflow: ellipsis;
 }
 .conv-open:hover { text-decoration: none; color: var(--accent); }
+/* The focus indicator has to ring the whole row, because the whole row is the
+   target. Outlining the stretched overlay does that at the app's standard 2px
+   solid accent — an inset glow at 22% alpha would not reach 3:1 against the
+   row. */
 .conv-open:focus-visible { outline: none; }
-.conv-row:has(.conv-open:focus-visible) {
-  background: var(--card-hover);
-  box-shadow: inset var(--ring);
+.conv-open:focus-visible::after {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: -2px;
+  border-radius: var(--radius-xs);
 }
+.conv-row:has(.conv-open:focus-visible) { background: var(--card-hover); }
 
 .conv-handle { font-size: var(--fs-xs); color: var(--muted); }
 .conv-time {
@@ -2589,8 +2595,69 @@ td .muted { font-size: var(--fs-xs); }
     row-gap: var(--space-2);
   }
   .conv-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  /* The skeleton has to fold exactly like the row it stands in for, or the
+     list grows taller the moment real data arrives. */
+  .skeleton-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: var(--space-2);
+  }
+  .skeleton-control { grid-column: 1 / -1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .conv-row, .range-tab { transition: none; }
 }
+
+/* Screen-reader-only text: used to name a region whose meaning is carried by
+   shape alone, such as the loading skeleton. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Loading skeleton for the conversation ledger. Shapes match the real rows so
+   the list does not jump when the data arrives. */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-sunken) 25%,
+    var(--line) 37%,
+    var(--bg-sunken) 63%
+  );
+  background-size: 400% 100%;
+  border-radius: var(--radius-xs);
+  animation: skeleton-sheen 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-sheen {
+  from { background-position: 100% 50%; }
+  to { background-position: 0 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; background: var(--bg-sunken); }
+}
+.skeleton-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--line);
+  border-inline-start: 3px solid var(--line);
+}
+.skeleton-row:first-child { border-top: 0; }
+.skeleton-avatar { width: 40px; height: 40px; border-radius: var(--radius-pill); }
+.skeleton-line { height: 10px; }
+.skeleton-line + .skeleton-line { margin-top: 8px; }
+.skeleton-name { width: 34%; }
+.skeleton-preview { width: 72%; }
+.skeleton-meta { width: 46%; height: 8px; }
+.skeleton-control { width: 128px; height: 36px; border-radius: var(--radius-sm); }
+.skeleton-pulse { height: 44px; margin: var(--space-3) var(--space-4); }
+.skeleton-day { width: 140px; height: 12px; margin-bottom: var(--space-2); }
