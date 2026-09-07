@@ -2263,3 +2263,63 @@ td .muted { font-size: var(--fs-xs); }
   .card { break-inside: avoid; box-shadow: none; }
   .thread { background: none; }
 }
+
+/* Human takeover: a segmented control for who is answering this conversation,
+   plus the owner's own reply box. Same pill shape as the language switcher, but
+   full width because the two labels are sentences rather than tokens. */
+.takeover-switch {
+  display: flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-pill);
+}
+.takeover-switch button {
+  flex: 1;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: var(--radius-pill);
+  padding: 6px 12px;
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  min-height: 34px;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.takeover-switch button:hover:not(:disabled) { color: var(--text); }
+.takeover-switch button.active {
+  background: var(--card);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+.takeover-switch button:disabled { cursor: default; }
+.takeover-error { color: var(--danger); font-weight: 500; }
+
+/* Dashboard metric grid. Denser than .work-strip because these are read-only
+   numbers rather than the primary navigation targets. */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-2);
+}
+.metric {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  padding: var(--space-2) var(--space-3);
+}
+.metric-value { display: block; font-size: var(--fs-xl); font-weight: 700; line-height: 1.1; }
+.metric-label {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.metric.attention .metric-value { color: var(--warning); }
+.attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.attention-list li { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }

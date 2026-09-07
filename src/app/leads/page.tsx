@@ -8,10 +8,10 @@ import { LeadStatusSelect } from "@/components/LeadStatusSelect";
 import { prisma } from "@/lib/db";
 import { getUiLang } from "@/lib/cookies";
 import { instagramProfileUrl, isDemoLead, leadDisplayName, leadInstagramUsername } from "@/lib/leads";
+import { leadFilterParams, leadWhere, parseLeadFilters } from "@/lib/lead-query";
 import { requireTenantId } from "@/lib/tenant";
 import { intentLabel, stageLabel } from "@/lib/ui/labels";
-import { meetingKindLabel, normalizeLeadStatus, uiCopy } from "@/lib/ui";
-import type { Prisma } from "@prisma/client";
+import { LEAD_STATUSES, meetingKindLabel, normalizeLeadStatus, uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +29,16 @@ function formatWhen(d: Date, lang: string) {
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; size?: string; q?: string; kind?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    size?: string;
+    q?: string;
+    kind?: string;
+    status?: string;
+  }>;
 }) {
-  const { page: pageParam, size: sizeParam, q, kind } = await searchParams;
+  const sp = await searchParams;
+  const { page: pageParam, size: sizeParam } = sp;
   const tenantId = await requireTenantId();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
@@ -39,18 +46,11 @@ export default async function LeadsPage({
     ? Number(sizeParam)
     : 20;
   const page = Math.max(1, Number(pageParam) || 1);
-  const query = q?.trim() ?? "";
-  const filterKind = kind === "demo" || kind === "live" ? kind : "all";
-
-  const where: Prisma.LeadWhereInput = { tenantId };
-  if (query) {
-    where.OR = [
-      { displayName: { contains: query, mode: "insensitive" } },
-      { externalUserId: { contains: query, mode: "insensitive" } },
-    ];
-  }
-  if (filterKind === "demo") where.externalUserId = { startsWith: "demo-" };
-  if (filterKind === "live") where.NOT = { externalUserId: { startsWith: "demo-" } };
+  const filters = parseLeadFilters(sp);
+  const query = filters.q;
+  const filterKind = filters.kind;
+  const where = leadWhere(tenantId, filters);
+  const exportQuery = new URLSearchParams(leadFilterParams(filters)).toString();
 
   const [total, leads, pendingMeetings] = await Promise.all([
     prisma.lead.count({ where }),
@@ -100,9 +100,27 @@ export default async function LeadsPage({
             ]}
           />
         </label>
+        <label>
+          {ui.common.status}
+          <FormSelect
+            name="status"
+            defaultValue={filters.status}
+            ariaLabel={ui.common.status}
+            options={[
+              { value: "all", label: ui.common.anyStatus },
+              ...LEAD_STATUSES.map((id) => ({ value: id, label: ui.status[id] })),
+            ]}
+          />
+        </label>
         <button type="submit" className="btn-secondary">
           {ui.common.search}
         </button>
+        <a
+          className="btn-secondary"
+          href={`/api/leads/export${exportQuery ? `?${exportQuery}` : ""}`}
+        >
+          {ui.common.exportCsv}
+        </a>
       </form>
       {pendingMeetings.length > 0 ? (
         <div className="card">
@@ -214,7 +232,7 @@ export default async function LeadsPage({
           total={total}
           basePath="/leads"
           ui={ui}
-          extraParams={{ ...(query ? { q: query } : {}), ...(filterKind !== "all" ? { kind: filterKind } : {}) }}
+          extraParams={leadFilterParams(filters)}
         />
       ) : null}
       {total === 0 ? <p className="empty-state">{ui.common.noLeads}</p> : null}

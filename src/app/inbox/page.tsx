@@ -3,6 +3,7 @@ import { ChannelBadge } from "@/components/ChannelBadge";
 import { ChatThread } from "@/components/ChatThread";
 import { MeetingDecisionForm } from "@/components/MeetingDecisionForm";
 import { PageHeader } from "@/components/PageHeader";
+import { TakeoverPanel } from "@/components/TakeoverPanel";
 import { prisma } from "@/lib/db";
 import { getUiLang } from "@/lib/cookies";
 import { enrichInstagramLeadIdentity } from "@/lib/conversations";
@@ -160,6 +161,7 @@ function InboxTaskDetail({
         contactName: string | null;
       }>;
       conversations: Array<{
+        status: string;
         messages: Array<{ id: string; role: string; text: string }>;
       }>;
     };
@@ -213,6 +215,12 @@ function InboxTaskDetail({
           labels={threadLabels}
         />
       </div>
+      <TakeoverPanel
+        ui={ui}
+        leadId={task.leadId}
+        paused={task.lead.conversations[0]?.status === "waiting_human"}
+        hasConversation={task.lead.conversations.length > 0}
+      />
       {isBooking ? (
         <MeetingDecisionForm
           meetingId={payload.meetingId!}
