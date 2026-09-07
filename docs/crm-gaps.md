@@ -51,17 +51,46 @@ Now:
 
 Lives in `src/lib/metrics.ts` (`getOwnerMetrics`) — count queries only, no scans.
 
-### 3. Leads list that survives a real book of business
+### 3. `/leads` rebuilt as a conversation dashboard
 
-- Filter by lead status (folding legacy `closed` rows into "lost").
-- Search now covers the captured contact fields (`fields.phone`, `fields.email`,
-  `fields.name`), not just `displayName`/`externalUserId`. An owner searching a
-  phone number does not care which column it lives in.
+The page was a table: eight equal-weight columns, one clickable name link, no
+sense of time. An owner scanning sixty chats needs four things per row — who,
+what was last said, when, and whether it is stuck on them — and a table gives all
+eight the same emphasis.
+
+It is now a **day ledger**:
+
+- **Grouped by day**, newest first, with "Today" / "Yesterday" / a spelled-out
+  date and a per-day count. The time axis is visible without reading a single
+  timestamp.
+- **Date range tabs** — today / 7 days / 30 days / all — as the page's primary
+  axis, styled as navigation rather than as one more filter pill.
+- **A pulse strip** scoped to the same filters: in view, waiting on you, visits to
+  approve, visits approved. The numbers and the list can never disagree.
+- **Rows carry a state rail** on the inline-start edge: amber when the
+  conversation is paused for the owner or has an unapproved visit, green when
+  active, grey when the lead is decided or the conversation is closed. Sixty rows
+  become a stripe you can read at a glance.
+- **The whole row opens the conversation**, via a stretched link, with the status
+  select layered above so it stays independently clickable. (The link itself must
+  not clip — an `overflow: hidden` on it clips its own overlay and silently kills
+  the row click.)
+- Each row shows the last message with its speaker, the captured phone, the
+  channel, and the date of the first message. A stage chip appears only when the
+  stage is something other than `talk`, which is where nearly every live
+  conversation sits.
+- Filter by lead status (folding legacy `closed` rows into "lost"); search now
+  covers the captured contact fields (`fields.phone`, `fields.email`,
+  `fields.name`), not just `displayName`/`externalUserId`.
 - **Export CSV** honouring the active filters (`GET /api/leads/export`), UTF-8 BOM
-  so Excel opens Hebrew names correctly. This is the escape hatch that makes the
-  CRM safe to adopt — the owner's list is never trapped.
-- Filter/search/status round-trip through pagination via `src/lib/lead-query.ts`,
-  shared by the page and the export so they can never disagree.
+  so Excel opens Hebrew names correctly. The owner's list is never trapped.
+- Filters round-trip through pagination via `src/lib/lead-query.ts`, shared by the
+  page and the export so they can never disagree. Day grouping, previews, initials
+  and row state live in `src/lib/conversation-list.ts` under unit test.
+
+For the date axis to be honest, `lead.updatedAt` had to mean "last activity", so
+`persistInboundIfNew` and `sendHumanReply` now touch the lead row. A replayed
+webhook does not — it fails the `providerMessageId` uniqueness check first.
 
 ### 4. `npm run lint` (incidental)
 
@@ -92,18 +121,19 @@ same event is never sent twice. Email as the fallback when no WhatsApp is connec
 
 **Effort.** Medium. The send path exists; the policy and dedupe are the work.
 
-### P2 — No conversation list
+### P2 — Read the thread without leaving the list
 
-**Gap.** `/inbox` lists *open HITL tasks*. `/leads` lists *people*. There is no
-"all my chats, newest first" — the single most familiar view in any WhatsApp tool,
-and the one an owner reaches for when they want to skim what the bot has been saying.
+**Partly shipped.** `/leads` is now the conversation list described above, so the
+"all my chats, newest first" view exists. What is still missing is reading in
+place: every row is a full page navigation, so skimming five conversations costs
+five round trips.
 
-**Shape.** `/chats`: left rail of conversations (avatar, name, last message snippet,
-relative time, unread/attention dot, channel badge), right pane the thread with the
-takeover panel already built. Filters: needs attention / active / all / closed.
+**Shape.** Split the page — list on the inline-start side, the selected thread and
+the takeover panel on the other, with the selection in the URL (`?open=<leadId>`)
+so it stays linkable and server-rendered. On narrow screens the list stays
+full-width and the thread remains its own page.
 
-**Effort.** Medium. Data is all there; it is a page plus a list query with the last
-message per conversation.
+**Effort.** Medium. All the data and both components already exist.
 
 ### P3 — Failures are invisible
 

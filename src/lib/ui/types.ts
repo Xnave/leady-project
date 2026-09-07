@@ -264,6 +264,31 @@ export type UiCopy = {
     intentsLegend: string;
     ownersNeverSee: string;
   };
+  conversations: {
+    title: string;
+    blurb: string;
+    today: string;
+    yesterday: string;
+    noMessages: string;
+    rangeToday: string;
+    range7d: string;
+    range30d: string;
+    rangeAll: string;
+    dayCount: string;
+    dayCountOne: string;
+    typeFilter: string;
+    pulseTotal: string;
+    pulseNeedsYou: string;
+    pulseVisits: string;
+    pulseBooked: string;
+    pausedForYou: string;
+    visitPending: string;
+    openedOn: string;
+    emptyTitle: string;
+    emptyBody: string;
+    emptyAction: string;
+    openConversation: string;
+  };
   takeover: {
     legend: string;
     botOn: string;

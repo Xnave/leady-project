@@ -120,6 +120,14 @@ export async function persistInboundIfNew(opts: {
         providerMessageId: opts.providerMessageId,
       },
     });
+    // Keep `lead.updatedAt` meaning "last activity" — the conversation list
+    // sorts, filters by date, and groups into day headings on this column, so a
+    // silent lead must not float above one that just wrote in. Only genuinely
+    // new messages touch it; a replayed webhook throws P2002 above.
+    await prisma.lead.update({
+      where: { id: lead.id },
+      data: { updatedAt: new Date() },
+    });
     return { conversationId: conversation.id, messageId: message.id, leadId: lead.id };
   } catch (err) {
     //Unique Constraint Violation.

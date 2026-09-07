@@ -2323,3 +2323,274 @@ td .muted { font-size: var(--fs-xs); }
 .metric.attention .metric-value { color: var(--warning); }
 .attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .attention-list li { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+
+/* --------------------------------------------------------------------------
+   Conversations — the day ledger
+
+   Not a table. An owner scanning sixty chats needs four things per row: who,
+   what was last said, when, and whether it is stuck on them. Everything else
+   is secondary, so the row is a WhatsApp-style list item with a state rail on
+   the inline-start edge, and the list is broken by day so the time axis is
+   visible without reading a single timestamp.
+   -------------------------------------------------------------------------- */
+
+.conv-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+/* Range is the page's primary axis, so it reads as navigation (underline),
+   not as one more pill among the filters. */
+.range-tabs {
+  display: flex;
+  gap: var(--space-4);
+  border-bottom: 1px solid var(--line);
+  padding-inline: 2px;
+}
+.range-tab {
+  position: relative;
+  padding: 6px 0 10px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+.range-tab:hover { color: var(--text); text-decoration: none; }
+.range-tab.active { color: var(--accent); }
+.range-tab.active::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--accent-bright);
+  border-radius: 2px;
+}
+
+.conv-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+.conv-filters label { gap: 4px; }
+.conv-field-label { font-size: var(--fs-2xs); color: var(--muted); font-weight: 600; }
+.conv-filters input[type="search"] { min-width: 200px; }
+.conv-filters select,
+.conv-filters .select-trigger { min-width: 140px; }
+
+/* One strip with hairline dividers rather than four identical cards — the
+   numbers are a single reading, not four separate objects. */
+.pulse-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--space-4);
+  overflow: hidden;
+}
+.pulse {
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 1px solid var(--line);
+}
+.pulse:first-child { border-inline-start: 0; }
+.pulse-value {
+  display: block;
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.pulse-label { display: block; margin-top: 2px; font-size: var(--fs-xs); color: var(--muted); }
+.pulse-warn .pulse-value { color: var(--warning); }
+
+.conv-day { margin-bottom: var(--space-5); }
+.conv-day-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-soft);
+}
+.conv-day-name { flex: 0 0 auto; }
+.conv-day-head::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--line);
+}
+.conv-day-count {
+  flex: 0 0 auto;
+  order: 3;
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.conv-list {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.conv-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--line);
+  border-inline-start: 3px solid transparent;
+  transition: background var(--transition-fast);
+}
+.conv-row:first-child { border-top: 0; }
+.conv-row:hover { background: var(--card-hover); }
+.conv-needs_you { border-inline-start-color: var(--warning); }
+.conv-active { border-inline-start-color: var(--accent-bright); }
+.conv-quiet { border-inline-start-color: var(--line-strong); }
+
+.conv-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-pill);
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent-line);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+.conv-needs_you .conv-avatar {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border-color: var(--warning-line);
+}
+.conv-quiet .conv-avatar {
+  background: var(--bg-sunken);
+  color: var(--muted);
+  border-color: var(--line-strong);
+}
+
+.conv-body { min-width: 0; }
+.conv-headline {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* The whole row opens the conversation. The link is the only focusable target
+   for it, stretched across the row; the status control sits above on z-index so
+   it stays independently clickable. */
+.conv-open {
+  min-width: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+}
+/* The overlay is a child box of the link, so the link itself must not clip:
+   the ellipsis lives on the inner span instead. */
+.conv-open::after { content: ""; position: absolute; inset: 0; z-index: 0; }
+.conv-name {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.conv-open:hover { text-decoration: none; color: var(--accent); }
+.conv-open:focus-visible { outline: none; }
+.conv-row:has(.conv-open:focus-visible) {
+  background: var(--card-hover);
+  box-shadow: inset var(--ring);
+}
+
+.conv-handle { font-size: var(--fs-xs); color: var(--muted); }
+.conv-time {
+  margin-inline-start: auto;
+  flex: 0 0 auto;
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.conv-needs_you .conv-time { color: var(--warning); font-weight: 600; }
+
+.conv-preview {
+  margin: 3px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conv-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elevated);
+  color: var(--text-soft);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.chip-warn {
+  border-color: var(--warning-line);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.conv-fact { font-size: var(--fs-2xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Ordered last rather than dimmed — 11px text cannot afford the contrast. */
+.conv-fact-quiet { color: var(--muted); }
+
+.conv-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.conv-actions .select-trigger,
+.conv-actions select { min-width: 128px; }
+
+@media (max-width: 720px) {
+  .conv-toolbar { flex-direction: column; align-items: stretch; }
+  .range-tabs { justify-content: space-between; gap: var(--space-2); }
+  .conv-filters input[type="search"] { min-width: 0; width: 100%; }
+  .conv-search { flex: 1 1 100%; }
+  .pulse-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pulse:nth-child(3) { border-inline-start: 0; }
+  .pulse:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .conv-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: var(--space-2);
+  }
+  .conv-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conv-row, .range-tab { transition: none; }
+}

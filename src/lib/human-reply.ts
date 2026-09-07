@@ -49,11 +49,17 @@ export async function sendHumanReply(opts: {
         ? ctx.lead.fields.zernioConversationId
         : undefined,
   });
-  // Touch the conversation so the leads list sorts by real activity.
-  await prisma.conversation.update({
-    where: { id: conversation.id },
-    data: { updatedAt: new Date() },
-  });
+  // Touch both rows so the conversation list sorts and groups by real activity.
+  await prisma.$transaction([
+    prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { updatedAt: new Date() },
+    }),
+    prisma.lead.update({
+      where: { id: opts.leadId },
+      data: { updatedAt: new Date() },
+    }),
+  ]);
   return { conversationId: conversation.id };
 }
 
