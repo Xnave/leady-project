@@ -7,6 +7,7 @@ import { FlowMap } from "@/components/FlowMap";
 import { LeadFieldsForm } from "@/components/LeadFieldsForm";
 import { LeadProfilePanel } from "@/components/LeadProfilePanel";
 import { MeetingDecisionForm } from "@/components/MeetingDecisionForm";
+import { TakeoverPanel } from "@/components/TakeoverPanel";
 import { prisma } from "@/lib/db";
 import type { FlowDefinition, LeadFields, LeadSchema } from "@/lib/flow/types";
 import { getUiLang } from "@/lib/cookies";
@@ -121,6 +122,12 @@ export default async function LeadDetailPage({
           instagramHandle={igHandle || undefined}
           instagramUrl={instagramProfileUrl(igHandle) || undefined}
         />
+        <TakeoverPanel
+          ui={ui}
+          leadId={lead.id}
+          paused={convo?.status === "waiting_human"}
+          hasConversation={Boolean(convo)}
+        />
         <div className="card">
           <h3>{ui.common.captured}</h3>
           <LeadFieldsForm
@@ -185,12 +192,14 @@ export default async function LeadDetailPage({
               }))}
               labels={threadLabels}
             />
-            <ChatComposer
-              leadId={lead.id}
-              from={lead.externalUserId}
-              disabled={convo.status === "waiting_human"}
-              labels={chatLabels}
-            />
+            {isDemoLead(lead.externalUserId) ? (
+              <ChatComposer
+                leadId={lead.id}
+                from={lead.externalUserId}
+                disabled={convo.status === "waiting_human"}
+                labels={chatLabels}
+              />
+            ) : null}
           </>
         ) : (
           <p className="muted">{ui.common.empty}</p>

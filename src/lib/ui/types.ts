@@ -174,6 +174,9 @@ export type UiCopy = {
     lastActive: string;
     staff: string;
     saveFailed: string;
+    exportCsv: string;
+    anyStatus: string;
+    clearFilters: string;
   };
   status: Record<LeadStatusId, string>;
   roles: {
@@ -260,6 +263,60 @@ export type UiCopy = {
     stagesLegend: string;
     intentsLegend: string;
     ownersNeverSee: string;
+  };
+  conversations: {
+    title: string;
+    blurb: string;
+    today: string;
+    yesterday: string;
+    noMessages: string;
+    rangeToday: string;
+    range7d: string;
+    range30d: string;
+    rangeAll: string;
+    dayCount: string;
+    dayCountOne: string;
+    typeFilter: string;
+    pulseTotal: string;
+    pulseNeedsYou: string;
+    pulseVisits: string;
+    pulseBooked: string;
+    pausedForYou: string;
+    visitPending: string;
+    openedOn: string;
+    emptyTitle: string;
+    emptyBody: string;
+    emptyAction: string;
+    openConversation: string;
+    loading: string;
+  };
+  takeover: {
+    legend: string;
+    botOn: string;
+    botOff: string;
+    pause: string;
+    resume: string;
+    replyPlaceholder: string;
+    replyHint: string;
+    failed: string;
+    noConversation: string;
+    switching: string;
+  };
+  metrics: {
+    legend: string;
+    leadsToday: string;
+    leads7d: string;
+    activeConversations: string;
+    waitingHuman: string;
+    openTasks: string;
+    meetingsPending: string;
+    meetingsApproved7d: string;
+    messages7d: string;
+    autoHandled: string;
+    autoHandledHint: string;
+    noData: string;
+    needsYou: string;
+    allClear: string;
   };
   errors: {
     badSecret: string;
