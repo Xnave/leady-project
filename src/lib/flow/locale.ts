@@ -9,7 +9,7 @@ export const chatLanguageMeta: { id: ChatLanguage; title: string; blurb: string 
   {
     id: "he",
     title: "עברית בלבד · Hebrew only",
-    blurb: "הסוכן תמיד עונה בעברית.",
+    blurb: "הסוכן תמיד עונה בעברית, גם אם הלקוח כותב באנגלית.",
   },
   {
     id: "en",

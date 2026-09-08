@@ -13,6 +13,11 @@ import {
   zernioWebhookSecret,
 } from "@/lib/zernio";
 
+/** Zernio dashboard URL check / browser probe — POST carries events. */
+export async function GET() {
+  return NextResponse.json({ ok: true, endpoint: "zernio" });
+}
+
 export async function POST(req: Request) {
   const raw = await req.text();
   let payload: unknown;
@@ -20,6 +25,12 @@ export async function POST(req: Request) {
     payload = JSON.parse(raw);
   } catch {
     return new Response("invalid json", { status: 400 });
+  }
+
+  const root =
+    payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
+  if (root?.event === "webhook.test") {
+    return NextResponse.json({ ok: true });
   }
 
   const inbound = parseZernioMessageReceived(payload);
@@ -42,7 +53,13 @@ export async function POST(req: Request) {
   const channel = await prisma.channelConnection.findFirst({
     where: { providerExternalId: inbound.accountId, enabled: true },
   });
-  if (!channel) return new Response("unknown channel", { status: 404 });
+  if (!channel) {
+    console.warn("zernio webhook: unknown channel", {
+      accountId: inbound.accountId,
+      platform: inbound.platform,
+    });
+    return new Response("unknown channel", { status: 404 });
+  }
 
   let senderName = inbound.senderName;
   let senderUsername = inbound.senderUsername;

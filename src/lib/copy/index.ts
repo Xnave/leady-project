@@ -33,15 +33,25 @@ export function fillTemplate(template: string, vars: Record<string, string>): st
 }
 
 export function bookingVars(input: Partial<BookingVars> & { slot: string }): BookingVars {
+  const need = input.need ?? "";
+  const kind = input.kind ?? "visit";
+  const details =
+    input.details?.trim() ||
+    [kind && kind !== "visit" ? kind : "", need].filter(Boolean).join(" · ") ||
+    need ||
+    kind;
   return {
     slot: input.slot,
+    date: input.date ?? input.slot,
+    time: input.time ?? "",
     address: input.address ?? "",
     hours: input.hours ?? "",
     name: input.name ?? "",
     phone: input.phone ?? "",
     email: input.email ?? "",
-    need: input.need ?? "",
-    kind: input.kind ?? "visit",
+    need,
+    kind,
+    details,
   };
 }
 

@@ -33,7 +33,7 @@ export const bookingCollectMeta: {
   {
     id: "phone",
     title: "Phone",
-    blurb: "On WhatsApp, this tenant's chat number is stored on the lead. Leave unchecked unless you want them to type a number.",
+    blurb: "Ask when missing; confirm when the chat number can be deduced (WhatsApp).",
   },
   {
     id: "email",
@@ -97,15 +97,35 @@ export function bookingRequiredFields(ctx: TurnContext): string[] {
   return [...defaultBookingCollect];
 }
 
+export function looksLikePhoneNumber(value: string): boolean {
+  return /^\+?\d[\d\s-]{7,}\d$/.test(value.trim());
+}
+
 export function callbackPhone(ctx: TurnContext): string | undefined {
   const stored = String(ctx.lead.fields.phone ?? "").trim();
   if (stored) return stored;
-  return ctx.channel?.customerPhone?.trim() || undefined;
+  const fromChannel = ctx.channel?.customerPhone?.trim();
+  if (fromChannel && looksLikePhoneNumber(fromChannel)) return fromChannel;
+  const fromId = ctx.lead.externalUserId?.trim() ?? "";
+  if (looksLikePhoneNumber(fromId)) return fromId;
+  return undefined;
+}
+
+/** Required booking fields as configured — never drop phone for demo/IG. */
+export function effectiveBookingRequired(ctx: TurnContext): string[] {
+  return bookingRequiredFields(ctx);
+}
+
+/**
+ * Phone already saved on the lead (after ask or confirm). Does not invent from the
+ * channel — use {@link callbackPhone} when you need a candidate to confirm.
+ */
+export function savedPhone(fields: LeadFields): string {
+  return String(fields.phone ?? "").trim();
 }
 
 export function withKnownPhone(ctx: TurnContext, fields: LeadFields): LeadFields {
-  const phone =
-    String(fields.phone ?? ctx.lead.fields.phone ?? "").trim() || callbackPhone(ctx);
+  const phone = savedPhone(fields) || savedPhone(ctx.lead.fields) || callbackPhone(ctx);
   if (!phone) return fields;
   return { ...fields, phone };
 }

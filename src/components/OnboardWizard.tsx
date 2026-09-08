@@ -181,7 +181,19 @@ export function OnboardWizard(props: Props) {
   }
 
   const agentLang = chatLanguage === "he" ? "he" : "en";
-  const tokens = ["{{slot}}", "{{address}}", "{{hours}}", "{{name}}", "{{phone}}", "{{email}}", "{{need}}", "{{kind}}"];
+  const tokens = [
+    "{{date}}",
+    "{{time}}",
+    "{{slot}}",
+    "{{name}}",
+    "{{phone}}",
+    "{{email}}",
+    "{{need}}",
+    "{{details}}",
+    "{{kind}}",
+    "{{address}}",
+    "{{hours}}",
+  ];
 
   function appendToken(current: string, set: (v: string) => void, token: string) {
     set(`${current}${current ? " " : ""}${token}`);

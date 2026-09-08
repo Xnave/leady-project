@@ -47,3 +47,23 @@ export function shouldSendCannedIntro(
   if (opts?.fromTerminal) return true;
   return isIdleConversationReset(ctx);
 }
+
+export function looksLikeBareHello(text: string): boolean {
+  const t = text.trim().toLowerCase().replace(/[!?.,]+$/g, "").trim();
+  return /^(hi|hello|hey|yo|שלום|היי|הי)$/.test(t);
+}
+
+/** @deprecated Prefer cannedIntroText + extract-on-first-turn; kept for tests. */
+export function prefixCannedIntro(
+  ctx: TurnContext,
+  reply: string,
+  opts?: { fromTerminal?: boolean },
+): string {
+  const body = reply.trim();
+  if (!shouldSendCannedIntro(ctx, opts)) return body;
+  const intro = cannedIntroText(ctx).trim();
+  if (!intro) return body;
+  if (!body || body === intro) return intro;
+  if (body.startsWith(intro)) return body;
+  return `${intro}\n${body}`;
+}

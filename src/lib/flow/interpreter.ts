@@ -1,5 +1,6 @@
 import { applyRestartPolicy, assertHitlAllowed, mergeAllowedFields, missingRequired } from "./helpers";
 import { cannedIntroText, shouldSendCannedIntro } from "./intro";
+import { copyFor, replyLang } from "@/lib/copy";
 import type {
   ActionStage,
   CollectStage,
@@ -47,18 +48,20 @@ export type TurnResult = {
   ok?: boolean;
 };
 
-async function sendCannedIntro(
-  ctx: TurnContext,
-  ports: InterpreterPorts,
-): Promise<TurnResult> {
-  const start = ctx.agent.flow.start;
-  if (ctx.conversation.flowState !== start) {
-    await ports.persistStage(ctx, start);
-    ctx.conversation.flowState = start;
-  }
-  await ports.sendAndSave(ctx, cannedIntroText(ctx));
-  ports.log("exit", { stageId: start, action: "canned_intro" });
-  return { stage: start, action: "canned_intro" };
+function hitlReasonKey(raw?: string): string {
+  const t = (raw ?? "").trim();
+  if (t === "support_unresolved" || t === "asked_for_person") return t;
+  if (/unresolved|could not/i.test(t)) return "support_unresolved";
+  return "asked_for_person";
+}
+
+async function sendWaitingHumanHold(ctx: TurnContext, ports: InterpreterPorts): Promise<void> {
+  const lastLead = [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
+  const lang = replyLang(ctx, lastLead);
+  const hold = copyFor(lang).chat.waitingHumanHold;
+  const lastAgent = [...ctx.messages].reverse().find((m) => m.role === "agent")?.text ?? "";
+  if (lastAgent.trim() === hold) return;
+  await ports.sendAndSave(ctx, hold);
 }
 
 export async function interpretTurn(
@@ -74,8 +77,9 @@ export async function interpretTurn(
   });
 
   if (ctx.conversation.status === "waiting_human" && !event.resume) {
+    await sendWaitingHumanHold(ctx, ports);
     ports.log("exit", { reason: "waiting_human" });
-    return { skipped: "waiting_human", stage: ctx.conversation.flowState };
+    return { skipped: "waiting_human", stage: ctx.conversation.flowState, action: "waiting_human_hold" };
   }
 
   const flow = ctx.agent.flow;
@@ -99,13 +103,10 @@ export async function interpretTurn(
     ctx.conversation.flowState = stageId;
   }
 
-  if (
+  const sendStaticIntro =
     !event.resume &&
     flow.stages[flow.start]?.type === "talk" &&
-    shouldSendCannedIntro(ctx, { fromTerminal })
-  ) {
-    return sendCannedIntro(ctx, ports);
-  }
+    shouldSendCannedIntro(ctx, { fromTerminal });
 
   for (let hop = 0; hop < 8; hop += 1) {
     if (stage.type === "classify") {
@@ -170,9 +171,19 @@ export async function interpretTurn(
       ctx.lead.fields = mergeAllowedFields(schemaKeys, ctx.lead.fields, incoming);
       await ports.persistFields(ctx, ctx.lead.fields);
 
+      // Static canned intro on first/idle turn — still extract above so the next
+      // turn can continue from the customer's first message. Escalation keeps
+      // the model reply instead of the welcome line.
+      if (sendStaticIntro && !out.escalate) {
+        out.reply = cannedIntroText(ctx);
+        out.book = false;
+        out.complete = false;
+      }
+
       if (out.escalate) {
         assertHitlAllowed(ctx, stageId);
-        await ports.requestHuman(ctx, "Customer asked for a person");
+        const reason = hitlReasonKey(out.escalateReason);
+        await ports.requestHuman(ctx, reason);
         await ports.sendAndSave(ctx, out.reply);
         ports.log("exit", { stageId: "waiting_human", stageType: "talk", escalate: true });
         return { stage: "waiting_human", action: "request_human", ok: true };
@@ -195,8 +206,8 @@ export async function interpretTurn(
 
       await ports.sendAndSave(ctx, out.reply);
       await ports.scheduleNudge(ctx, stageId, stage);
-      ports.log("exit", { stageId, stageType: "talk" });
-      return { stage: stageId };
+      ports.log("exit", { stageId, stageType: "talk", action: sendStaticIntro ? "canned_intro" : undefined });
+      return { stage: stageId, action: sendStaticIntro ? "canned_intro" : undefined };
     }
 
     if (stage.type === "action") {

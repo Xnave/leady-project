@@ -165,7 +165,7 @@ export const en: UiCopy = {
     fieldBookingApproved: "Approved booking message",
     fieldBookingRejected: "Declined booking message",
     templatesHint:
-      "Leave empty for language defaults. Placeholders: {{slot}} {{address}} {{hours}} {{name}} {{phone}} {{email}} {{need}} {{kind}}",
+      "Leave empty for language defaults. Placeholders: {{date}} {{time}} {{slot}} {{name}} {{phone}} {{details}} {{need}} {{kind}} {{address}} {{hours}} {{email}}",
     fieldIdleDays: "Reset conversation after idle days",
     idleHint:
       "The first customer message always gets this intro (no AI). After a conversation is done, or after this many days of silence, the next message gets the intro again. 0 = do not reset on idle.",
@@ -198,7 +198,7 @@ export const en: UiCopy = {
     },
     he: {
       title: "Hebrew only",
-      blurb: "Always reply in Hebrew.",
+      blurb: "Always reply in Hebrew, even if the customer writes in English.",
     },
     en: {
       title: "English only",
@@ -225,8 +225,13 @@ export const en: UiCopy = {
     generalTask: "Human task",
     openChat: "Open simulator",
     reason: "Reason",
+    summaryTitle: "Collected details",
+    summaryEmpty: "No structured details yet — open the chat if you need the full thread.",
+    summaryWhen: "When",
+    summaryIntent: "Intent",
     reasons: {
       support_unresolved: "The agent could not resolve this and asked for a human.",
+      asked_for_person: "The customer asked to speak with a person.",
     },
   },
   meeting: {

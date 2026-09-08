@@ -16,6 +16,20 @@ export async function GET(req: Request) {
   const fail = (msg: string) =>
     NextResponse.redirect(`${appUrl}/channels?error=${encodeURIComponent(msg)}`);
 
+  const zernioError = url.searchParams.get("error");
+  if (zernioError) {
+    const detail =
+      url.searchParams.get("error_message") ??
+      url.searchParams.get("reason") ??
+      zernioError;
+    console.error("zernio connect callback error", {
+      error: zernioError,
+      platform: url.searchParams.get("platform"),
+      detail,
+    });
+    return fail(detail);
+  }
+
   if (!profileId || !accountId) return fail("missing_callback");
   const tenant = await prisma.tenant.findFirst({ where: { id: tenantId } });
   if (!tenant?.zernioProfileId || tenant.zernioProfileId !== profileId) {

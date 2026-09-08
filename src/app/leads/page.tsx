@@ -46,6 +46,7 @@ export default async function LeadsPage({
     where.OR = [
       { displayName: { contains: query, mode: "insensitive" } },
       { externalUserId: { contains: query, mode: "insensitive" } },
+      { fields: { path: ["name"], string_contains: query, mode: "insensitive" } }, 
     ];
   }
   if (filterKind === "demo") where.externalUserId = { startsWith: "demo-" };

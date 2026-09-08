@@ -2,8 +2,13 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { bookingVars, copyFor, renderBookingMessage } from "@/lib/copy";
 import { askBookingField, bookingFieldGaps } from "@/lib/flow/booking";
-import { bookingRequiredFields, callbackPhone, withKnownPhone } from "@/lib/flow/booking-collect";
+import {
+  bookingRequiredFields,
+  callbackPhone,
+  savedPhone,
+} from "@/lib/flow/booking-collect";
 import { isChatLanguage, resolveReplyLanguage } from "@/lib/flow/locale";
+import { normalizeSlot } from "@/lib/flow/slot";
 import type { TurnContext } from "@/lib/flow/types";
 
 function venueFromTenant(ctx: TurnContext): { address: string; hours: string } {
@@ -18,24 +23,58 @@ function replyLangFromCtx(ctx: TurnContext): "en" | "he" {
   return resolveReplyLanguage(ctx.tenant?.chatLanguage, last);
 }
 
+function meetingMessageVars(opts: {
+  lang: "en" | "he";
+  slotRaw: string;
+  address: string;
+  hours: string;
+  name: string;
+  phone: string;
+  email: string;
+  need: string;
+  kind: string;
+}) {
+  const normalized = normalizeSlot(opts.slotRaw, { lang: opts.lang });
+  return bookingVars({
+    slot: normalized.display,
+    date: normalized.dateLabel,
+    time: normalized.timeLabel || normalized.time || "",
+    address: opts.address,
+    hours: opts.hours,
+    name: opts.name,
+    phone: opts.phone,
+    email: opts.email,
+    need: opts.need,
+    kind: opts.kind,
+  });
+}
+
 export async function requestTentativeMeeting(
   ctx: TurnContext,
 ): Promise<{ ok: boolean; reply: string }> {
   const lang = replyLangFromCtx(ctx);
-  const fields = withKnownPhone(ctx, { ...ctx.lead.fields });
+  const fields = { ...ctx.lead.fields };
   const venue = venueFromTenant(ctx);
   const gaps = bookingFieldGaps(fields, bookingRequiredFields(ctx));
   if (gaps.length > 0) {
-    return { ok: false, reply: askBookingField(lang, gaps[0], { hours: venue.hours }) };
+    return {
+      ok: false,
+      reply: askBookingField(lang, gaps[0], {
+        hours: venue.hours,
+        deducedPhone: gaps[0] === "phone" ? callbackPhone(ctx) : undefined,
+      }),
+    };
   }
-  const slot = String(fields.time_preference);
+  const phone = savedPhone(fields) || callbackPhone(ctx) || "";
+  const slotRaw = String(fields.time_preference);
+  const normalized = normalizeSlot(slotRaw, { lang });
   const kind = String(fields.visit_kind ?? "visit");
   const name = String(fields.name ?? "");
   const email = String(fields.email ?? "");
-  const phone = String(fields.phone ?? callbackPhone(ctx) ?? "");
   const need = String(fields.need ?? "");
-  const vars = bookingVars({
-    slot,
+  const vars = meetingMessageVars({
+    lang,
+    slotRaw,
     address: venue.address,
     hours: venue.hours,
     name,
@@ -65,7 +104,7 @@ export async function requestTentativeMeeting(
       conversationId: ctx.conversation.id,
       status: "pending",
       kind,
-      slotText: slot,
+      slotText: normalized.display,
       contactName: name,
       contactEmail: email,
       contactPhone: phone,
@@ -81,20 +120,42 @@ export async function requestTentativeMeeting(
       conversationId: ctx.conversation.id,
       leadId: ctx.lead.id,
       type: "booking_approval",
-      reason: `${kind} · ${slot} · ${name}${need ? ` · ${need}` : ""}`,
-      payload: { meetingId: meeting.id, name, phone, email, need, slot, kind },
+      reason: `${kind} · ${normalized.display} · ${name}${need ? ` · ${need}` : ""}`,
+      payload: {
+        meetingId: meeting.id,
+        name,
+        phone,
+        email,
+        need,
+        slot: normalized.display,
+        date: normalized.dateLabel,
+        time: normalized.timeLabel || normalized.time || "",
+        kind,
+        details: vars.details,
+      },
       status: "open",
     },
   });
 
-  const booking = { meetingId: meeting.id, status: "pending", when: slot, kind };
+  const booking = {
+    meetingId: meeting.id,
+    status: "pending",
+    when: normalized.display,
+    kind,
+  };
   await prisma.lead.update({
     where: { id: ctx.lead.id },
     data: {
-      fields: { ...fields, booking, need } as Prisma.InputJsonValue,
+      fields: {
+        ...fields,
+        time_preference: normalized.display,
+        phone,
+        booking,
+        need,
+      } as Prisma.InputJsonValue,
     },
   });
-  ctx.lead.fields = { ...fields, booking, need };
+  ctx.lead.fields = { ...fields, time_preference: normalized.display, phone, booking, need };
 
   return { ok: true, reply: requestText() };
 }
@@ -129,14 +190,15 @@ export async function markMeetingDecision(opts: {
     : "multi";
   const lang = resolveReplyLanguage(policy, meeting.conversation.messages[0]?.text ?? "");
   const chat = copyFor(lang).chat;
-  const vars = bookingVars({
-    slot: meeting.slotText,
-    address: meeting.venueText || meeting.tenant.venueAddress,
-    hours: meeting.hoursText || meeting.tenant.venueHours,
-    name: meeting.contactName,
-    phone: meeting.contactPhone,
-    email: meeting.contactEmail,
-    need: meeting.needText,
+  const vars = meetingMessageVars({
+    lang,
+    slotRaw: meeting.slotText,
+    address: meeting.venueText || meeting.tenant.venueAddress || "",
+    hours: meeting.hoursText || meeting.tenant.venueHours || "",
+    name: meeting.contactName || "",
+    phone: meeting.contactPhone || "",
+    email: meeting.contactEmail || "",
+    need: meeting.needText || "",
     kind: meeting.kind,
   });
   const text = opts.approved
@@ -175,6 +237,7 @@ export async function markMeetingDecision(opts: {
         status: opts.approved ? "approved" : "rejected",
         decidedBy: opts.actorUserId,
         decidedAt: new Date(),
+        slotText: vars.slot,
       },
     }),
     ...related.map((t) =>

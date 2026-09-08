@@ -165,7 +165,7 @@ export const he: UiCopy = {
     fieldBookingApproved: "הודעת ביקור מאושר",
     fieldBookingRejected: "הודעת ביקור נדחה",
     templatesHint:
-      "השאירו ריק לברירת מחדל לפי שפה. מציינים: {{slot}} {{address}} {{hours}} {{name}} {{phone}} {{email}} {{need}} {{kind}}",
+      "השאירו ריק לברירת מחדל לפי שפה. מציינים: {{date}} {{time}} {{slot}} {{name}} {{phone}} {{details}} {{need}} {{kind}} {{address}} {{hours}} {{email}}",
     fieldIdleDays: "איפוס שיחה אחרי ימי שקט",
     idleHint:
       "ההודעה הראשונה תמיד מקבלת את המבוא (ללא AI). אחרי סיום שיחה, או אחרי כמה ימים ללא פעילות, ההודעה הבאה שוב תקבל מבוא. 0 = ללא איפוס.",
@@ -198,7 +198,7 @@ export const he: UiCopy = {
     },
     he: {
       title: "עברית בלבד",
-      blurb: "הסוכן תמיד עונה בעברית.",
+      blurb: "תמיד עונה בעברית, גם אם הלקוח כותב באנגלית.",
     },
     en: {
       title: "English only",
@@ -225,8 +225,13 @@ export const he: UiCopy = {
     generalTask: "משימת נציג",
     openChat: "פתיחת סימולטור",
     reason: "סיבה",
+    summaryTitle: "פרטים שנאספו",
+    summaryEmpty: "עדיין אין פרטים מובנים — אפשר לפתוח את הצ'אט לשיחה המלאה.",
+    summaryWhen: "מועד",
+    summaryIntent: "כוונה",
     reasons: {
       support_unresolved: "הסוכן לא הצליח לפתור וביקש נציג.",
+      asked_for_person: "הלקוח ביקש לדבר עם נציג.",
     },
   },
   meeting: {

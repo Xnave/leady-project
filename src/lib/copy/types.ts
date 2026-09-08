@@ -1,5 +1,7 @@
 export type BookingVars = {
   slot: string;
+  date: string;
+  time: string;
   address: string;
   hours: string;
   name: string;
@@ -7,6 +9,7 @@ export type BookingVars = {
   email: string;
   need: string;
   kind: string;
+  details: string;
 };
 
 export type ChatCopy = {
@@ -25,6 +28,10 @@ export type ChatCopy = {
   askName: string;
   askEmail: string;
   askPhone: string;
+  askPhoneConfirm: (phone: string) => string;
+  askPhoneAgain: string;
+  askFieldAgain: (field: string) => string;
+  waitingHumanHold: string;
   askNeed: string;
   askVisitKind: string;
   askTime: (hours: string) => string;

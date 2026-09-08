@@ -5,8 +5,10 @@ import { isChatLanguage } from "@/lib/flow/locale";
 import { defaultFlow, defaultHitlPolicy, defaultLeadSchema } from "@/lib/flow/validate";
 import type { AgentSnapshot, TurnContext } from "@/lib/flow/types";
 import type { FlowDefinition, HitlPolicy, LeadSchema } from "@/lib/flow/types";
+import { looksLikePhoneNumber } from "@/lib/flow/booking-collect";
 import {
   contactDisplayName,
+  displayNameFromLeadFields,
   instagramIdentityFields,
   leadInstagramUsername,
   looksLikePlatformUserId,
@@ -39,7 +41,7 @@ export async function persistInboundIfNew(opts: {
   });
 
   const extraFields = { ...(opts.extraFields ?? {}) };
-  if (channel.provider === "whatsapp" && /^\+?\d[\d\s-]{7,}\d$/.test(opts.from.trim())) {
+  if (channel.provider === "whatsapp" && looksLikePhoneNumber(opts.from.trim())) {
     extraFields.phone = extraFields.phone ?? opts.from.trim();
   }
 
@@ -159,8 +161,11 @@ export async function loadTurnContext(
   };
 
   const fields = { ...((conversation.lead.fields as Record<string, unknown>) ?? {}) };
+  const fromId = conversation.lead.externalUserId?.trim() ?? "";
   const leadPhone =
-    typeof fields.phone === "string" && fields.phone.trim() ? fields.phone.trim() : undefined;
+    (typeof fields.phone === "string" && fields.phone.trim()) ||
+    (looksLikePhoneNumber(fromId) ? fromId : "") ||
+    undefined;
 
   return {
     tenantId,
@@ -232,9 +237,13 @@ export async function persistLeadFields(
   leadId: string,
   fields: Record<string, unknown>,
 ) {
+  const displayName = displayNameFromLeadFields(fields);
   await prisma.lead.update({
     where: { id: leadId },
-    data: { fields: fields as Prisma.InputJsonValue },
+    data: {
+      fields: fields as Prisma.InputJsonValue,
+      ...(displayName ? { displayName } : {}),
+    },
   });
 }
 

@@ -8,6 +8,12 @@ export function looksLikePlatformUserId(value: string): boolean {
   return /^\d{8,}$/.test(value.trim());
 }
 
+export function displayNameFromLeadFields(fields: Record<string, unknown> | null | undefined): string | undefined {
+  const name = typeof fields?.name === "string" ? fields.name.trim() : "";
+  if (!name || looksLikePlatformUserId(name)) return undefined;
+  return name;
+}
+
 export function normalizeInstagramUsername(value: string | null | undefined): string {
   return (value ?? "").trim().replace(/^@/, "");
 }

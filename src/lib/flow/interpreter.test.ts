@@ -78,7 +78,8 @@ describe("interpretTurn", () => {
     expect(result.stage).toBe("done");
   });
 
-  it("skips while waiting_human unless resume", async () => {
+  it("skips while waiting_human unless resume, and sends a holding line once", async () => {
+    const replies: string[] = [];
     const state = ctx({
       conversation: {
         id: "c1",
@@ -87,9 +88,21 @@ describe("interpretTurn", () => {
         flowVersion: 1,
         nudgeCountByStage: {},
       },
+      messages: [
+        { role: "lead", text: "transfer me" },
+        { role: "agent", text: "handing off" },
+        { role: "lead", text: "hello?" },
+      ],
     });
-    const result = await interpretTurn(state, {}, ports());
+    const result = await interpretTurn(state, {}, {
+      ...ports(),
+      sendAndSave: async (_c, text) => {
+        replies.push(text);
+      },
+    });
     expect(result.skipped).toBe("waiting_human");
+    expect(result.action).toBe("waiting_human_hold");
+    expect(replies[0]).toMatch(/teammate|נציג/);
   });
 
   it("resumes from HITL terminal instead of exiting immediately", async () => {
@@ -120,8 +133,9 @@ describe("interpretTurn", () => {
     expect(replies[0]).toBe("thanks, we are back");
   });
 
-  it("sends intro after done instead of ignoring the new message", async () => {
+  it("talks after done and sends a static canned intro while still extracting", async () => {
     const replies: string[] = [];
+    let talked = false;
     const flow = structuredClone(salesOrSupportFlow);
     flow.restartPolicy = { onNewMessage: "ignore" };
     flow.start = "talk";
@@ -151,16 +165,23 @@ describe("interpretTurn", () => {
     });
     const result = await interpretTurn(state, {}, {
       ...ports(),
+      talk: async () => {
+        talked = true;
+        return { reply: "what can I help with", fields: { need: "followup" } };
+      },
       sendAndSave: async (_c, text) => {
         replies.push(text);
       },
     });
+    expect(talked).toBe(true);
     expect(result.skipped).toBeUndefined();
-    expect(result.action).toBe("canned_intro");
+    expect(result.stage).toBe("talk");
     expect(replies[0]).toBe("We design and install kitchens.");
+    expect(replies[0]).not.toMatch(/what can I help with/);
+    expect(state.lead.fields.need).toBe("followup");
   });
 
-  it("talk sends the onboard intro without calling the model on the first turn", async () => {
+  it("talks on the first turn, extracts fields, and replies with only the onboard intro", async () => {
     const replies: string[] = [];
     let talked = false;
     const state = ctx({
@@ -178,20 +199,22 @@ describe("interpretTurn", () => {
       ...ports(),
       talk: async () => {
         talked = true;
-        return { reply: "should not run" };
+        return { reply: "got it, when works?", fields: { need: "kitchen" }, intent: "sales" };
       },
       sendAndSave: async (_c, text) => {
         replies.push(text);
       },
     });
-    expect(talked).toBe(false);
+    expect(talked).toBe(true);
     expect(result.action).toBe("canned_intro");
     expect(result.stage).toBe("talk");
     expect(replies[0]).toBe("We design and install kitchens.");
-    expect(state.lead.fields.name).toBeUndefined();
+    expect(replies[0]).not.toMatch(/got it, when works/);
+    expect(state.lead.fields.need).toBe("kitchen");
+    expect(state.lead.fields.intent).toBe("sales");
   });
 
-  it("sends the intro again after the conversation is done", async () => {
+  it("talks after the conversation is done and sends only the intro", async () => {
     const replies: string[] = [];
     let talked = false;
     const state = ctx({
@@ -214,19 +237,20 @@ describe("interpretTurn", () => {
       ...ports(),
       talk: async () => {
         talked = true;
-        return { reply: "should not run" };
+        return { reply: "welcome back" };
       },
       sendAndSave: async (_c, text) => {
         replies.push(text);
       },
     });
-    expect(talked).toBe(false);
+    expect(talked).toBe(true);
     expect(result.action).toBe("canned_intro");
     expect(result.stage).toBe("talk");
     expect(replies[0]).toBe("We design and install kitchens.");
+    expect(replies[0]).not.toMatch(/welcome back/);
   });
 
-  it("sends the intro after idle days without calling the model", async () => {
+  it("talks after idle days and sends only the intro", async () => {
     const replies: string[] = [];
     let talked = false;
     const now = new Date("2026-08-31T10:00:00Z");
@@ -268,15 +292,16 @@ describe("interpretTurn", () => {
       ...ports(),
       talk: async () => {
         talked = true;
-        return { reply: "should not run" };
+        return { reply: "yes, still here" };
       },
       sendAndSave: async (_c, text) => {
         replies.push(text);
       },
     });
-    expect(talked).toBe(false);
+    expect(talked).toBe(true);
     expect(result.action).toBe("canned_intro");
     expect(replies[0]).toBe("We design and install kitchens.");
+    expect(replies[0]).not.toMatch(/yes, still here/);
   });
 
   it("talk does not book just because name and email were saved", async () => {
@@ -355,5 +380,37 @@ describe("interpretTurn", () => {
     expect(replies[0]).toMatch(/ההזמנה נקלטה/);
     expect(replies[0]).toMatch(/הרוגוזין/);
     expect(replies[0]).not.toMatch(/כתובת\?/);
+  });
+
+  it("escalates with asked_for_person when the customer wants a human", async () => {
+    let reason = "";
+    const state = ctx({
+      agent: { ...ctx().agent, flow: defaultFlow() },
+      conversation: {
+        id: "c1",
+        status: "open",
+        flowState: "talk",
+        flowVersion: 1,
+        nudgeCountByStage: {},
+      },
+      messages: [
+        { role: "lead", text: "hi" },
+        { role: "agent", text: "How can I help?" },
+        { role: "lead", text: "Transfer me to a person" },
+      ],
+    });
+    const result = await interpretTurn(state, {}, {
+      ...ports(),
+      talk: async () => ({
+        reply: "Handing you over.",
+        escalate: true,
+        escalateReason: "they want a manager",
+      }),
+      requestHuman: async (_c, r) => {
+        reason = r;
+      },
+    });
+    expect(result.action).toBe("request_human");
+    expect(reason).toBe("asked_for_person");
   });
 });

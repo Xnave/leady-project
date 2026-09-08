@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { ChannelBadge } from "@/components/ChannelBadge";
-import { ChatThread } from "@/components/ChatThread";
 import { MeetingDecisionForm } from "@/components/MeetingDecisionForm";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
@@ -72,7 +71,6 @@ export default async function InboxPage({
       if (freshLead) selected = { ...selected, lead: freshLead };
     }
   }
-  const threadLabels = { emptyThread: ui.chat.emptyThread, roles: ui.roles };
 
   return (
     <div>
@@ -108,13 +106,7 @@ export default async function InboxPage({
             })}
           </div>
           {selected ? (
-            <InboxTaskDetail
-              lang={lang}
-              ui={ui}
-              threadLabels={threadLabels}
-              meetingLabels={meetingLabels}
-              task={selected}
-            />
+            <InboxTaskDetail lang={lang} ui={ui} meetingLabels={meetingLabels} task={selected} />
           ) : null}
         </div>
       )}
@@ -125,13 +117,11 @@ export default async function InboxPage({
 function InboxTaskDetail({
   lang,
   ui,
-  threadLabels,
   meetingLabels,
   task,
 }: {
   lang: "he" | "en";
   ui: ReturnType<typeof uiCopy>;
-  threadLabels: { emptyThread: string; roles: Record<string, string> };
   meetingLabels: {
     need: string;
     name: string;
@@ -158,6 +148,7 @@ function InboxTaskDetail({
         slotText: string;
         kind: string;
         contactName: string | null;
+        contactPhone: string | null;
       }>;
       conversations: Array<{
         messages: Array<{ id: string; role: string; text: string }>;
@@ -172,13 +163,39 @@ function InboxTaskDetail({
     email?: string;
     need?: string;
     slot?: string;
+    date?: string;
+    time?: string;
     kind?: string;
+    details?: string;
   };
   const isBooking = task.type === "booking_approval" && payload.meetingId;
   const taskTitle = isBooking ? ui.inbox.bookingApproval : ui.inbox.generalTask;
-  const messages = [...(task.lead.conversations[0]?.messages ?? [])].reverse();
   const fields = (task.lead.fields ?? {}) as Record<string, string | undefined>;
   const igHandle = leadInstagramUsername(task.lead.fields);
+  const meeting = task.lead.meetings.find((m) => m.id === payload.meetingId);
+
+  const summary = {
+    name:
+      String(fields.name ?? payload.name ?? meeting?.contactName ?? task.lead.displayName ?? "") ||
+      undefined,
+    phone: String(fields.phone ?? payload.phone ?? meeting?.contactPhone ?? "") || undefined,
+    email: String(fields.email ?? payload.email ?? "") || undefined,
+    need: String(fields.need ?? payload.need ?? meeting?.needText ?? "") || undefined,
+    slot:
+      String(payload.slot ?? meeting?.slotText ?? fields.time_preference ?? "") || undefined,
+    kind: String(payload.kind ?? meeting?.kind ?? "") || undefined,
+    details: String(payload.details ?? "") || undefined,
+    intent: String(fields.intent ?? "") || undefined,
+  };
+
+  const detailRows = [
+    { label: ui.inbox.summaryWhen, value: summary.slot },
+    { label: meetingLabels.name, value: summary.name },
+    { label: meetingLabels.phone, value: summary.phone },
+    { label: meetingLabels.email, value: summary.email },
+    { label: meetingLabels.need, value: summary.need || summary.details },
+    { label: ui.inbox.summaryIntent, value: summary.intent },
+  ].filter((row) => String(row.value ?? "").trim());
 
   return (
     <div className="card inbox-task">
@@ -208,10 +225,18 @@ function InboxTaskDetail({
         </p>
       ) : null}
       <div className="inbox-preview">
-        <ChatThread
-          messages={messages.map((m) => ({ id: m.id, role: m.role, text: m.text }))}
-          labels={threadLabels}
-        />
+        <p className="muted">{ui.inbox.summaryTitle}</p>
+        {detailRows.length === 0 ? (
+          <p className="muted">{ui.inbox.summaryEmpty}</p>
+        ) : (
+          <div className="stage-node">
+            {detailRows.map((row) => (
+              <p key={row.label}>
+                <strong>{row.label}:</strong> {row.value}
+              </p>
+            ))}
+          </div>
+        )}
       </div>
       {isBooking ? (
         <MeetingDecisionForm
@@ -219,29 +244,12 @@ function InboxTaskDetail({
           pending
           labels={meetingLabels}
           summary={{
-            name:
-              String(fields.name ?? payload.name ?? task.lead.displayName ?? "") || undefined,
-            phone: String(fields.phone ?? payload.phone ?? "") || undefined,
-            email: String(fields.email ?? payload.email ?? "") || undefined,
-            need:
-              String(
-                fields.need ??
-                  payload.need ??
-                  task.lead.meetings.find((m) => m.id === payload.meetingId)?.needText ??
-                  "",
-              ) || undefined,
-            slot:
-              String(
-                payload.slot ??
-                  task.lead.meetings.find((m) => m.id === payload.meetingId)?.slotText ??
-                  "",
-              ) || undefined,
-            kind:
-              String(
-                payload.kind ??
-                  task.lead.meetings.find((m) => m.id === payload.meetingId)?.kind ??
-                  "",
-              ) || undefined,
+            name: summary.name,
+            phone: summary.phone,
+            email: summary.email,
+            need: summary.need || summary.details,
+            slot: summary.slot,
+            kind: summary.kind,
           }}
         />
       ) : (
@@ -260,7 +268,12 @@ function InboxTaskDetail({
               </div>
             </label>
           </div>
-          <textarea className="note-input" name="note" placeholder={ui.inbox.notePlaceholder} required />
+          <textarea
+            className="note-input"
+            name="note"
+            placeholder={ui.inbox.notePlaceholder}
+            required
+          />
           <div className="row-actions">
             <button type="submit">{ui.inbox.complete}</button>
           </div>

@@ -1,11 +1,23 @@
 import { generateObject, generateText, stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { copyFor, replyLang } from "@/lib/copy";
+import { lastAgentText } from "./locale";
 import { missingRequired } from "./helpers";
-import { askBookingField, bookingFieldGaps } from "./booking";
-import { bookingRequiredFields, withKnownPhone } from "./booking-collect";
+import {
+  askBookingField,
+  bookingFieldGaps,
+  finalizeTalkReply,
+  inferTalkIntent,
+  looksLikePhoneConfirm,
+} from "./booking";
+import {
+  callbackPhone,
+  effectiveBookingRequired,
+  looksLikePhoneNumber,
+  savedPhone,
+} from "./booking-collect";
 import { talkGuardrails } from "./guardrails";
-import { cannedIntroText, hasAgentReplied } from "./intro";
+import { hasAgentReplied, looksLikeBareHello } from "./intro";
 import { chatModel, llmConfigured } from "./model";
 import type { CollectStage, FaqStage, LeadFields, Stage, TalkOutcome, TalkStage, TurnContext } from "./types";
 
@@ -20,6 +32,22 @@ function venueHours(ctx: TurnContext): string {
 
 function venueAddress(ctx: TurnContext): string {
   return ctx.tenant?.venueAddress?.trim() ?? "";
+}
+
+/** Accept a typed number, or confirm the deduced chat number on a short "yes". */
+function phoneFieldsFromTurn(ctx: TurnContext, collected: LeadFields): LeadFields {
+  const fields = { ...collected };
+  if (savedPhone(fields) || savedPhone(ctx.lead.fields)) return fields;
+  const last = lastLeadText(ctx);
+  if (looksLikePhoneNumber(last)) {
+    fields.phone = last.trim();
+    return fields;
+  }
+  const deduced = callbackPhone(ctx);
+  if (deduced && looksLikePhoneConfirm(last)) {
+    fields.phone = deduced;
+  }
+  return fields;
 }
 
 export async function classifyIntent(
@@ -125,11 +153,14 @@ export function heuristicTalk(ctx: TurnContext, stage: TalkStage): TalkOutcome {
   const last = lastLeadText(ctx);
   const lang = replyLang(ctx, last);
   const chat = copyFor(lang).chat;
-  const fields = withKnownPhone(ctx, {});
-  const required = bookingRequiredFields(ctx);
+  const fields = phoneFieldsFromTurn(ctx, {});
+  const required = effectiveBookingRequired(ctx);
 
   if (!hasAgentReplied(ctx)) {
-    return { reply: cannedIntroText(ctx), fields };
+    if (looksLikeBareHello(last)) {
+      return { reply: "", fields };
+    }
+    return { reply: chat.tellMeMore, fields };
   }
 
   if (stage.allowBook !== false) {
@@ -147,11 +178,16 @@ function talkSystem(ctx: TurnContext, stage: TalkStage): string {
   const last = lastLeadText(ctx);
   const lang = replyLang(ctx, last);
   const hours = venueHours(ctx);
-  const required = bookingRequiredFields(ctx);
-  const phone = String(withKnownPhone(ctx, {}).phone ?? "");
+  const required = effectiveBookingRequired(ctx);
+  const deduced = callbackPhone(ctx) ?? "";
+  const saved = savedPhone(ctx.lead.fields);
   const whatsapp = ctx.channel?.provider === "whatsapp";
   const channelLine = whatsapp
-    ? `Channel: WhatsApp for this tenant. Callback phone already on this lead: ${phone || "(none)"}. Do not ask for it unless they want a different number.`
+    ? saved
+      ? `Channel: WhatsApp. Callback phone already saved: ${saved}.`
+      : deduced
+        ? `Channel: WhatsApp. Deduced callback candidate: ${deduced}. Confirm it before book_meeting; on confirm save_fields phone=${deduced}.`
+        : `Channel: WhatsApp. No callback number yet — ask for phone if required.`
     : `Channel: ${ctx.channel?.provider ?? "chat"}.`;
   return [
     ctx.agent.systemPrompt,
@@ -160,7 +196,7 @@ function talkSystem(ctx: TurnContext, stage: TalkStage): string {
       allowBook: stage.allowBook !== false,
       requiredForBook: required,
       hours,
-      whatsappPhone: whatsapp ? phone || undefined : undefined,
+      whatsappPhone: !saved && deduced ? deduced : undefined,
       lang,
     }),
     copyFor(lang).prompts.talkContext({
@@ -178,9 +214,6 @@ function talkSystem(ctx: TurnContext, stage: TalkStage): string {
 }
 
 export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<TalkOutcome> {
-  if (!hasAgentReplied(ctx)) {
-    return { reply: cannedIntroText(ctx) };
-  }
   if (!llmConfigured()) {
     return heuristicTalk(ctx, stage);
   }
@@ -210,7 +243,8 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
           },
         }),
         set_intent: tool({
-          description: "What they want: sales (buy/book/quote), support, or other.",
+          description:
+            "What they want: sales (buy/book/quote), support (warranty, complaint, no-show), or other. Call this every turn.",
           inputSchema: z.object({ intent: z.enum(["sales", "support", "other"]) }),
           execute: async ({ intent }: { intent: "sales" | "support" | "other" }) => {
             collected.intent = intent;
@@ -218,7 +252,8 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
           },
         }),
         save_fields: tool({
-          description: "Save details they already gave. Do not invent.",
+          description:
+            "Save details they already gave, in their original wording. Do not invent. Do not translate names.",
           inputSchema: z.object(fieldShape),
           execute: async (raw: Record<string, unknown>) => {
             const fields: LeadFields = {};
@@ -242,8 +277,9 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
         request_human: tool({
           description: "Hand off to a person when policy allows.",
           inputSchema: z.object({ reason: z.string() }),
-          execute: async () => {
+          execute: async ({ reason }: { reason: string }) => {
             collected.escalate = true;
+            collected.escalateReason = reason.trim() || "asked_for_person";
             return "queued";
           },
         }),
@@ -260,27 +296,34 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
     return heuristicTalk(ctx, stage);
   }
 
-  if (!collected.reply) {
+  if (!collected.reply && !collected.escalate && !collected.book) {
     return heuristicTalk(ctx, stage);
   }
 
-  collected.fields = withKnownPhone(ctx, collected.fields ?? {});
+  collected.fields = phoneFieldsFromTurn(ctx, collected.fields ?? {});
   const merged = { ...ctx.lead.fields, ...collected.fields };
-  const required = bookingRequiredFields(ctx);
+  const required = effectiveBookingRequired(ctx);
   const gaps = bookingFieldGaps(merged, required);
   const lang = replyLang(ctx, lastLeadText(ctx));
   const hours = venueHours(ctx);
-  if (collected.book) {
-    if (gaps.length > 0) {
-      collected.book = false;
-      collected.reply = askBookingField(lang, gaps[0], { hours });
-    }
-  } else if (hours && collected.reply.includes("?") && !collected.reply.includes(hours)) {
-    const askingTime = required.includes("time_preference") && !String(merged.time_preference ?? "").trim();
-    if (askingTime) {
-      collected.reply = `${collected.reply.trim()}\n${copyFor(lang).chat.hoursLine(hours)}`;
-    }
+  const deducedPhone =
+    gaps[0] === "phone" && !savedPhone(merged) ? callbackPhone(ctx) : undefined;
+  const finalized = finalizeTalkReply({
+    reply: collected.reply,
+    book: collected.book,
+    lang,
+    hours,
+    gaps,
+    lastAgentText: lastAgentText(ctx.messages),
+    deducedPhone,
+  });
+  collected.reply = finalized.reply;
+  collected.book = finalized.book;
+  if (!collected.intent) {
+    collected.intent = inferTalkIntent(
+      lastLeadText(ctx),
+      typeof merged.need === "string" ? merged.need : undefined,
+    );
   }
-
   return collected;
 }

@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { channelLabel, isDemoLead, leadDisplayName } from "./leads";
+import { channelLabel, displayNameFromLeadFields, isDemoLead, leadDisplayName } from "./leads";
 import { normalizeLeadStatus } from "./ui";
 
 describe("leads helpers", () => {
   it("treats demo- prefix as demo", () => {
     expect(isDemoLead("demo-abc")).toBe(true);
     expect(isDemoLead("+97250")).toBe(false);
+  });
+
+  it("extracts a usable display name from fields", () => {
+    expect(displayNameFromLeadFields({ name: "Dana Levi" })).toBe("Dana Levi");
+    expect(displayNameFromLeadFields({ name: "1634072858426706" })).toBeUndefined();
+    expect(displayNameFromLeadFields({})).toBeUndefined();
   });
 
   it("prefers fields.name", () => {

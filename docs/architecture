@@ -1,0 +1,442 @@
+# Leady Architecture Overview
+
+Leady is an **async, multi-tenant messaging CRM**: WhatsApp/Instagram leads message a business, webhooks ingest those messages, an agent interprets a JSON flow and replies. Postgres is the source of truth; Inngest runs durable async turns.
+
+There is no separate “ingress” product or Kubernetes Ingress layer. **Ingress = webhook API routes** that ACK quickly, persist, and enqueue work.
+
+---
+
+## High-level architecture
+
+```mermaid
+flowchart TB
+  subgraph ingress [Ingress - Webhooks]
+    WH[WhatsApp / Instagram]
+    ZW["/api/webhooks/zernio"]
+    MW["/api/webhooks/meta"]
+    WH --> ZW & MW
+  end
+
+  subgraph persist [Postgres]
+    T[Tenant + Agent config]
+    L[Lead fields]
+    C[Conversation flowState]
+    M[Messages]
+  end
+
+  subgraph async [Inngest]
+    RT[runAgentTurn]
+    NU[nudgeIfSilent]
+  end
+
+  subgraph engine [Flow engine]
+    INT[interpreter.ts]
+    LLM[llm.ts - talk/classify/extract]
+  end
+
+  ZW & MW --> persist
+  persist --> RT
+  RT --> INT
+  INT --> LLM
+  INT --> persist
+  INT --> OUT[sendOnChannel]
+  OUT --> WH
+```
+
+| Layer | Location | Role |
+|---|---|---|
+| UI | `src/app/`, `src/components/` | Demo chat, onboarding, leads inbox, ops |
+| Ingress | `src/app/api/webhooks/` | Verify signature, persist inbound, enqueue turn |
+| Async jobs | `src/inngest/functions.ts` | `runAgentTurn`, `nudgeIfSilent` |
+| Flow engine | `src/lib/flow/` | Types, catalog, interpreter, LLM, validation |
+| CRM | `src/lib/conversations.ts`, `leads.ts`, `meetings.ts` | Messages, leads, HITL, bookings |
+| Channels | `src/lib/channels/` | HookMyApp (Meta) and Zernio send/parse |
+
+**Core design choice:** conversation state lives in Postgres, not in a graph framework. The “graph” is JSON on `Agent.flow`; the interpreter walks it per turn.
+
+---
+
+## How a new tenant onboards
+
+There are three paths, depending on who creates the tenant and when channels connect.
+
+### 1. Admin / programmatic creation
+
+`createTenant()` in `src/lib/provision-tenant.ts`:
+
+1. Creates a `Tenant` (synthetic `clerkOrgId`)
+2. Creates a default **Agent** with catalog `inbox`, flow from `flowForCatalog("inbox")`, default lead schema + HITL policy
+3. Creates a **local demo channel** so `/demo` works without real WhatsApp
+
+### 2. Dev seed
+
+`prisma/seed.ts` upserts a dev org + Demo Kitchen Co tenant.
+
+### 3. Owner setup wizard (primary product path)
+
+**UI:** `src/app/onboard/page.tsx` → `OnboardWizard.tsx`  
+**API:** `POST /api/onboard`
+
+Steps: `knowledge → business → flow → done`
+
+On submit:
+
+1. Owner picks a **catalog** (`inbox` | `book` | `faq`) and **booking fields** to collect
+2. `flowForCatalog()` builds flow JSON; `validateFlow()` rejects bad config
+3. Updates `Tenant` (name, intro, venue, booking templates, language, idle reset)
+4. Creates/updates `Agent` (system prompt, knowledge, flow, HITL)
+5. On update: bumps `flowVersion`, writes `AgentConfigRevision`
+
+Optional: `POST /api/onboard/extract` uses LLM to parse uploaded docs into business fields.
+
+### 4. Channel connection (after setup)
+
+- **HookMyApp:** workspace + OAuth onboarding link → `ChannelConnection` row with encrypted tokens
+- **Zernio:** profile connect + callback → binds WhatsApp account to tenant/agent
+
+Until a real channel is connected, the tenant can use the **demo channel** for testing.
+
+---
+
+## How ingress works
+
+Every production inbound message follows the same pipeline:
+
+```
+Webhook → verify HMAC → resolve ChannelConnection → persistInboundIfNew → enqueueAgentTurn → Inngest runAgentTurn
+```
+
+### Webhook routes
+
+| Route | Provider |
+|---|---|
+| `POST /api/webhooks/zernio` | Zernio WhatsApp/Instagram |
+| `POST /api/webhooks/meta` | HookMyApp → Meta |
+| `POST /api/webhooks/hookmyapp/connected` | Channel connected notification |
+
+### `persistInboundIfNew()` (`conversations.ts`)
+
+- **Idempotent** on `providerMessageId` (webhook retries are safe)
+- Upserts `Lead` by `(tenantId, channelId, externalUserId)`
+- Creates `Conversation` if none open; sets `flowState = agent.flow.start`
+- Inserts inbound `Message`
+
+### Inngest enqueue
+
+```58:72:src/lib/flow/run-turn.ts
+export async function enqueueAgentTurn(opts: {
+  tenantId: string;
+  conversationId: string;
+  triggerMessageId: string;
+  resume?: boolean;
+}) {
+  await inngest.send({
+    name: "agent/turn.requested",
+    id: `turn-${opts.triggerMessageId}`,
+    data: {
+      tenantId: opts.tenantId,
+      conversationId: opts.conversationId,
+      resume: opts.resume,
+    },
+  });
+}
+```
+
+**Why not call the LLM in the webhook?** Meta retries slow handlers; you risk duplicate sends. Fast ACK + durable async job is the contract.
+
+### Demo bypass
+
+`POST /api/demo/message` calls `runTurnNow()` **in-process** (same interpreter, no Inngest) so the UI can wait for a reply.
+
+### Concurrency
+
+```15:20:src/inngest/functions.ts
+export const runAgentTurn = inngest.createFunction(
+  {
+    id: "run-agent-turn",
+    retries: 3,
+    concurrency: [{ key: "event.data.conversationId", limit: 1 }],
+  },
+```
+
+One in-flight turn per conversation prevents double-replies when a lead sends two messages quickly.
+
+---
+
+## How flow definitions are created
+
+Flows are **JSON stored on `Agent.flow`**, not compiled code.
+
+### Creation paths
+
+1. **Onboarding:** `flowForCatalog(catalogId, bookingCollect)` → validate → save
+2. **Ops UI:** `POST /api/ops/agent` — change catalog, knowledge, HITL, restart policy
+3. **Programmatic:** `createTenant()` seeds inbox flow
+4. **Advanced:** raw JSON edit (validated on save)
+
+### Validation (`validate.ts`)
+
+On every save:
+
+- `start` stage exists; all transitions point to valid stages
+- Collect/talk fields exist in `leadSchema`
+- `request_human` stages are allowed by `hitlPolicy`
+- No dead ends or unreachable stages
+
+### Versioning
+
+- `Agent.flowVersion` bumps on change
+- `AgentConfigRevision` stores snapshots for rollback
+- `Conversation.flowVersion` tracks which config the chat started under
+
+---
+
+## Predefined flows
+
+### Production catalogs (`catalog.ts`)
+
+Three catalog IDs, all built on a **`talk`-centric graph**:
+
+| Catalog | Behavior |
+|---|---|
+| `inbox` | Greet, answer, qualify, book when ready |
+| `book` | Same style, biased toward booking |
+| `faq` | Answer only; `allowBook: false` |
+
+Shared structure:
+
+```
+start: "talk"
+  talk → on_complete: "done" | on_escalate: "escalate"
+  escalate → action: request_human → waiting_human
+  done, waiting_human → terminal
+restartPolicy: { onNewMessage: "fallback", fallbackStage: "talk" }
+```
+
+Prompts come from `src/lib/copy/en.ts` (and Hebrew). Booking fields are configurable via `booking-collect.ts` (default: `time_preference`, `name`, `need`).
+
+### Legacy / reference template (`templates.ts`)
+
+`salesOrSupportFlow` — the documented multi-stage graph:
+
+```
+classify_intent → collect_lead → schedule → done
+                → answer_support → done | escalate
+```
+
+Used in docs and tests; **not** the default runtime catalog. The interpreter still supports all stage types.
+
+---
+
+## How it works end-to-end
+
+### Two orthogonal state dimensions
+
+**1. CRM status** (`Conversation.status`)
+
+| Status | Behavior |
+|---|---|
+| `open` | Agent runs normally |
+| `waiting_human` | Inbound stored; interpreter skipped unless `resume: true` |
+| `closed` | Terminal CRM state |
+
+**2. Flow stage** (`Conversation.flowState`)
+
+A string ID into `agent.flow.stages` — e.g. `"talk"`, `"done"`, `"escalate"`.
+
+### One turn
+
+1. `loadTurnContext()` — tenant, agent, conversation, messages, lead fields
+2. If `waiting_human` and not resuming → store message, send hold reply, stop
+3. If on a terminal stage → apply `restartPolicy` (catalog default: fallback to `talk`)
+4. Enter interpreter loop (up to 8 stage hops):
+
+| Stage type | What happens |
+|---|---|
+| `talk` | LLM gets tools: `reply`, `set_intent`, `save_fields`, `book_meeting`, `request_human`. Interpreter enforces booking gaps, HITL policy |
+| `classify` | LLM picks intent → mapped transition |
+| `collect` | Extract fields → ask for missing → nudge if silent |
+| `faq` | Answer from knowledge → resolved/unresolved path |
+| `action` | `book_meeting` or `request_human` |
+| `terminal` | Conversation “done”; restart on next message per policy |
+
+5. Persist stage transitions, lead fields, outbound message
+6. Optionally schedule nudge (`agent/nudge.requested` → sleep → send template if still silent)
+
+### How the agent gets the correct state
+
+State is **loaded from DB every turn**, not kept in memory:
+
+```typescript
+// TurnContext carries everything the interpreter needs
+{
+  tenant, agent: { flow, leadSchema, hitlPolicy, systemPrompt, knowledgeText },
+  conversation: { flowState, status, flowVersion },
+  lead: { fields },
+  messages: [...last N messages]
+}
+```
+
+The interpreter reads `conversation.flowState`, looks up `flow.stages[stageId]`, and branches on `stage.type`. The LLM never picks the next stage directly (except in `classify`, where output is mapped by JSON transitions).
+
+### How each stage changes behavior
+
+For the primary **`talk`** stage, behavior is shaped by:
+
+- **`stage.prompt`** — catalog-specific instructions (inbox vs book vs faq)
+- **`stage.allowBook`** — whether `book_meeting` tool is meaningful
+- **`stage.required_for_book`** — fields that must be filled before booking
+- **`ctx.agent.systemPrompt`** — business name, intro, phone
+- **`ctx.agent.knowledgeText`** — FAQ content injected into talk context
+- **`ctx.agent.hitlPolicy`** — gates `request_human`
+- **`ctx.tenant`** — venue hours/address, booking templates, language, idle reset
+
+The LLM system prompt is assembled in `talkSystem()` (`llm.ts`) from all of the above plus guardrails.
+
+**Critical rule:** the interpreter, not the LLM, decides transitions. If the LLM calls `book_meeting` but required fields are missing, `finalizeTalkReply()` blocks it and the agent asks for the gap instead.
+
+---
+
+## What is configurable vs static
+
+### Configurable per tenant (no deploy)
+
+| Config | Where |
+|---|---|
+| Business profile, intro, knowledge | `Tenant`, `Agent.knowledgeText` |
+| Flow graph (within stage types) | `Agent.flow` JSON |
+| Catalog mode | `inbox` / `book` / `faq` |
+| Booking fields to collect | `booking-collect` on talk stage |
+| Lead schema keys | `Agent.leadSchema` |
+| HITL policy | `Agent.hitlPolicy` |
+| Restart policy, nudges | Flow JSON |
+| System prompt, language | Onboarding + copy files |
+| Channel bindings | `ChannelConnection` |
+
+### Static (requires code deploy)
+
+| Piece | Why |
+|---|---|
+| Stage types (`talk`, `classify`, `collect`, `faq`, `action`, `terminal`) | Interpreter switch in `interpreter.ts` |
+| LLM tools exposed per stage | `llm.ts` |
+| Channel adapters (Zernio, HookMyApp) | `channels/` |
+| Booking side-effect (tentative meeting + HITL) | `meetings.ts` |
+| Copy/i18n strings | `src/lib/copy/` |
+| Validation rules | `validate.ts` |
+
+Adding a **new catalog** = new `CatalogId` + `flowForCatalog()` branch + prompts. Same interpreter.
+
+Adding a **new stage type** (e.g. `qualify_score`) = extend types, interpreter, validation, possibly a new LLM port.
+
+---
+
+## Extending for different business types
+
+### Today (minimal ops work)
+
+| Business type | How to configure |
+|---|---|
+| Restaurant / salon (book visits) | Catalog `book`, set venue hours/address, pick booking fields |
+| FAQ-heavy (hours, location, menu) | Catalog `faq`, paste knowledge |
+| Sales + support mix | Catalog `inbox`, rich knowledge + booking fields |
+| Hebrew / English | `chatLanguage`, copy files |
+| Human approval for bookings | Already built: tentative meeting → owner approves in CRM |
+
+### Near-term extensions (data-level)
+
+- **Custom lead schema fields** — add to schema + ensure talk/collect references them
+- **Different nudge timings** — per-stage `nudge` in flow JSON
+- **Stricter/lighter HITL** — tune `hitlPolicy.allowedFromStages`, intents
+- **Multi-step legacy flows** — use `salesOrSupportFlow` pattern (classify → collect → action) for businesses that need rigid sequencing
+
+### Medium-term (code-level)
+
+| Need | Approach |
+|---|---|
+| E-commerce (cart, inventory) | New `action` types or tools; possibly n8n webhook after `done` |
+| Appointment types / Cal.com | Wire `calcomEventTypeId`; replace tentative meeting stub |
+| Document/photo review | `analyze_media` tool + HITL `review_media` |
+| Industry-specific qualification | New `collect` stages or richer `talk` prompts per vertical catalog |
+| Multiple agents per tenant | Schema supports it; routing logic by channel |
+| Drip campaigns / SLA timers | New Inngest functions (docs mention Temporal as future option) |
+
+### Vertical catalog pattern (recommended)
+
+Instead of one generic inbox for everyone:
+
+1. Add `CatalogId = "dental" | "legal" | ...`
+2. Define `flowForCatalog("dental")` with appropriate prompts and `required_for_book`
+3. Add vertical-specific copy in `copy/en.ts`
+4. Optionally use multi-stage template for rigid compliance flows
+
+Same interpreter, different JSON + prompts — no second orchestrator.
+
+---
+
+## Pros and cons of this architecture
+
+### Pros
+
+**1. Postgres is the checkpoint**  
+Replay any conversation from `messages` + `flowState` + `lead.fields`. No hidden LLM thread state.
+
+**2. Flow-as-data scales ops, not code**  
+Simple tenant = one `talk` stage. Complex tenant = eight stages. Same Inngest function.
+
+**3. Async-first for real channels**  
+Webhook ACK + idempotency + per-conversation concurrency matches WhatsApp/Instagram reality (slow, retried, turn-based).
+
+**4. Thin orchestration**  
+Inngest for durability; Vercel AI SDK for tools. No LangGraph/Temporal lock-in for v1.
+
+**5. Testable interpreter**  
+Port injection lets demo, preview, and tests run the same `interpretTurn()` with stubbed sends/LLM.
+
+**6. Multi-tenant by construction**  
+Every query scoped by `tenantId`; tools close over context.
+
+**7. HITL as CRM, not graph interrupt**  
+`waiting_human` + `HitlTask` rows are visible in the dashboard, resumable days later.
+
+**8. Validation before runtime**  
+Bad flow JSON fails at save time, not on a live lead.
+
+### Cons
+
+**1. `talk` stage puts a lot of trust in one LLM turn**  
+Production catalogs collapsed classify/collect/faq into unified `talk`. More flexible conversation, but less rigid rails than explicit multi-stage graphs. Mitigated by interpreter enforcing booking gaps and HITL policy.
+
+**2. New behaviors often need code**  
+Truly novel stage types (scoring, branching on external APIs) require interpreter changes, not just JSON.
+
+**3. No visual flow builder for owners**  
+Ops/internal tooling only. Owners pick catalog + fields, not arbitrary graphs.
+
+**4. Booking is stubbed**  
+Tentative meeting + owner HITL approval, not full Cal.com integration yet.
+
+**5. Single interpreter = single deployment**  
+All tenants share the same runtime code path. Safer for consistency, but risky if one tenant needs a forked behavior.
+
+**6. Application-level tenancy**  
+RLS is documented but not in Prisma schema; isolation relies on disciplined `tenantId` filtering.
+
+**7. Inngest dependency for production webhooks**  
+Local dev needs Inngest Dev Server (`INNGEST_DEV=1`) or webhooks won’t process turns.
+
+**8. Copy/prompts are code, not data**  
+New languages or vertical tone require editing `copy/` files, not just tenant config.
+
+---
+
+## Mental model
+
+Think of Leady as three layers:
+
+1. **Ingress layer** — webhooks that never do heavy work; just authenticate, persist, enqueue
+2. **State layer** — Postgres records what was said, what we know, where we are, whether a human owns it
+3. **Interpretation layer** — one function reads JSON + state, calls LLM inside guardrails, transitions stages, sends reply
+
+The LLM is a **worker inside stages** (wording, extraction, classification). The JSON + interpreter are the **rails**. HITL and restart policy are **product-level controls** separate from the flow graph.
+
+If you want to go deeper on any slice — e.g. the exact `talk` tool loop, HITL resume, or how to add a fourth catalog — say which part and we can walk through it with the relevant files.

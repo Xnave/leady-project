@@ -21,7 +21,12 @@ export const chat: ChatCopy = {
   whyCollect: "רק אם זה עוזר לי באמת לעזור. במה אפשר לעזור עכשיו?",
   askName: "כדי לקלוט את ההזמנה במערכת — איך קוראים לך?",
   askEmail: "מה האימייל שלך לאישור הפגישה?",
-  askPhone: "מה מספר הטלפון שלך לחזרה? אם תרצה מספר אחר מזה שבצ'אט, כתוב אותו.",
+  askPhone: "מה מספר הטלפון שלך לחזרה?",
+  askPhoneConfirm: (phone) =>
+    `אשמח לאשר — לחזרה אשתמש במספר ${phone}. זה מתאים, או לשלוח מספר אחר?`,
+  askPhoneAgain: "עדיין חסר לי מספר לחזרה כדי לקלוט את בקשת הביקור. אפשר לשלוח מספר?",
+  askFieldAgain: (field) => `עדיין חסר לי ${field} כדי לשלוח את בקשת הביקור.`,
+  waitingHumanHold: "קיבלנו, נציג חוזר אליך.",
   askNeed: "מה חשוב שנכסה בפגישה?",
   askVisitKind: "איזה סוג ביקור מתאים לך?",
   askTime: (hours) =>
@@ -31,18 +36,15 @@ export const chat: ChatCopy = {
     hours ? `אנחנו פתוחים ${hours}. באיזה יום ושעה נוח לך?` : "באיזה יום ושעה נוח לך?",
   hoursLine: (hours) => `שעות פתיחה: ${hours}`,
   bookingRequestTemplate: [
-    "הבקשה נקלטה במערכת ({{kind}}, {{slot}}) — טנטטיבית. הצוות יאשר או יציע מועד אחר.",
-    "צורך: {{need}}",
+    "רשמתי בקשה לפגישה ב־{{date}} בשעה {{time}}. הצוות יאשר או יציע מועד אחר.",
     "שם: {{name}}",
     "טלפון: {{phone}}",
     "אימייל: {{email}}",
+    "פרטי הפגישה: {{details}}",
     "כתובת: {{address}}",
   ].join("\n"),
-  bookingApprovedTemplate: [
-    "הפגישה אושרה.",
-    "מועד: {{slot}}",
-    "כתובת: {{address}}",
-  ].join("\n"),
+  bookingApprovedTemplate:
+    "הפגישה אושרה בתאריך {{date}} בשעה {{time}} עבור {{name}}, {{phone}}. פרטי הפגישה: {{details}}",
   bookingRejected: "לצערנו המועד לא אושר. מתי נוח לתאם מחדש?",
 };
 

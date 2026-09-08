@@ -232,6 +232,10 @@ export type UiCopy = {
     generalTask: string;
     openChat: string;
     reason: string;
+    summaryTitle: string;
+    summaryEmpty: string;
+    summaryWhen: string;
+    summaryIntent: string;
     reasons: Record<string, string>;
   };
   meeting: {

@@ -135,6 +135,7 @@ export type TalkOutcome = {
   intent?: string;
   book?: boolean;
   escalate?: boolean;
+  escalateReason?: string;
   complete?: boolean;
 };
 
