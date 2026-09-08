@@ -1,7 +1,15 @@
+import { FormSelect } from "@/components/Select";
 import type { LeadFields, LeadSchema } from "@/lib/flow/types";
-import { LEAD_STATUSES, normalizeLeadStatus, type LeadStatusId } from "@/lib/ui";
+import {
+  LEAD_STATUSES,
+  leadFieldLabel,
+  normalizeLeadStatus,
+  type LeadStatusId,
+  type UiCopy,
+} from "@/lib/ui";
 
 export function LeadFieldsForm({
+  ui,
   action,
   schema,
   fields,
@@ -11,6 +19,7 @@ export function LeadFieldsForm({
   saveLabel,
   enumLabels,
 }: {
+  ui: UiCopy;
   action: string;
   schema: LeadSchema;
   fields: LeadFields;
@@ -22,51 +31,68 @@ export function LeadFieldsForm({
 }) {
   const current = status !== undefined ? normalizeLeadStatus(status) : undefined;
   return (
-    <form action={action} method="post" className="stack">
+    <form action={action} method="post" className="stack field-form">
       {current !== undefined ? (
         <label>
-          {statusLegend ?? statusLabels?.[current] ?? "Status"}
-          <select name="status" defaultValue={current}>
-            {LEAD_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {statusLabels?.[s] ?? s}
-              </option>
-            ))}
-          </select>
+          {statusLegend ?? ui.common.status}
+          <FormSelect
+            name="status"
+            defaultValue={current}
+            ariaLabel={statusLegend ?? ui.common.status}
+            options={LEAD_STATUSES.map((s) => ({ value: s, label: statusLabels?.[s] ?? s }))}
+          />
         </label>
       ) : null}
       {Object.entries(schema.fields).map(([key, spec]) => {
         const value = fields[key] == null ? "" : String(fields[key]);
+        const label = leadFieldLabel(ui, key);
+
         if (spec.type === "enum" && spec.enum) {
           return (
             <fieldset key={key}>
-              <legend>{key.replaceAll("_", " ")}</legend>
-              {spec.enum.map((option) => (
-                <label key={option} className="choice">
-                  <input
-                    type="radio"
-                    name={`field_${key}`}
-                    value={option}
-                    defaultChecked={value === option}
-                  />
-                  {enumLabels?.[key]?.[option] ?? option}
-                </label>
-              ))}
+              <legend>{label}</legend>
+              <div className="chip-row">
+                {spec.enum.map((option) => (
+                  <label key={option} className="chip-toggle">
+                    <input
+                      type="radio"
+                      name={`field_${key}`}
+                      value={option}
+                      defaultChecked={value === option}
+                    />
+                    <span>{enumLabels?.[key]?.[option] ?? option}</span>
+                  </label>
+                ))}
+              </div>
             </fieldset>
           );
         }
+
         return (
-          <label key={key}>
-            {key.replaceAll("_", " ")}
+          <label key={key} className={value ? "" : "field-empty"}>
+            {label}
             <input
               name={`field_${key}`}
               type={spec.type === "email" ? "email" : "text"}
+              inputMode={spec.type === "email" ? "email" : undefined}
+              autoComplete={AUTOCOMPLETE[key] ?? "off"}
+              dir={spec.type === "email" || key === "phone" ? "ltr" : "auto"}
               defaultValue={value}
+              placeholder={label}
             />
           </label>
         );
       })}
-      <button type="submit">{saveLabel ?? "Save"}</button>
+      <div className="field-form-actions">
+        <button type="submit">{saveLabel ?? ui.common.save}</button>
+      </div>
     </form>
   );
 }
+
+/** Browser autofill hints for the fields that have a standard meaning. */
+const AUTOCOMPLETE: Record<string, string> = {
+  name: "name",
+  email: "email",
+  phone: "tel",
+};

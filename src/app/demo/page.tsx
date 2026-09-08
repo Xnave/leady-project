@@ -207,6 +207,7 @@ export default async function DemoPage({
               <div className="card">
                 <h2>{ui.common.captured}</h2>
                 <LeadFieldsForm
+                  ui={ui}
                   action={`/api/leads/${lead.id}/fields`}
                   schema={schema}
                   fields={fields}

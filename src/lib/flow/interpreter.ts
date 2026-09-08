@@ -50,9 +50,10 @@ export type TurnResult = {
 
 function hitlReasonKey(raw?: string): string {
   const t = (raw ?? "").trim();
-  if (t === "support_unresolved" || t === "asked_for_person") return t;
+  if (t === "support_unresolved") return t;
+  if (t === "escalation_requested" || t === "asked_for_person") return "escalation_requested";
   if (/unresolved|could not/i.test(t)) return "support_unresolved";
-  return "asked_for_person";
+  return "escalation_requested";
 }
 
 async function sendWaitingHumanHold(ctx: TurnContext, ports: InterpreterPorts): Promise<void> {

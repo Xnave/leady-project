@@ -382,7 +382,7 @@ describe("interpretTurn", () => {
     expect(replies[0]).not.toMatch(/כתובת\?/);
   });
 
-  it("escalates with asked_for_person when the customer wants a human", async () => {
+  it("escalates with escalation_requested when the customer wants a human", async () => {
     let reason = "";
     const state = ctx({
       agent: { ...ctx().agent, flow: defaultFlow() },
@@ -411,6 +411,6 @@ describe("interpretTurn", () => {
       },
     });
     expect(result.action).toBe("request_human");
-    expect(reason).toBe("asked_for_person");
+    expect(reason).toBe("escalation_requested");
   });
 });

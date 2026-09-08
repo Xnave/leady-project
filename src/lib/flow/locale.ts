@@ -1,23 +1,5 @@
 export type ChatLanguage = "multi" | "en" | "he";
 
-export const chatLanguageMeta: { id: ChatLanguage; title: string; blurb: string }[] = [
-  {
-    id: "multi",
-    title: "לפי הלקוח · Match customer",
-    blurb: "עונה בעברית או באנגלית לפי מה שכתבו.",
-  },
-  {
-    id: "he",
-    title: "עברית בלבד · Hebrew only",
-    blurb: "הסוכן תמיד עונה בעברית, גם אם הלקוח כותב באנגלית.",
-  },
-  {
-    id: "en",
-    title: "English only · אנגלית בלבד",
-    blurb: "Always reply in English.",
-  },
-];
-
 export function isChatLanguage(value: string): value is ChatLanguage {
   return value === "multi" || value === "en" || value === "he";
 }

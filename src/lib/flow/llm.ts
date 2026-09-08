@@ -279,7 +279,7 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
           inputSchema: z.object({ reason: z.string() }),
           execute: async ({ reason }: { reason: string }) => {
             collected.escalate = true;
-            collected.escalateReason = reason.trim() || "asked_for_person";
+            collected.escalateReason = reason.trim() || "escalation_requested";
             return "queued";
           },
         }),

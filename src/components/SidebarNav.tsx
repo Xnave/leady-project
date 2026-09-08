@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import type { NavCounts } from "@/lib/nav-counts";
-import type { UiCopy, UiLang } from "@/lib/ui";
+import type { UiCopy, UiLang, UiTheme } from "@/lib/ui";
 
 type NavKey = keyof UiCopy["nav"];
 
@@ -41,18 +41,40 @@ const ICONS: Partial<Record<NavKey, ReactNode>> = {
   admin: <Icon d="M12 3 4 7v5c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V7z" />,
 };
 
+const THEME_OPTIONS: { id: UiTheme; key: "system" | "light" | "dark"; icon: ReactNode }[] = [
+  {
+    id: "system",
+    key: "system",
+    icon: <Icon d="M3 5h18v11H3zM8 20h8M12 16v4" />,
+  },
+  {
+    id: "light",
+    key: "light",
+    icon: (
+      <Icon d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    ),
+  },
+  {
+    id: "dark",
+    key: "dark",
+    icon: <Icon d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z" />,
+  },
+];
+
 export function SidebarNav({
   ui,
   admin,
   counts,
   tenantName,
   lang,
+  theme,
 }: {
   ui: UiCopy;
   admin: boolean;
   counts: NavCounts | null;
   tenantName?: string | null;
   lang: UiLang;
+  theme: UiTheme;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -112,6 +134,24 @@ export function SidebarNav({
             <button type="submit" name="lang" value="en" className={lang === "en" ? "active" : ""}>
               {ui.langToggle.en}
             </button>
+          </form>
+
+          <span className="lang-toggle-label">{ui.themeToggle.appearance}</span>
+          <form action="/api/ui/theme" method="post" className="lang-toggle theme-toggle">
+            {THEME_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="submit"
+                name="theme"
+                value={option.id}
+                className={theme === option.id ? "active" : ""}
+                aria-pressed={theme === option.id}
+                aria-label={ui.themeToggle[option.key]}
+                title={ui.themeToggle[option.key]}
+              >
+                {option.icon}
+              </button>
+            ))}
           </form>
         </div>
       </aside>
