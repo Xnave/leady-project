@@ -1,5 +1,7 @@
 export type UiLang = "he" | "en";
 
+export type UiTheme = "system" | "light" | "dark";
+
 export type LeadStatusId = "new" | "open" | "in_progress" | "won" | "lost";
 
 export type CatalogUiId = "inbox" | "book" | "faq";
@@ -17,6 +19,7 @@ export type UiCopy = {
     admin: string;
   };
   langToggle: { he: string; en: string; uiLanguage: string };
+  themeToggle: { appearance: string; system: string; light: string; dark: string };
   actingAs: string;
   stopActing: string;
   page: {
@@ -43,6 +46,10 @@ export type UiCopy = {
     progress: string;
   };
   stages: Record<string, string>;
+  /** Labels for lead schema field keys. Unknown tenant keys fall back to a humanised key. */
+  leadFields: Record<string, string>;
+  /** Known meeting kinds. Tenants supply free text, so unknown values pass through humanised. */
+  meetingKinds: Record<string, string>;
   intents: Record<string, string>;
   stageTypes: Record<string, string>;
   convoStatus: Record<string, string>;
@@ -166,6 +173,7 @@ export type UiCopy = {
     live: string;
     lastActive: string;
     staff: string;
+    saveFailed: string;
   };
   status: Record<LeadStatusId, string>;
   roles: {

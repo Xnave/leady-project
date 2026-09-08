@@ -124,6 +124,7 @@ export default async function LeadDetailPage({
         <div className="card">
           <h3>{ui.common.captured}</h3>
           <LeadFieldsForm
+            ui={ui}
             action={`/api/leads/${lead.id}/fields`}
             schema={schema}
             fields={fields}

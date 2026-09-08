@@ -1,12 +1,16 @@
 import { en } from "./en";
 import { he } from "./he";
-import type { UiCopy, UiLang } from "./types";
+import type { UiCopy, UiLang, UiTheme } from "./types";
 
-export type { UiCopy, UiLang, LeadStatusId, CatalogUiId } from "./types";
+export type { UiCopy, UiLang, UiTheme, LeadStatusId, CatalogUiId } from "./types";
 export { LEAD_STATUSES, normalizeLeadStatus } from "./status";
 
 export function isUiLang(value: string | undefined | null): value is UiLang {
   return value === "he" || value === "en";
+}
+
+export function isUiTheme(value: string | undefined | null): value is UiTheme {
+  return value === "system" || value === "light" || value === "dark";
 }
 
 export function uiCopy(lang: UiLang): UiCopy {
@@ -33,6 +37,8 @@ export {
   restartPolicyLabel,
   actionLabel,
   hitlReasonLabel,
+  leadFieldLabel,
+  meetingKindLabel,
 } from "./labels";
 
 export function roleLabel(ui: UiCopy, role: string): string {

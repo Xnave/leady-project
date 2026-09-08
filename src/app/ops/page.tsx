@@ -1,4 +1,5 @@
 import { FlowMap } from "@/components/FlowMap";
+import { FormSelect } from "@/components/Select";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
 import type { FlowDefinition, HitlPolicy } from "@/lib/flow/types";
@@ -6,6 +7,7 @@ import { getUiLang } from "@/lib/cookies";
 import { requireTenantId } from "@/lib/tenant";
 import { intentLabel, stageLabel } from "@/lib/ui/labels";
 import { uiCopy } from "@/lib/ui";
+import { isCatalogId } from "@/lib/flow/catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +20,10 @@ export default async function OpsPage() {
   const flow = agent.flow as FlowDefinition;
   const hitl = agent.hitlPolicy as HitlPolicy;
   const stageIds = Object.keys(flow.stages);
+  // The stored agent name is free text (the seed writes an English one), so the
+  // header uses the localized catalog title instead of leaking it into a Hebrew UI.
+  const catalogId = agent.catalogId && isCatalogId(agent.catalogId) ? agent.catalogId : "inbox";
+  const catalogTitle = ui.catalog[catalogId]?.title ?? catalogId;
 
   const restartOptions = [
     ["ignore", ui.ops.ignoreMessages],
@@ -28,8 +34,8 @@ export default async function OpsPage() {
   return (
     <div>
       <PageHeader
-        title={`${ui.page.opsTitle} · ${agent.name}`}
-        blurb={`${ui.common.version} ${agent.flowVersion} · ${ui.ops.ownersNeverSee}`}
+        title={ui.page.opsTitle}
+        blurb={`${catalogTitle} · ${ui.common.version} ${agent.flowVersion} · ${ui.ops.ownersNeverSee}`}
       />
       <div className="ops-layout">
         <form action="/api/ops/agent" method="post" className="card stack">
@@ -82,14 +88,15 @@ export default async function OpsPage() {
             </div>
             <label>
               {ui.ops.fallbackStageLabel}
-              <select name="fallbackStage" defaultValue={flow.restartPolicy.fallbackStage ?? ""}>
-                <option value="">{ui.ops.noneOption}</option>
-                {stageIds.map((id) => (
-                  <option key={id} value={id}>
-                    {stageLabel(ui, id)}
-                  </option>
-                ))}
-              </select>
+              <FormSelect
+                name="fallbackStage"
+                defaultValue={flow.restartPolicy.fallbackStage ?? ""}
+                ariaLabel={ui.ops.fallbackStageLabel}
+                options={[
+                  { value: "", label: ui.ops.noneOption },
+                  ...stageIds.map((id) => ({ value: id, label: stageLabel(ui, id) })),
+                ]}
+              />
             </label>
           </fieldset>
           <fieldset>

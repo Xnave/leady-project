@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChannelBadge } from "@/components/ChannelBadge";
 import { PageHeader } from "@/components/PageHeader";
+import { FormSelect } from "@/components/Select";
 import { Pagination } from "@/components/Pagination";
 import { DeleteDemoLead } from "@/components/DeleteDemoLead";
 import { LeadStatusSelect } from "@/components/LeadStatusSelect";
@@ -9,7 +10,7 @@ import { getUiLang } from "@/lib/cookies";
 import { instagramProfileUrl, isDemoLead, leadDisplayName, leadInstagramUsername } from "@/lib/leads";
 import { requireTenantId } from "@/lib/tenant";
 import { intentLabel, stageLabel } from "@/lib/ui/labels";
-import { normalizeLeadStatus, uiCopy } from "@/lib/ui";
+import { meetingKindLabel, normalizeLeadStatus, uiCopy } from "@/lib/ui";
 import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -88,11 +89,16 @@ export default async function LeadsPage({
         </label>
         <label>
           {ui.common.demo}
-          <select name="kind" defaultValue={filterKind}>
-            <option value="all">{ui.common.all}</option>
-            <option value="live">{ui.common.live}</option>
-            <option value="demo">{ui.common.demo}</option>
-          </select>
+          <FormSelect
+            name="kind"
+            defaultValue={filterKind}
+            ariaLabel={ui.common.demo}
+            options={[
+              { value: "all", label: ui.common.all },
+              { value: "live", label: ui.common.live },
+              { value: "demo", label: ui.common.demo },
+            ]}
+          />
         </label>
         <button type="submit" className="btn-secondary">
           {ui.common.search}
@@ -108,7 +114,7 @@ export default async function LeadsPage({
                 {" · "}
                 <span className="badge">{ui.common.pending}</span>
                 {" · "}
-                {m.kind} · {m.slotText}
+                {meetingKindLabel(ui, m.kind)} · {m.slotText}
               </li>
             ))}
           </ul>
@@ -169,6 +175,7 @@ export default async function LeadsPage({
                       value={normalizeLeadStatus(lead.status)}
                       labels={ui.status}
                       ariaLabel={ui.common.status}
+                      failedLabel={ui.common.saveFailed}
                     />
                   </td>
                   <td>{stage}</td>

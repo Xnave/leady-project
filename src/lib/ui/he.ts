@@ -13,6 +13,7 @@ export const he: UiCopy = {
     admin: "אדמין",
   },
   langToggle: { he: "עברית", en: "English", uiLanguage: "שפת ממשק" },
+  themeToggle: { appearance: "מראה", system: "לפי המערכת", light: "בהיר", dark: "כהה" },
   actingAs: "מחובר כ־{name}",
   stopActing: "חזרה לאדמין",
   page: {
@@ -116,6 +117,7 @@ export const he: UiCopy = {
     live: "חי",
     lastActive: "פעילות אחרונה",
     staff: "צוות",
+    saveFailed: "השמירה נכשלה",
   },
   status: {
     new: "חדש",
@@ -227,6 +229,7 @@ export const he: UiCopy = {
     reason: "סיבה",
     reasons: {
       support_unresolved: "הסוכן לא הצליח לפתור וביקש נציג.",
+      escalation_requested: "הלקוח ביקש לדבר עם נציג אנושי.",
     },
   },
   meeting: {
@@ -256,6 +259,19 @@ export const he: UiCopy = {
     currentStage: "שלב נוכחי",
     progress: "התקדמות בזרימה",
   },
+  leadFields: {
+    name: "שם",
+    need: "צורך",
+    email: "אימייל",
+    phone: "טלפון",
+    budget: "תקציב",
+    intent: "כוונה",
+    booking: "הזמנה",
+    service: "שירות",
+    visit_kind: "סוג ביקור",
+    time_preference: "מועד מועדף",
+  },
+  meetingKinds: { visit: "ביקור", showroom: "אולם תצוגה", online: "מקוון", phone: "שיחת טלפון" },
   stages: {
     talk: "שיחה",
     escalate: "העברה לנציג",
