@@ -47,6 +47,7 @@ function talkFlow(opts: {
           prompt: opts.prompt,
           allowBook: opts.allowBook,
           required_for_book: collect,
+          capabilities: opts.allowBook ? ["booking"] : [],
           on_complete: "done",
           on_escalate: "escalate",
         },

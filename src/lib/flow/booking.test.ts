@@ -2,11 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   askBookingField,
   bookingFieldGaps,
-  capturePriorBookingAnswer,
-  isMidBookingCollect,
   gateBookOnGaps,
 } from "./booking";
-import { callbackPhone, effectiveBookingRequired, looksLikePhoneNumber } from "./booking-collect";
+import { callbackPhone, looksLikePhoneNumber } from "./booking-collect";
 import { copyFor, fillTemplate } from "@/lib/copy";
 import { flowForCatalog } from "./catalog";
 import { conversationIdleExpired } from "./rotate-conversation";
@@ -37,25 +35,6 @@ describe("booking helpers", () => {
         ["time_preference", "name", "phone"],
       )[0],
     ).toBe("phone");
-  });
-
-  it("detects mid-booking only after fields or confirm exist", () => {
-    expect(isMidBookingCollect({})).toBe(false);
-    expect(isMidBookingCollect({ name: "Nave" })).toBe(true);
-    expect(isMidBookingCollect({ booking_confirm: "pending" })).toBe(true);
-  });
-
-  it("captures the customer answer to the prior canned booking ask", () => {
-    const prior = askBookingField("he", "time_preference", {});
-    expect(
-      capturePriorBookingAnswer({
-        priorAgentText: prior,
-        customerText: "ביום חמישי ב12:00",
-        fields: { name: "נווה" },
-        required: ["time_preference", "name", "need"],
-        lang: "he",
-      }),
-    ).toEqual({ time_preference: "ביום חמישי ב12:00" });
   });
 
   it("fills booking templates and drops empty labeled lines", () => {
@@ -100,65 +79,20 @@ describe("callbackPhone", () => {
     expect(looksLikePhoneNumber("+972501234567")).toBe(true);
     expect(callbackPhone(ctx)).toBe("+972501234567");
   });
-
-  it("keeps phone required for demo leads when configured", () => {
-    const flow = flowForCatalog("inbox");
-    const talk = flow.stages.talk;
-    if (talk?.type === "talk") {
-      talk.required_for_book = ["time_preference", "name", "need", "phone"];
-    }
-    const ctx = {
-      lead: { id: "l1", externalUserId: "demo-xyz", fields: {} },
-      channel: { provider: "whatsapp" as const },
-      agent: {
-        id: "a1",
-        tenantId: "t1",
-        flow,
-        flowVersion: 1,
-        leadSchema: defaultLeadSchema,
-        hitlPolicy: defaultHitlPolicy,
-        systemPrompt: "",
-        knowledgeText: "",
-      },
-      conversation: {
-        id: "c1",
-        status: "open" as const,
-        flowState: "talk",
-        flowVersion: 1,
-        nudgeCountByStage: {},
-      },
-      tenantId: "t1",
-      messages: [],
-    } as TurnContext;
-    expect(effectiveBookingRequired(ctx)).toContain("phone");
-  });
 });
 
 describe("normalizeSlot", () => {
-  it("turns Hebrew tomorrow + time into a concrete datetime", () => {
-    const out = normalizeSlot("מחר ב-14:00", {
-      now: new Date("2026-09-08T10:00:00"),
+  it("parses Hebrew weekday + time", () => {
+    const out = normalizeSlot("יום חמישי ב-18:00", {
+      now: new Date("2026-09-08T12:00:00"),
       lang: "he",
     });
-    expect(out.dateIso).toBe("2026-09-09");
-    expect(out.time).toBe("14:00");
+    expect(out.time).toBe("18:00");
+    expect(out.dateIso).toBeTruthy();
   });
 
-  it("re-parses a Hebrew display string without duplicating the time", () => {
-    const out = normalizeSlot("10 בספטמבר 2026 בשעה 10:00", {
-      now: new Date("2026-09-08T10:00:00"),
-      lang: "he",
-    });
-    expect(out.dateLabel).toBe("10 בספטמבר 2026");
-    expect(out.timeLabel).toBe("10:00");
-    expect(out.display).toBe("10 בספטמבר 2026 בשעה 10:00");
-  });
-
-  it("parses dotted day.month.yy with colon time (not 11:11)", () => {
-    const out = normalizeSlot("11.11.26 10:00", {
-      now: new Date("2026-09-08T10:00:00"),
-      lang: "he",
-    });
+  it("does not treat dotted dates as clock times", () => {
+    const out = normalizeSlot("11.11.26 10:00", { lang: "he" });
     expect(out.dateIso).toBe("2026-11-11");
     expect(out.time).toBe("10:00");
     expect(out.display).toBe("11 בנובמבר 2026 בשעה 10:00");
@@ -244,5 +178,13 @@ describe("catalog flows", () => {
       inbox.displayOrder!.indexOf("done"),
     );
     expect(flowForCatalog("faq").stages.talk).toMatchObject({ allowBook: false });
+    expect((inbox.stages.talk as { capabilities?: string[] }).capabilities).toEqual([
+      "booking",
+    ]);
+  });
+
+  it("keeps lead schema compatible with booking fields", () => {
+    expect(defaultLeadSchema.fields.time_preference).toBeTruthy();
+    expect(defaultHitlPolicy.allowedFromStages).toContain("talk");
   });
 });

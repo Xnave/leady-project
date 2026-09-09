@@ -3,6 +3,16 @@ import type { FlowDefinition } from "@/lib/flow/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+export type LifecycleReason =
+  | "idle"
+  | "admin"
+  | "done"
+  | "hitl_resume"
+  | "approve"
+  | "inbound_create"
+  | "hitl_completed"
+  | string;
+
 export function conversationIdleExpired(opts: {
   lastMessageAt: Date | null | undefined;
   idleResetDays: number;
@@ -15,10 +25,27 @@ export function conversationIdleExpired(opts: {
   return now.getTime() - opts.lastMessageAt.getTime() >= days * DAY_MS;
 }
 
+async function sweepEmptyOpenThreads(opts: {
+  tenantId: string;
+  leadId: string;
+  keepConversationId: string;
+}): Promise<void> {
+  await prisma.conversation.deleteMany({
+    where: {
+      tenantId: opts.tenantId,
+      leadId: opts.leadId,
+      id: { not: opts.keepConversationId },
+      status: "open",
+      messages: { none: {} },
+    },
+  });
+}
+
 /** Mark a conversation closed at terminal `done` without opening a new empty thread. */
 export async function closeConversationAsDone(opts: {
   tenantId: string;
   conversationId: string;
+  reason?: LifecycleReason;
 }): Promise<void> {
   const conversation = await prisma.conversation.findFirst({
     where: { id: opts.conversationId, tenantId: opts.tenantId },
@@ -27,12 +54,14 @@ export async function closeConversationAsDone(opts: {
   if (!conversation) return;
 
   const flow = conversation.agent.flow as FlowDefinition;
+  const lifecycleReason = opts.reason ?? "done";
   if (conversation.status !== "closed") {
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
         status: "closed",
         flowState: flow.stages.done?.type === "terminal" ? "done" : conversation.flowState,
+        lifecycleReason,
       },
     });
   } else if (
@@ -41,30 +70,60 @@ export async function closeConversationAsDone(opts: {
   ) {
     await prisma.conversation.update({
       where: { id: conversation.id },
-      data: { flowState: "done" },
+      data: { flowState: "done", lifecycleReason },
     });
   }
 
-  // Drop leftover empty open threads (e.g. from older rotate-on-approve).
-  await prisma.conversation.deleteMany({
-    where: {
-      tenantId: opts.tenantId,
-      leadId: conversation.leadId,
-      id: { not: conversation.id },
-      status: "open",
-      messages: { none: {} },
-    },
+  await sweepEmptyOpenThreads({
+    tenantId: opts.tenantId,
+    leadId: conversation.leadId,
+    keepConversationId: conversation.id,
   });
 }
 
 /**
+ * Resume the same conversation after a non-booking HITL task — no new thread.
+ */
+export async function resumeConversationAfterHitl(opts: {
+  tenantId: string;
+  conversationId: string;
+}): Promise<{ conversationId: string }> {
+  const conversation = await prisma.conversation.findFirstOrThrow({
+    where: { id: opts.conversationId, tenantId: opts.tenantId },
+    include: { agent: true },
+  });
+  const flow = conversation.agent.flow as FlowDefinition;
+  const resumeStage =
+    flow.restartPolicy.fallbackStage && flow.stages[flow.restartPolicy.fallbackStage]
+      ? flow.restartPolicy.fallbackStage
+      : flow.start;
+
+  await prisma.conversation.update({
+    where: { id: conversation.id },
+    data: {
+      status: "open",
+      flowState: resumeStage,
+      lifecycleReason: "hitl_resume",
+    },
+  });
+
+  await sweepEmptyOpenThreads({
+    tenantId: opts.tenantId,
+    leadId: conversation.leadId,
+    keepConversationId: conversation.id,
+  });
+
+  return { conversationId: conversation.id };
+}
+
+/**
  * Close the current open conversation for a lead and open a fresh one at flow start.
- * Used for idle, admin "new conversation", and HITL resume (needs an open thread).
+ * Only for idle, admin "new conversation", or explicit start_new_conversation.
  */
 export async function rotateConversation(opts: {
   tenantId: string;
   leadId: string;
-  reason: string;
+  reason: LifecycleReason;
   conversationId?: string;
 }): Promise<{ previousId: string | null; conversationId: string }> {
   const lead = await prisma.lead.findFirstOrThrow({
@@ -92,6 +151,7 @@ export async function rotateConversation(opts: {
         status: "closed",
         flowState:
           flow.stages.done?.type === "terminal" ? "done" : current.flowState,
+        lifecycleReason: opts.reason,
       },
     });
   }
@@ -106,6 +166,7 @@ export async function rotateConversation(opts: {
       flowState: flow.start,
       flowVersion: agent.flowVersion,
       summary: "",
+      lifecycleReason: opts.reason,
     },
   });
 

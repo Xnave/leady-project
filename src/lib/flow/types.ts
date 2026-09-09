@@ -57,7 +57,8 @@ export type FaqStage = StageBase & {
 
 export type ActionStage = StageBase & {
   type: "action";
-  action: "book_meeting" | "request_human";
+  /** Registered action id (see ActionRegistry). Built-ins: book_meeting, request_human. */
+  action: string;
   on_complete: string;
   on_fail: string;
 };
@@ -69,6 +70,8 @@ export type TalkStage = StageBase & {
   prompt: string;
   allowBook?: boolean;
   required_for_book?: string[];
+  /** Capability packs enabled on this stage (default: ["booking"] if allowBook). */
+  capabilities?: string[];
   on_complete: string;
   on_escalate: string;
 };
@@ -132,15 +135,27 @@ export type MessageSnapshot = {
   createdAt?: Date | string;
 };
 
+export type TalkEffect = {
+  type: string;
+  args?: Record<string, unknown>;
+};
+
 export type TalkOutcome = {
   reply: string;
   fields?: LeadFields;
   intent?: string;
+  /** Must be an edge allowed from the current talk stage (or handled via effects). */
+  nextStage?: string;
+  /** Side effects for the runtime Action/Capability registry. */
+  effects?: TalkEffect[];
+  /** @deprecated Prefer effects: [{ type: "book_meeting" }] */
   book?: boolean;
+  /** @deprecated Prefer effects: [{ type: "request_human" }] + nextStage */
   escalate?: boolean;
   escalateReason?: string;
+  /** @deprecated Prefer nextStage = on_complete */
   complete?: boolean;
-  /** Customer accepted a staff-offered alternative slot — meeting already approved in DB. */
+  /** @deprecated Prefer effects: [{ type: "accept_offered_slot" }] */
   acceptOfferedSlot?: boolean;
 };
 

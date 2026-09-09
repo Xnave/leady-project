@@ -1,5 +1,5 @@
 import { persistInboundIfNew } from "@/lib/conversations";
-import { runTurnNow } from "@/lib/flow/run-turn";
+import { enqueueAgentTurn, runTurnNow } from "@/lib/flow/run-turn";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
 import { NextResponse } from "next/server";
@@ -27,7 +27,27 @@ export async function POST(req: Request) {
     text,
   });
   if (inserted) {
-    await runTurnNow({ tenantId, conversationId: inserted.conversationId });
+    await enqueueAgentTurn({
+      tenantId,
+      conversationId: inserted.conversationId,
+      triggerMessageId: inserted.messageId,
+    });
+    // Fallback when Inngest worker is not running (local DX).
+    await new Promise((r) => setTimeout(r, 800));
+    const agentMsg = await prisma.message.findFirst({
+      where: {
+        conversationId: inserted.conversationId,
+        role: "agent",
+        createdAt: { gt: new Date(Date.now() - 60_000) },
+      },
+    });
+    if (!agentMsg) {
+      await runTurnNow({
+        tenantId,
+        conversationId: inserted.conversationId,
+        triggerMessageId: inserted.messageId,
+      });
+    }
   }
   return NextResponse.redirect(redirectPath(req, "/leads"), 303);
 }

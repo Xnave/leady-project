@@ -11,17 +11,49 @@ export const runAgentTurn = inngest.createFunction(
   },
   { event: "agent/turn.requested" },
   async ({ event, step }) => {
-    const { tenantId, conversationId, resume } = event.data as {
+    const { tenantId, conversationId, resume, triggerMessageId } = event.data as {
       tenantId: string;
       conversationId: string;
       resume?: boolean;
+      triggerMessageId?: string;
     };
 
-    // Delegate to runTurnNow so staff-slot acceptance and all turn side-effects stay in one place.
-    const result = await step.run("run-turn", () =>
-      runTurnNow({ tenantId, conversationId, resume }),
+    const loaded = await step.run("load-context", async () => {
+      const convo = await prisma.conversation.findFirst({
+        where: { id: conversationId, tenantId },
+        select: {
+          id: true,
+          flowState: true,
+          status: true,
+          flowVersion: true,
+        },
+      });
+      return {
+        found: Boolean(convo),
+        flowState: convo?.flowState ?? null,
+        status: convo?.status ?? null,
+        flowVersion: convo?.flowVersion ?? null,
+      };
+    });
+
+    if (!loaded.found) {
+      return { skipped: "missing_conversation" };
+    }
+
+    const result = await step.run("interpret", () =>
+      runTurnNow({
+        tenantId,
+        conversationId,
+        resume,
+        triggerMessageId,
+      }),
     );
-    return result;
+
+    return {
+      ...result,
+      preFlowState: loaded.flowState,
+      preStatus: loaded.status,
+    };
   },
 );
 
@@ -58,7 +90,8 @@ export const nudgeIfSilent = inngest.createFunction(
       if ((counts[data.expectedStage] ?? 0) >= data.maxTimes) return { skipped: "max" };
 
       const ctx = await loadTurnContext(data.tenantId, data.conversationId);
-      await sendAndSave(ctx, data.template);
+      const nudgeKey = `nudge-out-${data.conversationId}-${data.expectedStage}-${data.flowVersion ?? 0}-${counts[data.expectedStage] ?? 0}`;
+      await sendAndSave(ctx, data.template, { idempotencyKey: nudgeKey });
       await prisma.conversation.update({
         where: { id: convo.id },
         data: {

@@ -1,5 +1,7 @@
 import { applyRestartPolicy, assertHitlAllowed, mergeAllowedFields, missingRequired } from "./helpers";
-import { cannedIntroText, shouldSendCannedIntro } from "./intro";
+import { ensureFlowRegistry } from "./capabilities";
+import { getAction } from "./registry";
+import { talkTransitionTargets } from "./prompt-builder";
 import { copyFor, replyLang } from "@/lib/copy";
 import type {
   ActionStage,
@@ -7,6 +9,7 @@ import type {
   FaqStage,
   LeadFields,
   Stage,
+  TalkEffect,
   TalkOutcome,
   TalkStage,
   TurnContext,
@@ -46,6 +49,7 @@ export type TurnResult = {
   missing?: string[];
   action?: string;
   ok?: boolean;
+  effects?: string[];
 };
 
 function hitlReasonKey(raw?: string): string {
@@ -65,11 +69,44 @@ async function sendWaitingHumanHold(ctx: TurnContext, ports: InterpreterPorts): 
   await ports.sendAndSave(ctx, hold);
 }
 
+/** Map legacy TalkOutcome flags into nextStage + effects. */
+export function normalizeTalkOutcome(out: TalkOutcome, stage: TalkStage): TalkOutcome {
+  const effects: TalkEffect[] = [...(out.effects ?? [])];
+  let nextStage = out.nextStage;
+  const has = (type: string) => effects.some((e) => e.type === type);
+
+  if (out.book && !has("book_meeting")) {
+    effects.push({ type: "book_meeting" });
+  }
+  if (out.escalate && !has("request_human")) {
+    effects.push({
+      type: "request_human",
+      args: { reason: out.escalateReason },
+    });
+  }
+  if (out.acceptOfferedSlot && !has("accept_offered_slot")) {
+    effects.push({ type: "accept_offered_slot" });
+    nextStage = nextStage ?? stage.on_complete;
+  }
+  if (out.complete) {
+    nextStage = nextStage ?? stage.on_complete;
+  }
+  if (has("request_human") && !nextStage) {
+    nextStage = stage.on_escalate;
+  }
+  return { ...out, effects, nextStage };
+}
+
+function isAllowedTalkTransition(stage: TalkStage, next: string): boolean {
+  return talkTransitionTargets(stage).includes(next);
+}
+
 export async function interpretTurn(
   ctx: TurnContext,
   event: TurnEvent,
   ports: InterpreterPorts,
 ): Promise<TurnResult> {
+  ensureFlowRegistry();
   ports.log("enter", {
     tenantId: ctx.tenantId,
     conversationId: ctx.conversation.id,
@@ -103,11 +140,6 @@ export async function interpretTurn(
     await ports.persistStage(ctx, stageId);
     ctx.conversation.flowState = stageId;
   }
-
-  const sendStaticIntro =
-    !event.resume &&
-    flow.stages[flow.start]?.type === "talk" &&
-    shouldSendCannedIntro(ctx, { fromTerminal });
 
   for (let hop = 0; hop < 8; hop += 1) {
     if (stage.type === "classify") {
@@ -165,7 +197,8 @@ export async function interpretTurn(
     }
 
     if (stage.type === "talk") {
-      const out = await ports.talk(ctx, stage);
+      const raw = await ports.talk(ctx, stage);
+      const out = normalizeTalkOutcome(raw, stage);
       const schemaKeys = [
         ...Object.keys(ctx.agent.leadSchema.fields),
         "booking_confirm",
@@ -176,59 +209,101 @@ export async function interpretTurn(
       ctx.lead.fields = mergeAllowedFields(schemaKeys, ctx.lead.fields, incoming);
       await ports.persistFields(ctx, ctx.lead.fields);
 
-      // Static canned intro on first/idle turn - still extract above so the next
-      // turn can continue from the customer's first message. Escalation keeps
-      // the model reply instead of the welcome line.
-      if (sendStaticIntro && !out.escalate && !out.acceptOfferedSlot) {
-        out.reply = cannedIntroText(ctx);
-        out.book = false;
-        out.complete = false;
-      }
+      const effectTypes = (out.effects ?? []).map((e) => e.type);
+      let reply = out.reply;
+      let bookedOk: boolean | undefined;
+      let escalateReason = "";
 
-      if (out.acceptOfferedSlot) {
-        await ports.sendAndSave(ctx, out.reply);
-        await ports.persistStage(ctx, stage.on_complete);
-        ctx.conversation.flowState = stage.on_complete;
-        ports.log("exit", { stageId: stage.on_complete, action: "accept_offered_slot" });
-        return { stage: stage.on_complete, action: "done", ok: true };
-      }
-
-      if (out.escalate) {
-        assertHitlAllowed(ctx, stageId);
-        const reason = hitlReasonKey(out.escalateReason);
-        await ports.persistStage(ctx, "waiting_human");
-        ctx.conversation.flowState = "waiting_human";
-        await ports.requestHuman(ctx, reason);
-        await ports.sendAndSave(ctx, out.reply);
-        ports.log("exit", { stageId: "waiting_human", stageType: "talk", escalate: true });
-        return { stage: "waiting_human", action: "request_human", ok: true };
-      }
-
-      if (out.book && stage.allowBook !== false) {
-        const booked = await ports.bookMeeting(ctx);
-        await ports.sendAndSave(ctx, booked.reply);
-        if (booked.ok) {
-          await ports.persistStage(ctx, "waiting_human");
-          ctx.conversation.flowState = "waiting_human";
-          ports.log("exit", { stageId: "waiting_human", action: "book_meeting", ok: true });
-          return { stage: "waiting_human", action: "book_meeting", ok: true };
+      for (const effect of out.effects ?? []) {
+        if (effect.type === "book_meeting") {
+          if (stage.allowBook === false) continue;
+          const booked = await ports.bookMeeting(ctx);
+          reply = booked.reply;
+          bookedOk = booked.ok;
+          if (booked.ok) {
+            await ports.persistStage(ctx, "waiting_human");
+            ctx.conversation.flowState = "waiting_human";
+            await ports.sendAndSave(ctx, reply);
+            ports.log("exit", {
+              stageId: "waiting_human",
+              action: "book_meeting",
+              ok: true,
+              effects: effectTypes,
+            });
+            return {
+              stage: "waiting_human",
+              action: "book_meeting",
+              ok: true,
+              effects: effectTypes,
+            };
+          }
         }
-        ports.log("exit", { stageId, action: "book_meeting", ok: false });
-        return { stage: stageId, action: "book_meeting", ok: false };
+        if (effect.type === "request_human") {
+          escalateReason = hitlReasonKey(
+            typeof effect.args?.reason === "string" ? effect.args.reason : undefined,
+          );
+        }
+        if (effect.type === "accept_offered_slot") {
+          // Meeting already approved inside the capability tool.
+        }
       }
 
-      if (out.complete) {
-        await ports.sendAndSave(ctx, out.reply);
+      if (bookedOk === false) {
+        await ports.sendAndSave(ctx, reply);
+        ports.log("exit", { stageId, action: "book_meeting", ok: false, effects: effectTypes });
+        return { stage: stageId, action: "book_meeting", ok: false, effects: effectTypes };
+      }
+
+      let nextStage = out.nextStage;
+      if (nextStage && !isAllowedTalkTransition(stage, nextStage)) {
+        ports.log("exit", {
+          stageId,
+          action: "illegal_transition",
+          nextStage,
+          effects: effectTypes,
+        });
+        nextStage = undefined;
+      }
+
+      if (nextStage === stage.on_escalate || effectTypes.includes("request_human")) {
+        assertHitlAllowed(ctx, stageId);
+        const dest = stage.on_escalate;
+        await ports.sendAndSave(ctx, reply);
+        await ports.persistStage(ctx, dest);
+        ctx.conversation.flowState = dest;
+        stageId = dest;
+        stage = flow.stages[stageId];
+        // Continue into action stage; stash reason on fields for action hop.
+        ctx.lead.fields = {
+          ...ctx.lead.fields,
+          _escalate_reason: escalateReason || "escalation_requested",
+        };
+        continue;
+      }
+
+      if (nextStage === stage.on_complete || effectTypes.includes("accept_offered_slot")) {
+        await ports.sendAndSave(ctx, reply);
         await ports.persistStage(ctx, stage.on_complete);
         ctx.conversation.flowState = stage.on_complete;
-        ports.log("exit", { stageId: stage.on_complete, stageType: "talk" });
-        return { stage: stage.on_complete, action: "done" };
+        ports.log("exit", {
+          stageId: stage.on_complete,
+          action: effectTypes.includes("accept_offered_slot")
+            ? "accept_offered_slot"
+            : "done",
+          effects: effectTypes,
+        });
+        return {
+          stage: stage.on_complete,
+          action: "done",
+          ok: true,
+          effects: effectTypes,
+        };
       }
 
-      await ports.sendAndSave(ctx, out.reply);
+      await ports.sendAndSave(ctx, reply);
       await ports.scheduleNudge(ctx, stageId, stage);
-      ports.log("exit", { stageId, stageType: "talk", action: sendStaticIntro ? "canned_intro" : undefined });
-      return { stage: stageId, action: sendStaticIntro ? "canned_intro" : undefined };
+      ports.log("exit", { stageId, stageType: "talk", effects: effectTypes });
+      return { stage: stageId, effects: effectTypes };
     }
 
     if (stage.type === "action") {
@@ -236,7 +311,9 @@ export async function interpretTurn(
       const next = result.ok ? stage.on_complete : stage.on_fail;
       await ports.persistStage(ctx, next);
       ctx.conversation.flowState = next;
-      await ports.sendAndSave(ctx, result.reply);
+      if (result.reply.trim()) {
+        await ports.sendAndSave(ctx, result.reply);
+      }
       ports.log("exit", { stageId: next, action: stage.action, ok: result.ok });
       return { stage: next, action: stage.action, ok: result.ok };
     }
@@ -256,10 +333,23 @@ async function runAction(
   if (stage.action === "book_meeting") {
     return ports.bookMeeting(ctx);
   }
-  assertHitlAllowed(ctx, ctx.conversation.flowState);
-  await ports.requestHuman(ctx, "support_unresolved");
-  return {
-    ok: true,
-    reply: "A person from the team will take this from here.",
-  };
+  if (stage.action === "request_human") {
+    assertHitlAllowed(ctx, ctx.conversation.flowState);
+    const reason = hitlReasonKey(String(ctx.lead.fields._escalate_reason ?? "support_unresolved"));
+    await ports.requestHuman(ctx, reason);
+    // Talk already sent the customer-facing handoff line.
+    if (ctx.lead.fields._escalate_reason) {
+      return { ok: true, reply: "" };
+    }
+    return {
+      ok: true,
+      reply: "A person from the team will take this from here.",
+    };
+  }
+
+  const registered = getAction(stage.action);
+  if (registered) {
+    return registered(ctx, stage);
+  }
+  return { ok: false, reply: `Unknown action: ${stage.action}` };
 }

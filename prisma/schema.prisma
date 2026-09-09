@@ -139,6 +139,8 @@ model Conversation {
   status           String   @default("open")
   flowState        String
   flowVersion      Int
+  /** Why this thread opened/closed: idle | admin | done | hitl_resume | approve | inbound_create | … */
+  lifecycleReason  String   @default("")
   nudgeCountByStage Json    @default("{}")
   summary          String   @default("")
   createdAt        DateTime @default(now())

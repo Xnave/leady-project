@@ -43,6 +43,7 @@ export async function POST(
     await closeConversationAsDone({
       tenantId,
       conversationId: result.conversationId,
+      reason: "approve",
     });
   }
   const redirectTo = String(form.get("redirect") ?? "").trim() || "/inbox";

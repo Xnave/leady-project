@@ -47,6 +47,7 @@ export async function POST(
         await closeConversationAsDone({
           tenantId,
           conversationId: result.conversationId,
+          reason: "approve",
         });
       }
       return NextResponse.redirect(redirectPath(req, "/inbox"), 303);

@@ -8,6 +8,7 @@ import type { FlowDefinition, HitlPolicy, LeadSchema } from "@/lib/flow/types";
 import { looksLikePhoneNumber } from "@/lib/flow/booking-collect";
 import {
   conversationIdleExpired,
+  resumeConversationAfterHitl,
   rotateConversation,
 } from "@/lib/flow/rotate-conversation";
 import {
@@ -19,7 +20,7 @@ import {
 } from "@/lib/leads";
 import { fetchZernioInboxContact } from "@/lib/zernio";
 
-export { rotateConversation } from "@/lib/flow/rotate-conversation";
+export { rotateConversation, resumeConversationAfterHitl } from "@/lib/flow/rotate-conversation";
 
 export async function persistInboundIfNew(opts: {
   tenantId: string;
@@ -138,6 +139,7 @@ export async function persistInboundIfNew(opts: {
         flowState: flow.start,
         flowVersion: channel.agent.flowVersion,
         summary: "",
+        lifecycleReason: "inbound_create",
       },
       include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
     });
@@ -282,6 +284,7 @@ export async function insertAgentMessage(
   tenantId: string,
   conversationId: string,
   text: string,
+  opts?: { providerMessageId?: string },
 ) {
   await prisma.message.create({
     data: {
@@ -289,7 +292,7 @@ export async function insertAgentMessage(
       conversationId,
       role: "agent",
       text,
-      providerMessageId: `out-${crypto.randomUUID()}`,
+      providerMessageId: opts?.providerMessageId ?? `out-${crypto.randomUUID()}`,
     },
   });
 }
@@ -351,13 +354,11 @@ export async function completeHitlTask(opts: {
       },
     }),
   ]);
-  const rotated = await rotateConversation({
+  const resumed = await resumeConversationAfterHitl({
     tenantId: opts.tenantId,
-    leadId: task.leadId,
-    reason: "hitl_completed",
     conversationId: task.conversationId,
   });
-  return { task, conversationId: rotated.conversationId };
+  return { task, conversationId: resumed.conversationId };
 }
 
 export async function enrichInstagramLeadIdentity(opts: {

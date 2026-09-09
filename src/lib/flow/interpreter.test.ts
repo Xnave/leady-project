@@ -133,7 +133,7 @@ describe("interpretTurn", () => {
     expect(replies[0]).toBe("thanks, we are back");
   });
 
-  it("talks after done and sends a static canned intro while still extracting", async () => {
+  it("talks after done and uses the model reply while still extracting (no canned overwrite)", async () => {
     const replies: string[] = [];
     let talked = false;
     const flow = structuredClone(salesOrSupportFlow);
@@ -176,12 +176,11 @@ describe("interpretTurn", () => {
     expect(talked).toBe(true);
     expect(result.skipped).toBeUndefined();
     expect(result.stage).toBe("talk");
-    expect(replies[0]).toBe("We design and install kitchens.");
-    expect(replies[0]).not.toMatch(/what can I help with/);
+    expect(replies[0]).toBe("what can I help with");
     expect(state.lead.fields.need).toBe("followup");
   });
 
-  it("talks on the first turn, extracts fields, and replies with only the onboard intro", async () => {
+  it("talks on the first turn, extracts fields, and sends the model reply", async () => {
     const replies: string[] = [];
     let talked = false;
     const state = ctx({
@@ -206,15 +205,14 @@ describe("interpretTurn", () => {
       },
     });
     expect(talked).toBe(true);
-    expect(result.action).toBe("canned_intro");
+    expect(result.action).not.toBe("canned_intro");
     expect(result.stage).toBe("talk");
-    expect(replies[0]).toBe("We design and install kitchens.");
-    expect(replies[0]).not.toMatch(/got it, when works/);
+    expect(replies[0]).toBe("got it, when works?");
     expect(state.lead.fields.need).toBe("kitchen");
     expect(state.lead.fields.intent).toBe("sales");
   });
 
-  it("talks after the conversation is done and sends only the intro", async () => {
+  it("talks after the conversation is done and sends the model reply", async () => {
     const replies: string[] = [];
     let talked = false;
     const state = ctx({
@@ -244,10 +242,9 @@ describe("interpretTurn", () => {
       },
     });
     expect(talked).toBe(true);
-    expect(result.action).toBe("canned_intro");
+    expect(result.action).not.toBe("canned_intro");
     expect(result.stage).toBe("talk");
-    expect(replies[0]).toBe("We design and install kitchens.");
-    expect(replies[0]).not.toMatch(/welcome back/);
+    expect(replies[0]).toBe("welcome back");
   });
 
   it("continues talk after a long gap when the conversation was not rotated yet", async () => {

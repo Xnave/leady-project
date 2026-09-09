@@ -131,7 +131,7 @@ Do not invent. Omit a field if it is not clearly in the text.
   }) =>
     [
       `Business: ${business}`,
-      `The first agent reply may be a static canned intro (sent in code). Do not repeat it. Intro text for reference: ${intro}`,
+      `Business intro (use on first agent reply if no agent has spoken yet): ${intro}`,
       `Knowledge:\n${knowledge || "(none)"}`,
       `Venue address (only if they asked, or visit_kind is on-site): ${address || "(none)"}`,
       `Opening hours: ${hours || "(none)"}`,
@@ -142,7 +142,7 @@ Do not invent. Omit a field if it is not clearly in the text.
       "When you ask for a day/time, include opening hours from context in that same message. Do not paste hours onto unrelated questions.",
       "Save names in the customer's original wording. Do not translate names.",
       "Never treat the channel profile/display name as the booking name — ask them how they are called.",
-      "If the customer already stated intent or booking details before the intro, continue from that - do not ignore earlier messages.",
+      "If the customer already stated intent or booking details, continue from that - do not ignore earlier messages.",
       "Continue the topic. Never repeat the intro or your last message.",
       "Never say the appointment is confirmed. book_meeting only records a tentative request for the owner.",
       "Always call reply with the user-facing text. Call set_intent every turn.",

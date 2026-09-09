@@ -1,6 +1,7 @@
 import { interpretTurn } from "./interpreter";
 import { heuristicPreviewClassify, previewExtract } from "./preview-helpers";
-import { heuristicTalk } from "./llm";
+import { degradeTalk } from "./llm";
+import { cannedIntroText, hasAgentReplied } from "./intro";
 import type { AgentSnapshot, LeadFields, TenantSnapshot, TurnContext } from "./types";
 import { validateFlow } from "./validate";
 
@@ -68,7 +69,13 @@ export async function previewFlow(
           reply: resolved ? agent.knowledgeText.slice(0, 200) : "escalate",
         };
       },
-      talk: async (c, stage) => heuristicTalk(c, stage),
+      talk: async (c, stage) => {
+        // Offline preview: simulate first greet without LLM; live path uses PromptBuilder.
+        if (!hasAgentReplied(c)) {
+          return { reply: cannedIntroText(c) };
+        }
+        return degradeTalk(c, stage);
+      },
       bookMeeting: async (c) => {
         actions.push("book_meeting");
         if (!c.lead.fields.email) return { ok: false, reply: "missing email" };
