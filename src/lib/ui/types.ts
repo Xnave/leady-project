@@ -264,6 +264,11 @@ export type UiCopy = {
     customReplyPlaceholder: string;
     newConversation: string;
     startConversation: string;
+    reopenConversation: string;
+    startDisabledHint: string;
+    conversationEnded: string;
+    reopenDisabledHint: string;
+    decisionsLockedHint: string;
     markRead: string;
     markUnread: string;
     staffPlaceholder: string;

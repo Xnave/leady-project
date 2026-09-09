@@ -72,6 +72,8 @@ export function MeetingsTable({
   labels,
   emptyLabel,
   allowDecide,
+  latestConversationId,
+  decisionsLockedHint,
 }: {
   ui: UiCopy;
   leadId: string;
@@ -79,6 +81,9 @@ export function MeetingsTable({
   labels: Labels;
   emptyLabel: string;
   allowDecide: boolean;
+  /** When set, only meetings from this conversation can be decided. */
+  latestConversationId?: string;
+  decisionsLockedHint?: string;
 }) {
   const [openId, setOpenId] = useState<string | null>(meetings[0]?.id ?? null);
 
@@ -103,6 +108,9 @@ export function MeetingsTable({
         <tbody>
           {meetings.map((meeting) => {
             const expanded = openId === meeting.id;
+            const canDecide =
+              allowDecide &&
+              (!latestConversationId || meeting.conversationId === latestConversationId);
             return (
               <Fragment key={meeting.id}>
                 <tr
@@ -152,7 +160,7 @@ export function MeetingsTable({
                         {meeting.kind && meeting.kind !== "visit" ? (
                           <p className="muted">{meetingKindLabel(ui, meeting.kind)}</p>
                         ) : null}
-                        {allowDecide ? (
+                        {canDecide ? (
                           <MeetingDecisionForm
                             meetingId={meeting.id}
                             pending={
@@ -172,6 +180,8 @@ export function MeetingsTable({
                           />
                         ) : meeting.awaitingCustomerConfirm ? (
                           <p className="muted">{ui.inbox.awaitingCustomerHint}</p>
+                        ) : allowDecide && !canDecide && decisionsLockedHint ? (
+                          <p className="muted">{decisionsLockedHint}</p>
                         ) : null}
                       </div>
                     </td>

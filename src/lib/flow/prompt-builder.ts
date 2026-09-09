@@ -1,6 +1,6 @@
 import { copyFor, replyLang } from "@/lib/copy";
 import { talkGuardrails } from "./guardrails";
-import { hasAgentReplied } from "./intro";
+import { hasAgentReplied, isIdleConversationReset } from "./intro";
 import { capabilityPromptSections, resolveTalkCapabilities } from "./registry";
 import type { LeadFields, Stage, TalkStage, TurnContext } from "./types";
 import { getStaffSlotOffer } from "@/lib/meetings";
@@ -10,7 +10,7 @@ import {
   effectiveBookingRequired,
   savedPhone,
 } from "./booking-collect";
-import { isCustomerNameSatisfied, looksLikeIncompleteCustomerName } from "@/lib/leads";
+import { formatPhoneDisplay, isCustomerNameSatisfied, looksLikeIncompleteCustomerName } from "@/lib/leads";
 
 function lastLeadText(ctx: TurnContext): string {
   return [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
@@ -61,10 +61,12 @@ export class PromptBuilder {
     const deduced = callbackPhone(ctx) ?? "";
     if (whatsapp) {
       if (saved) {
-        this.parts.push(`Channel: WhatsApp. Callback phone already saved: ${saved}.`);
+        this.parts.push(
+          `Channel: WhatsApp. Callback phone already saved: ${saved}. When mentioning it to the customer, write it as ${formatPhoneDisplay(saved) || saved} (never +972…).`,
+        );
       } else if (deduced) {
         this.parts.push(
-          `Channel: WhatsApp. Deduced callback candidate: ${deduced}. Confirm with the customer before save_fields phone=${deduced}.`,
+          `Channel: WhatsApp. Deduced callback candidate: ${deduced} (display as ${formatPhoneDisplay(deduced) || deduced}). Confirm with the customer before save_fields phone=${deduced}.`,
         );
       } else {
         this.parts.push(
@@ -73,6 +75,11 @@ export class PromptBuilder {
       }
     } else {
       this.parts.push(`Channel: ${ctx.channel?.provider ?? "chat"}.`);
+      if (saved) {
+        this.parts.push(
+          `When mentioning their phone, use ${formatPhoneDisplay(saved) || saved} (never international +972 form).`,
+        );
+      }
     }
     return this;
   }
@@ -131,6 +138,11 @@ export class PromptBuilder {
         last,
       }),
     );
+    if (isIdleConversationReset(ctx)) {
+      this.parts.push(
+        "There was a long gap since the previous message. Continue in this same conversation by default. If a clean start seems better, ask whether they want a new conversation — only call start_new_conversation after they clearly agree.",
+      );
+    }
     if (resolveTalkCapabilities(stage).includes("booking")) {
       const active = isBookingCollectActive(fields, required);
       if (active) {
@@ -173,6 +185,8 @@ export class PromptBuilder {
       "Prefer reply for informational turns. Call ask_field only while booking is in progress.",
       "Call reply unless ask_field or resolve_offered_slot already set the outbound text.",
       "Use transition when the goal is complete (on_complete) or you must hand off (on_escalate).",
+      "Conversation continuity: keep the SAME thread for follow-ups, staff questions, more details, or a new booking after a closed visit. Never invent a fresh welcome mid-thread.",
+      "Only if the topic is clearly a brand-new matter AND a long gap / customer wants a clean start: first ask with reply whether to open a new conversation. Call start_new_conversation(intro=...) ONLY after they clearly say yes — the intro becomes the first message on the new thread.",
     );
     return this;
   }

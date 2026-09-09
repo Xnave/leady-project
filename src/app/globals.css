@@ -1712,6 +1712,67 @@ td .muted { font-size: var(--fs-xs); }
 }
 .composer p.muted { flex-basis: 100%; margin: 0; color: var(--danger); font-weight: 500; }
 
+.lead-convo-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.lead-convo-card-head h3 {
+  margin: 0;
+}
+.lead-convo-ended-label {
+  margin: 0 0 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+.lead-convo-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: stretch;
+  width: 100%;
+}
+.lead-convo-card-head .lead-convo-actions {
+  width: auto;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+.lead-convo-actions form {
+  margin: 0;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.lead-convo-actions button {
+  width: 100%;
+  min-height: 44px;
+  cursor: pointer;
+  white-space: nowrap;
+  padding-inline: 12px;
+  font-size: 0.8125rem;
+}
+.lead-convo-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.composer.lead-convo-ended {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+.composer.lead-convo-ended .lead-convo-ended-label {
+  margin: 0;
+}
+.composer.lead-convo-ended .lead-convo-actions button {
+  border-radius: var(--radius-pill);
+}
+
 /* --------------------------------------------------------------------------
    15. Chat list (leads sidebar) — WhatsApp conversation rows
    -------------------------------------------------------------------------- */

@@ -25,7 +25,7 @@ async function loadInboxTasks(tenantId: string) {
           channel: true,
           meetings: { orderBy: { createdAt: "desc" }, take: 10 },
           conversations: {
-            orderBy: { updatedAt: "desc" },
+            orderBy: { createdAt: "desc" },
             take: 1,
           },
         },
@@ -86,7 +86,7 @@ export default async function InboxPage({
             include: {
               channel: true,
               meetings: { orderBy: { createdAt: "desc" }, take: 10 },
-              conversations: { orderBy: { updatedAt: "desc" }, take: 1 },
+              conversations: { orderBy: { createdAt: "desc" }, take: 1 },
             },
           },
           conversation: true,
@@ -218,6 +218,11 @@ function InboxTaskDetail({
     (isWhatsapp ? task.lead.externalUserId : "");
   const waUrl = isWhatsapp ? whatsappChatUrl(phone) : "";
   const meeting = task.lead.meetings.find((m) => m.id === payload.meetingId);
+  const latestConversationId = task.lead.conversations[0]?.id;
+  const decisionsOnLatest =
+    !latestConversationId ||
+    meeting?.conversationId === latestConversationId ||
+    task.conversationId === latestConversationId;
   const payloadFlags = payload as {
     meetingId?: string;
     awaitingCustomerConfirm?: boolean;
@@ -306,37 +311,41 @@ function InboxTaskDetail({
           {awaitingCustomer ? (
             <p className="muted">{ui.inbox.awaitingCustomerHint}</p>
           ) : null}
-          <MeetingDecisionForm
-            meetingId={payload.meetingId!}
-            pending={meetingPending}
-            status={
-              awaitingCustomer
-                ? ui.inbox.awaitingCustomer
-                : meeting.status === "pending"
-                  ? ui.common.pending
-                  : meeting.status === "approved"
-                    ? resolution?.customerConfirmed
-                      ? ui.inbox.customerConfirmed
-                      : ui.meeting.approved
-                    : meeting.status === "rejected"
-                      ? ui.meeting.rejected
-                      : meeting.status
-            }
-            labels={meetingLabels}
-            summary={{
-              name:
-                String(fields.name ?? payload.name ?? meeting.contactName ?? "") ||
-                undefined,
-              phone:
-                String(fields.phone ?? payload.phone ?? meeting.contactPhone ?? "") ||
-                undefined,
-              email: String(fields.email ?? payload.email ?? "") || undefined,
-              need:
-                String(fields.need ?? payload.need ?? meeting.needText ?? "") || undefined,
-              slot: String(payload.slot ?? meeting.slotText ?? "") || undefined,
-              kind: String(payload.kind ?? meeting.kind ?? "") || undefined,
-            }}
-          />
+          {decisionsOnLatest ? (
+            <MeetingDecisionForm
+              meetingId={payload.meetingId!}
+              pending={meetingPending}
+              status={
+                awaitingCustomer
+                  ? ui.inbox.awaitingCustomer
+                  : meeting.status === "pending"
+                    ? ui.common.pending
+                    : meeting.status === "approved"
+                      ? resolution?.customerConfirmed
+                        ? ui.inbox.customerConfirmed
+                        : ui.meeting.approved
+                      : meeting.status === "rejected"
+                        ? ui.meeting.rejected
+                        : meeting.status
+              }
+              labels={meetingLabels}
+              summary={{
+                name:
+                  String(fields.name ?? payload.name ?? meeting.contactName ?? "") ||
+                  undefined,
+                phone:
+                  String(fields.phone ?? payload.phone ?? meeting.contactPhone ?? "") ||
+                  undefined,
+                email: String(fields.email ?? payload.email ?? "") || undefined,
+                need:
+                  String(fields.need ?? payload.need ?? meeting.needText ?? "") || undefined,
+                slot: String(payload.slot ?? meeting.slotText ?? "") || undefined,
+                kind: String(payload.kind ?? meeting.kind ?? "") || undefined,
+              }}
+            />
+          ) : (
+            <p className="muted">{ui.inbox.decisionsLockedHint}</p>
+          )}
         </>
       ) : !isBooking && task.status === "open" ? (
         <form action={`/api/hitl/${task.id}/complete`} method="post" className="stack">

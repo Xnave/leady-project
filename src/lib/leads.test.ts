@@ -7,6 +7,7 @@ import {
   isDemoLead,
   leadDisplayName,
   looksLikeIncompleteCustomerName,
+  rewritePhonesInText,
 } from "./leads";
 import { normalizeLeadStatus } from "./ui";
 
@@ -56,6 +57,15 @@ describe("leads helpers", () => {
   it("formats IL phones for UI", () => {
     expect(formatPhoneDisplay("+972526595639")).toBe("052-659-5639");
     expect(formatPhoneDisplay("972526595639")).toBe("052-659-5639");
+  });
+
+  it("rewrites +972 phones in free text", () => {
+    expect(
+      rewritePhonesInText("טלפון: +972526595639", ["0526595639"]),
+    ).toBe("טלפון: 052-659-5639");
+    expect(rewritePhonesInText("טלפון: +972526595639", [])).toBe(
+      "טלפון: 052-659-5639",
+    );
   });
 
   it("treats single-token names as incomplete until agent-collected", () => {

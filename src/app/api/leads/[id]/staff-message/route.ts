@@ -31,6 +31,9 @@ export async function POST(
   if (!conversation) {
     return NextResponse.json({ error: "no_open_conversation" }, { status: 400 });
   }
+  if (conversation.status === "closed") {
+    return NextResponse.json({ error: "conversation_closed" }, { status: 400 });
+  }
 
   await prisma.message.create({
     data: {

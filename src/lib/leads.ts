@@ -53,6 +53,42 @@ export function formatPhoneDisplay(phone: string | null | undefined): string {
   return digits || raw;
 }
 
+/**
+ * Replace raw phone forms in customer-facing text with UI display format.
+ * Handles +972…, 972…, and already-local variants of the known numbers.
+ */
+export function rewritePhonesInText(
+  text: string,
+  phones: Array<string | null | undefined>,
+): string {
+  let out = text;
+  for (const raw of phones) {
+    const trimmed = (raw ?? "").trim();
+    if (!trimmed) continue;
+    const display = formatPhoneDisplay(trimmed);
+    if (!display) continue;
+    const digits = trimmed.replace(/[^\d]/g, "");
+    const local = digits.startsWith("972") && digits.length >= 11 ? `0${digits.slice(3)}` : digits;
+    const intl =
+      local.startsWith("0") && local.length >= 9 ? `972${local.slice(1)}` : digits.startsWith("972") ? digits : "";
+    const variants = [
+      trimmed,
+      digits,
+      local,
+      intl ? `+${intl}` : "",
+      intl,
+      local.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3"),
+      local.replace(/(\d{2})(\d{3})(\d{4})/, "$1-$2-$3"),
+    ].filter((v, i, arr) => Boolean(v) && v !== display && arr.indexOf(v) === i);
+    for (const v of variants) {
+      out = out.split(v).join(display);
+    }
+  }
+  // Catch leftover +972 / 972 mobiles the model invented without matching saved phone.
+  out = out.replace(/\+?972[\s-]?5\d(?:[\s-]?\d){7}/g, (m) => formatPhoneDisplay(m) || m);
+  return out;
+}
+
 /** True when stored name looks like a nickname / partial / non-person name. */
 export function looksLikeIncompleteCustomerName(name: string | null | undefined): boolean {
   const t = (name ?? "").trim();

@@ -6,11 +6,13 @@ import {
   callbackPhone,
   effectiveBookingRequired,
   looksLikePhoneNumber,
+  savedPhone,
 } from "../booking-collect";
 import { registerCapability } from "../registry";
 import type { LeadFields, TalkOutcome, TalkStage, TurnContext } from "../types";
 import { getStaffSlotOffer, markMeetingDecision } from "@/lib/meetings";
 import { proposesDifferentSlot } from "../slot";
+import { formatPhoneDisplay, rewritePhonesInText } from "@/lib/leads";
 
 export type TalkCollected = TalkOutcome & {
   askFieldUsed?: boolean;
@@ -224,10 +226,17 @@ export function registerBookingCapability(): void {
         }),
         confirm_details: tool({
           description:
-            "Present the visit details for the customer to confirm before book_meeting. Then save_fields booking_confirm=pending until they agree.",
+            "Present the visit details for the customer to confirm before book_meeting. Then save_fields booking_confirm=pending until they agree. Always write the phone using the display form from the system (local 0XX-XXX-XXXX), never +972.",
           inputSchema: z.object({ text: z.string() }),
           execute: async ({ text }: { text: string }) => {
-            collected.reply = text.trim();
+            const merged = { ...fieldsForTurn, ...collected.fields };
+            const phoneRaw = savedPhone(merged) || callbackPhone(ctx) || "";
+            const displayPhone = formatPhoneDisplay(phoneRaw) || phoneRaw;
+            collected.reply = rewritePhonesInText(text.trim(), [
+              phoneRaw,
+              displayPhone,
+              callbackPhone(ctx),
+            ]);
             collected.replyLocked = true;
             collected.fields = {
               ...collected.fields,

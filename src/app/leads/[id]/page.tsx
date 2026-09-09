@@ -64,16 +64,23 @@ export default async function LeadDetailPage({
     }
   }
   const conversations = lead.conversations;
-  const withMessages = conversations.filter((c) => c.messages.length > 0);
   const lastActivityAt = (c: (typeof conversations)[number]) => {
     const lastMsg = c.messages[c.messages.length - 1];
     return lastMsg?.createdAt?.getTime() ?? c.updatedAt.getTime();
   };
-  const visibleConversations = [...(withMessages.length > 0 ? withMessages : conversations)].sort(
-    (a, b) => lastActivityAt(b) - lastActivityAt(a),
-  );
+  // Keep open (incl. empty new) threads visible so staff can write after "start".
+  const visibleConversations = [...conversations]
+    .filter(
+      (c) =>
+        c.messages.length > 0 ||
+        c.status !== "closed" ||
+        c.id === convoParam,
+    )
+    .sort((a, b) => lastActivityAt(b) - lastActivityAt(a));
   const convo =
-    visibleConversations.find((c) => c.id === convoParam) ?? visibleConversations[0];
+    visibleConversations.find((c) => c.id === convoParam) ??
+    conversations.find((c) => c.id === convoParam) ??
+    visibleConversations[0];
   const flow = convo?.agent.flow as FlowDefinition | undefined;
   const schema = (convo?.agent.leadSchema ?? { fields: {} }) as LeadSchema;
   const crmFields = (lead.fields as LeadFields) ?? {};
@@ -90,8 +97,12 @@ export default async function LeadDetailPage({
     (lead.channel.provider === "whatsapp" ? lead.externalUserId : "") ||
     "";
   const waUrl = lead.channel.provider === "whatsapp" ? whatsappChatUrl(phone) : "";
-  const latestId = visibleConversations[0]?.id;
+  const latestByCreated = [...conversations].sort(
+    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+  )[0];
+  const latestId = latestByCreated?.id;
   const isLatest = Boolean(convo && latestId && convo.id === latestId);
+  const hasOpenConversation = conversations.some((c) => c.status !== "closed");
 
   if (lead.adminUnread) {
     await prisma.lead.update({
@@ -132,6 +143,8 @@ export default async function LeadDetailPage({
       activeConversationId={convo?.id}
       conversationId={convo?.id}
       isLatestConversation={isLatest}
+      hasOpenConversation={hasOpenConversation}
+      latestConversationId={latestId}
       flow={flow}
       messages={(convo?.messages ?? []).map((m) => ({
         id: m.id,

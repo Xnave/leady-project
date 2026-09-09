@@ -1,15 +1,24 @@
 import { NextResponse } from "next/server";
 import {
   closeConversationAsDone,
+  reopenConversation,
   rotateConversation,
 } from "@/lib/flow/rotate-conversation";
 import { requireTenantId } from "@/lib/tenant";
 import { redirectPath } from "@/lib/request-url";
 import { prisma } from "@/lib/db";
 
+type Intent = "end" | "start" | "reopen";
+
+function parseIntent(raw: string): Intent {
+  if (raw === "start" || raw === "reopen") return raw;
+  return "end";
+}
+
 /**
- * intent=end (default): close the active conversation.
- * intent=start: open a fresh conversation (after end, or when already closed).
+ * intent=end: close the active conversation (no new thread).
+ * intent=start: open a brand-new empty conversation (refuses if one is already open).
+ * intent=reopen: reopen this closed conversation (refuses if another open exists).
  */
 export async function POST(
   req: Request,
@@ -22,40 +31,89 @@ export async function POST(
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
   const form = await req.formData().catch(() => null);
-  const intent = String(form?.get("intent") ?? "end").trim() === "start" ? "start" : "end";
-  const conversationId =
-    String(form?.get("conversationId") ?? "").trim() ||
-    (
-      await prisma.conversation.findFirst({
-        where: { leadId, tenantId, status: { not: "closed" } },
-        orderBy: { createdAt: "desc" },
-        select: { id: true },
-      })
-    )?.id;
+  const intent = parseIntent(String(form?.get("intent") ?? "end").trim());
+  const conversationId = String(form?.get("conversationId") ?? "").trim();
 
-  let redirectConvoId = conversationId ?? null;
+  const openConvo = await prisma.conversation.findFirst({
+    where: { leadId, tenantId, status: { not: "closed" } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
 
-  if (intent === "end") {
-    if (conversationId) {
-      await closeConversationAsDone({
+  let redirectConvoId: string | null = conversationId || openConvo?.id || null;
+
+  try {
+    if (intent === "end") {
+      const toClose =
+        conversationId ||
+        openConvo?.id ||
+        (
+          await prisma.conversation.findFirst({
+            where: { leadId, tenantId, status: { not: "closed" } },
+            orderBy: { createdAt: "desc" },
+            select: { id: true },
+          })
+        )?.id;
+      if (toClose) {
+        await closeConversationAsDone({
+          tenantId,
+          conversationId: toClose,
+          reason: "admin",
+        });
+        redirectConvoId = toClose;
+      }
+    } else if (intent === "start") {
+      if (openConvo) {
+        const accept = req.headers.get("accept") ?? "";
+        if (accept.includes("application/json")) {
+          return NextResponse.json(
+            { error: "open_conversation_exists", openConversationId: openConvo.id },
+            { status: 409 },
+          );
+        }
+        return NextResponse.redirect(
+          redirectPath(req, `/leads/${leadId}?c=${openConvo.id}`),
+          303,
+        );
+      }
+      const rotated = await rotateConversation({
         tenantId,
-        conversationId,
+        leadId,
         reason: "admin",
       });
+      redirectConvoId = rotated.conversationId;
+    } else {
+      // reopen
+      if (!conversationId) {
+        return NextResponse.json({ error: "conversationId_required" }, { status: 400 });
+      }
+      if (openConvo && openConvo.id !== conversationId) {
+        return NextResponse.json(
+          { error: "open_conversation_exists", openConversationId: openConvo.id },
+          { status: 409 },
+        );
+      }
+      if (openConvo && openConvo.id === conversationId) {
+        redirectConvoId = conversationId;
+      } else {
+        const reopened = await reopenConversation({
+          tenantId,
+          conversationId,
+        });
+        redirectConvoId = reopened.conversationId;
+      }
     }
-  } else {
-    const rotated = await rotateConversation({
-      tenantId,
-      leadId,
-      reason: "admin",
-      conversationId: conversationId || undefined,
-    });
-    redirectConvoId = rotated.conversationId;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "failed";
+    if (message === "open_conversation_exists") {
+      return NextResponse.json({ error: message }, { status: 409 });
+    }
+    throw err;
   }
 
   const accept = req.headers.get("accept") ?? "";
   if (accept.includes("application/json")) {
-    return NextResponse.json({ conversationId: redirectConvoId });
+    return NextResponse.json({ conversationId: redirectConvoId, intent });
   }
   const path = redirectConvoId
     ? `/leads/${leadId}?c=${redirectConvoId}`

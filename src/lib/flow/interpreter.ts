@@ -56,6 +56,8 @@ export type TurnResult = {
   action?: string;
   ok?: boolean;
   effects?: string[];
+  /** Outbound text deferred to the runtime (e.g. intro after start_new_conversation). */
+  reply?: string;
 };
 
 function hitlReasonKey(raw?: string): string {
@@ -330,6 +332,26 @@ export async function interpretTurn(
           effects: effectTypes,
         });
         nextStage = undefined;
+      }
+
+      if (effectTypes.includes("start_new_conversation")) {
+        const intro =
+          (out.effects ?? []).find((e) => e.type === "start_new_conversation")?.args
+            ?.intro;
+        const text =
+          (typeof intro === "string" && intro.trim()) || out.reply.trim();
+        ports.log("exit", {
+          stageId,
+          action: "start_new_conversation",
+          effects: effectTypes,
+        });
+        return {
+          stage: stageId,
+          action: "start_new_conversation",
+          ok: true,
+          effects: effectTypes,
+          reply: text,
+        };
       }
 
       if (nextStage === stage.on_escalate || effectTypes.includes("request_human")) {

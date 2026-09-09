@@ -236,6 +236,28 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
         return "queued";
       },
     }),
+    start_new_conversation: tool({
+      description:
+        "Start a brand-new conversation thread with a fresh intro. ONLY after the customer clearly agrees to start a new chat (not for ordinary follow-ups). Pass the full intro+first reply as intro. Do NOT call this just because a prior visit was approved or the previous topic ended — ask first with reply, then call this only on yes.",
+      inputSchema: z.object({
+        intro: z
+          .string()
+          .describe(
+            "Full first message on the new thread: business intro plus addressing their latest message.",
+          ),
+      }),
+      execute: async ({ intro }: { intro: string }) => {
+        const text = intro.trim();
+        if (!text) return "error: intro required";
+        collected.reply = text;
+        collected.replyLocked = true;
+        collected.effects = [
+          ...(collected.effects ?? []),
+          { type: "start_new_conversation", args: { intro: text } },
+        ];
+        return "ok";
+      },
+    }),
   };
 
   const capabilityTools: Record<string, unknown> = {};

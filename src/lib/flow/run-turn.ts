@@ -11,9 +11,14 @@ import { addIsoDuration } from "@/lib/flow/helpers";
 import { interpretTurn } from "@/lib/flow/interpreter";
 import { answerFaq, classifyIntent, draftQuestion, extractFields, talkTurn } from "@/lib/flow/llm";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
-import { closeConversationAsDone } from "@/lib/flow/rotate-conversation";
+import { callbackPhone, savedPhone } from "@/lib/flow/booking-collect";
+import {
+  closeConversationAsDone,
+  rotateConversation,
+} from "@/lib/flow/rotate-conversation";
 import { summarizeConversation } from "@/lib/flow/summarize";
 import type { Stage, TurnContext } from "@/lib/flow/types";
+import { rewritePhonesInText } from "@/lib/leads";
 import { inngest } from "@/inngest/client";
 import { prisma } from "@/lib/db";
 
@@ -27,6 +32,11 @@ export async function sendAndSave(
   opts?: { idempotencyKey?: string },
 ) {
   if (!text.trim()) return;
+  const cleaned = rewritePhonesInText(text, [
+    savedPhone(ctx.lead.fields),
+    callbackPhone(ctx),
+    typeof ctx.lead.externalUserId === "string" ? ctx.lead.externalUserId : null,
+  ]);
   if (opts?.idempotencyKey) {
     const existing = await prisma.message.findFirst({
       where: {
@@ -37,7 +47,7 @@ export async function sendAndSave(
     });
     if (existing) return;
   }
-  await insertAgentMessage(ctx.tenantId, ctx.conversation.id, text, {
+  await insertAgentMessage(ctx.tenantId, ctx.conversation.id, cleaned, {
     providerMessageId: opts?.idempotencyKey,
   });
   await sendOnChannel({
@@ -46,7 +56,7 @@ export async function sendAndSave(
     provider: ctx.connection.provider,
     providerAccountId: ctx.connection.providerAccountId,
     to: ctx.lead.externalUserId,
-    text,
+    text: cleaned,
     zernioAccountId: ctx.connection.zernioAccountId,
     zernioConversationId:
       typeof ctx.lead.fields.zernioConversationId === "string"
@@ -133,6 +143,35 @@ export async function runTurnNow(opts: {
     scheduleNudge: maybeScheduleNudge,
     log: logTurn,
   });
+
+  if (result.action === "start_new_conversation") {
+    const intro = (result.reply ?? "").trim();
+    const rotated = await rotateConversation({
+      tenantId: opts.tenantId,
+      leadId: ctx.lead.id,
+      reason: "start_new_conversation",
+      conversationId: opts.conversationId,
+    });
+    if (intro) {
+      const fresh = await loadTurnContext(opts.tenantId, rotated.conversationId);
+      await sendAndSave(fresh, intro, {
+        idempotencyKey: outboundKey
+          ? `${outboundKey}-new-${Buffer.from(intro).toString("base64url").slice(0, 24)}`
+          : undefined,
+      });
+    }
+    logTurn("exit", {
+      tenantId: opts.tenantId,
+      conversationId: rotated.conversationId,
+      previousConversationId: opts.conversationId,
+      stage: ctx.agent.flow.start,
+      action: result.action,
+      effects: result.effects,
+      ms: Date.now() - started,
+      triggerMessageId: opts.triggerMessageId,
+    });
+    return { ...result, stage: ctx.agent.flow.start };
+  }
 
   if (result.action === "done" || result.stage === "done") {
     await closeConversationAsDone({

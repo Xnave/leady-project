@@ -12,9 +12,8 @@ import {
   splitCrmAndSession,
 } from "@/lib/flow/booking";
 import {
-  conversationIdleExpired,
+  reopenConversation,
   resumeConversationAfterHitl,
-  rotateConversation,
 } from "@/lib/flow/rotate-conversation";
 import {
   contactDisplayName,
@@ -25,7 +24,11 @@ import {
 } from "@/lib/leads";
 import { fetchZernioInboxContact } from "@/lib/zernio";
 
-export { rotateConversation, resumeConversationAfterHitl } from "@/lib/flow/rotate-conversation";
+export {
+  reopenConversation,
+  resumeConversationAfterHitl,
+  rotateConversation,
+} from "@/lib/flow/rotate-conversation";
 
 export async function persistInboundIfNew(opts: {
   tenantId: string;
@@ -113,28 +116,33 @@ export async function persistInboundIfNew(opts: {
   });
 
   const flow = channel.agent.flow as FlowDefinition;
-  const idleDays = channel.tenant.idleResetDays ?? 5;
-  if (
-    conversation &&
-    conversationIdleExpired({
-      lastMessageAt: conversation.messages[0]?.createdAt,
-      idleResetDays: idleDays,
-    })
-  ) {
-    const rotated = await rotateConversation({
-      tenantId: opts.tenantId,
-      leadId: lead.id,
-      reason: "idle",
-      conversationId: conversation.id,
+
+  // No open thread: reopen the latest closed one (same history). Do NOT auto-create
+  // a new conversation + intro — the agent may offer that via start_new_conversation.
+  if (!conversation) {
+    const latestClosed = await prisma.conversation.findFirst({
+      where: { tenantId: opts.tenantId, leadId: lead.id, status: "closed" },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
     });
-    conversation = await prisma.conversation.findFirstOrThrow({
-      where: { id: rotated.conversationId },
-      include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
-    });
+    if (latestClosed) {
+      const reopened = await reopenConversation({
+        tenantId: opts.tenantId,
+        conversationId: latestClosed.id,
+      });
+      conversation = await prisma.conversation.findFirstOrThrow({
+        where: { id: reopened.conversationId },
+        include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
+      });
+      await prisma.lead.update({
+        where: { id: lead.id },
+        data: { adminUnread: true },
+      });
+    }
   }
 
   if (!conversation) {
-    // Compat: strip leaked session keys from Lead. New Conversation.session is {} by default.
+    // First message ever for this lead.
     const prevFields = (lead.fields as LeadFields) ?? {};
     const cleared = clearBookingSessionFields(prevFields);
     if (JSON.stringify(prevFields) !== JSON.stringify(cleared)) {

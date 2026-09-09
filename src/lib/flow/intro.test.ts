@@ -66,7 +66,7 @@ describe("canned intro", () => {
     ).toBe(false);
   });
 
-  it("still exposes idle detection for inbound rotate", () => {
+  it("exposes idle detection so the agent can suggest a new conversation", () => {
     expect(
       isIdleConversationReset(
         ctx({

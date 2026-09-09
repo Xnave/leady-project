@@ -13,6 +13,8 @@ export type LifecycleReason =
   | "approve"
   | "inbound_create"
   | "hitl_completed"
+  | "admin_reopen"
+  | "start_new_conversation"
   | string;
 
 export function conversationIdleExpired(opts: {
@@ -123,8 +125,62 @@ export async function resumeConversationAfterHitl(opts: {
 }
 
 /**
+ * Reopen a closed conversation for staff follow-up (same thread).
+ * Refuses if any other open conversation already exists for the lead.
+ */
+export async function reopenConversation(opts: {
+  tenantId: string;
+  conversationId: string;
+}): Promise<{ conversationId: string }> {
+  const conversation = await prisma.conversation.findFirstOrThrow({
+    where: { id: opts.conversationId, tenantId: opts.tenantId },
+    include: { agent: true },
+  });
+
+  const openOther = await prisma.conversation.findFirst({
+    where: {
+      tenantId: opts.tenantId,
+      leadId: conversation.leadId,
+      status: { not: "closed" },
+      id: { not: conversation.id },
+    },
+    select: { id: true },
+  });
+  if (openOther) {
+    throw new Error("open_conversation_exists");
+  }
+
+  if (conversation.status === "closed") {
+    const flow = conversation.agent.flow as FlowDefinition;
+    const resumeStage =
+      flow.stages.talk?.type === "talk"
+        ? "talk"
+        : flow.restartPolicy.fallbackStage && flow.stages[flow.restartPolicy.fallbackStage]
+          ? flow.restartPolicy.fallbackStage
+          : flow.start;
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        status: "open",
+        flowState: resumeStage,
+        lifecycleReason: "admin_reopen",
+      },
+    });
+  }
+
+  await sweepEmptyOpenThreads({
+    tenantId: opts.tenantId,
+    leadId: conversation.leadId,
+    keepConversationId: conversation.id,
+  });
+
+  return { conversationId: conversation.id };
+}
+
+/**
  * Close the current open conversation for a lead and open a fresh one at flow start.
  * Only for idle, admin "new conversation", or explicit start_new_conversation.
+ * Refuses to create a second open thread if one already exists (unless closing it first).
  */
 export async function rotateConversation(opts: {
   tenantId: string;
@@ -150,6 +206,17 @@ export async function rotateConversation(opts: {
   const flow = agent.flow as FlowDefinition;
   const current = lead.conversations[0];
 
+  // Admin "start" while another open exists (and we're not closing that open one) → refuse.
+  if (opts.reason === "admin" && !opts.conversationId) {
+    const open = await prisma.conversation.findFirst({
+      where: { tenantId: opts.tenantId, leadId: opts.leadId, status: { not: "closed" } },
+      select: { id: true },
+    });
+    if (open) {
+      return { previousId: null, conversationId: open.id };
+    }
+  }
+
   if (current && current.status !== "closed") {
     await prisma.conversation.update({
       where: { id: current.id },
@@ -161,6 +228,15 @@ export async function rotateConversation(opts: {
         session: {} as Prisma.InputJsonValue,
       },
     });
+  } else if (opts.reason === "admin") {
+    // Starting a brand-new thread: must not leave a parallel open conversation.
+    const open = await prisma.conversation.findFirst({
+      where: { tenantId: opts.tenantId, leadId: opts.leadId, status: { not: "closed" } },
+      select: { id: true },
+    });
+    if (open) {
+      throw new Error("open_conversation_exists");
+    }
   }
 
   const created = await prisma.conversation.create({
