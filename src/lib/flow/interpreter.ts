@@ -202,6 +202,7 @@ export async function interpretTurn(
       const schemaKeys = [
         ...Object.keys(ctx.agent.leadSchema.fields),
         "booking_confirm",
+        "booking_flow",
         "staff_slot_offer",
       ];
       const incoming: LeadFields = { ...(out.fields ?? {}) };

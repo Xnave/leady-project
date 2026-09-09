@@ -221,7 +221,8 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
       },
     }),
     request_human: tool({
-      description: "Hand off to a person when policy allows (transitions to on_escalate).",
+      description:
+        "Hand off to a person only when the customer asks for a human, or knowledge cannot help after you tried to answer. Do NOT call for ordinary product interest or booking — answer with reply / start_booking instead.",
       inputSchema: z.object({ reason: z.string() }),
       execute: async ({ reason }: { reason: string }) => {
         collected.effects = [

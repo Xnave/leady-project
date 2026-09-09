@@ -57,6 +57,20 @@ describe("booking helpers", () => {
   });
 });
 
+describe("isBookingCollectActive", () => {
+  it("is false for empty product-interest turns", async () => {
+    const { isBookingCollectActive } = await import("./booking");
+    expect(isBookingCollectActive({})).toBe(false);
+  });
+
+  it("is true once booking_flow or a required field is set", async () => {
+    const { isBookingCollectActive } = await import("./booking");
+    expect(isBookingCollectActive({ booking_flow: "active" })).toBe(true);
+    expect(isBookingCollectActive({ name: "Nave" })).toBe(false);
+    expect(isBookingCollectActive({ booking_confirm: "pending" })).toBe(true);
+  });
+});
+
 describe("gateBookOnGaps", () => {
   it("clears book when gaps remain without rewriting replies", () => {
     expect(gateBookOnGaps({ book: true, gaps: ["name"] })).toEqual({ book: false });

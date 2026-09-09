@@ -63,7 +63,8 @@ describe("PromptBuilder", () => {
     const prompt = buildTalkSystemPrompt(ctx, stage, {});
     expect(prompt).toMatch(/BASE/);
     expect(prompt).toMatch(/Allowed transition targets/);
-    expect(prompt).toMatch(/Booking capability|Booking field gaps|book_meeting/i);
+    expect(prompt).toMatch(/Visit booking is NOT started|start_booking|Booking capability/i);
     expect(prompt).toMatch(/FIRST MESSAGE/);
+    expect(prompt).not.toMatch(/Booking field gaps: time_preference/);
   });
 });

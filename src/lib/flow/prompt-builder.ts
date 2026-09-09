@@ -4,7 +4,7 @@ import { hasAgentReplied } from "./intro";
 import { capabilityPromptSections, resolveTalkCapabilities } from "./registry";
 import type { LeadFields, Stage, TalkStage, TurnContext } from "./types";
 import { getStaffSlotOffer } from "@/lib/meetings";
-import { bookingConfirmStatus, bookingFieldGaps } from "./booking";
+import { bookingConfirmStatus, bookingFieldGaps, isBookingCollectActive } from "./booking";
 import {
   callbackPhone,
   effectiveBookingRequired,
@@ -131,14 +131,23 @@ export class PromptBuilder {
       }),
     );
     if (resolveTalkCapabilities(stage).includes("booking")) {
-      const gaps = bookingFieldGaps(fields, required);
-      const confirm = bookingConfirmStatus(fields);
-      this.parts.push(
-        `Booking field gaps: ${gaps.join(", ") || "none"}. booking_confirm=${confirm || "(none)"}.`,
-        "When they answer a booking question, call save_fields with their wording first, then ask_field for the next gap only.",
-        "time_preference: weekday + clock is enough — save as-is.",
-        "Before book_meeting: confirm_details, then save_fields booking_confirm=confirmed after they agree, then book_meeting.",
-      );
+      const active = isBookingCollectActive(fields, required);
+      if (active) {
+        const gaps = bookingFieldGaps(fields, required);
+        const confirm = bookingConfirmStatus(fields);
+        this.parts.push(
+          `Visit booking is in progress. Gaps: ${gaps.join(", ") || "none"}. booking_confirm=${confirm || "(none)"}.`,
+          "When they answer a booking question, call save_fields with their wording first, then ask_field for the next gap only.",
+          "time_preference: weekday + clock is enough — save as-is.",
+          "Before book_meeting: confirm_details, then save_fields booking_confirm=confirmed after they agree, then book_meeting.",
+        );
+      } else {
+        this.parts.push(
+          "Visit booking is NOT started. Use reply to answer product/sales questions from knowledge.",
+          'Examples that must NOT trigger booking: "I want a WhatsApp agent", "how much is it", "tell me more", "I need something for Instagram".',
+          "Only call start_booking if they explicitly ask to schedule a meeting/visit/demo/call, or clearly accept an offer to book.",
+        );
+      }
     }
     return this;
   }
@@ -146,6 +155,7 @@ export class PromptBuilder {
   withClosing(): this {
     this.parts.push(
       "Call set_intent every turn.",
+      "Prefer reply for informational turns. Call ask_field only while booking is in progress.",
       "Call reply unless ask_field or resolve_offered_slot already set the outbound text.",
       "Use transition when the goal is complete (on_complete) or you must hand off (on_escalate).",
     );

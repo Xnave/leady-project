@@ -78,3 +78,38 @@ export function bookingConfirmStatus(fields: LeadFields): "pending" | "confirmed
   if (v === "pending") return "pending";
   return "";
 }
+
+/**
+ * True once visit booking has actually started (not mere product interest).
+ * CRM leftovers like name/phone/need from a prior visit must NOT keep booking open.
+ */
+export function isBookingCollectActive(
+  fields: LeadFields,
+  _required: string[] = ["time_preference", "name", "need"],
+): boolean {
+  if (fields.staff_slot_offer && typeof fields.staff_slot_offer === "object") {
+    return true;
+  }
+  if (String(fields.booking_flow ?? "").trim() === "active") return true;
+  if (bookingConfirmStatus(fields)) return true;
+  return false;
+}
+
+/** Fields that belong to an in-progress booking — cleared on new conversation / idle rotate. */
+export const BOOKING_SESSION_FIELD_KEYS = [
+  "booking_flow",
+  "booking_confirm",
+  "booking",
+  "time_preference",
+  "staff_slot_offer",
+  "need",
+  "visit_kind",
+] as const;
+
+export function clearBookingSessionFields(fields: LeadFields): LeadFields {
+  const next = { ...fields };
+  for (const key of BOOKING_SESSION_FIELD_KEYS) {
+    delete next[key];
+  }
+  return next;
+}

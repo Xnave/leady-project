@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db";
-import type { FlowDefinition } from "@/lib/flow/types";
+import type { FlowDefinition, LeadFields } from "@/lib/flow/types";
+import { clearBookingSessionFields } from "@/lib/flow/booking";
+import { Prisma } from "@prisma/client";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -169,6 +171,16 @@ export async function rotateConversation(opts: {
       lifecycleReason: opts.reason,
     },
   });
+
+  // Fresh thread: drop in-progress booking session so talk starts with intro, not ask_field.
+  if (opts.reason === "admin" || opts.reason === "idle") {
+    const prevFields = (lead.fields as LeadFields) ?? {};
+    const nextFields = clearBookingSessionFields(prevFields);
+    await prisma.lead.update({
+      where: { id: lead.id },
+      data: { fields: nextFields as Prisma.InputJsonValue },
+    });
+  }
 
   return { previousId: current?.id ?? null, conversationId: created.id };
 }

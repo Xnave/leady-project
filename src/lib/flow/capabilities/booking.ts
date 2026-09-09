@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { replyLang } from "@/lib/copy";
-import { askBookingField, bookingConfirmStatus, bookingFieldGaps, gateBookOnGaps } from "../booking";
+import { askBookingField, bookingConfirmStatus, bookingFieldGaps, gateBookOnGaps, isBookingCollectActive } from "../booking";
 import {
   callbackPhone,
   effectiveBookingRequired,
@@ -31,9 +31,15 @@ export function registerBookingCapability(): void {
     id: "booking",
     promptSection: ({ ctx, fields }) => {
       const required = effectiveBookingRequired(ctx);
+      if (!isBookingCollectActive(fields, required)) {
+        return [
+          "Booking capability available but idle.",
+          "Do NOT ask for day/time yet. Answer with reply. Call start_booking only after an explicit schedule request.",
+        ];
+      }
       const gaps = bookingFieldGaps(fields, required);
       return [
-        `Booking capability enabled. Required fields: ${required.join(", ")}.`,
+        `Booking in progress. Required fields: ${required.join(", ")}.`,
         `Current gaps: ${gaps.join(", ") || "none"}.`,
         "Never say the visit is confirmed — book_meeting only stores a tentative request for a human.",
       ];
@@ -45,6 +51,7 @@ export function registerBookingCapability(): void {
       const fieldsForTurn = { ...ctx.lead.fields, ...collected.fields };
       const offered = getStaffSlotOffer(fieldsForTurn);
       const last = lastLeadText(ctx);
+      const active = isBookingCollectActive(fieldsForTurn, required);
 
       if (offered) {
         return {
@@ -95,6 +102,7 @@ export function registerBookingCapability(): void {
                 };
                 if (proposedText) {
                   nextFields.time_preference = proposedText;
+                  nextFields.booking_flow = "active";
                   collected.reply =
                     lang === "he"
                       ? `הבנתי, רשמתי מועד אחר: ${proposedText}. אעביר לנציג לאישור — זה מתאים?`
@@ -125,12 +133,39 @@ export function registerBookingCapability(): void {
         };
       }
 
+      if (!active) {
+        return {
+          start_booking: tool({
+            description:
+              "Begin collecting visit/meeting details. Call ONLY when the customer explicitly asks to schedule a meeting, visit, demo, or call — or clearly accepts your offer to book one. Do NOT call for product interest alone (e.g. wanting a WhatsApp agent, asking how it works, pricing, features).",
+            inputSchema: z.object({
+              reason: z.string().optional(),
+            }),
+            execute: async () => {
+              const first = required[0] ?? "time_preference";
+              collected.fields = {
+                ...collected.fields,
+                booking_flow: "active",
+              };
+              collected.askFieldUsed = true;
+              collected.replyLocked = true;
+              collected.reply = askBookingField(lang, first, {
+                hours,
+                deducedPhone: first === "phone" ? callbackPhone(ctx) : undefined,
+              });
+              return JSON.stringify({ ok: true, next_field: first });
+            },
+          }),
+        };
+      }
+
       const fieldShape = Object.fromEntries(
         Object.keys(ctx.agent.leadSchema.fields)
           .filter((k) => k !== "intent")
           .map((k) => [k, z.string().optional()]),
       );
       fieldShape.booking_confirm = z.string().optional();
+      fieldShape.booking_flow = z.string().optional();
 
       return {
         save_fields: tool({
@@ -160,7 +195,7 @@ export function registerBookingCapability(): void {
         }),
         ask_field: tool({
           description:
-            "Ask for one missing booking field ONLY when the customer clearly wants a visit/meeting. Only fields in the required booking list. Sets outbound text to that ask.",
+            "Ask for one missing booking field while visit booking is already in progress. Only fields in the required booking list. Sets outbound text to that ask.",
           inputSchema: z.object({
             field: z.enum([
               "time_preference",

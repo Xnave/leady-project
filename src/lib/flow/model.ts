@@ -60,7 +60,7 @@ export function chatModel(): LanguageModel {
   const gemini = env("GOOGLE_GENERATIVE_AI_API_KEY") || env("GEMINI_API_KEY");
   if (gemini) {
     process.env["GOOGLE_GENERATIVE_AI_API_KEY"] = gemini;
-    return google("gemini-2.0-flash");
+    return google("gemini-3.5-flash-lite");
   }
   const anth = env("ANTHROPIC_API_KEY");
   if (anth) {
