@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { decryptSecret } from "@/lib/crypto";
+import { resolveActorLabel } from "@/lib/admin-decisions";
 import { isChatLanguage } from "@/lib/flow/locale";
 import { defaultFlow, defaultHitlPolicy, defaultLeadSchema } from "@/lib/flow/validate";
 import type { AgentSnapshot, TurnContext } from "@/lib/flow/types";
@@ -11,10 +12,7 @@ import {
   mergeLeadAndSession,
   splitCrmAndSession,
 } from "@/lib/flow/booking";
-import {
-  reopenConversation,
-  resumeConversationAfterHitl,
-} from "@/lib/flow/rotate-conversation";
+import { reopenConversation, resumeConversationAfterHitl } from "@/lib/flow/rotate-conversation";
 import {
   contactDisplayName,
   displayNameFromLeadFields,
@@ -420,6 +418,25 @@ export async function completeHitlTask(opts: {
         resolution: { note: opts.note, approved: opts.approved },
         completedBy: opts.actorUserId,
         completedAt: new Date(),
+      },
+    }),
+    prisma.adminDecisionLog.create({
+      data: {
+        tenantId: opts.tenantId,
+        leadId: task.leadId,
+        conversationId: task.conversationId,
+        category: "hitl",
+        action: opts.approved === false ? "decline" : "approve",
+        actorUserId: opts.actorUserId,
+        actorLabel: resolveActorLabel(opts.actorUserId),
+        summary: "",
+        details: {
+          hitlTaskId: task.id,
+          reason: task.reason,
+          type: task.type,
+          note: opts.note,
+          approved: opts.approved !== false,
+        } as Prisma.InputJsonValue,
       },
     }),
     prisma.message.create({

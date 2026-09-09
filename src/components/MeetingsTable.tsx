@@ -110,7 +110,11 @@ export function MeetingsTable({
             const expanded = openId === meeting.id;
             const canDecide =
               allowDecide &&
-              (!latestConversationId || meeting.conversationId === latestConversationId);
+              (!latestConversationId ||
+                meeting.conversationId === latestConversationId ||
+                // Pending booking work stays actionable even if a newer thread exists.
+                meeting.status === "pending" ||
+                Boolean(meeting.awaitingCustomerConfirm));
             return (
               <Fragment key={meeting.id}>
                 <tr

@@ -40,6 +40,7 @@ export default async function LeadDetailPage({
         orderBy: { createdAt: "desc" },
       },
       meetings: { orderBy: { createdAt: "desc" } },
+      adminDecisionLogs: { orderBy: { createdAt: "desc" } },
     },
   });
   if (!lead) notFound();
@@ -58,6 +59,7 @@ export default async function LeadDetailPage({
             orderBy: { createdAt: "desc" },
           },
           meetings: { orderBy: { createdAt: "desc" } },
+          adminDecisionLogs: { orderBy: { createdAt: "desc" } },
         },
       });
       if (fresh) lead = fresh;
@@ -169,6 +171,19 @@ export default async function LeadDetailPage({
         conversationId: m.conversationId,
         awaitingCustomerConfirm: staffOffer?.meetingId === m.id,
         customerConfirmed: m.status === "approved" && m.decidedBy === "customer",
+      }))}
+      decisionLogs={lead.adminDecisionLogs.map((row) => ({
+        id: row.id,
+        category: row.category,
+        action: row.action,
+        actorUserId: row.actorUserId,
+        actorLabel: row.actorLabel,
+        summary: row.summary,
+        details:
+          row.details && typeof row.details === "object" && !Array.isArray(row.details)
+            ? (row.details as Record<string, unknown>)
+            : {},
+        createdAt: row.createdAt,
       }))}
       meetingLabels={{
         need: ui.common.need,

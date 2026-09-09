@@ -218,8 +218,11 @@ function InboxTaskDetail({
     (isWhatsapp ? task.lead.externalUserId : "");
   const waUrl = isWhatsapp ? whatsappChatUrl(phone) : "";
   const meeting = task.lead.meetings.find((m) => m.id === payload.meetingId);
+  // Open inbox work must stay actionable even if a newer empty thread was started.
+  // Only lock resolved/history views when the meeting belongs to an older conversation.
   const latestConversationId = task.lead.conversations[0]?.id;
   const decisionsOnLatest =
+    task.status === "open" ||
     !latestConversationId ||
     meeting?.conversationId === latestConversationId ||
     task.conversationId === latestConversationId;

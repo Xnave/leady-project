@@ -1723,54 +1723,67 @@ td .muted { font-size: var(--fs-xs); }
 .lead-convo-card-head h3 {
   margin: 0;
 }
-.lead-convo-ended-label {
-  margin: 0 0 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
+.lead-convo-end-form {
+  margin: 0;
+}
+.composer.lead-convo-ended {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  flex-wrap: nowrap;
+  padding: 14px var(--space-4);
+  background: color-mix(in srgb, var(--bg-elevated) 88%, var(--line));
+}
+.lead-convo-ended-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.lead-convo-ended-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.lead-convo-ended-hint {
+  font-size: 0.8125rem;
   color: var(--muted);
 }
-.lead-convo-actions {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
+.lead-convo-ended-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
-  align-items: stretch;
   width: 100%;
 }
-.lead-convo-card-head .lead-convo-actions {
-  width: auto;
-  flex: 1 1 auto;
-  justify-content: flex-end;
-  max-width: 100%;
-}
-.lead-convo-actions form {
+.lead-convo-ended-actions form {
   margin: 0;
-  flex: 1 1 0;
   min-width: 0;
 }
-.lead-convo-actions button {
+.lead-convo-ended-btn {
   width: 100%;
   min-height: 44px;
   cursor: pointer;
   white-space: nowrap;
-  padding-inline: 12px;
-  font-size: 0.8125rem;
+  padding-inline: 14px;
+  border-radius: var(--radius-pill);
+  font-size: 0.875rem;
 }
-.lead-convo-actions button:disabled {
+.lead-convo-ended-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
-.composer.lead-convo-ended {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
-  flex-wrap: nowrap;
-}
-.composer.lead-convo-ended .lead-convo-ended-label {
-  margin: 0;
-}
-.composer.lead-convo-ended .lead-convo-actions button {
-  border-radius: var(--radius-pill);
+@media (max-width: 520px) {
+  .lead-convo-ended-actions {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* --------------------------------------------------------------------------

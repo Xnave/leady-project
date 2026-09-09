@@ -33,6 +33,7 @@ model Tenant {
   messages             Message[]
   hitlTasks            HitlTask[]
   meetings             Meeting[]
+  adminDecisionLogs    AdminDecisionLog[]
   mediaAssets          MediaAsset[]
   revisions            AgentConfigRevision[]
 }
@@ -122,6 +123,7 @@ model Lead {
   conversations Conversation[]
   hitlTasks     HitlTask[]
   meetings      Meeting[]
+  adminDecisionLogs AdminDecisionLog[]
   mediaAssets   MediaAsset[]
 
   @@unique([tenantId, channelId, externalUserId])
@@ -198,6 +200,32 @@ model Meeting {
 
   @@index([tenantId, status])
   @@index([leadId])
+}
+
+/**
+ * Append-only log of admin (and customer) decisions of any kind.
+ * Meetings are one category today; future HITL / lead actions use the same table.
+ */
+model AdminDecisionLog {
+  id             String   @id @default(cuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leadId         String?
+  lead           Lead?    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  conversationId String?
+  /** Domain: meeting | hitl | lead | … */
+  category       String
+  /** Action within category: approve | decline | reschedule | … */
+  action         String
+  actorUserId    String
+  actorLabel     String   @default("")
+  /** Type-specific payload (note, customReply, slots, meetingId, …). */
+  details        Json     @default("{}")
+  summary        String   @default("")
+  createdAt      DateTime @default(now())
+
+  @@index([tenantId, leadId, createdAt])
+  @@index([tenantId, category, createdAt])
 }
 
 model HitlTask {

@@ -269,6 +269,17 @@ export type UiCopy = {
     conversationEnded: string;
     reopenDisabledHint: string;
     decisionsLockedHint: string;
+    decisionLogAction: string;
+    decisionLogWhen: string;
+    decisionLogActor: string;
+    decisionLogApproved: string;
+    decisionLogDeclined: string;
+    decisionLogRescheduled: string;
+    decisionLogApprovedByCustomer: string;
+    decisionLogActorAdmin: string;
+    decisionLogActorCustomer: string;
+    decisionLogPreviousSlot: string;
+    decisionLogEmpty: string;
     markRead: string;
     markUnread: string;
     staffPlaceholder: string;

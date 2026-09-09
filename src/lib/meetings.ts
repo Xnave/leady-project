@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/db";
+import { resolveActorLabel } from "@/lib/admin-decisions";
+import { Prisma } from "@prisma/client";
 import {
   appendStaffNote,
   bookingVars,
@@ -322,6 +324,7 @@ export async function markMeetingDecision(opts: {
   const nextSlotText = reschedule && altSlot ? altSlot : vars.slot;
   // Reschedule keeps the meeting pending until the customer accepts the offered slot.
   const nextStatus = approved ? "approved" : reschedule ? "pending" : "rejected";
+  const actorLabel = resolveActorLabel(opts.actorUserId);
 
   await prisma.$transaction([
     prisma.meeting.update({
@@ -331,6 +334,28 @@ export async function markMeetingDecision(opts: {
         decidedBy: approved || !reschedule ? opts.actorUserId : meeting.decidedBy,
         decidedAt: approved || !reschedule ? now : meeting.decidedAt,
         slotText: nextSlotText,
+      },
+    }),
+    prisma.adminDecisionLog.create({
+      data: {
+        tenantId: opts.tenantId,
+        leadId: meeting.leadId,
+        conversationId: meeting.conversationId,
+        category: "meeting",
+        action: opts.decision,
+        actorUserId: opts.actorUserId,
+        actorLabel,
+        summary: "",
+        details: {
+          meetingId: meeting.id,
+          note: opts.note?.trim() ?? "",
+          customReply: opts.customReply?.trim() ?? "",
+          previousSlot,
+          alternativeSlot: altSlot,
+          slotText: nextSlotText,
+          customerConfirmed: Boolean(opts.customerConfirmed),
+        } as Prisma.InputJsonValue,
+        createdAt: now,
       },
     }),
     ...related.map((t) => {

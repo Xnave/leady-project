@@ -8,6 +8,7 @@ import { ChatThread } from "@/components/ChatThread";
 import { LeadChatPoll } from "@/components/LeadChatPoll";
 import { LeadFieldsForm } from "@/components/LeadFieldsForm";
 import { MeetingsTable } from "@/components/MeetingsTable";
+import { DecisionsLogTable, type DecisionLogRow } from "@/components/DecisionsLogTable";
 import {
   convoStatusLabel,
   intentLabel,
@@ -92,6 +93,7 @@ type Props = {
   schema: LeadSchema;
   fields: LeadFields;
   meetings: MeetingItem[];
+  decisionLogs: DecisionLogRow[];
   meetingLabels: {
     need: string;
     name: string;
@@ -176,17 +178,8 @@ export function LeadWorkspace(props: Props) {
   const statusId = props.status ? normalizeLeadStatus(props.status) : undefined;
   const locale = props.lang === "he" ? "he-IL" : "en-GB";
 
-  const decisionMeetings = useMemo(
-    () =>
-      props.meetings.filter(
-        (m) => m.status === "pending" || m.status === "rejected" || m.awaitingCustomerConfirm,
-      ),
-    [props.meetings],
-  );
-  const approvedMeetings = useMemo(
-    () => props.meetings.filter((m) => m.status === "approved"),
-    [props.meetings],
-  );
+  const decisionLogs = props.decisionLogs;
+  const allMeetings = props.meetings;
 
   const capturedEntries = useMemo(() => {
     return Object.entries(props.fields)
@@ -342,62 +335,20 @@ export function LeadWorkspace(props: Props) {
           <div className="card lead-convo-card">
             <div className="lead-convo-card-head">
               <h3>{props.ui.common.conversation}</h3>
-              {props.conversationId ? (
-                props.convoStatus !== "closed" ? (
-                  props.isLatestConversation ? (
-                    <form
-                      action={`/api/leads/${props.leadId}/new-conversation`}
-                      method="post"
-                      className="lead-convo-end-form"
-                    >
-                      <input type="hidden" name="intent" value="end" />
-                      <input type="hidden" name="conversationId" value={props.conversationId} />
-                      <button type="submit" className="btn-ghost">
-                        {props.ui.inbox.newConversation}
-                      </button>
-                    </form>
-                  ) : null
-                ) : (
-                  <div className="lead-convo-actions" role="group" aria-label={props.ui.inbox.conversationEnded}>
-                    <form action={`/api/leads/${props.leadId}/new-conversation`} method="post">
-                      <input type="hidden" name="intent" value="reopen" />
-                      <input type="hidden" name="conversationId" value={props.conversationId} />
-                      <button
-                        type="submit"
-                        className="btn-secondary"
-                        disabled={Boolean(props.hasOpenConversation)}
-                        title={
-                          props.hasOpenConversation
-                            ? props.ui.inbox.reopenDisabledHint
-                            : undefined
-                        }
-                      >
-                        {props.ui.inbox.reopenConversation}
-                      </button>
-                    </form>
-                    <form action={`/api/leads/${props.leadId}/new-conversation`} method="post">
-                      <input type="hidden" name="intent" value="start" />
-                      <input type="hidden" name="conversationId" value={props.conversationId} />
-                      <button
-                        type="submit"
-                        className="btn-secondary"
-                        disabled={Boolean(props.hasOpenConversation)}
-                        title={
-                          props.hasOpenConversation
-                            ? props.ui.inbox.startDisabledHint
-                            : undefined
-                        }
-                      >
-                        {props.ui.inbox.startConversation}
-                      </button>
-                    </form>
-                  </div>
-                )
+              {props.conversationId && props.convoStatus !== "closed" ? (
+                <form
+                  action={`/api/leads/${props.leadId}/new-conversation`}
+                  method="post"
+                  className="lead-convo-end-form"
+                >
+                  <input type="hidden" name="intent" value="end" />
+                  <input type="hidden" name="conversationId" value={props.conversationId} />
+                  <button type="submit" className="btn-ghost">
+                    {props.ui.inbox.newConversation}
+                  </button>
+                </form>
               ) : null}
             </div>
-            {props.convoStatus === "closed" ? (
-              <p className="lead-convo-ended-label">{props.ui.inbox.conversationEnded}</p>
-            ) : null}
             <div className="stack">
               {props.conversations.map((c) => (
                 <Link
@@ -425,7 +376,7 @@ export function LeadWorkspace(props: Props) {
         </div>
 
         <div className="card chat-panel lead-main">
-          <LeadChatPoll enabled={tab === "chat"} />
+          <LeadChatPoll enabled={tab === "chat" && props.convoStatus !== "closed"} />
           <div className="lead-tabs" role="tablist">
             <button
               type="button"
@@ -444,7 +395,6 @@ export function LeadWorkspace(props: Props) {
               onClick={() => setTab("decisions")}
             >
               {props.ui.common.decisionsTab}
-              {decisionMeetings.length ? ` (${decisionMeetings.length})` : ""}
             </button>
             <button
               type="button"
@@ -454,7 +404,6 @@ export function LeadWorkspace(props: Props) {
               onClick={() => setTab("meetings")}
             >
               {props.ui.common.meetingsTab}
-              {approvedMeetings.length ? ` (${approvedMeetings.length})` : ""}
             </button>
           </div>
 
@@ -472,9 +421,14 @@ export function LeadWorkspace(props: Props) {
                 leadName={props.name}
               />
               {props.convoStatus === "closed" ? (
-                <div className="composer lead-convo-ended">
-                  <p className="lead-convo-ended-label">{props.ui.inbox.conversationEnded}</p>
-                  <div className="lead-convo-actions" role="group">
+                <div className="composer lead-convo-ended" role="region" aria-label={props.ui.inbox.conversationEnded}>
+                  <div className="lead-convo-ended-bar">
+                    <span className="lead-convo-ended-pill">{props.ui.inbox.conversationEnded}</span>
+                    {props.hasOpenConversation ? (
+                      <span className="lead-convo-ended-hint">{props.ui.inbox.reopenDisabledHint}</span>
+                    ) : null}
+                  </div>
+                  <div className="lead-convo-ended-actions" role="group">
                     <form action={`/api/leads/${props.leadId}/new-conversation`} method="post">
                       <input type="hidden" name="intent" value="reopen" />
                       {props.conversationId ? (
@@ -482,7 +436,7 @@ export function LeadWorkspace(props: Props) {
                       ) : null}
                       <button
                         type="submit"
-                        className="btn"
+                        className="btn lead-convo-ended-btn"
                         disabled={Boolean(props.hasOpenConversation)}
                         title={
                           props.hasOpenConversation
@@ -500,7 +454,7 @@ export function LeadWorkspace(props: Props) {
                       ) : null}
                       <button
                         type="submit"
-                        className="btn-secondary"
+                        className="btn-secondary lead-convo-ended-btn"
                         disabled={Boolean(props.hasOpenConversation)}
                         title={
                           props.hasOpenConversation
@@ -524,15 +478,11 @@ export function LeadWorkspace(props: Props) {
             </>
           ) : tab === "decisions" ? (
             <div className="lead-visits-panel">
-              <MeetingsTable
+              <DecisionsLogTable
                 ui={props.ui}
-                leadId={props.leadId}
-                meetings={decisionMeetings}
-                labels={props.meetingLabels}
-                emptyLabel={props.ui.common.noDecisions}
-                allowDecide
-                latestConversationId={props.latestConversationId}
-                decisionsLockedHint={props.ui.inbox.decisionsLockedHint}
+                rows={decisionLogs}
+                emptyLabel={props.ui.inbox.decisionLogEmpty}
+                locale={locale}
               />
             </div>
           ) : (
@@ -540,7 +490,7 @@ export function LeadWorkspace(props: Props) {
               <MeetingsTable
                 ui={props.ui}
                 leadId={props.leadId}
-                meetings={approvedMeetings}
+                meetings={allMeetings}
                 labels={props.meetingLabels}
                 emptyLabel={props.ui.common.noMeetings}
                 allowDecide

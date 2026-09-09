@@ -37,14 +37,31 @@ export async function POST(
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
-  // Decisions only on the lead's latest conversation — older threads are read-only.
-  const latest = await prisma.conversation.findFirst({
-    where: { leadId: meeting.leadId, tenantId },
-    orderBy: { createdAt: "desc" },
-    select: { id: true },
+  // Allow decide while an open booking HITL still targets this meeting (inbox work),
+  // even if a newer conversation thread exists. Otherwise require the meeting's thread
+  // to be the lead's latest conversation.
+  const openHitlForMeeting = await prisma.hitlTask.findMany({
+    where: {
+      tenantId,
+      leadId: meeting.leadId,
+      status: "open",
+      type: "booking_approval",
+    },
+    select: { id: true, payload: true },
   });
-  if (!latest || latest.id !== meeting.conversationId) {
-    return NextResponse.json({ error: "stale_conversation" }, { status: 409 });
+  const hasOpenHitl = openHitlForMeeting.some((t) => {
+    const payload = t.payload as { meetingId?: string };
+    return payload.meetingId === meeting.id;
+  });
+  if (!hasOpenHitl) {
+    const latest = await prisma.conversation.findFirst({
+      where: { leadId: meeting.leadId, tenantId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (!latest || latest.id !== meeting.conversationId) {
+      return NextResponse.json({ error: "stale_conversation" }, { status: 409 });
+    }
   }
 
   const result = await markMeetingDecision({
