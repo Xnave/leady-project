@@ -396,12 +396,16 @@ export async function markMeetingDecision(opts: {
   delete nextFields.time_preference;
   // Prior meeting lives in Meeting row; clear the session pin so rebook creates a new HITL.
   delete nextFields.booking;
+  // Keep need from the prior visit so rebook / reschedule does not re-ask.
+  const priorNeed = meeting.needText?.trim() || String(fields.need ?? "").trim();
+  if (priorNeed) nextFields.need = priorNeed;
   if (reschedule && altSlot) {
     nextFields.staff_slot_offer = {
       meetingId: meeting.id,
       slot: altSlot,
       previousSlot,
     } satisfies StaffSlotOffer;
+    nextFields.booking_flow = "active";
   } else {
     delete nextFields.staff_slot_offer;
     // Decline without alternate: keep booking collect active so they can pick a new slot.

@@ -181,10 +181,15 @@ export async function rotateConversation(opts: {
   // Compat: strip leaked booking-session keys from Lead (new thread already has empty session).
   const prevFields = (lead.fields as LeadFields) ?? {};
   const nextFields = clearBookingSessionFields(prevFields);
-  if (JSON.stringify(prevFields) !== JSON.stringify(nextFields)) {
+  const fieldsChanged = JSON.stringify(prevFields) !== JSON.stringify(nextFields);
+  const markUnread = opts.reason === "idle";
+  if (fieldsChanged || markUnread) {
     await prisma.lead.update({
       where: { id: lead.id },
-      data: { fields: nextFields as Prisma.InputJsonValue },
+      data: {
+        ...(fieldsChanged ? { fields: nextFields as Prisma.InputJsonValue } : {}),
+        ...(markUnread ? { adminUnread: true } : {}),
+      },
     });
   }
 

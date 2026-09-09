@@ -50,6 +50,13 @@ describe("booking helpers", () => {
     ).toBe("phone");
   });
 
+  it("formats phones inside bookingVars for customer messages", async () => {
+    const { bookingVars } = await import("@/lib/copy");
+    expect(bookingVars({ slot: "Thu", phone: "+972526595639", name: "N" }).phone).toBe(
+      "052-659-5639",
+    );
+  });
+
   it("fills booking templates and drops empty labeled lines", () => {
     const text = fillTemplate(copyFor("en").chat.bookingRequestTemplate, {
       slot: "Thu 18:00",
@@ -69,6 +76,7 @@ describe("booking helpers", () => {
     expect(text).not.toMatch(/^Phone:/m);
   });
 });
+
 
 describe("isBookingCollectActive", () => {
   it("is false for empty product-interest turns", async () => {
@@ -111,7 +119,7 @@ describe("gateBookOnGaps", () => {
 
   it("builds phone confirm asks from templates", () => {
     expect(askBookingField("en", "phone", { deducedPhone: "+972501234567" })).toMatch(
-      /\+972501234567/,
+      /050-123-4567/,
     );
   });
 });

@@ -4,6 +4,7 @@ import type { BookingVars } from "./types";
 import type { ChatLanguage } from "@/lib/flow/locale";
 import { resolveReplyLanguage } from "@/lib/flow/locale";
 import type { TurnContext } from "@/lib/flow/types";
+import { formatPhoneDisplay } from "@/lib/leads";
 
 export type { BookingVars } from "./types";
 export { chat as enChat, prompts as enPrompts } from "./en";
@@ -42,6 +43,7 @@ export function bookingVars(
     [kind && kind !== "visit" ? kind : "", need].filter(Boolean).join(" · ") ||
     need ||
     kind;
+  const rawPhone = input.phone ?? "";
   return {
     slot: input.slot,
     date: input.date ?? input.slot,
@@ -49,7 +51,7 @@ export function bookingVars(
     address: input.address ?? "",
     hours: input.hours ?? "",
     name: input.name ?? "",
-    phone: input.phone ?? "",
+    phone: formatPhoneDisplay(rawPhone) || rawPhone,
     email: input.email ?? "",
     need,
     kind,

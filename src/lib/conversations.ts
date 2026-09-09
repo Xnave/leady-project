@@ -158,6 +158,10 @@ export async function persistInboundIfNew(opts: {
       },
       include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
     });
+    await prisma.lead.update({
+      where: { id: lead.id },
+      data: { adminUnread: true },
+    });
   }
 
   try {

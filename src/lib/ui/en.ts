@@ -253,6 +253,7 @@ export const en: UiCopy = {
     customReplyLabel: "Custom reply (optional — approve only, replaces the template)",
     customReplyPlaceholder: "Leave empty to use the default message",
     newConversation: "End conversation",
+    startConversation: "Start a new conversation",
     markRead: "Mark as read",
     markUnread: "Mark as unread",
     staffPlaceholder: "Write to the customer as staff…",

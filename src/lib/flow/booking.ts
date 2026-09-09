@@ -1,5 +1,5 @@
 import { copyFor } from "@/lib/copy";
-import { isCustomerNameSatisfied } from "@/lib/leads";
+import { formatPhoneDisplay, isCustomerNameSatisfied } from "@/lib/leads";
 import { missingRequired } from "./helpers";
 import type { LeadFields } from "./types";
 
@@ -60,7 +60,9 @@ export function askBookingField(
   if (field === "email") return chat.askEmail;
   if (field === "phone") {
     const deduced = extras?.deducedPhone?.trim();
-    return deduced ? chat.askPhoneConfirm(deduced) : chat.askPhone;
+    return deduced
+      ? chat.askPhoneConfirm(formatPhoneDisplay(deduced) || deduced)
+      : chat.askPhone;
   }
   if (field === "need") return chat.askNeed;
   if (field === "visit_kind") return chat.askVisitKind;

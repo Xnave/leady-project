@@ -2123,6 +2123,23 @@ td .muted { font-size: var(--fs-xs); }
 }
 .channel-cell-link:hover { text-decoration: underline; }
 .row-unread td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+[dir="rtl"] .row-unread td:first-child { box-shadow: inset -3px 0 0 var(--accent); }
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.btn-icon:hover { color: var(--text); background: var(--surface-2, var(--line)); }
+.btn-icon:disabled { opacity: 0.5; cursor: default; }
 
 .wizard-footer {
   display: flex;

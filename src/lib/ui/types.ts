@@ -263,6 +263,7 @@ export type UiCopy = {
     customReplyLabel: string;
     customReplyPlaceholder: string;
     newConversation: string;
+    startConversation: string;
     markRead: string;
     markUnread: string;
     staffPlaceholder: string;

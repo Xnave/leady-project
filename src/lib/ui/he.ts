@@ -253,6 +253,7 @@ export const he: UiCopy = {
     customReplyLabel: "תשובה מותאמת (אופציונלי — לאישור בלבד, במקום התבנית)",
     customReplyPlaceholder: "השאירו ריק לשימוש בתבנית",
     newConversation: "סיים שיחה",
+    startConversation: "התחל שיחה חדשה",
     markRead: "סמן כנקרא",
     markUnread: "סמן כלא נקרא",
     staffPlaceholder: "כתבו ללקוח בתור הנציג…",

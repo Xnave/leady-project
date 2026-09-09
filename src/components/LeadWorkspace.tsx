@@ -338,15 +338,24 @@ export function LeadWorkspace(props: Props) {
           <div className="card">
             <div className="row-actions" style={{ justifyContent: "space-between" }}>
               <h3>{props.ui.common.conversation}</h3>
-              {props.isLatestConversation &&
-              props.conversationId &&
-              props.convoStatus !== "closed" ? (
-                <form action={`/api/leads/${props.leadId}/new-conversation`} method="post">
-                  <input type="hidden" name="conversationId" value={props.conversationId} />
-                  <button type="submit" className="btn-ghost">
-                    {props.ui.inbox.newConversation}
-                  </button>
-                </form>
+              {props.isLatestConversation && props.conversationId ? (
+                props.convoStatus !== "closed" ? (
+                  <form action={`/api/leads/${props.leadId}/new-conversation`} method="post">
+                    <input type="hidden" name="intent" value="end" />
+                    <input type="hidden" name="conversationId" value={props.conversationId} />
+                    <button type="submit" className="btn-ghost">
+                      {props.ui.inbox.newConversation}
+                    </button>
+                  </form>
+                ) : (
+                  <form action={`/api/leads/${props.leadId}/new-conversation`} method="post">
+                    <input type="hidden" name="intent" value="start" />
+                    <input type="hidden" name="conversationId" value={props.conversationId} />
+                    <button type="submit" className="btn-secondary">
+                      {props.ui.inbox.startConversation}
+                    </button>
+                  </form>
+                )
               ) : null}
             </div>
             <div className="stack">
@@ -422,12 +431,28 @@ export function LeadWorkspace(props: Props) {
                 labels={props.threadLabels}
                 leadName={props.name}
               />
-              <StaffChatComposer
-                leadId={props.leadId}
-                conversationId={props.conversationId ?? props.activeConversationId ?? ""}
-                disabled={props.composerDisabled}
-                labels={props.chatLabels}
-              />
+              {props.convoStatus === "closed" ? (
+                <form
+                  action={`/api/leads/${props.leadId}/new-conversation`}
+                  method="post"
+                  className="composer"
+                >
+                  <input type="hidden" name="intent" value="start" />
+                  {props.conversationId ? (
+                    <input type="hidden" name="conversationId" value={props.conversationId} />
+                  ) : null}
+                  <button type="submit" className="btn" style={{ width: "100%" }}>
+                    {props.ui.inbox.startConversation}
+                  </button>
+                </form>
+              ) : (
+                <StaffChatComposer
+                  leadId={props.leadId}
+                  conversationId={props.conversationId ?? props.activeConversationId ?? ""}
+                  disabled={props.composerDisabled}
+                  labels={props.chatLabels}
+                />
+              )}
             </>
           ) : tab === "decisions" ? (
             <div className="lead-visits-panel">

@@ -24,6 +24,15 @@ import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
 
+function formatWhen(d: Date, lang: string) {
+  return d.toLocaleString(lang === "he" ? "he-IL" : "en-GB", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default async function DemoPage({
   searchParams,
 }: {
@@ -35,6 +44,19 @@ export default async function DemoPage({
   const ui = uiCopy(lang);
   const tenant = await prisma.tenant.findFirst({ where: { id: tenantId } });
   const agent = await prisma.agent.findFirst({ where: { tenantId } });
+  const leads = await prisma.lead.findMany({
+    where: { tenantId, externalUserId: { startsWith: "demo-" } },
+    orderBy: { updatedAt: "desc" },
+    take: 30,
+    include: {
+      channel: true,
+      conversations: {
+        take: 1,
+        orderBy: { updatedAt: "desc" },
+        include: { messages: { take: 1, orderBy: { createdAt: "desc" } } },
+      },
+    },
+  });
   let lead =
     leadId
       ? await prisma.lead.findFirst({
@@ -98,7 +120,42 @@ export default async function DemoPage({
   return (
     <div>
       <p className="demo-banner">{ui.demo.banner}</p>
-      <div className="demo-grid demo-grid-solo">
+      <div className="demo-grid">
+        <aside className="card">
+          <h2>{ui.common.customers}</h2>
+          <Link href="/demo" className="btn-secondary">
+            {ui.common.newChat}
+          </Link>
+          <ul className="lead-list">
+            {leads.map((item) => {
+              const last = item.conversations[0]?.messages[0];
+              return (
+                <li key={item.id}>
+                  <Link
+                    href={`/demo?leadId=${item.id}`}
+                    className={leadId === item.id ? "active" : undefined}
+                  >
+                    <div className="mailbox-item">
+                      <span>
+                        {leadDisplayName(item)}
+                        {isDemoLead(item.externalUserId) ? (
+                          <>
+                            {" "}
+                            <span className="badge badge-demo">{ui.common.demo}</span>
+                          </>
+                        ) : null}
+                      </span>
+                      {last ? <span className="snippet">{last.text}</span> : null}
+                      <span className="meta">{formatWhen(item.updatedAt, lang)}</span>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+          {leads.length === 0 ? <p className="muted">{ui.demo.noLeadSelected}</p> : null}
+        </aside>
+
         <section className="card chat-panel">
           <div className="chat-header">
             <div>
@@ -109,12 +166,7 @@ export default async function DemoPage({
                 {languageTitle}
               </p>
             </div>
-            <div className="row-actions">
-              <Link href="/demo" className="btn-secondary">
-                {ui.common.newChat}
-              </Link>
-              {lead?.channel ? <ChannelBadge lang={lang} channel={lead.channel} /> : null}
-            </div>
+            {lead?.channel ? <ChannelBadge lang={lang} channel={lead.channel} /> : null}
           </div>
           {lead && convo ? (
             <>
