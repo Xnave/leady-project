@@ -3,11 +3,17 @@ import { ChannelBadge } from "@/components/ChannelBadge";
 import { PageHeader } from "@/components/PageHeader";
 import { FormSelect } from "@/components/Select";
 import { Pagination } from "@/components/Pagination";
-import { DeleteDemoLead } from "@/components/DeleteDemoLead";
 import { LeadStatusSelect } from "@/components/LeadStatusSelect";
+import { MarkLeadRead } from "@/components/MarkLeadRead";
 import { prisma } from "@/lib/db";
 import { getUiLang } from "@/lib/cookies";
-import { instagramProfileUrl, isDemoLead, leadDisplayName, leadInstagramUsername, whatsappChatUrl } from "@/lib/leads";
+import {
+  formatPhoneDisplay,
+  instagramProfileUrl,
+  leadDisplayName,
+  leadInstagramUsername,
+  whatsappChatUrl,
+} from "@/lib/leads";
 import { requireTenantId } from "@/lib/tenant";
 import { intentLabel, stageLabel } from "@/lib/ui/labels";
 import { meetingKindLabel, normalizeLeadStatus, uiCopy } from "@/lib/ui";
@@ -16,6 +22,15 @@ import type { Prisma } from "@prisma/client";
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZES = [10, 20, 50] as const;
+const STATUS_FILTERS = ["new", "open", "in_progress", "won", "lost"] as const;
+const STAGE_FILTERS = [
+  "talk",
+  "escalate",
+  "waiting_human",
+  "done",
+  "collect_lead",
+  "classify_intent",
+] as const;
 
 function formatWhen(d: Date, lang: string) {
   return d.toLocaleString(lang === "he" ? "he-IL" : "en-GB", {
@@ -29,9 +44,15 @@ function formatWhen(d: Date, lang: string) {
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; size?: string; q?: string; kind?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    size?: string;
+    q?: string;
+    status?: string;
+    stage?: string;
+  }>;
 }) {
-  const { page: pageParam, size: sizeParam, q, kind } = await searchParams;
+  const { page: pageParam, size: sizeParam, q, status, stage } = await searchParams;
   const tenantId = await requireTenantId();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
@@ -40,18 +61,30 @@ export default async function LeadsPage({
     : 20;
   const page = Math.max(1, Number(pageParam) || 1);
   const query = q?.trim() ?? "";
-  const filterKind = kind === "demo" || kind === "live" ? kind : "all";
+  const filterStatus = STATUS_FILTERS.includes(status as (typeof STATUS_FILTERS)[number])
+    ? status!
+    : "";
+  const filterStage = STAGE_FILTERS.includes(stage as (typeof STAGE_FILTERS)[number])
+    ? stage!
+    : "";
 
-  const where: Prisma.LeadWhereInput = { tenantId };
+  const where: Prisma.LeadWhereInput = {
+    tenantId,
+    NOT: { externalUserId: { startsWith: "demo-" } },
+  };
   if (query) {
     where.OR = [
       { displayName: { contains: query, mode: "insensitive" } },
       { externalUserId: { contains: query, mode: "insensitive" } },
-      { fields: { path: ["name"], string_contains: query, mode: "insensitive" } }, 
+      { fields: { path: ["name"], string_contains: query, mode: "insensitive" } },
     ];
   }
-  if (filterKind === "demo") where.externalUserId = { startsWith: "demo-" };
-  if (filterKind === "live") where.NOT = { externalUserId: { startsWith: "demo-" } };
+  if (filterStatus) where.status = filterStatus;
+  if (filterStage) {
+    where.conversations = {
+      some: { flowState: filterStage, messages: { some: {} } },
+    };
+  }
 
   const [total, leads, pendingMeetings] = await Promise.all([
     prisma.lead.count({ where }),
@@ -74,7 +107,11 @@ export default async function LeadsPage({
       },
     }),
     prisma.meeting.findMany({
-      where: { tenantId, status: "pending" },
+      where: {
+        tenantId,
+        status: "pending",
+        lead: { NOT: { externalUserId: { startsWith: "demo-" } } },
+      },
       include: { lead: true },
       orderBy: { createdAt: "desc" },
       take: 5,
@@ -82,25 +119,47 @@ export default async function LeadsPage({
   ]);
 
   const showVisit = leads.some((l) => l.meetings.length > 0) || pendingMeetings.length > 0;
+  const extraParams: Record<string, string> = {
+    ...(query ? { q: query } : {}),
+    ...(filterStatus ? { status: filterStatus } : {}),
+    ...(filterStage ? { stage: filterStage } : {}),
+  };
 
   return (
     <div>
-      <PageHeader title={`${ui.page.leadsTitle} (${total})`} />
+      <PageHeader title={ui.page.leadsTitle} />
       <form className="toolbar" method="get">
         <label>
           {ui.common.search}
           <input type="search" name="q" defaultValue={query} />
         </label>
         <label>
-          {ui.common.demo}
+          {ui.common.status}
           <FormSelect
-            name="kind"
-            defaultValue={filterKind}
-            ariaLabel={ui.common.demo}
+            name="status"
+            defaultValue={filterStatus || "all"}
+            ariaLabel={ui.common.status}
             options={[
               { value: "all", label: ui.common.all },
-              { value: "live", label: ui.common.live },
-              { value: "demo", label: ui.common.demo },
+              ...STATUS_FILTERS.map((id) => ({
+                value: id,
+                label: ui.status[id as keyof typeof ui.status] ?? id,
+              })),
+            ]}
+          />
+        </label>
+        <label>
+          {ui.common.stage}
+          <FormSelect
+            name="stage"
+            defaultValue={filterStage || "all"}
+            ariaLabel={ui.common.stage}
+            options={[
+              { value: "all", label: ui.common.all },
+              ...STAGE_FILTERS.map((id) => ({
+                value: id,
+                label: stageLabel(ui, id),
+              })),
             ]}
           />
         </label>
@@ -142,52 +201,54 @@ export default async function LeadsPage({
             {leads.map((lead) => {
               const fields = lead.fields as Record<string, unknown>;
               const rawStage = lead.conversations[0]?.flowState;
-              const stage = rawStage ? stageLabel(ui, rawStage) : ui.common.empty;
+              const stageText = rawStage ? stageLabel(ui, rawStage) : ui.common.empty;
               const pending = lead.meetings.length;
-              const demo = isDemoLead(lead.externalUserId);
               const intent = fields.intent ? intentLabel(ui, String(fields.intent)) : ui.common.empty;
               const igHandle =
                 lead.channel.provider === "instagram" ? leadInstagramUsername(fields) : "";
               const phone =
                 (typeof fields.phone === "string" && fields.phone) ||
                 (lead.channel.provider === "whatsapp" ? lead.externalUserId : "");
+              const phoneDisplay = formatPhoneDisplay(String(phone));
               const waUrl =
                 lead.channel.provider === "whatsapp" ? whatsappChatUrl(String(phone)) : "";
+              const igUrl = igHandle ? instagramProfileUrl(igHandle) : "";
+              const channelHref = waUrl || igUrl || "";
+              const channelExtra = waUrl
+                ? phoneDisplay
+                : igHandle
+                  ? `@${igHandle}`
+                  : "";
               const lastAt =
                 lead.conversations[0]?.messages[0]?.createdAt ??
                 lead.conversations[0]?.updatedAt ??
                 lead.updatedAt;
               return (
-                <tr key={lead.id}>
+                <tr key={lead.id} className={lead.adminUnread ? "row-unread" : undefined}>
                   <td>
-                    <Link href={`/leads/${lead.id}`}>{leadDisplayName(lead)}</Link>
-                    {demo ? (
-                      <>
-                        {" "}
-                        <span className="badge badge-demo">{ui.common.demo}</span>
-                      </>
-                    ) : null}
-                    {waUrl ? (
-                      <div className="muted">
-                        <a href={waUrl} target="_blank" rel="noopener noreferrer" dir="ltr">
-                          {String(phone)}
-                        </a>
-                      </div>
-                    ) : null}
-                    {igHandle ? (
-                      <div className="muted">
-                        <a
-                          href={instagramProfileUrl(igHandle)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          @{igHandle}
-                        </a>
-                      </div>
-                    ) : null}
+                    <Link href={`/leads/${lead.id}`}>
+                      {lead.adminUnread ? <strong>{leadDisplayName(lead)}</strong> : leadDisplayName(lead)}
+                    </Link>
                   </td>
                   <td>
-                    <ChannelBadge lang={lang} channel={lead.channel} />
+                    {channelHref ? (
+                      <a
+                        href={channelHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="channel-cell-link"
+                      >
+                        <ChannelBadge lang={lang} channel={lead.channel} />
+                        {channelExtra ? (
+                          <span className="muted" dir="ltr">
+                            {" "}
+                            {channelExtra}
+                          </span>
+                        ) : null}
+                      </a>
+                    ) : (
+                      <ChannelBadge lang={lang} channel={lead.channel} />
+                    )}
                   </td>
                   <td>
                     <LeadStatusSelect
@@ -198,7 +259,7 @@ export default async function LeadsPage({
                       failedLabel={ui.common.saveFailed}
                     />
                   </td>
-                  <td>{stage}</td>
+                  <td>{stageText}</td>
                   {showVisit ? (
                     <td>
                       {pending > 0 ? (
@@ -213,13 +274,12 @@ export default async function LeadsPage({
                   <td>{intent}</td>
                   <td className="muted">{formatWhen(lastAt, lang)}</td>
                   <td className="table-actions">
-                    {demo ? (
-                      <DeleteDemoLead
-                        leadId={lead.id}
-                        label={ui.common.delete}
-                        confirmText={ui.common.confirmDeleteDemo}
-                      />
-                    ) : null}
+                    <MarkLeadRead
+                      leadId={lead.id}
+                      unread={lead.adminUnread}
+                      markReadLabel={ui.inbox.markRead}
+                      markUnreadLabel={ui.inbox.markUnread}
+                    />
                   </td>
                 </tr>
               );
@@ -234,7 +294,7 @@ export default async function LeadsPage({
           total={total}
           basePath="/leads"
           ui={ui}
-          extraParams={{ ...(query ? { q: query } : {}), ...(filterKind !== "all" ? { kind: filterKind } : {}) }}
+          extraParams={extraParams}
         />
       ) : null}
       {total === 0 ? <p className="empty-state">{ui.common.noLeads}</p> : null}

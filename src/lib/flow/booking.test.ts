@@ -3,6 +3,8 @@ import {
   askBookingField,
   bookingFieldGaps,
   gateBookOnGaps,
+  mergeLeadAndSession,
+  splitCrmAndSession,
 } from "./booking";
 import { callbackPhone, looksLikePhoneNumber } from "./booking-collect";
 import { copyFor, fillTemplate } from "@/lib/copy";
@@ -16,13 +18,21 @@ describe("booking helpers", () => {
   it("asks for time then name then need by default", () => {
     expect(bookingFieldGaps({})[0]).toBe("time_preference");
     expect(bookingFieldGaps({ time_preference: "Thursday 18:00" })[0]).toBe("name");
+    // Single-token name looks incomplete until the agent collected it.
     expect(
       bookingFieldGaps({ time_preference: "Thursday 18:00", name: "Nave" })[0],
+    ).toBe("name");
+    expect(
+      bookingFieldGaps({
+        time_preference: "Thursday 18:00",
+        name: "Nave Cohen",
+      })[0],
     ).toBe("need");
     expect(
       bookingFieldGaps({
         time_preference: "Thursday 18:00",
         name: "Nave",
+        name_collected_by_agent: "1",
         need: "product demo",
       }),
     ).toEqual([]);
@@ -31,7 +41,10 @@ describe("booking helpers", () => {
   it("only asks for phone when that field is required", () => {
     expect(
       bookingFieldGaps(
-        { time_preference: "Thursday 18:00", name: "Nave" },
+        {
+          time_preference: "Thursday 18:00",
+          name: "Nave Cohen",
+        },
         ["time_preference", "name", "phone"],
       )[0],
     ).toBe("phone");
@@ -68,6 +81,25 @@ describe("isBookingCollectActive", () => {
     expect(isBookingCollectActive({ booking_flow: "active" })).toBe(true);
     expect(isBookingCollectActive({ name: "Nave" })).toBe(false);
     expect(isBookingCollectActive({ booking_confirm: "pending" })).toBe(true);
+  });
+});
+
+describe("splitCrmAndSession", () => {
+  it("keeps CRM on lead and booking drafts in session", () => {
+    const { crm, session } = splitCrmAndSession({
+      name: "Dana",
+      phone: "+1",
+      booking_flow: "active",
+      time_preference: "Thu 18:00",
+      need: "demo",
+    });
+    expect(crm).toEqual({ name: "Dana", phone: "+1" });
+    expect(session).toEqual({
+      booking_flow: "active",
+      time_preference: "Thu 18:00",
+      need: "demo",
+    });
+    expect(mergeLeadAndSession(crm, session).booking_flow).toBe("active");
   });
 });
 

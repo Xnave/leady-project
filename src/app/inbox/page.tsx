@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
 import { getUiLang } from "@/lib/cookies";
 import { enrichInstagramLeadIdentity } from "@/lib/conversations";
-import { instagramProfileUrl, leadDisplayName, leadInstagramUsername, whatsappChatUrl } from "@/lib/leads";
+import { formatPhoneDisplay, instagramProfileUrl, leadDisplayName, leadInstagramUsername, whatsappChatUrl } from "@/lib/leads";
 import { requireTenantId } from "@/lib/tenant";
 import { fillUi, hitlReasonLabel, uiCopy } from "@/lib/ui";
 
@@ -255,7 +255,7 @@ function InboxTaskDetail({
           <span>{leadDisplayName(task.lead)}</span>
           {waUrl ? (
             <a href={waUrl} target="_blank" rel="noopener noreferrer" dir="ltr">
-              {phone || ui.common.whatsapp}
+              {formatPhoneDisplay(phone) || ui.common.whatsapp}
             </a>
           ) : null}
           {igHandle ? (

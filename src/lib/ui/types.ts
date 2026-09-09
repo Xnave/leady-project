@@ -149,6 +149,7 @@ export type UiCopy = {
     captured: string;
     conversation: string;
     flow: string;
+    advanced: string;
     customers: string;
     newChat: string;
     knowledge: string;
@@ -262,6 +263,9 @@ export type UiCopy = {
     customReplyLabel: string;
     customReplyPlaceholder: string;
     newConversation: string;
+    markRead: string;
+    markUnread: string;
+    staffPlaceholder: string;
     historyTitle: string;
     waitingTitle: string;
     taskOpen: string;

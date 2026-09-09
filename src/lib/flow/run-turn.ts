@@ -3,8 +3,8 @@ import {
   insertAgentMessage,
   loadTurnContext,
   pauseForHuman,
-  persistLeadFields,
   persistStage,
+  persistTurnFields,
 } from "@/lib/conversations";
 import { requestTentativeMeeting } from "@/lib/meetings";
 import { addIsoDuration } from "@/lib/flow/helpers";
@@ -122,7 +122,8 @@ export async function runTurnNow(opts: {
       });
     },
     persistStage: (c, stageId) => persistStage(c.tenantId, c.conversation.id, stageId),
-    persistFields: (c, fields) => persistLeadFields(c.tenantId, c.lead.id, fields),
+    persistFields: (c, fields) =>
+      persistTurnFields(c.tenantId, c.lead.id, c.conversation.id, fields),
     sendAndSave: (c, text) =>
       sendAndSave(c as Awaited<ReturnType<typeof loadTurnContext>>, text, {
         idempotencyKey: outboundKey

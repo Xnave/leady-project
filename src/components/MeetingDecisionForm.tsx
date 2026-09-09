@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { formatPhoneDisplay } from "@/lib/leads";
 
 type Labels = {
   need: string;
@@ -58,8 +59,12 @@ export function MeetingDecisionForm({
         <div className="stage-node">
           {summary.kind || summary.slot ? (
             <p>
-              <strong>{summary.kind ?? labels.visitDefault}</strong>
-              {summary.slot ? ` · ${summary.slot}` : ""}
+              {summary.kind && summary.kind !== "visit" ? (
+                <strong>{summary.kind}</strong>
+              ) : null}
+              {summary.slot
+                ? `${summary.kind && summary.kind !== "visit" ? " · " : ""}${summary.slot}`
+                : ""}
             </p>
           ) : null}
           {summary.need ? (
@@ -76,7 +81,7 @@ export function MeetingDecisionForm({
             <p>
               {labels.phone}:{" "}
               <span dir="ltr" className="ltr-isolate">
-                {summary.phone}
+                {formatPhoneDisplay(summary.phone)}
               </span>
             </p>
           ) : null}

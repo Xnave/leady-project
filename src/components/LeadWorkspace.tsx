@@ -3,17 +3,19 @@
 import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ChannelBadge } from "@/components/ChannelBadge";
-import { ChatComposer } from "@/components/ChatComposer";
+import { StaffChatComposer } from "@/components/ChatComposer";
 import { ChatThread } from "@/components/ChatThread";
-import { FlowBreadcrumb } from "@/components/FlowBreadcrumb";
 import { LeadChatPoll } from "@/components/LeadChatPoll";
 import { LeadFieldsForm } from "@/components/LeadFieldsForm";
 import { MeetingsTable } from "@/components/MeetingsTable";
 import {
   convoStatusLabel,
   intentLabel,
+  meetingKindLabel,
   stageLabel,
 } from "@/lib/ui/labels";
+import { formatPhoneDisplay } from "@/lib/leads";
+import { isBookingSessionKey } from "@/lib/flow/booking";
 import { normalizeLeadStatus, type UiCopy, type UiLang } from "@/lib/ui";
 import type { FlowDefinition, LeadFields, LeadSchema } from "@/lib/flow/types";
 
@@ -45,6 +47,11 @@ const HIDDEN_CAPTURED = new Set([
   "instagramUsername",
   "zernioConversationId",
   "booking_confirm",
+  "booking_flow",
+  "booking",
+  "staff_slot_offer",
+  "time_preference",
+  "name_collected_by_agent",
   "intent", // already shown in the profile block
   "meetingId",
 ]);
@@ -75,6 +82,9 @@ type Props = {
   summary?: string;
   composerFrom: string;
   composerDisabled: boolean;
+  /** Latest conversation for this lead — end-conversation only shows then. */
+  isLatestConversation?: boolean;
+  conversationId?: string;
   schema: LeadSchema;
   fields: LeadFields;
   meetings: MeetingItem[];
@@ -132,6 +142,7 @@ function formatCapturedValue(
     return intentLabel(ui, value);
   }
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    if (key === "phone") return formatPhoneDisplay(String(value));
     return String(value);
   }
   if (typeof value === "object") {
@@ -147,7 +158,9 @@ function formatCapturedValue(
             ? ui.meeting.rejected
             : statusRaw;
     const when = typeof rec.when === "string" ? rec.when : "";
-    const kind = typeof rec.kind === "string" ? rec.kind : "";
+    const kindRaw = typeof rec.kind === "string" ? rec.kind.trim() : "";
+    const kind =
+      kindRaw && kindRaw !== "visit" ? meetingKindLabel(ui, kindRaw) : "";
     return [status, when, kind].filter(Boolean).join(" · ");
   }
   return "";
@@ -173,7 +186,7 @@ export function LeadWorkspace(props: Props) {
 
   const capturedEntries = useMemo(() => {
     return Object.entries(props.fields)
-      .filter(([key]) => !HIDDEN_CAPTURED.has(key))
+      .filter(([key]) => !HIDDEN_CAPTURED.has(key) && !isBookingSessionKey(key))
       .map(([key, value]) => ({
         key,
         value: formatCapturedValue(key, value, props.ui),
@@ -182,12 +195,28 @@ export function LeadWorkspace(props: Props) {
       .filter((row) => row.value);
   }, [props.fields, props.ui]);
 
+  const crmSchema: LeadSchema = useMemo(
+    () => ({
+      fields: Object.fromEntries(
+        Object.entries(props.schema.fields).filter(([key]) => !isBookingSessionKey(key)),
+      ),
+    }),
+    [props.schema],
+  );
+  const crmFields: LeadFields = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(props.fields).filter(([key]) => !isBookingSessionKey(key)),
+      ),
+    [props.fields],
+  );
+
   return (
     <div className="lead-page">
       <p className="lead-page-nav">
         <Link href="/leads">{props.ui.nav.leads}</Link>
         {" · "}
-        <Link href={`/demo?leadId=${props.leadId}`}>{props.ui.nav.chat}</Link>
+        <span>{props.name}</span>
       </p>
 
       <div className="lead-workspace">
@@ -215,7 +244,7 @@ export function LeadWorkspace(props: Props) {
                 <>
                   <dt>{props.ui.common.phone}</dt>
                   <dd>
-                    <Ltr>{props.phone}</Ltr>
+                    <Ltr>{formatPhoneDisplay(props.phone)}</Ltr>
                   </dd>
                 </>
               ) : null}
@@ -232,7 +261,10 @@ export function LeadWorkspace(props: Props) {
                   <dt>{props.ui.common.whatsapp}</dt>
                   <dd>
                     <a href={props.whatsappUrl} target="_blank" rel="noopener noreferrer">
-                      <Ltr>{props.whatsappLabel || props.phone || props.ui.common.whatsapp}</Ltr>
+                      <Ltr>
+                        {formatPhoneDisplay(props.whatsappLabel || props.phone) ||
+                          props.ui.common.whatsapp}
+                      </Ltr>
                     </a>
                   </dd>
                 </>
@@ -272,8 +304,8 @@ export function LeadWorkspace(props: Props) {
                 <LeadFieldsForm
                   ui={props.ui}
                   action={`/api/leads/${props.leadId}/fields`}
-                  schema={props.schema}
-                  fields={props.fields}
+                  schema={crmSchema}
+                  fields={crmFields}
                   status={props.status}
                   statusLabels={props.ui.status}
                   statusLegend={props.ui.common.status}
@@ -306,11 +338,16 @@ export function LeadWorkspace(props: Props) {
           <div className="card">
             <div className="row-actions" style={{ justifyContent: "space-between" }}>
               <h3>{props.ui.common.conversation}</h3>
-              <form action={`/api/leads/${props.leadId}/new-conversation`} method="post">
-                <button type="submit" className="btn-ghost">
-                  {props.ui.inbox.newConversation}
-                </button>
-              </form>
+              {props.isLatestConversation &&
+              props.conversationId &&
+              props.convoStatus !== "closed" ? (
+                <form action={`/api/leads/${props.leadId}/new-conversation`} method="post">
+                  <input type="hidden" name="conversationId" value={props.conversationId} />
+                  <button type="submit" className="btn-ghost">
+                    {props.ui.inbox.newConversation}
+                  </button>
+                </form>
+              ) : null}
             </div>
             <div className="stack">
               {props.conversations.map((c) => (
@@ -379,13 +416,15 @@ export function LeadWorkspace(props: Props) {
                   {props.summary}
                 </p>
               ) : null}
-              {props.flow ? (
-                <FlowBreadcrumb flow={props.flow} current={props.stage} ui={props.ui} />
-              ) : null}
-              <ChatThread lang={props.lang} messages={props.messages} labels={props.threadLabels} />
-              <ChatComposer
+              <ChatThread
+                lang={props.lang}
+                messages={props.messages}
+                labels={props.threadLabels}
+                leadName={props.name}
+              />
+              <StaffChatComposer
                 leadId={props.leadId}
-                from={props.composerFrom}
+                conversationId={props.conversationId ?? props.activeConversationId ?? ""}
                 disabled={props.composerDisabled}
                 labels={props.chatLabels}
               />

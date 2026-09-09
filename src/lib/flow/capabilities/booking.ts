@@ -188,6 +188,9 @@ export function registerBookingCapability(): void {
                 return `invalid phone: ${value}`;
               }
               fields[key] = value.trim();
+              if (key === "name" && value.trim()) {
+                fields.name_collected_by_agent = "1";
+              }
             }
             collected.fields = { ...collected.fields, ...fields };
             return "ok";
@@ -195,7 +198,7 @@ export function registerBookingCapability(): void {
         }),
         ask_field: tool({
           description:
-            "Ask for one missing booking field while visit booking is already in progress. Only fields in the required booking list. Sets outbound text to that ask.",
+            "Ask for one missing booking field while visit booking is already in progress. Only fields in the required booking list. Sets outbound text to that ask. For name: ask for a full name when the stored value looks like a nickname or partial name, unless name_collected_by_agent is already set.",
           inputSchema: z.object({
             field: z.enum([
               "time_preference",

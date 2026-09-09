@@ -23,7 +23,8 @@ export const bookingCollectMeta: {
   {
     id: "name",
     title: "Name",
-    blurb: "How to address them on the booking.",
+    blurb: "Full name — always collected; re-asked if only a nickname is known.",
+    locked: true,
   },
   {
     id: "need",
@@ -62,7 +63,8 @@ export function sanitizeBookingCollect(raw: unknown): BookingCollectId[] {
   const picked = raw
     .filter((item): item is string => typeof item === "string")
     .filter(isBookingCollectId);
-  return [...new Set<BookingCollectId>(["time_preference", ...picked])];
+  // Name + time are always collected (name may be re-asked if nickname-only).
+  return [...new Set<BookingCollectId>(["time_preference", "name", ...picked])];
 }
 
 export function bookingCollectFromFlow(flow: FlowDefinition | null | undefined): BookingCollectId[] {

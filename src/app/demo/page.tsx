@@ -2,16 +2,16 @@ import Link from "next/link";
 import { ChannelBadge } from "@/components/ChannelBadge";
 import { ChatComposer } from "@/components/ChatComposer";
 import { ChatThread } from "@/components/ChatThread";
-import { FlowBreadcrumb } from "@/components/FlowBreadcrumb";
 import { LeadFieldsForm } from "@/components/LeadFieldsForm";
 import { LeadProfilePanel } from "@/components/LeadProfilePanel";
 import { prisma } from "@/lib/db";
-import { flowForCatalog, isCatalogId } from "@/lib/flow/catalog";
+import { isCatalogId } from "@/lib/flow/catalog";
 import { isChatLanguage } from "@/lib/flow/locale";
-import type { FlowDefinition, LeadFields, LeadSchema } from "@/lib/flow/types";
+import type { LeadFields, LeadSchema } from "@/lib/flow/types";
 import { getUiLang } from "@/lib/cookies";
 import { enrichInstagramLeadIdentity } from "@/lib/conversations";
 import {
+  formatPhoneDisplay,
   instagramProfileUrl,
   isDemoLead,
   leadDisplayName,
@@ -24,15 +24,6 @@ import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
 
-function formatWhen(d: Date, lang: string) {
-  return d.toLocaleString(lang === "he" ? "he-IL" : "en-GB", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 export default async function DemoPage({
   searchParams,
 }: {
@@ -44,32 +35,20 @@ export default async function DemoPage({
   const ui = uiCopy(lang);
   const tenant = await prisma.tenant.findFirst({ where: { id: tenantId } });
   const agent = await prisma.agent.findFirst({ where: { tenantId } });
-  const leads = await prisma.lead.findMany({
-    where: { tenantId },
-    orderBy: { updatedAt: "desc" },
-    take: 30,
-    include: {
-      channel: true,
-      conversations: {
-        take: 1,
-        orderBy: { updatedAt: "desc" },
-        include: { messages: { take: 1, orderBy: { createdAt: "desc" } } },
-      },
-    },
-  });
-  let lead = leadId
-    ? await prisma.lead.findFirst({
-        where: { id: leadId, tenantId },
-        include: {
-          channel: true,
-          conversations: {
-            include: { messages: { orderBy: { createdAt: "asc" } }, agent: true },
-            orderBy: { updatedAt: "desc" },
-            take: 1,
+  let lead =
+    leadId
+      ? await prisma.lead.findFirst({
+          where: { id: leadId, tenantId, externalUserId: { startsWith: "demo-" } },
+          include: {
+            channel: true,
+            conversations: {
+              include: { messages: { orderBy: { createdAt: "asc" } }, agent: true },
+              orderBy: { updatedAt: "desc" },
+              take: 1,
+            },
           },
-        },
-      })
-    : null;
+        })
+      : null;
   if (lead?.channel.provider === "instagram") {
     const changed = await enrichInstagramLeadIdentity({ leadId: lead.id, tenantId });
     if (changed) {
@@ -94,16 +73,13 @@ export default async function DemoPage({
   const phone =
     (fields.phone ? String(fields.phone) : "") ||
     (lead?.channel.provider === "whatsapp" ? lead.externalUserId : "");
-  const waUrl =
-    lead?.channel.provider === "whatsapp" ? whatsappChatUrl(phone) : "";
+  const waUrl = lead?.channel.provider === "whatsapp" ? whatsappChatUrl(phone) : "";
   const catalogId = agent?.catalogId && isCatalogId(agent.catalogId) ? agent.catalogId : "inbox";
   const catalogTitle = ui.catalog[catalogId]?.title ?? catalogId;
   const languageId =
     tenant?.chatLanguage && isChatLanguage(tenant.chatLanguage) ? tenant.chatLanguage : "multi";
   const languageTitle = ui.chatLanguage[languageId]?.title ?? languageId;
   const setupIncomplete = !(tenant?.intro ?? "").trim();
-  const flow = flowForCatalog(catalogId) as FlowDefinition;
-  const agentFlow = (convo?.agent.flow ?? flow) as FlowDefinition;
 
   const chatLabels = {
     placeholder: ui.chat.placeholder,
@@ -122,58 +98,26 @@ export default async function DemoPage({
   return (
     <div>
       <p className="demo-banner">{ui.demo.banner}</p>
-      <div className="demo-grid">
-        <aside className="card">
-          <h2>{ui.common.customers}</h2>
-          <Link href="/demo" className="btn-secondary">
-            {ui.common.newChat}
-          </Link>
-          <ul className="lead-list">
-            {leads.map((item) => {
-              const last = item.conversations[0]?.messages[0];
-              return (
-                <li key={item.id}>
-                  <Link
-                    href={`/demo?leadId=${item.id}`}
-                    className={leadId === item.id ? "active" : undefined}
-                  >
-                    <div className="mailbox-item">
-                      <span>
-                        {leadDisplayName(item)}
-                        {isDemoLead(item.externalUserId) ? (
-                          <>
-                            {" "}
-                            <span className="badge badge-demo">{ui.common.demo}</span>
-                          </>
-                        ) : null}
-                      </span>
-                      {last ? <span className="snippet">{last.text}</span> : null}
-                      <span className="meta">
-                        {formatWhen(item.updatedAt, lang)}
-                        {item.channel ? ` · ${ui.common.whatsapp}` : ""}
-                      </span>
-                    </div>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </aside>
-
+      <div className="demo-grid demo-grid-solo">
         <section className="card chat-panel">
+          <div className="chat-header">
+            <div>
+              <h2>{lead ? leadDisplayName(lead) : (tenant?.name ?? ui.page.chatTitle)}</h2>
+              <p className="muted">
+                {ui.demo.simulateAs}
+                {convo ? ` · ${convoStatusLabel(ui, convo.status)}` : ""} · {catalogTitle} ·{" "}
+                {languageTitle}
+              </p>
+            </div>
+            <div className="row-actions">
+              <Link href="/demo" className="btn-secondary">
+                {ui.common.newChat}
+              </Link>
+              {lead?.channel ? <ChannelBadge lang={lang} channel={lead.channel} /> : null}
+            </div>
+          </div>
           {lead && convo ? (
             <>
-              <div className="chat-header">
-                <div>
-                  <h2>{leadDisplayName(lead)}</h2>
-                  <p className="muted">
-                    {ui.demo.simulateAs} · {convoStatusLabel(ui, convo.status)} · {catalogTitle} ·{" "}
-                    {languageTitle}
-                  </p>
-                </div>
-                <ChannelBadge lang={lang} channel={lead.channel} />
-              </div>
-              <FlowBreadcrumb flow={agentFlow} current={convo.flowState} ui={ui} />
               <ChatThread
                 lang={lang}
                 messages={convo.messages.map((m) => ({
@@ -183,6 +127,7 @@ export default async function DemoPage({
                   createdAt: m.createdAt,
                 }))}
                 labels={threadLabels}
+                leadName={leadDisplayName(lead)}
               />
               <ChatComposer
                 leadId={lead.id}
@@ -198,9 +143,6 @@ export default async function DemoPage({
             </>
           ) : (
             <>
-              <div className="chat-header">
-                <h2>{tenant?.name ?? ui.page.chatTitle}</h2>
-              </div>
               {setupIncomplete ? (
                 <p className="muted">
                   <Link href="/onboard">{ui.nav.setup}</Link>
@@ -234,7 +176,7 @@ export default async function DemoPage({
                 ui={ui}
                 leadId={lead.id}
                 name={leadDisplayName(lead)}
-                phone={phone || undefined}
+                phone={phone ? formatPhoneDisplay(phone) : undefined}
                 email={fields.email ? String(fields.email) : undefined}
                 intent={fields.intent ? String(fields.intent) : undefined}
                 status={lead.status}

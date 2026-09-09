@@ -51,28 +51,32 @@ export async function closeConversationAsDone(opts: {
 }): Promise<void> {
   const conversation = await prisma.conversation.findFirst({
     where: { id: opts.conversationId, tenantId: opts.tenantId },
-    include: { agent: true },
+    include: { agent: true, lead: true },
   });
   if (!conversation) return;
 
   const flow = conversation.agent.flow as FlowDefinition;
   const lifecycleReason = opts.reason ?? "done";
-  if (conversation.status !== "closed") {
-    await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        status: "closed",
-        flowState: flow.stages.done?.type === "terminal" ? "done" : conversation.flowState,
-        lifecycleReason,
-      },
-    });
-  } else if (
-    conversation.flowState !== "done" &&
-    flow.stages.done?.type === "terminal"
-  ) {
-    await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: { flowState: "done", lifecycleReason },
+  const doneState = flow.stages.done?.type === "terminal" ? "done" : conversation.flowState;
+
+  await prisma.conversation.update({
+    where: { id: conversation.id },
+    data: {
+      status: "closed",
+      flowState: doneState,
+      lifecycleReason,
+      // Primary fix: session dies with the thread; next inbound gets empty {}.
+      session: {} as Prisma.InputJsonValue,
+    },
+  });
+
+  // Compat: strip any leaked booking-session keys still parked on Lead.fields.
+  const prevFields = (conversation.lead.fields as LeadFields) ?? {};
+  const nextFields = clearBookingSessionFields(prevFields);
+  if (JSON.stringify(prevFields) !== JSON.stringify(nextFields)) {
+    await prisma.lead.update({
+      where: { id: conversation.leadId },
+      data: { fields: nextFields as Prisma.InputJsonValue },
     });
   }
 
@@ -154,6 +158,7 @@ export async function rotateConversation(opts: {
         flowState:
           flow.stages.done?.type === "terminal" ? "done" : current.flowState,
         lifecycleReason: opts.reason,
+        session: {} as Prisma.InputJsonValue,
       },
     });
   }
@@ -169,13 +174,14 @@ export async function rotateConversation(opts: {
       flowVersion: agent.flowVersion,
       summary: "",
       lifecycleReason: opts.reason,
+      session: {} as Prisma.InputJsonValue,
     },
   });
 
-  // Fresh thread: drop in-progress booking session so talk starts with intro, not ask_field.
-  if (opts.reason === "admin" || opts.reason === "idle") {
-    const prevFields = (lead.fields as LeadFields) ?? {};
-    const nextFields = clearBookingSessionFields(prevFields);
+  // Compat: strip leaked booking-session keys from Lead (new thread already has empty session).
+  const prevFields = (lead.fields as LeadFields) ?? {};
+  const nextFields = clearBookingSessionFields(prevFields);
+  if (JSON.stringify(prevFields) !== JSON.stringify(nextFields)) {
     await prisma.lead.update({
       where: { id: lead.id },
       data: { fields: nextFields as Prisma.InputJsonValue },

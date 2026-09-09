@@ -85,10 +85,13 @@ export function ChatThread({
   messages,
   labels,
   lang = "en",
+  leadName,
 }: {
   messages: Msg[];
   labels: Labels;
   lang?: "he" | "en";
+  /** When set, customer bubbles show this instead of the generic "lead" role label. */
+  leadName?: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const lastId = messages[messages.length - 1]?.id ?? "";
@@ -100,6 +103,7 @@ export function ChatThread({
   }, [lastId, messages.length]);
 
   function roleName(role: string) {
+    if (role === "lead" && leadName?.trim()) return leadName.trim();
     return labels.roles[role] ?? role;
   }
 

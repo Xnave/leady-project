@@ -30,6 +30,62 @@ export function whatsappChatUrl(phone: string | null | undefined): string {
   return `https://wa.me/${digits}`;
 }
 
+/**
+ * Display phones for UI: +972… → 0…, spaced as 052-659-5639.
+ * Non-IL numbers stay digit-grouped lightly.
+ */
+export function formatPhoneDisplay(phone: string | null | undefined): string {
+  const raw = (phone ?? "").trim();
+  if (!raw) return "";
+  let digits = raw.replace(/[^\d]/g, "");
+  if (digits.startsWith("972") && digits.length >= 11) {
+    digits = `0${digits.slice(3)}`;
+  } else if (raw.startsWith("+972") && digits.startsWith("972")) {
+    digits = `0${digits.slice(3)}`;
+  }
+  // Israeli mobile 05X-XXX-XXXX
+  if (/^05\d{8}$/.test(digits)) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  if (/^0\d{8,9}$/.test(digits)) {
+    return `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}`;
+  }
+  return digits || raw;
+}
+
+/** True when stored name looks like a nickname / partial / non-person name. */
+export function looksLikeIncompleteCustomerName(name: string | null | undefined): boolean {
+  const t = (name ?? "").trim();
+  if (!t) return true;
+  if (looksLikePlatformUserId(t)) return true;
+  if (looksLikePhoneNumberish(t)) return true;
+  // Emoji / symbols only or mostly
+  if (/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+$/u.test(t)) return true;
+  // Single very short token (e.g. "N", "Avi" alone is ok at 3+ hebrew/latin letters)
+  const cleaned = t.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "").trim();
+  if (!cleaned) return true;
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  if (parts.length === 1 && parts[0].length < 2) return true;
+  // Nickname / partial: single token (no family name) unless agent already verified.
+  if (parts.length < 2) return true;
+  // Display names that are clearly channel nicknames with heart/fire etc.
+  if (/[\p{Emoji_Presentation}]/u.test(t)) return true;
+  return false;
+}
+
+/** True when booking may treat `name` as filled (agent-collected or looks complete). */
+export function isCustomerNameSatisfied(fields: Record<string, unknown> | null | undefined): boolean {
+  const name = typeof fields?.name === "string" ? fields.name.trim() : "";
+  if (!name) return false;
+  const verified =
+    fields?.name_collected_by_agent === true ||
+    fields?.name_collected_by_agent === "1" ||
+    fields?.name_collected_by_agent === "true";
+  if (verified) return true;
+  return !looksLikeIncompleteCustomerName(name);
+}
+
+
 function looksLikePhoneNumberish(value: string): boolean {
   const t = value.trim();
   return /^\+?\d[\d\s-]{6,}\d$/.test(t) || looksLikePlatformUserId(t);

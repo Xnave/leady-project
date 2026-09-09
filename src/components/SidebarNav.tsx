@@ -18,7 +18,6 @@ const OWNER_ITEMS: { href: string; key: NavKey; countKey?: keyof NavCounts }[] =
 ];
 
 const STAFF_ITEMS: { href: string; key: NavKey; adminOnly?: boolean }[] = [
-  { href: "/ops", key: "ops" },
   { href: "/admin", key: "admin", adminOnly: true },
 ];
 

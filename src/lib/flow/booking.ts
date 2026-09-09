@@ -1,4 +1,5 @@
 import { copyFor } from "@/lib/copy";
+import { isCustomerNameSatisfied } from "@/lib/leads";
 import { missingRequired } from "./helpers";
 import type { LeadFields } from "./types";
 
@@ -7,10 +8,14 @@ export function bookingFieldGaps(
   required: string[] = ["time_preference", "name", "need"],
 ): string[] {
   const contactKeys = new Set(["phone", "email"]);
-  const missing = missingRequired(
-    fields,
-    required.filter((key) => !contactKeys.has(key)),
-  );
+  const withoutName = required.filter((key) => key !== "name" && !contactKeys.has(key));
+  const missing = missingRequired(fields, withoutName);
+  if (required.includes("name") && !isCustomerNameSatisfied(fields)) {
+    // Keep name near the front of the gap list (after time when both missing).
+    const timeIdx = missing.indexOf("time_preference");
+    if (timeIdx >= 0) missing.splice(timeIdx + 1, 0, "name");
+    else missing.unshift("name");
+  }
   if (required.includes("phone") && !String(fields.phone ?? "").trim()) {
     missing.push("phone");
   }
@@ -95,7 +100,7 @@ export function isBookingCollectActive(
   return false;
 }
 
-/** Fields that belong to an in-progress booking — cleared on new conversation / idle rotate. */
+/** Fields that belong to an in-progress booking — live on Conversation.session. */
 export const BOOKING_SESSION_FIELD_KEYS = [
   "booking_flow",
   "booking_confirm",
@@ -106,6 +111,31 @@ export const BOOKING_SESSION_FIELD_KEYS = [
   "visit_kind",
 ] as const;
 
+export type BookingSessionFieldKey = (typeof BOOKING_SESSION_FIELD_KEYS)[number];
+
+export function isBookingSessionKey(key: string): key is BookingSessionFieldKey {
+  return (BOOKING_SESSION_FIELD_KEYS as readonly string[]).includes(key);
+}
+
+/** Split a merged working bag into durable CRM vs per-conversation session. */
+export function splitCrmAndSession(fields: LeadFields): {
+  crm: LeadFields;
+  session: LeadFields;
+} {
+  const crm: LeadFields = {};
+  const session: LeadFields = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (isBookingSessionKey(key)) session[key] = value;
+    else crm[key] = value;
+  }
+  return { crm, session };
+}
+
+export function mergeLeadAndSession(crm: LeadFields, session: LeadFields): LeadFields {
+  return { ...crm, ...session };
+}
+
+/** Strip session keys from Lead.fields (compat / migration). Prefer Conversation.session. */
 export function clearBookingSessionFields(fields: LeadFields): LeadFields {
   const next = { ...fields };
   for (const key of BOOKING_SESSION_FIELD_KEYS) {

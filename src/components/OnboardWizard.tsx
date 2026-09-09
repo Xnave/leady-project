@@ -1,10 +1,9 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FlowBreadcrumb } from "@/components/FlowBreadcrumb";
 import { RadioCard } from "@/components/RadioCard";
-import { flowForCatalog, isCatalogId, type CatalogId } from "@/lib/flow/catalog";
+import { isCatalogId, type CatalogId } from "@/lib/flow/catalog";
 import {
   defaultBookingCollect,
   sanitizeBookingCollect,
@@ -48,9 +47,7 @@ export function OnboardWizard(props: Props) {
     if (isChatLanguage(props.chatLanguage)) return props.chatLanguage;
     return looksHebrew(props.intro) ? "he" : "multi";
   });
-  const [idleResetDays, setIdleResetDays] = useState(
-    Number.isFinite(props.idleResetDays) ? props.idleResetDays : 5,
-  );
+  const idleResetDays = Number.isFinite(props.idleResetDays) ? props.idleResetDays : 5;
   const [bookingCollect, setBookingCollect] = useState<BookingCollectId[]>(() =>
     sanitizeBookingCollect(props.bookingCollect?.length ? props.bookingCollect : defaultBookingCollect),
   );
@@ -70,10 +67,6 @@ export function OnboardWizard(props: Props) {
   const [extracting, setExtracting] = useState(false);
   const [filledCount, setFilledCount] = useState<number | null>(null);
   const extractedSourceRef = useRef("");
-  const flow = useMemo(
-    () => flowForCatalog(catalogId, bookingCollect),
-    [catalogId, bookingCollect],
-  );
 
   const stepTitles = [ui.common.knowledge, ui.common.business, ui.common.flow, ui.common.done];
 
@@ -203,12 +196,14 @@ export function OnboardWizard(props: Props) {
     <div className="stack form-narrow">
       <div className="wizard-steps">
         {WIZARD_STEPS.map((_, i) => (
-          <div
+          <button
             key={stepTitles[i]}
+            type="button"
             className={`wizard-step${i === step ? " active" : ""}${i < step ? " done" : ""}`}
+            onClick={() => setStep(i)}
           >
             {stepTitles[i]}
-          </div>
+          </button>
         ))}
       </div>
 
@@ -263,7 +258,6 @@ export function OnboardWizard(props: Props) {
         {step === 1 ? (
           <>
             <h2>{ui.common.business}</h2>
-            <p className="muted">{ui.onboard.businessHint}</p>
             <fieldset>
               <legend>{ui.onboard.agentLanguageLegend}</legend>
               <p className="muted">{ui.onboard.agentLanguageHint}</p>
@@ -318,52 +312,52 @@ export function OnboardWizard(props: Props) {
                 />
               </label>
             </div>
-            <label>
-              {ui.onboard.fieldBookingRequest}
-              <textarea
-                rows={3}
-                value={bookingRequestTemplate}
-                onChange={(e) => setBookingRequestTemplate(e.target.value)}
-                placeholder={copyFor(agentLang).chat.bookingRequestTemplate}
-              />
-            </label>
-            <div className="token-chips">
-              {tokens.map((t) => (
-                <button key={t} type="button" onClick={() => appendToken(bookingRequestTemplate, setBookingRequestTemplate, t)}>
-                  {t}
-                </button>
-              ))}
-            </div>
-            <label>
-              {ui.onboard.fieldBookingApproved}
-              <textarea
-                rows={3}
-                value={bookingApprovedTemplate}
-                onChange={(e) => setBookingApprovedTemplate(e.target.value)}
-                placeholder={copyFor(agentLang).chat.bookingApprovedTemplate}
-              />
-            </label>
-            <label>
-              {ui.onboard.fieldBookingRejected}
-              <textarea
-                rows={2}
-                value={bookingRejectedTemplate}
-                onChange={(e) => setBookingRejectedTemplate(e.target.value)}
-                placeholder={copyFor(agentLang).chat.bookingRejected}
-              />
-            </label>
-            <p className="muted">{ui.onboard.templatesHint}</p>
-            <label>
-              {ui.onboard.fieldIdleDays}
-              <input
-                type="number"
-                min={0}
-                max={365}
-                value={idleResetDays}
-                onChange={(e) => setIdleResetDays(Number(e.target.value))}
-              />
-            </label>
-            <p className="muted">{ui.onboard.idleHint}</p>
+            <details className="onboard-advanced">
+              <summary>{ui.common.advanced}</summary>
+              <div className="stack" style={{ marginTop: "0.75rem" }}>
+                <label>
+                  {ui.onboard.fieldBookingRequest}
+                  <textarea
+                    rows={3}
+                    value={bookingRequestTemplate}
+                    onChange={(e) => setBookingRequestTemplate(e.target.value)}
+                    placeholder={copyFor(agentLang).chat.bookingRequestTemplate}
+                  />
+                </label>
+                <div className="token-chips">
+                  {tokens.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() =>
+                        appendToken(bookingRequestTemplate, setBookingRequestTemplate, t)
+                      }
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+                <label>
+                  {ui.onboard.fieldBookingApproved}
+                  <textarea
+                    rows={3}
+                    value={bookingApprovedTemplate}
+                    onChange={(e) => setBookingApprovedTemplate(e.target.value)}
+                    placeholder={copyFor(agentLang).chat.bookingApprovedTemplate}
+                  />
+                </label>
+                <label>
+                  {ui.onboard.fieldBookingRejected}
+                  <textarea
+                    rows={2}
+                    value={bookingRejectedTemplate}
+                    onChange={(e) => setBookingRejectedTemplate(e.target.value)}
+                    placeholder={copyFor(agentLang).chat.bookingRejected}
+                  />
+                </label>
+                <p className="muted">{ui.onboard.templatesHint}</p>
+              </div>
+            </details>
             <div className="wizard-footer">
               <button type="button" className="btn-secondary" onClick={() => setStep(0)}>
                 {ui.common.back}
@@ -399,7 +393,7 @@ export function OnboardWizard(props: Props) {
                 <legend>{ui.onboard.collectLegend}</legend>
                 <p className="muted">{ui.onboard.collectHint}</p>
                 <div className="chip-row">
-                  {(["name", "need", "phone", "email", "visit_kind"] as BookingCollectId[]).map((id) => {
+                  {(["need", "phone", "email", "visit_kind"] as BookingCollectId[]).map((id) => {
                     const meta = ui.bookingCollect[id];
                     if (!meta) return null;
                     const checked = bookingCollect.includes(id);
@@ -422,15 +416,11 @@ export function OnboardWizard(props: Props) {
                   })}
                 </div>
                 <p className="muted">
-                  {ui.bookingCollect.time_preference?.title}: {ui.onboard.timeAlwaysCollected}
+                  {ui.bookingCollect.time_preference?.title} · {ui.bookingCollect.name?.title}:{" "}
+                  {ui.onboard.timeAlwaysCollected}
                 </p>
               </fieldset>
             ) : null}
-            <FlowBreadcrumb flow={flow} current={flow.start} ui={ui} />
-            <p className="muted">
-              {ui.flow.start}: <strong>{flow.start}</strong> · {ui.flow.afterDone}:{" "}
-              <strong>{flow.restartPolicy.onNewMessage}</strong>
-            </p>
             <div className="wizard-footer">
               <button type="button" className="btn-secondary" onClick={() => setStep(1)}>
                 {ui.common.back}

@@ -10,6 +10,7 @@ import {
   effectiveBookingRequired,
   savedPhone,
 } from "./booking-collect";
+import { isCustomerNameSatisfied, looksLikeIncompleteCustomerName } from "@/lib/leads";
 
 function lastLeadText(ctx: TurnContext): string {
   return [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
@@ -135,12 +136,26 @@ export class PromptBuilder {
       if (active) {
         const gaps = bookingFieldGaps(fields, required);
         const confirm = bookingConfirmStatus(fields);
+        const storedName = String(fields.name ?? "").trim();
         this.parts.push(
           `Visit booking is in progress. Gaps: ${gaps.join(", ") || "none"}. booking_confirm=${confirm || "(none)"}.`,
           "When they answer a booking question, call save_fields with their wording first, then ask_field for the next gap only.",
           "time_preference: weekday + clock is enough — save as-is.",
           "Before book_meeting: confirm_details, then save_fields booking_confirm=confirmed after they agree, then book_meeting.",
+          "CRITICAL: Never tell the customer you recorded/submitted a visit request unless you called book_meeting and it returned ok. A plain reply claiming that is a bug.",
+          "After a teammate declines a visit, collect a new time_preference and call book_meeting again — do not invent a confirmation.",
+          "Do not transition to on_complete/done while booking is in progress.",
         );
+        if (
+          required.includes("name") &&
+          storedName &&
+          looksLikeIncompleteCustomerName(storedName) &&
+          !isCustomerNameSatisfied(fields)
+        ) {
+          this.parts.push(
+            `Stored name "${storedName}" looks like a nickname or partial name. Ask for their full name via ask_field name. Do not re-ask after they already gave a name in this chat (save_fields marks it collected).`,
+          );
+        }
       } else {
         this.parts.push(
           "Visit booking is NOT started. Use reply to answer product/sales questions from knowledge.",

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
-import type { LeadSchema } from "@/lib/flow/types";
+import { splitCrmAndSession } from "@/lib/flow/booking";
+import type { LeadFields, LeadSchema } from "@/lib/flow/types";
 import { normalizeLeadStatus } from "@/lib/ui";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -19,10 +20,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const raw = form.get(`field_${key}`);
     if (typeof raw === "string") fields[key] = raw;
   }
+  const { crm } = splitCrmAndSession(fields as LeadFields);
   const status = normalizeLeadStatus(String(form.get("status") ?? lead.status));
   await prisma.lead.update({
     where: { id },
-    data: { fields: fields as Prisma.InputJsonValue, status },
+    data: { fields: crm as Prisma.InputJsonValue, status },
   });
   const back = req.headers.get("referer") ?? `/leads/${id}`;
   return NextResponse.redirect(back, 303);

@@ -76,7 +76,9 @@ export default async function LeadDetailPage({
     visibleConversations.find((c) => c.id === convoParam) ?? visibleConversations[0];
   const flow = convo?.agent.flow as FlowDefinition | undefined;
   const schema = (convo?.agent.leadSchema ?? { fields: {} }) as LeadSchema;
-  const fields = (lead.fields as LeadFields) ?? {};
+  const crmFields = (lead.fields as LeadFields) ?? {};
+  const sessionFields = (convo?.session as LeadFields) ?? {};
+  const fields = { ...crmFields, ...sessionFields };
   const staffOffer =
     fields.staff_slot_offer && typeof fields.staff_slot_offer === "object"
       ? (fields.staff_slot_offer as { meetingId?: string })
@@ -88,6 +90,15 @@ export default async function LeadDetailPage({
     (lead.channel.provider === "whatsapp" ? lead.externalUserId : "") ||
     "";
   const waUrl = lead.channel.provider === "whatsapp" ? whatsappChatUrl(phone) : "";
+  const latestId = visibleConversations[0]?.id;
+  const isLatest = Boolean(convo && latestId && convo.id === latestId);
+
+  if (lead.adminUnread) {
+    await prisma.lead.update({
+      where: { id: lead.id },
+      data: { adminUnread: false },
+    });
+  }
 
   return (
     <LeadWorkspace
@@ -119,6 +130,8 @@ export default async function LeadDetailPage({
         messageCount: c.messages.length,
       }))}
       activeConversationId={convo?.id}
+      conversationId={convo?.id}
+      isLatestConversation={isLatest}
       flow={flow}
       messages={(convo?.messages ?? []).map((m) => ({
         id: m.id,
@@ -128,9 +141,7 @@ export default async function LeadDetailPage({
       }))}
       summary={convo?.summary}
       composerFrom={lead.externalUserId}
-      composerDisabled={
-        !convo || convo.status === "waiting_human" || convo.status === "closed"
-      }
+      composerDisabled={!convo || convo.status === "closed"}
       schema={schema}
       fields={fields}
       meetings={lead.meetings.map((m) => ({
@@ -167,7 +178,7 @@ export default async function LeadDetailPage({
         cancel: ui.common.cancel,
       }}
       chatLabels={{
-        placeholder: ui.chat.placeholder,
+        placeholder: ui.inbox.staffPlaceholder,
         waitingHuman: ui.chat.waitingHuman,
         send: ui.common.send,
         sending: ui.common.sending,

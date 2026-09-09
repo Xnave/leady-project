@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { channelLabel, displayNameFromLeadFields, isDemoLead, leadDisplayName } from "./leads";
+import {
+  channelLabel,
+  displayNameFromLeadFields,
+  formatPhoneDisplay,
+  isCustomerNameSatisfied,
+  isDemoLead,
+  leadDisplayName,
+  looksLikeIncompleteCustomerName,
+} from "./leads";
 import { normalizeLeadStatus } from "./ui";
 
 describe("leads helpers", () => {
@@ -43,5 +51,17 @@ describe("leads helpers", () => {
     expect(channelLabel("he", { provider: "whatsapp", providerAccountId: "+1" })).toContain(
       "וואטסאפ",
     );
+  });
+
+  it("formats IL phones for UI", () => {
+    expect(formatPhoneDisplay("+972526595639")).toBe("052-659-5639");
+    expect(formatPhoneDisplay("972526595639")).toBe("052-659-5639");
+  });
+
+  it("treats single-token names as incomplete until agent-collected", () => {
+    expect(looksLikeIncompleteCustomerName("Avi")).toBe(true);
+    expect(looksLikeIncompleteCustomerName("Avi Cohen")).toBe(false);
+    expect(isCustomerNameSatisfied({ name: "Avi" })).toBe(false);
+    expect(isCustomerNameSatisfied({ name: "Avi", name_collected_by_agent: "1" })).toBe(true);
   });
 });

@@ -6,14 +6,15 @@ export type NavCounts = {
 };
 
 export async function getNavCounts(tenantId: string): Promise<NavCounts> {
-  const [inbox, leadsWithPending, newLeads] = await Promise.all([
+  const [inbox, unreadLeads] = await Promise.all([
     prisma.hitlTask.count({ where: { tenantId, status: "open" } }),
     prisma.lead.count({
-      where: { tenantId, meetings: { some: { status: "pending" } } },
-    }),
-    prisma.lead.count({
-      where: { tenantId, status: { in: ["new", "open", "in_progress"] } },
+      where: {
+        tenantId,
+        adminUnread: true,
+        NOT: { externalUserId: { startsWith: "demo-" } },
+      },
     }),
   ]);
-  return { inbox, leads: leadsWithPending + newLeads };
+  return { inbox, leads: unreadLeads };
 }

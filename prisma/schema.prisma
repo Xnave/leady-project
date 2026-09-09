@@ -113,6 +113,8 @@ model Lead {
   externalUserId String
   displayName    String?
   status         String   @default("open")
+  /** Admin has not opened / marked this lead as read. */
+  adminUnread    Boolean  @default(true)
   fields         Json     @default("{}")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -139,6 +141,8 @@ model Conversation {
   status           String   @default("open")
   flowState        String
   flowVersion      Int
+  /** Ephemeral per-thread state (booking_flow, drafts). Dies with the conversation. */
+  session          Json     @default("{}")
   /** Why this thread opened/closed: idle | admin | done | hitl_resume | approve | inbound_create | … */
   lifecycleReason  String   @default("")
   nudgeCountByStage Json    @default("{}")

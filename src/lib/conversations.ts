@@ -4,8 +4,13 @@ import { decryptSecret } from "@/lib/crypto";
 import { isChatLanguage } from "@/lib/flow/locale";
 import { defaultFlow, defaultHitlPolicy, defaultLeadSchema } from "@/lib/flow/validate";
 import type { AgentSnapshot, TurnContext } from "@/lib/flow/types";
-import type { FlowDefinition, HitlPolicy, LeadSchema } from "@/lib/flow/types";
+import type { FlowDefinition, HitlPolicy, LeadFields, LeadSchema } from "@/lib/flow/types";
 import { looksLikePhoneNumber } from "@/lib/flow/booking-collect";
+import {
+  clearBookingSessionFields,
+  mergeLeadAndSession,
+  splitCrmAndSession,
+} from "@/lib/flow/booking";
 import {
   conversationIdleExpired,
   resumeConversationAfterHitl,
@@ -129,6 +134,15 @@ export async function persistInboundIfNew(opts: {
   }
 
   if (!conversation) {
+    // Compat: strip leaked session keys from Lead. New Conversation.session is {} by default.
+    const prevFields = (lead.fields as LeadFields) ?? {};
+    const cleared = clearBookingSessionFields(prevFields);
+    if (JSON.stringify(prevFields) !== JSON.stringify(cleared)) {
+      await prisma.lead.update({
+        where: { id: lead.id },
+        data: { fields: cleared as Prisma.InputJsonValue },
+      });
+    }
     conversation = await prisma.conversation.create({
       data: {
         tenantId: opts.tenantId,
@@ -140,6 +154,7 @@ export async function persistInboundIfNew(opts: {
         flowVersion: channel.agent.flowVersion,
         summary: "",
         lifecycleReason: "inbound_create",
+        session: {} as Prisma.InputJsonValue,
       },
       include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
     });
@@ -154,6 +169,10 @@ export async function persistInboundIfNew(opts: {
         text: opts.text,
         providerMessageId: opts.providerMessageId,
       },
+    });
+    await prisma.lead.update({
+      where: { id: lead.id },
+      data: { adminUnread: true },
     });
     return { conversationId: conversation.id, messageId: message.id, leadId: lead.id };
   } catch (err) {
@@ -192,7 +211,26 @@ export async function loadTurnContext(
     calcomEventTypeId: conversation.agent.calcomEventTypeId,
   };
 
-  const fields = { ...((conversation.lead.fields as Record<string, unknown>) ?? {}) };
+  const leadFieldsRaw = { ...((conversation.lead.fields as LeadFields) ?? {}) };
+  const sessionRaw = { ...((conversation.session as LeadFields) ?? {}) };
+  const { crm, session: leakedFromLead } = splitCrmAndSession(leadFieldsRaw);
+  // Conversation.session wins; leaked Lead keys are migrated once then stripped.
+  const session = mergeLeadAndSession(leakedFromLead, sessionRaw);
+  const fields = mergeLeadAndSession(crm, session);
+
+  if (Object.keys(leakedFromLead).length > 0) {
+    await prisma.lead.update({
+      where: { id: conversation.lead.id },
+      data: { fields: crm as Prisma.InputJsonValue },
+    });
+    if (Object.keys(sessionRaw).length === 0 && Object.keys(session).length > 0) {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { session: session as Prisma.InputJsonValue },
+      });
+    }
+  }
+
   const fromId = conversation.lead.externalUserId?.trim() ?? "";
   const leadPhone =
     (typeof fields.phone === "string" && fields.phone.trim()) ||
@@ -265,16 +303,45 @@ export async function persistStage(tenantId: string, conversationId: string, sta
   });
 }
 
+/**
+ * Persist a turn's working fields bag: CRM → Lead.fields, booking session → Conversation.session.
+ * Always strips session keys from Lead so they cannot leak into the next thread.
+ */
+export async function persistTurnFields(
+  tenantId: string,
+  leadId: string,
+  conversationId: string,
+  fields: Record<string, unknown>,
+) {
+  const { crm, session } = splitCrmAndSession(fields as LeadFields);
+  const displayName = displayNameFromLeadFields(crm);
+  await prisma.$transaction([
+    prisma.lead.update({
+      where: { id: leadId },
+      data: {
+        fields: crm as Prisma.InputJsonValue,
+        ...(displayName ? { displayName } : {}),
+      },
+    }),
+    prisma.conversation.update({
+      where: { id: conversationId },
+      data: { session: session as Prisma.InputJsonValue },
+    }),
+  ]);
+}
+
+/** CRM-only write (admin edit). Never writes booking session keys to Lead. */
 export async function persistLeadFields(
   tenantId: string,
   leadId: string,
   fields: Record<string, unknown>,
 ) {
-  const displayName = displayNameFromLeadFields(fields);
+  const { crm } = splitCrmAndSession(fields as LeadFields);
+  const displayName = displayNameFromLeadFields(crm);
   await prisma.lead.update({
     where: { id: leadId },
     data: {
-      fields: fields as Prisma.InputJsonValue,
+      fields: crm as Prisma.InputJsonValue,
       ...(displayName ? { displayName } : {}),
     },
   });

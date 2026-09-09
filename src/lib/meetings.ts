@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import {
   appendStaffNote,
@@ -16,6 +15,7 @@ import { isChatLanguage, resolveReplyLanguage } from "@/lib/flow/locale";
 import { normalizeSlot } from "@/lib/flow/slot";
 import { summarizeConversation } from "@/lib/flow/summarize";
 import type { TurnContext } from "@/lib/flow/types";
+import { persistTurnFields } from "@/lib/conversations";
 
 function venueFromTenant(ctx: TurnContext): { address: string; hours: string } {
   return {
@@ -156,20 +156,7 @@ export async function requestTentativeMeeting(
     when: normalized.display,
     kind,
   };
-  await prisma.lead.update({
-    where: { id: ctx.lead.id },
-    data: {
-      fields: {
-        ...fields,
-        time_preference: normalized.display,
-        phone,
-        booking,
-        need,
-        booking_confirm: "confirmed",
-      } as Prisma.InputJsonValue,
-    },
-  });
-  ctx.lead.fields = {
+  const nextFields = {
     ...fields,
     time_preference: normalized.display,
     phone,
@@ -177,6 +164,8 @@ export async function requestTentativeMeeting(
     need,
     booking_confirm: "confirmed",
   };
+  await persistTurnFields(ctx.tenantId, ctx.lead.id, ctx.conversation.id, nextFields);
+  ctx.lead.fields = nextFields;
 
   await prisma.conversation.update({
     where: { id: ctx.conversation.id },
@@ -394,17 +383,19 @@ export async function markMeetingDecision(opts: {
   ]);
 
   const lead = await prisma.lead.findFirstOrThrow({ where: { id: meeting.leadId } });
-  const fields = { ...((lead.fields as Record<string, unknown>) ?? {}) };
-  const booking = fields.booking;
+  const conversation = await prisma.conversation.findFirstOrThrow({
+    where: { id: meeting.conversationId },
+  });
+  const crm = { ...((lead.fields as Record<string, unknown>) ?? {}) };
+  const session = { ...((conversation.session as Record<string, unknown>) ?? {}) };
+  const fields = { ...crm, ...session };
   const nextFields: Record<string, unknown> = {
     ...fields,
-    booking:
-      booking && typeof booking === "object"
-        ? { ...booking, status: nextStatus }
-        : { status: nextStatus },
     booking_confirm: "",
   };
   delete nextFields.time_preference;
+  // Prior meeting lives in Meeting row; clear the session pin so rebook creates a new HITL.
+  delete nextFields.booking;
   if (reschedule && altSlot) {
     nextFields.staff_slot_offer = {
       meetingId: meeting.id,
@@ -413,11 +404,12 @@ export async function markMeetingDecision(opts: {
     } satisfies StaffSlotOffer;
   } else {
     delete nextFields.staff_slot_offer;
+    // Decline without alternate: keep booking collect active so they can pick a new slot.
+    if (!approved) {
+      nextFields.booking_flow = "active";
+    }
   }
-  await prisma.lead.update({
-    where: { id: lead.id },
-    data: { fields: nextFields as Prisma.InputJsonValue },
-  });
+  await persistTurnFields(opts.tenantId, lead.id, meeting.conversationId, nextFields);
 
   if (approved) {
     return {

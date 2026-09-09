@@ -2,6 +2,12 @@ import { applyRestartPolicy, assertHitlAllowed, mergeAllowedFields, missingRequi
 import { ensureFlowRegistry } from "./capabilities";
 import { getAction } from "./registry";
 import { talkTransitionTargets } from "./prompt-builder";
+import {
+  bookingConfirmStatus,
+  bookingFieldGaps,
+  isBookingCollectActive,
+} from "./booking";
+import { effectiveBookingRequired } from "./booking-collect";
 import { copyFor, replyLang } from "@/lib/copy";
 import type {
   ActionStage,
@@ -58,6 +64,66 @@ function hitlReasonKey(raw?: string): string {
   if (t === "escalation_requested" || t === "asked_for_person") return "escalation_requested";
   if (/unresolved|could not/i.test(t)) return "support_unresolved";
   return "escalation_requested";
+}
+
+function lastLeadMessage(ctx: TurnContext): string {
+  return [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
+}
+
+/** Short customer affirmations after confirm_details. */
+function looksLikeBookingAffirmation(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length > 40) return false;
+  return /^(כן|כן\.|yep|yes|yeah|ok|okay|בסדר|מאשר|נכון|מאושר|סבבה|יאללה)[!?.]*$/iu.test(t);
+}
+
+/**
+ * Ensure a confirmed booking always goes through book_meeting (HITL), never a free-text reply.
+ * Also treat a short "yes" after confirm_details as booking_confirm=confirmed.
+ */
+export function enforceBookingEffects(
+  ctx: TurnContext,
+  stage: TalkStage,
+  out: TalkOutcome,
+): TalkOutcome {
+  if (stage.allowBook === false) return out;
+  const required = effectiveBookingRequired(ctx);
+  const fields = { ...ctx.lead.fields, ...(out.fields ?? {}) };
+  if (!isBookingCollectActive(fields, required)) return out;
+
+  const gaps = bookingFieldGaps(fields, required);
+  let confirm = bookingConfirmStatus(fields);
+  const nextFields = { ...(out.fields ?? {}) };
+
+  if (gaps.length === 0 && confirm === "pending" && looksLikeBookingAffirmation(lastLeadMessage(ctx))) {
+    nextFields.booking_confirm = "confirmed";
+    confirm = "confirmed";
+  }
+
+  const effects = [...(out.effects ?? [])];
+  const hasBook = effects.some((e) => e.type === "book_meeting");
+  let nextStage = out.nextStage;
+
+  if (gaps.length === 0 && confirm === "confirmed" && !hasBook) {
+    effects.push({ type: "book_meeting" });
+  }
+
+  // Never mark the talk goal complete while booking is still in progress.
+  if (
+    nextStage === stage.on_complete ||
+    nextStage === "done" ||
+    (typeof nextStage === "string" && nextStage.endsWith("done"))
+  ) {
+    nextStage = undefined;
+  }
+
+  return {
+    ...out,
+    fields: Object.keys(nextFields).length ? { ...out.fields, ...nextFields } : out.fields,
+    effects,
+    nextStage,
+    book: gaps.length === 0 && confirm === "confirmed" ? true : out.book,
+  };
 }
 
 async function sendWaitingHumanHold(ctx: TurnContext, ports: InterpreterPorts): Promise<void> {
@@ -198,7 +264,7 @@ export async function interpretTurn(
 
     if (stage.type === "talk") {
       const raw = await ports.talk(ctx, stage);
-      const out = normalizeTalkOutcome(raw, stage);
+      const out = enforceBookingEffects(ctx, stage, normalizeTalkOutcome(raw, stage));
       const schemaKeys = [
         ...Object.keys(ctx.agent.leadSchema.fields),
         "booking_confirm",

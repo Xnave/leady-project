@@ -19,7 +19,7 @@ export const chat: ChatCopy = {
   faqUnresolved: "אעביר את זה למישהו מהצוות.",
   faqNoKnowledge: "אין לי תשובה במאגר הידע.",
   whyCollect: "רק אם זה עוזר לי באמת לעזור. במה אפשר לעזור עכשיו?",
-  askName: "כדי לקלוט את ההזמנה במערכת - איך קוראים לך?",
+  askName: "כדי לקלוט את ההזמנה במערכת - מה השם המלא שלך?",
   askEmail: "מה האימייל שלך לאישור הפגישה?",
   askPhone: "מה מספר הטלפון שלך לחזרה?",
   askPhoneConfirm: (phone) =>

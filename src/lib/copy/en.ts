@@ -17,7 +17,7 @@ export const chat: ChatCopy = {
   faqUnresolved: "I will get a teammate to help with that.",
   faqNoKnowledge: "I do not have an answer in the knowledge base.",
   whyCollect: "Only if it helps me actually help you. What can I do for you right now?",
-  askName: "To put this in the system - what's your name?",
+  askName: "To put this in the system — what's your full name?",
   askEmail: "What email should we use for the visit?",
   askPhone: "What phone number should we use to call you back?",
   askPhoneConfirm: (phone) =>

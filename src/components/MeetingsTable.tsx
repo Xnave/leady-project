@@ -2,6 +2,8 @@
 
 import { Fragment, useState, type ReactNode } from "react";
 import { MeetingDecisionForm } from "@/components/MeetingDecisionForm";
+import { formatPhoneDisplay } from "@/lib/leads";
+import { meetingKindLabel } from "@/lib/ui/labels";
 import type { UiCopy } from "@/lib/ui";
 
 export type MeetingRow = {
@@ -113,7 +115,11 @@ export function MeetingsTable({
                   <td>{meeting.slotText || ui.common.empty}</td>
                   <td>{meeting.contactName || ui.common.empty}</td>
                   <td>
-                    {meeting.contactPhone ? <Ltr>{meeting.contactPhone}</Ltr> : ui.common.empty}
+                    {meeting.contactPhone ? (
+                      <Ltr>{formatPhoneDisplay(meeting.contactPhone)}</Ltr>
+                    ) : (
+                      ui.common.empty
+                    )}
                   </td>
                   <td className="lead-meetings-actions">
                     <button
@@ -143,7 +149,9 @@ export function MeetingsTable({
                             {ui.common.email}: <Ltr>{meeting.contactEmail}</Ltr>
                           </p>
                         ) : null}
-                        {meeting.kind ? <p className="muted">{meeting.kind}</p> : null}
+                        {meeting.kind && meeting.kind !== "visit" ? (
+                          <p className="muted">{meetingKindLabel(ui, meeting.kind)}</p>
+                        ) : null}
                         {allowDecide ? (
                           <MeetingDecisionForm
                             meetingId={meeting.id}
