@@ -62,89 +62,80 @@ export function askBookingField(
   return chat.askFieldFallback(bookingFieldLabel(lang, field));
 }
 
-function lastAskMatches(lastAgent: string, ask: string): boolean {
-  const last = lastAgent.trim();
-  if (!last || !ask) return false;
-  return last === ask || last.endsWith(ask) || last.includes(ask);
-}
-
-function looksLikeTimeAsk(reply: string, lang: "en" | "he", hours: string): boolean {
-  const ask = askBookingField(lang, "time_preference", { hours });
-  if (reply.includes(ask)) return true;
-  return /מתי|שעה|יום ושעה|what day|when works|day and time|what time/i.test(reply);
-}
-
-export function finalizeTalkReply(opts: {
-  reply: string;
+/** Safety only: clear book flag when gaps remain. Never rewrite reply text. */
+export function gateBookOnGaps(opts: {
   book?: boolean;
-  lang: "en" | "he";
-  hours: string;
   gaps: string[];
-  lastAgentText: string;
-  deducedPhone?: string;
-}): { reply: string; book: boolean } {
-  let reply = opts.reply.trim();
-  let book = Boolean(opts.book);
-  const chat = copyFor(opts.lang).chat;
-  const lastAgent = opts.lastAgentText.trim();
-
-  if (book && opts.gaps.length > 0) {
-    book = false;
-    const field = opts.gaps[0];
-    let ask = askBookingField(opts.lang, field, {
-      hours: opts.hours,
-      deducedPhone: opts.deducedPhone,
-    });
-    if (lastAskMatches(lastAgent, ask)) {
-      ask =
-        field === "phone"
-          ? opts.deducedPhone?.trim()
-            ? chat.askPhoneConfirm(opts.deducedPhone.trim())
-            : chat.askPhoneAgain
-          : chat.askFieldAgain(bookingFieldLabel(opts.lang, field));
-      if (lastAskMatches(lastAgent, ask)) {
-        return { reply: ask, book: false };
-      }
-    }
-    // Collect turns: send only the ask — no "I noted the visit…" chatter.
-    return { reply: ask, book: false };
-  }
-
-  if (
-    !book &&
-    opts.hours &&
-    opts.gaps[0] === "time_preference" &&
-    looksLikeTimeAsk(reply, opts.lang, opts.hours) &&
-    !reply.includes(opts.hours) &&
-    !lastAgent.includes(opts.hours)
-  ) {
-    reply = `${reply}\n${chat.hoursLine(opts.hours)}`;
-  }
-
-  return { reply, book };
+}): { book: boolean } {
+  if (opts.book && opts.gaps.length > 0) return { book: false };
+  return { book: Boolean(opts.book) };
 }
 
-export function inferTalkIntent(
-  lastCustomer: string,
-  need?: string,
-): "sales" | "support" | "other" | undefined {
-  const hay = `${lastCustomer} ${need ?? ""}`.toLowerCase();
-  const support =
-    /warranty|complaint|no-?show|never showed|installer|broken|refund|manager|אחריות|תלונה|לא הגיע|תקלה|נציג/.test(
-      hay,
-    );
-  const sales = /quote|book|measur|visit|kitchen|הצעת|פגישה|מדיד|מטבח/.test(hay);
-  if (support) return "support";
-  if (sales) return "sales";
+export function bookingConfirmStatus(fields: LeadFields): "pending" | "confirmed" | "" {
+  const v = String(fields.booking_confirm ?? "").trim().toLowerCase();
+  if (v === "confirmed") return "confirmed";
+  if (v === "pending") return "pending";
+  return "";
+}
+
+/** True once we already started a visit request (fields or confirm), not on plain FAQ turns. */
+export function isMidBookingCollect(
+  fields: LeadFields,
+  required: string[] = ["time_preference", "name", "need"],
+): boolean {
+  // Waiting on a staff-offered alternative — do not collect more booking fields.
+  if (fields.staff_slot_offer && typeof fields.staff_slot_offer === "object") {
+    return false;
+  }
+  if (bookingConfirmStatus(fields)) return true;
+  return required.some((key) => String(fields[key] ?? "").trim().length > 0);
+}
+
+/** Which booking field the agent message was asking for (canned ask_field texts). */
+export function matchAskedBookingField(
+  agentText: string,
+  lang: "en" | "he",
+  fields: string[],
+  extras?: { hours?: string; deducedPhone?: string },
+): string | undefined {
+  const text = agentText.trim();
+  if (!text) return undefined;
+  const candidates = [...fields].sort(
+    (a, b) =>
+      askBookingField(lang, b, extras).length - askBookingField(lang, a, extras).length,
+  );
+  for (const field of candidates) {
+    const ask = askBookingField(lang, field, extras);
+    if (text === ask || text.includes(ask)) return field;
+  }
+  if (fields.includes("time_preference")) {
+    const bare = askBookingField(lang, "time_preference", {});
+    if (text === bare || text.includes(bare)) return "time_preference";
+  }
   return undefined;
 }
 
-const YES_RE =
-  /^(yes|yeah|yep|sure|ok|okay|confirm|confirmed|כן|בטח|מאשר|מאשרת|סבבה|בסדר|תשתמשו|תשתמש|זה בסדר)([!.\s]|$)/i;
-
-export function looksLikePhoneConfirm(text: string): boolean {
-  const t = text.trim();
-  if (!t) return false;
-  if (YES_RE.test(t)) return true;
-  return /^(yes|כן).{0,40}(phone|מספר|טלפון|זה|number)/i.test(t);
+/**
+ * When the prior agent turn asked for a still-empty booking field and the customer
+ * answered, capture their wording as-is (no date parsing). The LLM may clear or
+ * replace via save_fields if it decides the answer is unusable.
+ */
+export function capturePriorBookingAnswer(opts: {
+  priorAgentText: string;
+  customerText: string;
+  fields: LeadFields;
+  required: string[];
+  lang: "en" | "he";
+  hours?: string;
+  deducedPhone?: string;
+}): LeadFields {
+  const customer = opts.customerText.trim();
+  if (!customer) return {};
+  const prior = matchAskedBookingField(opts.priorAgentText, opts.lang, opts.required, {
+    hours: opts.hours,
+    deducedPhone: opts.deducedPhone,
+  });
+  if (!prior) return {};
+  if (String(opts.fields[prior] ?? "").trim()) return {};
+  return { [prior]: customer };
 }

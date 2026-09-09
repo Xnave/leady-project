@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { completeHitlTask, loadTurnContext, persistStage } from "@/lib/conversations";
+import { completeHitlTask, loadTurnContext } from "@/lib/conversations";
+import { closeConversationAsDone } from "@/lib/flow/rotate-conversation";
 import { runTurnNow, sendAndSave } from "@/lib/flow/run-turn";
 import { markMeetingDecision } from "@/lib/meetings";
 import { prisma } from "@/lib/db";
@@ -15,6 +16,7 @@ export async function POST(
   const form = await req.formData();
   const note = String(form.get("note") ?? "");
   const approved = String(form.get("approved") ?? "") === "yes";
+  const customReply = String(form.get("customReply") ?? "").trim();
 
   const task = await prisma.hitlTask.findFirstOrThrow({
     where: { id, tenantId },
@@ -22,22 +24,36 @@ export async function POST(
   if (task.type === "booking_approval") {
     const payload = task.payload as { meetingId?: string };
     if (payload.meetingId) {
+      const rawDecision = String(form.get("decision") ?? "").trim();
+      const decision =
+        rawDecision === "approve" || rawDecision === "decline" || rawDecision === "reschedule"
+          ? rawDecision
+          : approved
+            ? "approve"
+            : "decline";
+      const alternativeSlot = String(form.get("alternativeSlot") ?? "").trim();
       const result = await markMeetingDecision({
         tenantId,
         meetingId: payload.meetingId,
         actorUserId: "owner",
-        approved,
+        decision,
+        note: note || undefined,
+        customReply: customReply || undefined,
+        alternativeSlot: alternativeSlot || undefined,
       });
       const ctx = await loadTurnContext(tenantId, result.conversationId);
       await sendAndSave(ctx, result.text);
-      if (result.reopenTalk) {
-        await persistStage(tenantId, result.conversationId, "talk");
+      if (result.closeAsDone) {
+        await closeConversationAsDone({
+          tenantId,
+          conversationId: result.conversationId,
+        });
       }
       return NextResponse.redirect(redirectPath(req, "/inbox"), 303);
     }
   }
 
-  await completeHitlTask({
+  const { conversationId } = await completeHitlTask({
     tenantId,
     taskId: id,
     actorUserId: "owner",
@@ -46,7 +62,7 @@ export async function POST(
   });
   await runTurnNow({
     tenantId,
-    conversationId: task.conversationId,
+    conversationId,
     resume: true,
   });
   return NextResponse.redirect(redirectPath(req, "/inbox"), 303);

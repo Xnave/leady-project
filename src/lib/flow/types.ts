@@ -85,6 +85,8 @@ export type FlowDefinition = {
   start: string;
   restartPolicy: RestartPolicy;
   stages: Record<string, Stage>;
+  /** UI order for breadcrumb/map; terminals may be siblings of branches. */
+  displayOrder?: string[];
 };
 
 export type LeadFields = Record<string, unknown>;
@@ -95,6 +97,7 @@ export type ConversationSnapshot = {
   flowState: string;
   flowVersion: number;
   nudgeCountByStage: Record<string, number>;
+  summary?: string;
 };
 
 export type AgentSnapshot = {
@@ -137,6 +140,8 @@ export type TalkOutcome = {
   escalate?: boolean;
   escalateReason?: string;
   complete?: boolean;
+  /** Customer accepted a staff-offered alternative slot — meeting already approved in DB. */
+  acceptOfferedSlot?: boolean;
 };
 
 export type ChannelSnapshot = {

@@ -32,7 +32,9 @@ export function fillTemplate(template: string, vars: Record<string, string>): st
     .join("\n");
 }
 
-export function bookingVars(input: Partial<BookingVars> & { slot: string }): BookingVars {
+export function bookingVars(
+  input: Partial<BookingVars> & { slot: string } & { alt_slot?: string },
+): BookingVars & { alt_slot: string } {
   const need = input.need ?? "";
   const kind = input.kind ?? "visit";
   const details =
@@ -52,16 +54,23 @@ export function bookingVars(input: Partial<BookingVars> & { slot: string }): Boo
     need,
     kind,
     details,
+    alt_slot: input.alt_slot ?? "",
   };
 }
 
 export function renderBookingMessage(
   template: string | undefined | null,
   fallback: string,
-  vars: BookingVars,
+  vars: Record<string, string>,
 ): string {
   const source = template?.trim() || fallback;
   return fillTemplate(source, vars);
+}
+
+export function appendStaffNote(text: string, note: string | undefined, prefix: string): string {
+  const trimmed = note?.trim();
+  if (!trimmed) return text;
+  return `${text}\n${prefix} ${trimmed}`;
 }
 
 export function introGreeting(

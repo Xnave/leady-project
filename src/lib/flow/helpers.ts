@@ -42,7 +42,11 @@ export function mergeAllowedFields(
   const next = { ...current };
   for (const [key, value] of Object.entries(incoming)) {
     if (!schemaKeys.includes(key)) continue;
-    if (value == null || value === "") continue;
+    if (value == null) continue;
+    if (value === "") {
+      delete next[key];
+      continue;
+    }
     next[key] = value;
   }
   return next;

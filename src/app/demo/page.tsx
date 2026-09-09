@@ -16,6 +16,7 @@ import {
   isDemoLead,
   leadDisplayName,
   leadInstagramUsername,
+  whatsappChatUrl,
 } from "@/lib/leads";
 import { requireTenantId } from "@/lib/tenant";
 import { convoStatusLabel } from "@/lib/ui/labels";
@@ -88,7 +89,13 @@ export default async function DemoPage({
   const convo = lead?.conversations[0];
   const schema = (agent?.leadSchema ?? { fields: {} }) as LeadSchema;
   const fields = (lead?.fields as LeadFields) ?? {};
-  const igHandle = leadInstagramUsername(fields);
+  const igHandle =
+    lead?.channel.provider === "instagram" ? leadInstagramUsername(fields) : "";
+  const phone =
+    (fields.phone ? String(fields.phone) : "") ||
+    (lead?.channel.provider === "whatsapp" ? lead.externalUserId : "");
+  const waUrl =
+    lead?.channel.provider === "whatsapp" ? whatsappChatUrl(phone) : "";
   const catalogId = agent?.catalogId && isCatalogId(agent.catalogId) ? agent.catalogId : "inbox";
   const catalogTitle = ui.catalog[catalogId]?.title ?? catalogId;
   const languageId =
@@ -108,6 +115,8 @@ export default async function DemoPage({
   const threadLabels = {
     emptyThread: ui.chat.emptyThread,
     roles: ui.roles,
+    today: ui.chat.today,
+    yesterday: ui.chat.yesterday,
   };
 
   return (
@@ -166,10 +175,12 @@ export default async function DemoPage({
               </div>
               <FlowBreadcrumb flow={agentFlow} current={convo.flowState} ui={ui} />
               <ChatThread
+                lang={lang}
                 messages={convo.messages.map((m) => ({
                   id: m.id,
                   role: m.role,
                   text: m.text,
+                  createdAt: m.createdAt,
                 }))}
                 labels={threadLabels}
               />
@@ -223,7 +234,7 @@ export default async function DemoPage({
                 ui={ui}
                 leadId={lead.id}
                 name={leadDisplayName(lead)}
-                phone={fields.phone ? String(fields.phone) : undefined}
+                phone={phone || undefined}
                 email={fields.email ? String(fields.email) : undefined}
                 intent={fields.intent ? String(fields.intent) : undefined}
                 status={lead.status}
@@ -234,6 +245,7 @@ export default async function DemoPage({
                 waitingHuman={convo?.status === "waiting_human"}
                 instagramHandle={igHandle || undefined}
                 instagramUrl={instagramProfileUrl(igHandle) || undefined}
+                whatsappUrl={waUrl || undefined}
               />
             </>
           ) : (

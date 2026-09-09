@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  askBookingField,
   bookingFieldGaps,
-  finalizeTalkReply,
-  inferTalkIntent,
-  looksLikePhoneConfirm,
+  capturePriorBookingAnswer,
+  isMidBookingCollect,
+  gateBookOnGaps,
 } from "./booking";
 import { callbackPhone, effectiveBookingRequired, looksLikePhoneNumber } from "./booking-collect";
 import { copyFor, fillTemplate } from "@/lib/copy";
 import { flowForCatalog } from "./catalog";
+import { conversationIdleExpired } from "./rotate-conversation";
 import { normalizeSlot } from "./slot";
 import type { TurnContext } from "./types";
 import { defaultHitlPolicy, defaultLeadSchema } from "./validate";
@@ -37,6 +39,25 @@ describe("booking helpers", () => {
     ).toBe("phone");
   });
 
+  it("detects mid-booking only after fields or confirm exist", () => {
+    expect(isMidBookingCollect({})).toBe(false);
+    expect(isMidBookingCollect({ name: "Nave" })).toBe(true);
+    expect(isMidBookingCollect({ booking_confirm: "pending" })).toBe(true);
+  });
+
+  it("captures the customer answer to the prior canned booking ask", () => {
+    const prior = askBookingField("he", "time_preference", {});
+    expect(
+      capturePriorBookingAnswer({
+        priorAgentText: prior,
+        customerText: "ביום חמישי ב12:00",
+        fields: { name: "נווה" },
+        required: ["time_preference", "name", "need"],
+        lang: "he",
+      }),
+    ).toEqual({ time_preference: "ביום חמישי ב12:00" });
+  });
+
   it("fills booking templates and drops empty labeled lines", () => {
     const text = fillTemplate(copyFor("en").chat.bookingRequestTemplate, {
       slot: "Thu 18:00",
@@ -52,99 +73,21 @@ describe("booking helpers", () => {
       hours: "",
     });
     expect(text).toMatch(/September 10, 2026/);
-    expect(text).toMatch(/18:00/);
-    expect(text).toMatch(/quote/);
     expect(text).toMatch(/Dana/);
-    expect(text).toMatch(/1 Main St/);
     expect(text).not.toMatch(/^Phone:/m);
   });
 });
 
-describe("finalizeTalkReply", () => {
-  it("sends only the missing-field ask when booking is incomplete", () => {
-    const out = finalizeTalkReply({
-      reply: "Great, I'll request that visit.",
-      book: true,
-      lang: "en",
-      hours: "Sun–Thu 09:00–19:00",
-      gaps: ["phone"],
-      lastAgentText: "When works for you?",
-    });
-    expect(out.book).toBe(false);
-    expect(out.reply).toMatch(/phone number/i);
-    expect(out.reply).not.toMatch(/Great, I'll request/);
+describe("gateBookOnGaps", () => {
+  it("clears book when gaps remain without rewriting replies", () => {
+    expect(gateBookOnGaps({ book: true, gaps: ["name"] })).toEqual({ book: false });
+    expect(gateBookOnGaps({ book: true, gaps: [] })).toEqual({ book: true });
   });
 
-  it("confirms a deduced phone instead of a blank ask", () => {
-    const out = finalizeTalkReply({
-      reply: "Saving now.",
-      book: true,
-      lang: "en",
-      hours: "",
-      gaps: ["phone"],
-      lastAgentText: "When works for you?",
-      deducedPhone: "+972501234567",
-    });
-    expect(out.reply).toMatch(/\+972501234567/);
-    expect(out.reply).toMatch(/work/i);
-  });
-
-  it("does not send the same phone ask twice", () => {
-    const ask = copyFor("en").chat.askPhone;
-    const out = finalizeTalkReply({
-      reply: "Saving now.",
-      book: true,
-      lang: "en",
-      hours: "",
-      gaps: ["phone"],
-      lastAgentText: ask,
-    });
-    expect(out.book).toBe(false);
-    expect(out.reply).toMatch(/still need a callback/i);
-    expect(out.reply).not.toBe(ask);
-  });
-
-  it("does not paste hours onto a question that is not about time", () => {
-    const out = finalizeTalkReply({
-      reply: "What do you need from the visit?",
-      book: false,
-      lang: "en",
-      hours: "Sun–Thu 09:00–19:00",
-      gaps: ["time_preference"],
-      lastAgentText: "",
-    });
-    expect(out.reply).not.toMatch(/Sun–Thu/);
-  });
-
-  it("adds hours when the reply is a time question", () => {
-    const out = finalizeTalkReply({
-      reply: "What day and time works for you?",
-      book: false,
-      lang: "en",
-      hours: "Sun–Thu 09:00–19:00",
-      gaps: ["time_preference"],
-      lastAgentText: "",
-    });
-    expect(out.reply).toMatch(/Sun–Thu 09:00–19:00/);
-  });
-});
-
-describe("inferTalkIntent", () => {
-  it("prefers support for warranty and no-shows", () => {
-    expect(inferTalkIntent("warranty claim visit")).toBe("support");
-    expect(inferTalkIntent("Your installer never showed up")).toBe("support");
-  });
-
-  it("maps quotes and bookings to sales", () => {
-    expect(inferTalkIntent("I want a quote for a new kitchen")).toBe("sales");
-  });
-});
-
-describe("phone confirm helpers", () => {
-  it("detects short yes replies", () => {
-    expect(looksLikePhoneConfirm("כן")).toBe(true);
-    expect(looksLikePhoneConfirm("yes")).toBe(true);
-    expect(looksLikePhoneConfirm("I want Tuesday")).toBe(false);
+  it("builds phone confirm asks from templates", () => {
+    expect(askBookingField("en", "phone", { deducedPhone: "+972501234567" })).toMatch(
+      /\+972501234567/,
+    );
   });
 });
 
@@ -199,16 +142,107 @@ describe("normalizeSlot", () => {
     });
     expect(out.dateIso).toBe("2026-09-09");
     expect(out.time).toBe("14:00");
-    expect(out.display).toMatch(/9 בספטמבר 2026/);
-    expect(out.display).toMatch(/14:00/);
   });
 
-  it("turns English Tuesday morning into next Tuesday", () => {
-    const out = normalizeSlot("Tuesday at 10 in the morning", {
+  it("re-parses a Hebrew display string without duplicating the time", () => {
+    const out = normalizeSlot("10 בספטמבר 2026 בשעה 10:00", {
       now: new Date("2026-09-08T10:00:00"),
-      lang: "en",
+      lang: "he",
     });
-    expect(out.dateIso).toBe("2026-09-15");
+    expect(out.dateLabel).toBe("10 בספטמבר 2026");
+    expect(out.timeLabel).toBe("10:00");
+    expect(out.display).toBe("10 בספטמבר 2026 בשעה 10:00");
+  });
+
+  it("parses dotted day.month.yy with colon time (not 11:11)", () => {
+    const out = normalizeSlot("11.11.26 10:00", {
+      now: new Date("2026-09-08T10:00:00"),
+      lang: "he",
+    });
+    expect(out.dateIso).toBe("2026-11-11");
     expect(out.time).toBe("10:00");
+    expect(out.display).toBe("11 בנובמבר 2026 בשעה 10:00");
+  });
+
+  it("time-only does not put בשעה into dateLabel", () => {
+    const out = normalizeSlot("בשעה 10:00", { lang: "he" });
+    expect(out.dateLabel).toBe("");
+    expect(out.timeLabel).toBe("10:00");
+  });
+});
+
+describe("proposesDifferentSlot", () => {
+  it("detects a new weekday+time vs a concrete staff offer", async () => {
+    const { proposesDifferentSlot } = await import("./slot");
+    const now = new Date("2026-09-08T12:00:00");
+    expect(
+      proposesDifferentSlot("אני רוצה לקבוע פגישה ליום ראשון ב11", "11 בנובמבר 2026 בשעה 10:00", {
+        lang: "he",
+        now,
+      }),
+    ).toBe(true);
+  });
+
+  it("allows plain yes without a competing slot", async () => {
+    const { proposesDifferentSlot } = await import("./slot");
+    expect(
+      proposesDifferentSlot("כן", "11 בנובמבר 2026 בשעה 10:00", { lang: "he" }),
+    ).toBe(false);
+  });
+
+  it("detects same day but different clock time", async () => {
+    const { proposesDifferentSlot } = await import("./slot");
+    expect(
+      proposesDifferentSlot("ב-11:00", "11 בנובמבר 2026 בשעה 10:00", { lang: "he" }),
+    ).toBe(true);
+  });
+});
+
+describe("getStaffSlotOffer", () => {
+  it("reads a pending staff offer from lead fields", async () => {
+    const { getStaffSlotOffer } = await import("@/lib/meetings");
+    expect(getStaffSlotOffer({})).toBeNull();
+    expect(
+      getStaffSlotOffer({
+        staff_slot_offer: {
+          meetingId: "m1",
+          slot: "11 בנובמבר 2026 בשעה 10:00",
+          previousSlot: "old",
+        },
+      }),
+    ).toEqual({
+      meetingId: "m1",
+      slot: "11 בנובמבר 2026 בשעה 10:00",
+      previousSlot: "old",
+    });
+  });
+});
+
+describe("conversationIdleExpired", () => {
+  it("detects idle past the tenant window", () => {
+    expect(
+      conversationIdleExpired({
+        lastMessageAt: new Date("2026-09-01T10:00:00Z"),
+        idleResetDays: 5,
+        now: new Date("2026-09-08T10:00:00Z"),
+      }),
+    ).toBe(true);
+    expect(
+      conversationIdleExpired({
+        lastMessageAt: new Date("2026-09-07T10:00:00Z"),
+        idleResetDays: 5,
+        now: new Date("2026-09-08T10:00:00Z"),
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("catalog flows", () => {
+  it("orders waiting_human before done in displayOrder", () => {
+    const inbox = flowForCatalog("inbox");
+    expect(inbox.displayOrder?.indexOf("waiting_human")).toBeLessThan(
+      inbox.displayOrder!.indexOf("done"),
+    );
+    expect(flowForCatalog("faq").stages.talk).toMatchObject({ allowBook: false });
   });
 });

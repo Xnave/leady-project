@@ -111,14 +111,14 @@ export function callbackPhone(ctx: TurnContext): string | undefined {
   return undefined;
 }
 
-/** Required booking fields as configured — never drop phone for demo/IG. */
+/** Required booking fields as configured - never drop phone for demo/IG. */
 export function effectiveBookingRequired(ctx: TurnContext): string[] {
   return bookingRequiredFields(ctx);
 }
 
 /**
  * Phone already saved on the lead (after ask or confirm). Does not invent from the
- * channel — use {@link callbackPhone} when you need a candidate to confirm.
+ * channel - use {@link callbackPhone} when you need a candidate to confirm.
  */
 export function savedPhone(fields: LeadFields): string {
   return String(fields.phone ?? "").trim();

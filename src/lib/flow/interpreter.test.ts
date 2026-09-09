@@ -118,7 +118,7 @@ describe("interpretTurn", () => {
       },
       messages: [
         { role: "lead", text: "I need a person" },
-        { role: "human", text: "Owner handled it — continue" },
+        { role: "human", text: "Owner handled it - continue" },
       ],
     });
     const result = await interpretTurn(state, { resume: true }, {
@@ -250,7 +250,7 @@ describe("interpretTurn", () => {
     expect(replies[0]).not.toMatch(/welcome back/);
   });
 
-  it("talks after idle days and sends only the intro", async () => {
+  it("continues talk after a long gap when the conversation was not rotated yet", async () => {
     const replies: string[] = [];
     let talked = false;
     const now = new Date("2026-08-31T10:00:00Z");
@@ -299,9 +299,8 @@ describe("interpretTurn", () => {
       },
     });
     expect(talked).toBe(true);
-    expect(result.action).toBe("canned_intro");
-    expect(replies[0]).toBe("We design and install kitchens.");
-    expect(replies[0]).not.toMatch(/yes, still here/);
+    expect(result.action).not.toBe("canned_intro");
+    expect(replies[0]).toBe("yes, still here");
   });
 
   it("talk does not book just because name and email were saved", async () => {
@@ -338,7 +337,7 @@ describe("interpretTurn", () => {
     expect(replies[0]).toBe("תודה, נמשיך עם התכנון.");
   });
 
-  it("talk books a tentative visit and stays in talk", async () => {
+  it("talk books a tentative visit and moves to waiting_human", async () => {
     const replies: string[] = [];
     const state = ctx({
       agent: { ...ctx().agent, flow: defaultFlow() },
@@ -376,7 +375,7 @@ describe("interpretTurn", () => {
     });
     expect(result.action).toBe("book_meeting");
     expect(result.ok).toBe(true);
-    expect(result.stage).toBe("talk");
+    expect(result.stage).toBe("waiting_human");
     expect(replies[0]).toMatch(/ההזמנה נקלטה/);
     expect(replies[0]).toMatch(/הרוגוזין/);
     expect(replies[0]).not.toMatch(/כתובת\?/);

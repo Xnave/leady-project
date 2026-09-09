@@ -14,12 +14,12 @@ export const catalogMeta: {
   {
     id: "inbox",
     title: "Inbox (recommended)",
-    blurb: "Greet, answer questions, then qualify and book when they want help.",
+    blurb: "Answer questions first; invite a visit only when they ask or need a human.",
   },
   {
     id: "book",
     title: "Booking",
-    blurb: "Same conversation style, biased toward setting a meeting.",
+    blurb: "Biased toward setting a meeting after a short qualify.",
   },
   {
     id: "faq",
@@ -27,6 +27,8 @@ export const catalogMeta: {
     blurb: "Answer from your intro and files. No booking.",
   },
 ];
+
+const DISPLAY_ORDER = ["talk", "escalate", "waiting_human", "done"] as const;
 
 function talkFlow(opts: {
   prompt: string;
@@ -38,6 +40,7 @@ function talkFlow(opts: {
     {
       start: "talk",
       restartPolicy: { onNewMessage: "fallback", fallbackStage: "talk" },
+      displayOrder: [...DISPLAY_ORDER],
       stages: {
         talk: {
           type: "talk",
@@ -53,8 +56,8 @@ function talkFlow(opts: {
           on_complete: "waiting_human",
           on_fail: "talk",
         },
-        done: { type: "terminal" },
         waiting_human: { type: "terminal" },
+        done: { type: "terminal" },
       },
     },
     collect,

@@ -44,27 +44,33 @@ export function LeadFieldsForm({
         </label>
       ) : null}
       {Object.entries(schema.fields).map(([key, spec]) => {
-        const value = fields[key] == null ? "" : String(fields[key]);
+        if (
+          key === "booking" ||
+          key === "booking_confirm" ||
+          key === "instagramUsername" ||
+          key === "zernioConversationId"
+        ) {
+          return null;
+        }
+        const raw = fields[key];
+        if (raw != null && typeof raw === "object") return null;
+        const value = raw == null ? "" : String(raw);
         const label = leadFieldLabel(ui, key);
 
         if (spec.type === "enum" && spec.enum) {
           return (
-            <fieldset key={key}>
-              <legend>{label}</legend>
-              <div className="chip-row">
-                {spec.enum.map((option) => (
-                  <label key={option} className="chip-toggle">
-                    <input
-                      type="radio"
-                      name={`field_${key}`}
-                      value={option}
-                      defaultChecked={value === option}
-                    />
-                    <span>{enumLabels?.[key]?.[option] ?? option}</span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
+            <label key={key}>
+              {label}
+              <FormSelect
+                name={`field_${key}`}
+                defaultValue={value || spec.enum[0]}
+                ariaLabel={label}
+                options={spec.enum.map((option) => ({
+                  value: option,
+                  label: enumLabels?.[key]?.[option] ?? option,
+                }))}
+              />
+            </label>
           );
         }
 
@@ -77,6 +83,7 @@ export function LeadFieldsForm({
               inputMode={spec.type === "email" ? "email" : undefined}
               autoComplete={AUTOCOMPLETE[key] ?? "off"}
               dir={spec.type === "email" || key === "phone" ? "ltr" : "auto"}
+              className={spec.type === "email" || key === "phone" ? "ltr-isolate" : undefined}
               defaultValue={value}
               placeholder={label}
             />

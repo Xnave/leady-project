@@ -10,6 +10,8 @@ import { requestTentativeMeeting } from "@/lib/meetings";
 import { addIsoDuration } from "@/lib/flow/helpers";
 import { interpretTurn } from "@/lib/flow/interpreter";
 import { answerFaq, classifyIntent, draftQuestion, extractFields, talkTurn } from "@/lib/flow/llm";
+import { closeConversationAsDone } from "@/lib/flow/rotate-conversation";
+import { summarizeConversation } from "@/lib/flow/summarize";
 import type { Stage, TurnContext } from "@/lib/flow/types";
 import { inngest } from "@/inngest/client";
 
@@ -78,20 +80,23 @@ export async function runTurnNow(opts: {
   resume?: boolean;
 }) {
   const ctx = await loadTurnContext(opts.tenantId, opts.conversationId);
-  return interpretTurn(ctx, { resume: opts.resume }, {
+  const result = await interpretTurn(ctx, { resume: opts.resume }, {
     classify: classifyIntent,
     extract: extractFields,
     draftQuestion,
     answerFaq,
     talk: talkTurn,
     bookMeeting: (c) => requestTentativeMeeting(c),
-    requestHuman: (c, reason) =>
-      pauseForHuman({
+    requestHuman: async (c, reason) => {
+      const summary = await summarizeConversation(c.conversation.id);
+      await pauseForHuman({
         tenantId: c.tenantId,
         conversationId: c.conversation.id,
         leadId: c.lead.id,
         reason,
-      }),
+        summary,
+      });
+    },
     persistStage: (c, stageId) => persistStage(c.tenantId, c.conversation.id, stageId),
     persistFields: (c, fields) => persistLeadFields(c.tenantId, c.lead.id, fields),
     sendAndSave: (c, text) =>
@@ -99,4 +104,13 @@ export async function runTurnNow(opts: {
     scheduleNudge: maybeScheduleNudge,
     log: logTurn,
   });
+
+  if (result.action === "done" || result.stage === "done") {
+    await closeConversationAsDone({
+      tenantId: opts.tenantId,
+      conversationId: opts.conversationId,
+    });
+  }
+
+  return result;
 }

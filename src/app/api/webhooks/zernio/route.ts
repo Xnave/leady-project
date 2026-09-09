@@ -13,7 +13,7 @@ import {
   zernioWebhookSecret,
 } from "@/lib/zernio";
 
-/** Zernio dashboard URL check / browser probe — POST carries events. */
+/** Zernio dashboard URL check / browser probe - POST carries events. */
 export async function GET() {
   return NextResponse.json({ ok: true, endpoint: "zernio" });
 }
@@ -86,12 +86,15 @@ export async function POST(req: Request) {
     text: inbound.text,
     displayName: contactDisplayName({
       name: senderName,
-      username: senderUsername,
+      username: channel.provider === "instagram" ? senderUsername : undefined,
       fallback: inbound.from,
     }),
     extraFields: {
       zernioConversationId: inbound.conversationId,
-      ...instagramIdentityFields(senderName, senderUsername),
+      // Instagram identity only — never store WA phone as instagramUsername / profile name as booking name.
+      ...(channel.provider === "instagram" || inbound.platform === "instagram"
+        ? instagramIdentityFields(senderName, senderUsername)
+        : {}),
     },
   });
   if (!inserted) return new Response("ok", { status: 200 });

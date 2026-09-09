@@ -19,21 +19,21 @@ export const chat: ChatCopy = {
   faqUnresolved: "אעביר את זה למישהו מהצוות.",
   faqNoKnowledge: "אין לי תשובה במאגר הידע.",
   whyCollect: "רק אם זה עוזר לי באמת לעזור. במה אפשר לעזור עכשיו?",
-  askName: "כדי לקלוט את ההזמנה במערכת — איך קוראים לך?",
+  askName: "כדי לקלוט את ההזמנה במערכת - איך קוראים לך?",
   askEmail: "מה האימייל שלך לאישור הפגישה?",
   askPhone: "מה מספר הטלפון שלך לחזרה?",
   askPhoneConfirm: (phone) =>
-    `אשמח לאשר — לחזרה אשתמש במספר ${phone}. זה מתאים, או לשלוח מספר אחר?`,
+    `אשמח לאשר - לחזרה אשתמש במספר ${phone}. זה מתאים, או לשלוח מספר אחר?`,
   askPhoneAgain: "עדיין חסר לי מספר לחזרה כדי לקלוט את בקשת הביקור. אפשר לשלוח מספר?",
   askFieldAgain: (field) => `עדיין חסר לי ${field} כדי לשלוח את בקשת הביקור.`,
   waitingHumanHold: "קיבלנו, נציג חוזר אליך.",
   askNeed: "מה חשוב שנכסה בפגישה?",
   askVisitKind: "איזה סוג ביקור מתאים לך?",
   askTime: (hours) =>
-    hours ? `אנחנו פתוחים ${hours}. באיזה יום ושעה נוח לך?` : "מתי נוח לך? יום ושעה.",
+    hours ? `${hours}. באיזה יום ושעה נוח לך?` : "מתי נוח לך? יום ושעה.",
   askFieldFallback: (field) => `חסר לי עוד פרט לפגישה: ${field}.`,
   availability: (hours) =>
-    hours ? `אנחנו פתוחים ${hours}. באיזה יום ושעה נוח לך?` : "באיזה יום ושעה נוח לך?",
+    hours ? `${hours}. באיזה יום ושעה נוח לך?` : "באיזה יום ושעה נוח לך?",
   hoursLine: (hours) => `שעות פתיחה: ${hours}`,
   bookingRequestTemplate: [
     "רשמתי בקשה לפגישה ב־{{date}} בשעה {{time}}. הצוות יאשר או יציע מועד אחר.",
@@ -43,9 +43,17 @@ export const chat: ChatCopy = {
     "פרטי הפגישה: {{details}}",
     "כתובת: {{address}}",
   ].join("\n"),
-  bookingApprovedTemplate:
-    "הפגישה אושרה בתאריך {{date}} בשעה {{time}} עבור {{name}}, {{phone}}. פרטי הפגישה: {{details}}",
-  bookingRejected: "לצערנו המועד לא אושר. מתי נוח לתאם מחדש?",
+  bookingApprovedTemplate: [
+    "הפגישה אושרה ל־{{slot}}.",
+    "שם: {{name}}",
+    "טלפון: {{phone}}",
+    "פרטי הפגישה: {{details}}",
+  ].join("\n"),
+  bookingRejected:
+    "לצערנו לא הצלחנו לאשר את הפגישה ב־{{slot}} עבור {{name}}. בקשת הפגישה למועד הזה בוטלה. אפשר להציע יום ושעה אחרים? {{hours}}.",
+  bookingReschedule:
+    "לצערנו לא הצלחנו לאשר את הפגישה ב־{{slot}} עבור {{name}}. בקשת הפגישה למועד הזה בוטלה. מוצע מועד חלופי: {{alt_slot}}. האם זה מתאים? {{hours}}.",
+  notePrefix: "הערת הנציג:",
 };
 
 /** System prompts stay in English so the model follows tools reliably. */

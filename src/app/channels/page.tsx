@@ -88,7 +88,15 @@ export default async function ChannelsPage({
             {rows.map((row) => (
               <tr key={row.provider}>
                 <td>{row.label}</td>
-                <td>{row.live?.providerAccountId ?? ui.common.empty}</td>
+                <td>
+                  {row.live?.providerAccountId ? (
+                    <span dir="ltr" className="ltr-isolate">
+                      {row.live.providerAccountId}
+                    </span>
+                  ) : (
+                    ui.common.empty
+                  )}
+                </td>
                 <td>
                   <span className={`badge${row.live?.enabled ? "" : " badge-warn"}`}>
                     {row.live?.enabled

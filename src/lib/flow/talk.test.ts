@@ -41,37 +41,20 @@ function talkCtx(text: string, extra?: Partial<TurnContext>): TurnContext {
 }
 
 describe("heuristicTalk", () => {
-  it("greets with an empty body on a bare hello so the interpreter can send the intro", () => {
+  it("returns empty body on first turn so the interpreter can send the intro", () => {
     const ctx = talkCtx("Hello");
     const stage = ctx.agent.flow.stages.talk as TalkStage;
     const out = heuristicTalk(ctx, stage);
     expect(out.reply).toBe("");
   });
 
-  it("adds tell-me-more on a first message with substance", () => {
-    const ctx = talkCtx("I want a quote for a kitchen");
-    const stage = ctx.agent.flow.stages.talk as TalkStage;
-    const out = heuristicTalk(ctx, stage);
-    expect(out.reply).toBe("Got it. Tell me a bit more.");
-  });
-
-  it("does not run a vertical-specific script after the intro", () => {
-    const ctx = talkCtx("I want to book", {
-      messages: [
-        { role: "lead", text: "Hello" },
-        { role: "agent", text: "We help you book a visit." },
-        { role: "lead", text: "I want to book" },
-      ],
-    });
-    const stage = ctx.agent.flow.stages.talk as TalkStage;
-    const out = heuristicTalk(ctx, stage);
-    expect(out.book).toBeUndefined();
-    expect(out.reply).toBe("Got it. Tell me a bit more.");
-  });
-
-  it("does not book a demo lead when phone is still required and missing", () => {
+  it("asks for the next booking field when required and missing", () => {
     const ctx = talkCtx("please save that", {
-      channel: { provider: "whatsapp" },
+      messages: [
+        { role: "lead", text: "hi" },
+        { role: "agent", text: "We help you book a visit." },
+        { role: "lead", text: "please save that" },
+      ],
       lead: {
         id: "l1",
         externalUserId: "demo-abc",
@@ -81,19 +64,61 @@ describe("heuristicTalk", () => {
           need: "demo",
         },
       },
-      messages: [
-        { role: "lead", text: "hi" },
-        { role: "agent", text: "We help you book a visit." },
-        { role: "lead", text: "please save that" },
-      ],
     });
     const stage = ctx.agent.flow.stages.talk as TalkStage;
     stage.required_for_book = ["time_preference", "name", "need", "phone"];
     const out = heuristicTalk(ctx, stage);
     expect(out.book).toBeUndefined();
+    expect(out.reply).toMatch(/phone/i);
   });
 
-  it("books when required fields including phone are already on this lead", () => {
+  it("saves the prior time answer then asks the next gap", () => {
+    const timeAsk = "מתי נוח לך? יום ושעה.";
+    const ctx = talkCtx("ביום חמישי ב12:00", {
+      tenant: {
+        name: "Demo Co",
+        phone: "",
+        intro: "We help you book a visit.",
+        chatLanguage: "he",
+        venueHours: "",
+        venueAddress: "1 Main St",
+      },
+      messages: [
+        { role: "lead", text: "דמו" },
+        { role: "agent", text: "כדי לקלוט את ההזמנה במערכת - איך קוראים לך?" },
+        { role: "lead", text: "נווה" },
+        { role: "agent", text: timeAsk },
+        { role: "lead", text: "ביום חמישי ב12:00" },
+      ],
+      lead: {
+        id: "l1",
+        externalUserId: "demo-abc",
+        fields: { name: "נווה" },
+      },
+    });
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    stage.required_for_book = ["time_preference", "name", "need"];
+    const out = heuristicTalk(ctx, stage);
+    expect(out.fields?.time_preference).toBe("ביום חמישי ב12:00");
+    expect(out.reply).toMatch(/חשוב שנכסה|need|visit/i);
+  });
+
+  it("does not start booking collect on a FAQ turn with empty fields", () => {
+    const ctx = talkCtx("Do you also handle phone inquiries?", {
+      messages: [
+        { role: "lead", text: "hi" },
+        { role: "agent", text: "We help you book a visit." },
+        { role: "lead", text: "Do you also handle phone inquiries?" },
+      ],
+      lead: { id: "l1", externalUserId: "demo-abc", fields: {} },
+    });
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const out = heuristicTalk(ctx, stage);
+    expect(out.reply).not.toMatch(/name|phone|time|visit|book/i);
+    expect(out.reply).toBe("Got it. Tell me a bit more.");
+  });
+
+  it("books when required fields and confirm are present", () => {
     const ctx = talkCtx("please save that", {
       channel: { provider: "whatsapp", customerPhone: "+972501234567" },
       lead: {
@@ -104,6 +129,7 @@ describe("heuristicTalk", () => {
           time_preference: "Thursday 18:00",
           need: "demo",
           phone: "+972501234567",
+          booking_confirm: "confirmed",
         },
       },
       messages: [
@@ -114,31 +140,6 @@ describe("heuristicTalk", () => {
     });
     const stage = ctx.agent.flow.stages.talk as TalkStage;
     const out = heuristicTalk(ctx, stage);
-    expect(out.book).toBe(true);
-  });
-
-  it("saves deduced phone when the customer confirms with yes", () => {
-    const ctx = talkCtx("כן", {
-      channel: { provider: "whatsapp", customerPhone: "+972501234567" },
-      lead: {
-        id: "l1",
-        externalUserId: "+972501234567",
-        fields: {
-          name: "Nave",
-          time_preference: "Thursday 18:00",
-          need: "demo",
-        },
-      },
-      messages: [
-        { role: "lead", text: "hi" },
-        { role: "agent", text: "I'll use +972501234567 — ok?" },
-        { role: "lead", text: "כן" },
-      ],
-    });
-    const stage = ctx.agent.flow.stages.talk as TalkStage;
-    stage.required_for_book = ["time_preference", "name", "need", "phone"];
-    const out = heuristicTalk(ctx, stage);
-    expect(out.fields?.phone).toBe("+972501234567");
     expect(out.book).toBe(true);
   });
 });

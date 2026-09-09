@@ -1,24 +1,128 @@
-type Msg = { id: string; role: string; text: string };
+"use client";
+
+import { useLayoutEffect, useRef } from "react";
+
+type Msg = {
+  id: string;
+  role: string;
+  text: string;
+  createdAt?: string | Date | null;
+};
 
 type Labels = {
   emptyThread: string;
   roles: Record<string, string>;
+  today?: string;
+  yesterday?: string;
 };
 
-export function ChatThread({ messages, labels }: { messages: Msg[]; labels: Labels }) {
+function toDate(value: string | Date | null | undefined): Date | null {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function dayStamp(d: Date): string {
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function formatMessageTime(d: Date, lang: "he" | "en"): string {
+  return d.toLocaleTimeString(lang === "he" ? "he-IL" : "en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDayLabel(
+  d: Date,
+  lang: "he" | "en",
+  labels: { today?: string; yesterday?: string },
+  now = new Date(),
+): string {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((today.getTime() - day.getTime()) / (24 * 60 * 60 * 1000));
+  if (diffDays === 0) return labels.today ?? (lang === "he" ? "היום" : "Today");
+  if (diffDays === 1) return labels.yesterday ?? (lang === "he" ? "אתמול" : "Yesterday");
+  return d.toLocaleDateString(lang === "he" ? "he-IL" : "en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: day.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
+  });
+}
+
+type ThreadItem =
+  | { kind: "day"; key: string; label: string }
+  | { kind: "msg"; key: string; message: Msg; at: Date | null };
+
+function buildThreadItems(
+  messages: Msg[],
+  lang: "he" | "en",
+  labels: Labels,
+): ThreadItem[] {
+  const items: ThreadItem[] = [];
+  let lastDay = "";
+  for (const message of messages) {
+    const at = toDate(message.createdAt ?? null);
+    if (at) {
+      const stamp = dayStamp(at);
+      if (stamp !== lastDay) {
+        lastDay = stamp;
+        items.push({
+          kind: "day",
+          key: `day-${stamp}`,
+          label: formatDayLabel(at, lang, labels),
+        });
+      }
+    }
+    items.push({ kind: "msg", key: message.id, message, at });
+  }
+  return items;
+}
+
+export function ChatThread({
+  messages,
+  labels,
+  lang = "en",
+}: {
+  messages: Msg[];
+  labels: Labels;
+  lang?: "he" | "en";
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const lastId = messages[messages.length - 1]?.id ?? "";
+
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [lastId, messages.length]);
+
   function roleName(role: string) {
     return labels.roles[role] ?? role;
   }
 
+  const items = buildThreadItems(messages, lang, labels);
+
   return (
-    <div className="thread">
+    <div className="thread" ref={rootRef}>
       {messages.length === 0 ? <p className="muted">{labels.emptyThread}</p> : null}
-      {messages.map((m) => (
-        <div key={m.id} className={`bubble ${m.role}`}>
-          <div className="bubble-role">{roleName(m.role)}</div>
-          {m.text}
-        </div>
-      ))}
+      {items.map((item) =>
+        item.kind === "day" ? (
+          <div key={item.key} className="thread-day">
+            <span>{item.label}</span>
+          </div>
+        ) : (
+          <div key={item.key} className={`bubble ${item.message.role}`}>
+            <div className="bubble-role">{roleName(item.message.role)}</div>
+            <div className="bubble-text">{item.message.text}</div>
+            {item.at ? (
+              <div className="bubble-time">{formatMessageTime(item.at, lang)}</div>
+            ) : null}
+          </div>
+        ),
+      )}
     </div>
   );
 }

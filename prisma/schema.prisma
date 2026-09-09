@@ -140,6 +140,7 @@ model Conversation {
   flowState        String
   flowVersion      Int
   nudgeCountByStage Json    @default("{}")
+  summary          String   @default("")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

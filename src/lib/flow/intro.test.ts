@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cannedIntroText, isIdleConversationReset, looksLikeBareHello, prefixCannedIntro, shouldSendCannedIntro } from "./intro";
+import { cannedIntroText, isIdleConversationReset, prefixCannedIntro, shouldSendCannedIntro } from "./intro";
 import { flowForCatalog } from "./catalog";
 import type { TurnContext } from "./types";
 import { defaultHitlPolicy, defaultLeadSchema } from "./validate";
@@ -42,7 +42,7 @@ describe("canned intro", () => {
     expect(cannedIntroText(ctx())).toBe("שלום ברוך הבא למטבחי הזהב.");
   });
 
-  it("is a first-turn flag on the first customer message", () => {
+  it("is a first-turn flag when no agent has replied", () => {
     expect(shouldSendCannedIntro(ctx())).toBe(true);
   });
 
@@ -50,15 +50,6 @@ describe("canned intro", () => {
     expect(prefixCannedIntro(ctx(), "אני רוצה מטבח")).toBe(
       "שלום ברוך הבא למטבחי הזהב.\nאני רוצה מטבח",
     );
-    expect(prefixCannedIntro(ctx(), "שלום ברוך הבא למטבחי הזהב.")).toBe(
-      "שלום ברוך הבא למטבחי הזהב.",
-    );
-  });
-
-  it("treats hi/שלום as a bare hello", () => {
-    expect(looksLikeBareHello("hi")).toBe(true);
-    expect(looksLikeBareHello("שלום!")).toBe(true);
-    expect(looksLikeBareHello("I want a quote")).toBe(false);
   });
 
   it("is not required on the next message after the intro", () => {
@@ -75,7 +66,7 @@ describe("canned intro", () => {
     ).toBe(false);
   });
 
-  it("detects idle of 5 days", () => {
+  it("still exposes idle detection for inbound rotate", () => {
     expect(
       isIdleConversationReset(
         ctx({

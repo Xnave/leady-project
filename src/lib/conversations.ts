@@ -7,6 +7,10 @@ import type { AgentSnapshot, TurnContext } from "@/lib/flow/types";
 import type { FlowDefinition, HitlPolicy, LeadSchema } from "@/lib/flow/types";
 import { looksLikePhoneNumber } from "@/lib/flow/booking-collect";
 import {
+  conversationIdleExpired,
+  rotateConversation,
+} from "@/lib/flow/rotate-conversation";
+import {
   contactDisplayName,
   displayNameFromLeadFields,
   instagramIdentityFields,
@@ -14,6 +18,8 @@ import {
   looksLikePlatformUserId,
 } from "@/lib/leads";
 import { fetchZernioInboxContact } from "@/lib/zernio";
+
+export { rotateConversation } from "@/lib/flow/rotate-conversation";
 
 export async function persistInboundIfNew(opts: {
   tenantId: string;
@@ -37,7 +43,7 @@ export async function persistInboundIfNew(opts: {
 
   const channel = await prisma.channelConnection.findFirstOrThrow({
     where: { id: opts.channelId, tenantId: opts.tenantId },
-    include: { agent: true },
+    include: { agent: true, tenant: true },
   });
 
   const extraFields = { ...(opts.extraFields ?? {}) };
@@ -95,9 +101,32 @@ export async function persistInboundIfNew(opts: {
   let conversation = await prisma.conversation.findFirst({
     where: { tenantId: opts.tenantId, leadId: lead.id, status: { not: "closed" } },
     orderBy: { createdAt: "desc" },
+    include: {
+      messages: { orderBy: { createdAt: "desc" }, take: 1 },
+    },
   });
 
   const flow = channel.agent.flow as FlowDefinition;
+  const idleDays = channel.tenant.idleResetDays ?? 5;
+  if (
+    conversation &&
+    conversationIdleExpired({
+      lastMessageAt: conversation.messages[0]?.createdAt,
+      idleResetDays: idleDays,
+    })
+  ) {
+    const rotated = await rotateConversation({
+      tenantId: opts.tenantId,
+      leadId: lead.id,
+      reason: "idle",
+      conversationId: conversation.id,
+    });
+    conversation = await prisma.conversation.findFirstOrThrow({
+      where: { id: rotated.conversationId },
+      include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
+    });
+  }
+
   if (!conversation) {
     conversation = await prisma.conversation.create({
       data: {
@@ -108,7 +137,9 @@ export async function persistInboundIfNew(opts: {
         status: "open",
         flowState: flow.start,
         flowVersion: channel.agent.flowVersion,
+        summary: "",
       },
+      include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
     });
   }
 
@@ -124,7 +155,6 @@ export async function persistInboundIfNew(opts: {
     });
     return { conversationId: conversation.id, messageId: message.id, leadId: lead.id };
   } catch (err) {
-    //Unique Constraint Violation.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return null;
     }
@@ -190,6 +220,7 @@ export async function loadTurnContext(
       flowState: conversation.flowState,
       flowVersion: conversation.flowVersion,
       nudgeCountByStage: (conversation.nudgeCountByStage as Record<string, number>) ?? {},
+      summary: conversation.summary ?? "",
     },
     lead: {
       id: conversation.lead.id,
@@ -268,6 +299,7 @@ export async function pauseForHuman(opts: {
   conversationId: string;
   leadId: string;
   reason: string;
+  summary?: string;
 }) {
   await prisma.$transaction([
     prisma.hitlTask.create({
@@ -277,12 +309,13 @@ export async function pauseForHuman(opts: {
         leadId: opts.leadId,
         type: "more_info",
         reason: opts.reason,
+        payload: opts.summary ? { summary: opts.summary } : {},
         status: "open",
       },
     }),
     prisma.conversation.update({
       where: { id: opts.conversationId },
-      data: { status: "waiting_human" },
+      data: { status: "waiting_human", flowState: "waiting_human" },
     }),
   ]);
 }
@@ -317,12 +350,14 @@ export async function completeHitlTask(opts: {
         metadata: { hitlTaskId: task.id, approved: opts.approved },
       },
     }),
-    prisma.conversation.update({
-      where: { id: task.conversationId },
-      data: { status: "open" },
-    }),
   ]);
-  return task;
+  const rotated = await rotateConversation({
+    tenantId: opts.tenantId,
+    leadId: task.leadId,
+    reason: "hitl_completed",
+    conversationId: task.conversationId,
+  });
+  return { task, conversationId: rotated.conversationId };
 }
 
 export async function enrichInstagramLeadIdentity(opts: {

@@ -154,6 +154,16 @@ export type UiCopy = {
     knowledge: string;
     business: string;
     done: string;
+    editDetails: string;
+    visitsTab: string;
+    decisionsTab: string;
+    meetingsTab: string;
+    noVisits: string;
+    noDecisions: string;
+    noMeetings: string;
+    details: string;
+    close: string;
+    cancel: string;
     stepOf: string;
     enabled: string;
     disabled: string;
@@ -191,6 +201,8 @@ export type UiCopy = {
     flowLabel: string;
     languageLabel: string;
     sendFailed: string;
+    today: string;
+    yesterday: string;
   };
   onboard: {
     agentLanguageLegend: string;
@@ -222,6 +234,7 @@ export type UiCopy = {
     catalogLegend: string;
     collectLegend: string;
     collectHint: string;
+    timeAlwaysCollected: string;
     filledFields: string;
     insertToken: string;
   };
@@ -244,12 +257,32 @@ export type UiCopy = {
     summaryEmpty: string;
     summaryWhen: string;
     summaryIntent: string;
+    declineNoteLabel: string;
+    declineNotePlaceholder: string;
+    customReplyLabel: string;
+    customReplyPlaceholder: string;
+    newConversation: string;
+    historyTitle: string;
+    waitingTitle: string;
+    taskOpen: string;
+    taskResolved: string;
+    updateDecision: string;
+    currentDecision: string;
+    changeDecision: string;
+    awaitingCustomer: string;
+    awaitingCustomerHint: string;
+    customerConfirmed: string;
     reasons: Record<string, string>;
   };
   meeting: {
     approve: string;
     decline: string;
+    reschedule: string;
+    alternativeSlotLabel: string;
+    alternativeSlotPlaceholder: string;
     visitDefault: string;
+    approved: string;
+    rejected: string;
   };
   ops: {
     catalogLegend: string;

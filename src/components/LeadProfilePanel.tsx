@@ -23,6 +23,8 @@ type Props = {
   waitingHuman?: boolean;
   instagramUrl?: string;
   instagramHandle?: string;
+  whatsappUrl?: string;
+  showOpenFullLead?: boolean;
 };
 
 export function LeadProfilePanel({
@@ -41,6 +43,8 @@ export function LeadProfilePanel({
   waitingHuman,
   instagramUrl,
   instagramHandle,
+  whatsappUrl,
+  showOpenFullLead = true,
 }: Props) {
   const statusId = status ? normalizeLeadStatus(status) : undefined;
 
@@ -67,16 +71,36 @@ export function LeadProfilePanel({
         {phone ? (
           <>
             <dt>{ui.common.phone}</dt>
-            <dd>{phone}</dd>
+            <dd>
+              <span dir="ltr" className="ltr-isolate">
+                {phone}
+              </span>
+            </dd>
           </>
         ) : null}
         {email ? (
           <>
             <dt>{ui.common.email}</dt>
-            <dd>{email}</dd>
+            <dd>
+              <span dir="ltr" className="ltr-isolate">
+                {email}
+              </span>
+            </dd>
           </>
         ) : null}
-        {instagramUrl ? (
+        {channel?.provider === "whatsapp" && whatsappUrl ? (
+          <>
+            <dt>{ui.common.whatsapp}</dt>
+            <dd>
+              <a href={whatsappUrl} target="_blank" rel="noopener noreferrer">
+                <span dir="ltr" className="ltr-isolate">
+                  {phone || ui.common.whatsapp}
+                </span>
+              </a>
+            </dd>
+          </>
+        ) : null}
+        {channel?.provider === "instagram" && instagramUrl ? (
           <>
             <dt>{ui.common.instagramProfile}</dt>
             <dd>
@@ -94,9 +118,11 @@ export function LeadProfilePanel({
         ) : null}
       </dl>
       <div className="row-actions">
-        <Link href={`/leads/${leadId}`} className="btn-secondary">
-          {ui.demo.openFullLead}
-        </Link>
+        {showOpenFullLead ? (
+          <Link href={`/leads/${leadId}`} className="btn-secondary">
+            {ui.demo.openFullLead}
+          </Link>
+        ) : null}
         {waitingHuman ? (
           <Link href="/inbox" className="btn-secondary">
             {ui.nav.inbox}

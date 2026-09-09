@@ -58,6 +58,13 @@ export function Select({
   const selected = options.find((o) => o.value === value);
   const selectable = (i: number) => options[i] && !options[i].disabled;
 
+  // Keep keyboard/hover highlight on the committed value so the first option
+  // is not left looking selected after choosing another.
+  useEffect(() => {
+    const i = options.findIndex((o) => o.value === value);
+    if (i >= 0) setActive(i);
+  }, [value, options, open]);
+
   /**
    * Fixed-position the list so it is always fully on screen: pick whichever
    * side has more room, cap the height to the room actually available, and
@@ -243,6 +250,7 @@ export function Select({
         >
           {options.map((option, i) => {
             const isSelected = option.value === value;
+            const isActive = open && i === active;
             return (
               <li
                 key={option.value}
@@ -250,7 +258,7 @@ export function Select({
                 role="option"
                 aria-selected={isSelected}
                 aria-disabled={option.disabled || undefined}
-                data-active={i === active}
+                data-active={isActive ? "true" : undefined}
                 className={`select-option${isSelected ? " is-selected" : ""}${option.disabled ? " is-disabled" : ""}`}
                 onPointerEnter={() => setActive(i)}
                 onClick={() => commit(i)}

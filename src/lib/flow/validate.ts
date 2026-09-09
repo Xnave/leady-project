@@ -98,6 +98,7 @@ export const defaultLeadSchema: LeadSchema = {
     visit_kind: { type: "string" },
     need: { type: "string" },
     booking: { type: "string" },
+    booking_confirm: { type: "string" },
   },
 };
 

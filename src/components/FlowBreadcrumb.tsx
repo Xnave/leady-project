@@ -2,7 +2,17 @@ import { stageLabel } from "@/lib/ui/labels";
 import type { FlowDefinition } from "@/lib/flow/types";
 import type { UiCopy } from "@/lib/ui";
 
-const STAGE_ORDER = ["talk", "escalate", "done", "waiting_human"] as const;
+export function flowDisplayOrder(flow: FlowDefinition): string[] {
+  if (flow.displayOrder?.length) {
+    return flow.displayOrder.filter((id) => id in flow.stages);
+  }
+  const preferred = ["talk", "escalate", "waiting_human", "done"];
+  const ordered = preferred.filter((id) => id in flow.stages);
+  for (const id of Object.keys(flow.stages)) {
+    if (!ordered.includes(id)) ordered.push(id);
+  }
+  return ordered;
+}
 
 export function FlowBreadcrumb({
   flow,
@@ -13,7 +23,7 @@ export function FlowBreadcrumb({
   current?: string;
   ui: UiCopy;
 }) {
-  const stages = STAGE_ORDER.filter((id) => id in flow.stages);
+  const stages = flowDisplayOrder(flow);
   if (!stages.length) return null;
 
   return (

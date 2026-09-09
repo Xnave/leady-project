@@ -43,9 +43,10 @@ export function shouldSendCannedIntro(
   opts?: { fromTerminal?: boolean },
 ): boolean {
   if (ctx.conversation.status === "waiting_human") return false;
+  // New conversation (or restart onto talk with no agent yet) → static intro.
   if (!hasAgentReplied(ctx)) return true;
   if (opts?.fromTerminal) return true;
-  return isIdleConversationReset(ctx);
+  return false;
 }
 
 export function looksLikeBareHello(text: string): boolean {

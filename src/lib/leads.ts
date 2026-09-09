@@ -20,15 +20,28 @@ export function normalizeInstagramUsername(value: string | null | undefined): st
 
 export function instagramProfileUrl(username: string | null | undefined): string {
   const handle = normalizeInstagramUsername(username);
-  if (!handle) return "";
+  if (!handle || looksLikePhoneNumberish(handle)) return "";
   return `https://instagram.com/${encodeURIComponent(handle)}`;
+}
+
+export function whatsappChatUrl(phone: string | null | undefined): string {
+  const digits = (phone ?? "").replace(/[^\d]/g, "");
+  if (digits.length < 8) return "";
+  return `https://wa.me/${digits}`;
+}
+
+function looksLikePhoneNumberish(value: string): boolean {
+  const t = value.trim();
+  return /^\+?\d[\d\s-]{6,}\d$/.test(t) || looksLikePlatformUserId(t);
 }
 
 export function leadInstagramUsername(fields?: unknown): string {
   const record = (fields ?? {}) as Record<string, unknown>;
-  return normalizeInstagramUsername(
+  const raw = normalizeInstagramUsername(
     typeof record.instagramUsername === "string" ? record.instagramUsername : "",
   );
+  if (!raw || looksLikePhoneNumberish(raw)) return "";
+  return raw;
 }
 
 export function contactDisplayName(opts: {

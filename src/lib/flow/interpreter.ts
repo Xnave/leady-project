@@ -166,24 +166,38 @@ export async function interpretTurn(
 
     if (stage.type === "talk") {
       const out = await ports.talk(ctx, stage);
-      const schemaKeys = Object.keys(ctx.agent.leadSchema.fields);
+      const schemaKeys = [
+        ...Object.keys(ctx.agent.leadSchema.fields),
+        "booking_confirm",
+        "staff_slot_offer",
+      ];
       const incoming: LeadFields = { ...(out.fields ?? {}) };
       if (out.intent) incoming.intent = out.intent;
       ctx.lead.fields = mergeAllowedFields(schemaKeys, ctx.lead.fields, incoming);
       await ports.persistFields(ctx, ctx.lead.fields);
 
-      // Static canned intro on first/idle turn — still extract above so the next
+      // Static canned intro on first/idle turn - still extract above so the next
       // turn can continue from the customer's first message. Escalation keeps
       // the model reply instead of the welcome line.
-      if (sendStaticIntro && !out.escalate) {
+      if (sendStaticIntro && !out.escalate && !out.acceptOfferedSlot) {
         out.reply = cannedIntroText(ctx);
         out.book = false;
         out.complete = false;
       }
 
+      if (out.acceptOfferedSlot) {
+        await ports.sendAndSave(ctx, out.reply);
+        await ports.persistStage(ctx, stage.on_complete);
+        ctx.conversation.flowState = stage.on_complete;
+        ports.log("exit", { stageId: stage.on_complete, action: "accept_offered_slot" });
+        return { stage: stage.on_complete, action: "done", ok: true };
+      }
+
       if (out.escalate) {
         assertHitlAllowed(ctx, stageId);
         const reason = hitlReasonKey(out.escalateReason);
+        await ports.persistStage(ctx, "waiting_human");
+        ctx.conversation.flowState = "waiting_human";
         await ports.requestHuman(ctx, reason);
         await ports.sendAndSave(ctx, out.reply);
         ports.log("exit", { stageId: "waiting_human", stageType: "talk", escalate: true });
@@ -193,8 +207,14 @@ export async function interpretTurn(
       if (out.book && stage.allowBook !== false) {
         const booked = await ports.bookMeeting(ctx);
         await ports.sendAndSave(ctx, booked.reply);
-        ports.log("exit", { stageId, action: "book_meeting", ok: booked.ok });
-        return { stage: stageId, action: "book_meeting", ok: booked.ok };
+        if (booked.ok) {
+          await ports.persistStage(ctx, "waiting_human");
+          ctx.conversation.flowState = "waiting_human";
+          ports.log("exit", { stageId: "waiting_human", action: "book_meeting", ok: true });
+          return { stage: "waiting_human", action: "book_meeting", ok: true };
+        }
+        ports.log("exit", { stageId, action: "book_meeting", ok: false });
+        return { stage: stageId, action: "book_meeting", ok: false };
       }
 
       if (out.complete) {
@@ -202,7 +222,7 @@ export async function interpretTurn(
         await ports.persistStage(ctx, stage.on_complete);
         ctx.conversation.flowState = stage.on_complete;
         ports.log("exit", { stageId: stage.on_complete, stageType: "talk" });
-        return { stage: stage.on_complete };
+        return { stage: stage.on_complete, action: "done" };
       }
 
       await ports.sendAndSave(ctx, out.reply);

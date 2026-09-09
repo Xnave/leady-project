@@ -40,7 +40,11 @@ export type ChatCopy = {
   hoursLine: (hours: string) => string;
   bookingRequestTemplate: string;
   bookingApprovedTemplate: string;
+  /** Decline without offering another slot */
   bookingRejected: string;
+  /** Decline + offer an alternative slot ({{alt_slot}}) */
+  bookingReschedule: string;
+  notePrefix: string;
 };
 
 export type PromptCopy = {

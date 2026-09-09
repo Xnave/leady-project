@@ -399,21 +399,20 @@ export function OnboardWizard(props: Props) {
                 <legend>{ui.onboard.collectLegend}</legend>
                 <p className="muted">{ui.onboard.collectHint}</p>
                 <div className="chip-row">
-                  {(["time_preference", "name", "need", "phone", "email", "visit_kind"] as BookingCollectId[]).map((id) => {
+                  {(["name", "need", "phone", "email", "visit_kind"] as BookingCollectId[]).map((id) => {
                     const meta = ui.bookingCollect[id];
                     if (!meta) return null;
-                    const locked = id === "time_preference";
                     const checked = bookingCollect.includes(id);
                     return (
                       <label key={id} className={`chip-toggle${checked ? " selected" : ""}`}>
                         <input
                           type="checkbox"
                           checked={checked}
-                          disabled={locked}
                           onChange={() => {
-                            if (locked) return;
                             setBookingCollect((prev) =>
-                              prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+                              sanitizeBookingCollect(
+                                prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+                              ),
                             );
                           }}
                         />
@@ -422,6 +421,9 @@ export function OnboardWizard(props: Props) {
                     );
                   })}
                 </div>
+                <p className="muted">
+                  {ui.bookingCollect.time_preference?.title}: {ui.onboard.timeAlwaysCollected}
+                </p>
               </fieldset>
             ) : null}
             <FlowBreadcrumb flow={flow} current={flow.start} ui={ui} />

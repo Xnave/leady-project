@@ -39,7 +39,7 @@ export function refererRedirect(req: Request): URL {
       const url = new URL(referer, origin);
       if (url.origin === origin) return url;
     } catch {
-      // malformed referer — fall through to the app root
+      // malformed referer - fall through to the app root
     }
   }
   return redirectPath(req, "/");

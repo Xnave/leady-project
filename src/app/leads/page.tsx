@@ -7,7 +7,7 @@ import { DeleteDemoLead } from "@/components/DeleteDemoLead";
 import { LeadStatusSelect } from "@/components/LeadStatusSelect";
 import { prisma } from "@/lib/db";
 import { getUiLang } from "@/lib/cookies";
-import { instagramProfileUrl, isDemoLead, leadDisplayName, leadInstagramUsername } from "@/lib/leads";
+import { instagramProfileUrl, isDemoLead, leadDisplayName, leadInstagramUsername, whatsappChatUrl } from "@/lib/leads";
 import { requireTenantId } from "@/lib/tenant";
 import { intentLabel, stageLabel } from "@/lib/ui/labels";
 import { meetingKindLabel, normalizeLeadStatus, uiCopy } from "@/lib/ui";
@@ -63,9 +63,12 @@ export default async function LeadsPage({
       include: {
         channel: true,
         conversations: {
+          where: { messages: { some: {} } },
           take: 1,
           orderBy: { updatedAt: "desc" },
-          include: { messages: { take: 1, orderBy: { createdAt: "desc" } } },
+          include: {
+            messages: { take: 1, orderBy: { createdAt: "desc" }, select: { createdAt: true } },
+          },
         },
         meetings: { where: { status: "pending" } },
       },
@@ -143,8 +146,17 @@ export default async function LeadsPage({
               const pending = lead.meetings.length;
               const demo = isDemoLead(lead.externalUserId);
               const intent = fields.intent ? intentLabel(ui, String(fields.intent)) : ui.common.empty;
-              const igHandle = leadInstagramUsername(fields);
-              const lastAt = lead.conversations[0]?.updatedAt ?? lead.updatedAt;
+              const igHandle =
+                lead.channel.provider === "instagram" ? leadInstagramUsername(fields) : "";
+              const phone =
+                (typeof fields.phone === "string" && fields.phone) ||
+                (lead.channel.provider === "whatsapp" ? lead.externalUserId : "");
+              const waUrl =
+                lead.channel.provider === "whatsapp" ? whatsappChatUrl(String(phone)) : "";
+              const lastAt =
+                lead.conversations[0]?.messages[0]?.createdAt ??
+                lead.conversations[0]?.updatedAt ??
+                lead.updatedAt;
               return (
                 <tr key={lead.id}>
                   <td>
@@ -154,6 +166,13 @@ export default async function LeadsPage({
                         {" "}
                         <span className="badge badge-demo">{ui.common.demo}</span>
                       </>
+                    ) : null}
+                    {waUrl ? (
+                      <div className="muted">
+                        <a href={waUrl} target="_blank" rel="noopener noreferrer" dir="ltr">
+                          {String(phone)}
+                        </a>
+                      </div>
                     ) : null}
                     {igHandle ? (
                       <div className="muted">

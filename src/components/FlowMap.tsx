@@ -1,3 +1,4 @@
+import { flowDisplayOrder } from "@/components/FlowBreadcrumb";
 import { stageTargets } from "@/lib/flow/validate";
 import type { FlowDefinition } from "@/lib/flow/types";
 import {
@@ -28,17 +29,27 @@ export function FlowMap({
   ui: UiCopy;
 }) {
   const L = labels ?? ui.flow;
+  const stageIds = flowDisplayOrder(flow);
 
   return (
     <div className="flow-map">
       <p className="muted">
         {L.start}: <strong>{stageLabel(ui, flow.start)}</strong> · {L.afterDone}:{" "}
         <strong>{restartPolicyLabel(ui, flow.restartPolicy.onNewMessage)}</strong>
-        {flow.restartPolicy.fallbackStage
-          ? ` → ${stageLabel(ui, flow.restartPolicy.fallbackStage)}`
-          : ""}
+        {flow.restartPolicy.fallbackStage ? (
+          <>
+            {" "}
+            <span className="flow-arrow" aria-hidden="true">
+              →
+            </span>{" "}
+            {stageLabel(ui, flow.restartPolicy.fallbackStage)}
+          </>
+        ) : (
+          ""
+        )}
       </p>
-      {Object.entries(flow.stages).map(([id, stage]) => {
+      {stageIds.map((id) => {
+        const stage = flow.stages[id];
         const next = stageTargets(stage);
         return (
           <div key={id} className={`stage-node${current === id ? " current" : ""}`}>
@@ -53,12 +64,16 @@ export function FlowMap({
             ) : null}
             {stage.type === "classify" ? (
               <p className="muted">
-                {Object.entries(stage.transitions)
-                  .map(
-                    ([intent, to]) =>
-                      `${intentLabel(ui, intent)} → ${stageLabel(ui, to)}`,
-                  )
-                  .join(" · ")}
+                {Object.entries(stage.transitions).map(([intent, to], i) => (
+                  <span key={intent}>
+                    {i > 0 ? " · " : null}
+                    {intentLabel(ui, intent)}{" "}
+                    <span className="flow-arrow" aria-hidden="true">
+                      →
+                    </span>{" "}
+                    {stageLabel(ui, to)}
+                  </span>
+                ))}
               </p>
             ) : null}
             {stage.type === "action" ? (
@@ -66,7 +81,10 @@ export function FlowMap({
             ) : null}
             {next.length > 0 && stage.type !== "classify" ? (
               <p className="muted">
-                → {next.map((n) => stageLabel(ui, n)).join(", ")}
+                <span className="flow-arrow" aria-hidden="true">
+                  →
+                </span>{" "}
+                {next.map((n) => stageLabel(ui, n)).join(", ")}
               </p>
             ) : null}
           </div>
