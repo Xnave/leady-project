@@ -463,3 +463,36 @@ export async function markMeetingDecision(opts: {
     reopenTalk: true,
   };
 }
+
+/** Update durable meeting details (e.g. need) after staff/customer follow-up. */
+export async function updateMeetingDetails(opts: {
+  tenantId: string;
+  meetingId: string;
+  need?: string;
+}): Promise<{ ok: true; needText: string } | { ok: false; error: string }> {
+  const meeting = await prisma.meeting.findFirst({
+    where: { id: opts.meetingId, tenantId: opts.tenantId },
+  });
+  if (!meeting) return { ok: false, error: "not_found" };
+
+  const needText = opts.need?.trim();
+  if (needText == null || !needText) {
+    return { ok: false, error: "need_required" };
+  }
+
+  await prisma.meeting.update({
+    where: { id: meeting.id },
+    data: { needText },
+  });
+
+  const lead = await prisma.lead.findFirst({ where: { id: meeting.leadId } });
+  if (lead) {
+    const fields = { ...((lead.fields as Record<string, unknown>) ?? {}), need: needText };
+    await prisma.lead.update({
+      where: { id: lead.id },
+      data: { fields: fields as Prisma.InputJsonValue },
+    });
+  }
+
+  return { ok: true, needText };
+}

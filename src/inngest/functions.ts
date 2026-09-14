@@ -1,7 +1,8 @@
 import { inngest } from "./client";
-import { runTurnNow, sendAndSave } from "@/lib/flow/run-turn";
+import { runTurnNow, sendAndSave, type NudgeRequestedEvent } from "@/lib/flow/run-turn";
 import { loadTurnContext } from "@/lib/conversations";
 import { prisma } from "@/lib/db";
+import type { FlowDefinition } from "@/lib/flow/types";
 
 export const runAgentTurn = inngest.createFunction(
   {
@@ -49,16 +50,31 @@ export const runAgentTurn = inngest.createFunction(
       }),
     );
 
+    const nudgeEvent = (result as { nudgeEvent?: NudgeRequestedEvent | null }).nudgeEvent;
+    if (nudgeEvent) {
+      await step.sendEvent("schedule-nudge", nudgeEvent);
+    }
+
     return {
       ...result,
       preFlowState: loaded.flowState,
       preStatus: loaded.status,
+      nudgeScheduled: Boolean(nudgeEvent),
     };
   },
 );
 
 export const nudgeIfSilent = inngest.createFunction(
-  { id: "nudge-if-silent" },
+  {
+    id: "nudge-if-silent",
+    cancelOn: [
+      {
+        event: "agent/turn.requested",
+        if: "event.data.conversationId == async.data.conversationId && event.data.tenantId == async.data.tenantId && async.data.triggerMessageId != event.data.scheduledAfterMessageId",
+        timeout: "30d",
+      },
+    ],
+  },
   { event: "agent/nudge.requested" },
   async ({ event, step }) => {
     const data = event.data as {
@@ -69,6 +85,7 @@ export const nudgeIfSilent = inngest.createFunction(
       template: string;
       maxTimes: number;
       flowVersion?: number;
+      scheduledAfterMessageId?: string;
     };
     await step.sleepUntil("wait", new Date(data.nudgeAt));
     return step.run("maybe-send", async () => {
@@ -77,8 +94,14 @@ export const nudgeIfSilent = inngest.createFunction(
         include: { lead: true, channel: true, agent: true },
       });
       if (!convo) return { skipped: "missing" };
-      if (convo.status === "waiting_human") return { skipped: "hitl" };
-      if (convo.updatedAt > new Date(data.nudgeAt)) return { skipped: "replied" };
+      if (convo.status !== "open") return { skipped: convo.status };
+      const flow = convo.agent.flow as FlowDefinition;
+      const expectedStage = flow.stages[data.expectedStage];
+      if (!expectedStage || expectedStage.type === "terminal") {
+        return { skipped: "terminal" };
+      }
+      const currentStage = flow.stages[convo.flowState];
+      if (currentStage?.type === "terminal") return { skipped: "terminal" };
       if (convo.flowState !== data.expectedStage) return { skipped: "moved-on" };
       if (
         data.flowVersion != null &&

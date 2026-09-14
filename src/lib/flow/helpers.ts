@@ -1,4 +1,17 @@
-import type { FlowDefinition, HitlPolicy, LeadFields, TurnContext } from "./types";
+import { nudgeSpecForStage } from "./catalog";
+import type {
+  FlowDefinition,
+  HitlPolicy,
+  LeadFields,
+  MessageSnapshot,
+  NudgeSpec,
+  Stage,
+  TurnContext,
+} from "./types";
+
+export function resolvedNudgeSpec(stage: Stage): NudgeSpec | undefined {
+  return nudgeSpecForStage(stage);
+}
 
 export function missingRequired(fields: LeadFields, required: string[]): string[] {
   return required.filter((key) => {
@@ -63,4 +76,36 @@ export function addIsoDuration(from: Date, isoDuration: string): Date {
   return new Date(
     from.getTime() + ((hours * 3600 + minutes * 60 + seconds) * 1000),
   );
+}
+
+/** ISO-8601 duration for nudge delay; `NUDGE_AFTER_OVERRIDE` wins in dev (e.g. PT5M). */
+export function resolveNudgeAfterDuration(flowAfter: string): string {
+  const override = (process.env.NUDGE_AFTER_OVERRIDE ?? "").trim();
+  return override || flowAfter;
+}
+
+/** Nudges only while the conversation is actively waiting on the lead in a non-terminal stage. */
+export function shouldScheduleNudge(ctx: TurnContext, stageId: string, stage: Stage): boolean {
+  if (!resolvedNudgeSpec(stage)) return false;
+  if (stage.type === "terminal") return false;
+  if (ctx.conversation.status !== "open") return false;
+  const atId = ctx.agent.flow.stages[stageId];
+  if (atId?.type === "terminal") return false;
+  return true;
+}
+
+export function lastLeadMessageAt(messages: MessageSnapshot[], fallback = new Date()): Date {
+  let latest: Date | null = null;
+  for (const m of messages) {
+    if (m.role !== "lead") continue;
+    const at =
+      m.createdAt instanceof Date
+        ? m.createdAt
+        : typeof m.createdAt === "string"
+          ? new Date(m.createdAt)
+          : null;
+    if (!at || Number.isNaN(at.getTime())) continue;
+    if (!latest || at > latest) latest = at;
+  }
+  return latest ?? fallback;
 }

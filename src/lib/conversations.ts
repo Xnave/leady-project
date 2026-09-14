@@ -247,6 +247,19 @@ export async function loadTurnContext(
     (looksLikePhoneNumber(fromId) ? fromId : "") ||
     undefined;
 
+  const recentMeetingRow = await prisma.meeting.findFirst({
+    where: { tenantId, leadId: conversation.lead.id },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      status: true,
+      slotText: true,
+      needText: true,
+      contactName: true,
+      decidedAt: true,
+    },
+  });
+
   return {
     tenantId,
     tenant: {
@@ -286,6 +299,16 @@ export async function loadTurnContext(
       provider: conversation.channel.provider,
       customerPhone: leadPhone,
     },
+    recentMeeting: recentMeetingRow
+      ? {
+          id: recentMeetingRow.id,
+          status: recentMeetingRow.status,
+          slotText: recentMeetingRow.slotText,
+          needText: recentMeetingRow.needText,
+          contactName: recentMeetingRow.contactName,
+          decidedAt: recentMeetingRow.decidedAt?.toISOString(),
+        }
+      : null,
     connection: {
       id: conversation.channel.id,
       provider: conversation.channel.provider,

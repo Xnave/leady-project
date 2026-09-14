@@ -169,11 +169,18 @@ export class PromptBuilder {
           );
         }
       } else {
-        this.parts.push(
-          "Visit booking is NOT started. Use reply to answer product/sales questions from knowledge.",
-          'Examples that must NOT trigger booking: "I want a WhatsApp agent", "how much is it", "tell me more", "I need something for Instagram".',
-          "Only call start_booking if they explicitly ask to schedule a meeting/visit/demo/call, or clearly accept an offer to book.",
-        );
+        const recent = ctx.recentMeeting;
+        if (recent && (recent.status === "approved" || recent.status === "pending")) {
+          this.parts.push(
+            "A meeting already exists for this lead. Prefer update_meeting_details for clarifications; do not treat short product answers as a new sales lead.",
+          );
+        } else {
+          this.parts.push(
+            "Visit booking is NOT started. Use reply to answer product/sales questions from knowledge.",
+            'Examples that must NOT trigger booking: "I want a WhatsApp agent", "how much is it", "tell me more", "I need something for Instagram".',
+            "Only call start_booking if they explicitly ask to schedule a meeting/visit/demo/call, or clearly accept an offer to book.",
+          );
+        }
       }
     }
     return this;
@@ -183,9 +190,10 @@ export class PromptBuilder {
     this.parts.push(
       "Call set_intent every turn.",
       "Prefer reply for informational turns. Call ask_field only while booking is in progress.",
-      "Call reply unless ask_field or resolve_offered_slot already set the outbound text.",
+      "Call reply unless ask_field, resolve_offered_slot, or update_meeting_details already set the outbound text.",
       "Use transition when the goal is complete (on_complete) or you must hand off (on_escalate).",
       "Conversation continuity: keep the SAME thread for follow-ups, staff questions, more details, or a new booking after a closed visit. Never invent a fresh welcome mid-thread.",
+      "After a visit was approved/rescheduled: if they answer a staff note (e.g. which agents/product) or correct meeting details, call update_meeting_details — short ack only, no intro and no new demo pitch.",
       "Only if the topic is clearly a brand-new matter AND a long gap / customer wants a clean start: first ask with reply whether to open a new conversation. Call start_new_conversation(intro=...) ONLY after they clearly say yes — the intro becomes the first message on the new thread.",
     );
     return this;

@@ -22,7 +22,7 @@ export const salesOrSupportFlow: FlowDefinition = {
       ask_one_at_a_time: true,
       on_complete: "schedule",
       nudge: {
-        after: "PT24H",
+        after: "PT1H",
         template: "Still happy to help - want to finish booking?",
         maxTimes: 1,
       },

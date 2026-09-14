@@ -15,7 +15,10 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
+    "db:push:production": "bash scripts/db-push-production.sh",
+    "db:import:production": "bash scripts/db-import-local-to-production.sh",
     "db:seed": "tsx prisma/seed.ts",
+    "zernio:webhook:dev": "tsx scripts/zernio-register-dev-webhook.ts",
     "typecheck": "tsc --noEmit"
   },
   "prisma": {

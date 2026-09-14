@@ -35,6 +35,17 @@ Outbound replies use the Zernio inbox API once a WhatsApp conversation id is sto
 
 Inngest is only required for delayed nudges (`npx inngest-cli@latest dev`).
 
+Nudge timing is **`NUDGE_AFTER_OVERRIDE` or PT23H after the lead’s last message** (not after the agent reply). With a second Zernio webhook to production, nudges may run on **Inngest Cloud** while you watch **local :8288** — use one webhook + local stack when debugging, or open the [Inngest Cloud dashboard](https://app.inngest.com) for production.
+
+Nudges fire after silence since the lead’s last message (default **23h** in flow JSON, inside WhatsApp’s 24h window). For local testing, set `NUDGE_AFTER_OVERRIDE=PT5M` in `.env` and re-seed so the agent flow includes a talk-stage nudge (`npm run db:seed`).
+
+Register a **second** Zernio webhook for ngrok (production webhook can stay — you may get duplicate replies while both are active):
+
+```bash
+pnpm proxy   # set NEXT_PUBLIC_APP_URL from banner, restart pnpm dev
+pnpm zernio:webhook:dev
+```
+
 `npm test` covers flow validation and the interpreter.
 
 ### Public HTTPS (Zernio / any device) — ngrok

@@ -1,7 +1,7 @@
 import { applyBookingCollect, defaultBookingCollect } from "./booking-collect";
 import type { BookingCollectId } from "./booking-collect";
 import { enPrompts, languageSystemRule } from "@/lib/copy";
-import type { FlowDefinition, HitlPolicy } from "./types";
+import type { FlowDefinition, HitlPolicy, NudgeSpec, Stage } from "./types";
 import type { ChatLanguage } from "./locale";
 
 export type CatalogId = "inbox" | "book" | "faq";
@@ -30,6 +30,18 @@ export const catalogMeta: {
 
 const DISPLAY_ORDER = ["talk", "escalate", "waiting_human", "done"] as const;
 
+export const defaultTalkNudge: NudgeSpec = {
+  after: "PT1H",
+  template: "עדיין כאן? נשמח לעזור להמשיך.",
+  maxTimes: 1,
+};
+
+export function nudgeSpecForStage(stage: Stage): NudgeSpec | undefined {
+  if (stage.nudge) return stage.nudge;
+  if (stage.type === "talk") return defaultTalkNudge;
+  return undefined;
+}
+
 function talkFlow(opts: {
   prompt: string;
   allowBook: boolean;
@@ -50,6 +62,7 @@ function talkFlow(opts: {
           capabilities: opts.allowBook ? ["booking"] : [],
           on_complete: "done",
           on_escalate: "escalate",
+          nudge: { ...defaultTalkNudge },
         },
         escalate: {
           type: "action",

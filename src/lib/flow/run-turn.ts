@@ -7,7 +7,13 @@ import {
   persistTurnFields,
 } from "@/lib/conversations";
 import { requestTentativeMeeting } from "@/lib/meetings";
-import { addIsoDuration } from "@/lib/flow/helpers";
+import {
+  addIsoDuration,
+  lastLeadMessageAt,
+  resolveNudgeAfterDuration,
+  resolvedNudgeSpec,
+  shouldScheduleNudge,
+} from "@/lib/flow/helpers";
 import { interpretTurn } from "@/lib/flow/interpreter";
 import { answerFaq, classifyIntent, draftQuestion, extractFields, talkTurn } from "@/lib/flow/llm";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
@@ -65,22 +71,53 @@ export async function sendAndSave(
   });
 }
 
-async function maybeScheduleNudge(ctx: TurnContext, stageId: string, stage: Stage) {
-  if (!stage.nudge) return;
-  const nudgeAt = addIsoDuration(new Date(), stage.nudge.after);
-  await inngest.send({
+export type NudgeRequestedEvent = {
+  name: "agent/nudge.requested";
+  id: string;
+  data: {
+    tenantId: string;
+    conversationId: string;
+    expectedStage: string;
+    nudgeAt: string;
+    template: string;
+    maxTimes: number;
+    flowVersion: number;
+    /** Inbound message id for this turn; cancel only on a later turn.requested. */
+    scheduledAfterMessageId: string;
+    afterUsed: string;
+    anchorLeadMessageAt: string;
+  };
+};
+
+export function buildNudgeRequestedEvent(
+  ctx: TurnContext,
+  stageId: string,
+  stage: Stage,
+  triggerMessageId?: string,
+): NudgeRequestedEvent | null {
+  if (!shouldScheduleNudge(ctx, stageId, stage)) return null;
+  if (!triggerMessageId) return null;
+  const nudge = resolvedNudgeSpec(stage);
+  if (!nudge) return null;
+  const after = resolveNudgeAfterDuration(nudge.after);
+  const anchorAt = lastLeadMessageAt(ctx.messages);
+  const nudgeAt = addIsoDuration(anchorAt, after);
+  return {
     name: "agent/nudge.requested",
-    id: `nudge-${ctx.conversation.id}-${stageId}-${ctx.agent.flowVersion}`,
+    id: `nudge-${ctx.conversation.id}-${triggerMessageId}`,
     data: {
       tenantId: ctx.tenantId,
       conversationId: ctx.conversation.id,
       expectedStage: stageId,
       nudgeAt: nudgeAt.toISOString(),
-      template: stage.nudge.template,
-      maxTimes: stage.nudge.maxTimes ?? 1,
+      template: nudge.template,
+      maxTimes: nudge.maxTimes ?? 1,
       flowVersion: ctx.agent.flowVersion,
+      scheduledAfterMessageId: triggerMessageId,
+      afterUsed: after,
+      anchorLeadMessageAt: anchorAt.toISOString(),
     },
-  });
+  };
 }
 
 export async function enqueueAgentTurn(opts: {
@@ -114,6 +151,8 @@ export async function runTurnNow(opts: {
     ? `out-${opts.conversationId}-${opts.triggerMessageId}`
     : undefined;
 
+  let nudgeEvent: NudgeRequestedEvent | null = null;
+
   const result = await interpretTurn(ctx, { resume: opts.resume }, {
     classify: classifyIntent,
     extract: extractFields,
@@ -140,7 +179,9 @@ export async function runTurnNow(opts: {
           ? `${outboundKey}-${Buffer.from(text).toString("base64url").slice(0, 24)}`
           : undefined,
       }),
-    scheduleNudge: maybeScheduleNudge,
+    scheduleNudge: async (c, stageId, stage) => {
+      nudgeEvent = buildNudgeRequestedEvent(c, stageId, stage, opts.triggerMessageId);
+    },
     log: logTurn,
   });
 
@@ -170,7 +211,7 @@ export async function runTurnNow(opts: {
       ms: Date.now() - started,
       triggerMessageId: opts.triggerMessageId,
     });
-    return { ...result, stage: ctx.agent.flow.start };
+    return { ...result, stage: ctx.agent.flow.start, nudgeEvent };
   }
 
   if (result.action === "done" || result.stage === "done") {
@@ -191,5 +232,5 @@ export async function runTurnNow(opts: {
     triggerMessageId: opts.triggerMessageId,
   });
 
-  return result;
+  return { ...result, nudgeEvent };
 }

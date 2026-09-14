@@ -164,6 +164,16 @@ export type ChannelSnapshot = {
   customerPhone?: string;
 };
 
+/** Latest meeting on the lead — for post-approval follow-ups in talk. */
+export type RecentMeetingSnapshot = {
+  id: string;
+  status: string;
+  slotText: string;
+  needText: string;
+  contactName: string;
+  decidedAt?: string;
+};
+
 export type TurnContext = {
   tenantId: string;
   tenant?: TenantSnapshot;
@@ -172,6 +182,7 @@ export type TurnContext = {
   lead: { id: string; externalUserId: string; fields: LeadFields };
   messages: MessageSnapshot[];
   channel?: ChannelSnapshot;
+  recentMeeting?: RecentMeetingSnapshot | null;
 };
 
 export class FlowConfigError extends Error {

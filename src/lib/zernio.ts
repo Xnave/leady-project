@@ -186,6 +186,46 @@ export async function zernioWhatsAppConnectUrl(opts: {
   return zernioConnectUrl({ ...opts, platform: "whatsapp" });
 }
 
+export type ZernioWebhookSettings = {
+  _id: string;
+  name: string;
+  url: string;
+  events: string[];
+  isActive?: boolean;
+};
+
+//for local scripts
+export async function createZernioWebhookSettings(opts: {
+  name: string;
+  url: string;
+  events: string[];
+  secret?: string;
+  isActive?: boolean;
+}): Promise<ZernioWebhookSettings> {
+  const data = await zernio<{ webhook?: ZernioWebhookSettings; success?: boolean }>(
+    "/webhooks/settings",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name: opts.name,
+        url: opts.url,
+        events: opts.events,
+        ...(opts.secret ? { secret: opts.secret } : {}),
+        isActive: opts.isActive ?? true,
+      }),
+    },
+  );
+  const webhook = data.webhook;
+  if (!webhook?._id) throw new Error("Zernio webhook create returned no webhook");
+  return webhook;
+}
+
+//for local scripts
+export async function listZernioWebhookSettings(): Promise<ZernioWebhookSettings[]> {
+  const data = await zernio<{ webhooks?: ZernioWebhookSettings[] }>("/webhooks/settings");
+  return data.webhooks ?? [];
+}
+
 export async function sendZernioInboxMessage(opts: {
   accountId: string;
   conversationId: string;
