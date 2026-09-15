@@ -231,10 +231,17 @@ describe("catalog flows", () => {
     expect(inbox.displayOrder?.indexOf("waiting_human")).toBeLessThan(
       inbox.displayOrder!.indexOf("done"),
     );
-    expect(flowForCatalog("faq").stages.talk).toMatchObject({ allowBook: false });
+    expect(flowForCatalog("faq").stages.talk).toMatchObject({
+      allowBook: false,
+      capabilities: [],
+    });
     expect((inbox.stages.talk as { capabilities?: string[] }).capabilities).toEqual([
       "booking",
     ]);
+    expect(flowForCatalog("book").stages.talk).toMatchObject({
+      capabilities: ["booking"],
+      bookingStance: "proactive",
+    });
   });
 
   it("keeps lead schema compatible with booking fields", () => {

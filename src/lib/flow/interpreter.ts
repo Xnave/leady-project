@@ -1,6 +1,6 @@
 import { applyRestartPolicy, assertHitlAllowed, mergeAllowedFields, missingRequired } from "./helpers";
 import { ensureFlowRegistry } from "./capabilities";
-import { getAction } from "./registry";
+import { getAction, getTalkEffect, resolveTalkCapabilities, sessionFieldKeysForStage } from "./registry";
 import { talkTransitionTargets } from "./prompt-builder";
 import {
   bookingConfirmStatus,
@@ -9,6 +9,7 @@ import {
 } from "./booking";
 import { effectiveBookingRequired } from "./booking-collect";
 import { copyFor, replyLang } from "@/lib/copy";
+import { hitlReasonKey } from "./effects";
 import type {
   ActionStage,
   CollectStage,
@@ -60,14 +61,6 @@ export type TurnResult = {
   reply?: string;
 };
 
-function hitlReasonKey(raw?: string): string {
-  const t = (raw ?? "").trim();
-  if (t === "support_unresolved") return t;
-  if (t === "escalation_requested" || t === "asked_for_person") return "escalation_requested";
-  if (/unresolved|could not/i.test(t)) return "support_unresolved";
-  return "escalation_requested";
-}
-
 function lastLeadMessage(ctx: TurnContext): string {
   return [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
 }
@@ -88,6 +81,7 @@ export function enforceBookingEffects(
   stage: TalkStage,
   out: TalkOutcome,
 ): TalkOutcome {
+  if (!resolveTalkCapabilities(stage).includes("booking")) return out;
   if (stage.allowBook === false) return out;
   const required = effectiveBookingRequired(ctx);
   const fields = { ...ctx.lead.fields, ...(out.fields ?? {}) };
@@ -269,9 +263,7 @@ export async function interpretTurn(
       const out = enforceBookingEffects(ctx, stage, normalizeTalkOutcome(raw, stage));
       const schemaKeys = [
         ...Object.keys(ctx.agent.leadSchema.fields),
-        "booking_confirm",
-        "booking_flow",
-        "staff_slot_offer",
+        ...sessionFieldKeysForStage(stage),
       ];
       const incoming: LeadFields = { ...(out.fields ?? {}) };
       if (out.intent) incoming.intent = out.intent;
@@ -284,36 +276,32 @@ export async function interpretTurn(
       let escalateReason = "";
 
       for (const effect of out.effects ?? []) {
-        if (effect.type === "book_meeting") {
-          if (stage.allowBook === false) continue;
-          const booked = await ports.bookMeeting(ctx);
-          reply = booked.reply;
-          bookedOk = booked.ok;
-          if (booked.ok) {
-            await ports.persistStage(ctx, "waiting_human");
-            ctx.conversation.flowState = "waiting_human";
-            await ports.sendAndSave(ctx, reply);
-            ports.log("exit", {
-              stageId: "waiting_human",
-              action: "book_meeting",
-              ok: true,
-              effects: effectTypes,
-            });
-            return {
-              stage: "waiting_human",
-              action: "book_meeting",
-              ok: true,
-              effects: effectTypes,
-            };
-          }
-        }
-        if (effect.type === "request_human") {
-          escalateReason = hitlReasonKey(
-            typeof effect.args?.reason === "string" ? effect.args.reason : undefined,
-          );
-        }
-        if (effect.type === "accept_offered_slot") {
-          // Meeting already approved inside the capability tool.
+        const handler = getTalkEffect(effect.type);
+        if (!handler) continue;
+        const result = await handler({
+          ctx,
+          stage,
+          effect,
+          ports,
+          reply,
+        });
+        if (result.reply !== undefined) reply = result.reply;
+        if (result.escalateReason) escalateReason = result.escalateReason;
+        if (result.bookedOk !== undefined) bookedOk = result.bookedOk;
+        if (result.halt) {
+          ports.log("exit", {
+            stageId: result.halt.stage,
+            action: result.halt.action,
+            ok: result.halt.ok,
+            effects: effectTypes,
+          });
+          return {
+            stage: result.halt.stage,
+            action: result.halt.action,
+            ok: result.halt.ok,
+            effects: effectTypes,
+            reply: result.halt.reply,
+          };
         }
       }
 

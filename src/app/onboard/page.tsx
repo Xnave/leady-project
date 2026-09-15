@@ -1,10 +1,11 @@
 import { OnboardWizard } from "@/components/OnboardWizard";
 import { PageHeader } from "@/components/PageHeader";
 import { bookingCollectFromFlow } from "@/lib/flow/booking-collect";
+import { resolveBookingStance } from "@/lib/flow/catalog";
 import { prisma } from "@/lib/db";
 import { getUiLang } from "@/lib/cookies";
 import { requireTenantId } from "@/lib/tenant";
-import type { FlowDefinition } from "@/lib/flow/types";
+import type { FlowDefinition, TalkStage } from "@/lib/flow/types";
 import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,13 @@ export default async function OnboardPage() {
   const tenant = await prisma.tenant.findFirst({ where: { id: tenantId } });
   if (!tenant) return <p className="empty-state">{ui.errors.noTenant}</p>;
   const agent = await prisma.agent.findFirst({ where: { tenantId } });
+  const flow = agent?.flow as FlowDefinition | undefined;
+  const talk = flow?.stages?.talk as TalkStage | undefined;
+  const capabilities = talk?.capabilities ?? undefined;
+  const bookingStance = resolveBookingStance({
+    catalogId: agent?.catalogId,
+    stage: talk,
+  });
 
   return (
     <div>
@@ -27,6 +35,8 @@ export default async function OnboardPage() {
         intro={tenant.intro ?? ""}
         knowledgeText={agent?.knowledgeText ?? ""}
         catalogId={agent?.catalogId ?? "inbox"}
+        capabilities={capabilities}
+        bookingStance={bookingStance}
         chatLanguage={
           tenant && "chatLanguage" in tenant && typeof tenant.chatLanguage === "string"
             ? tenant.chatLanguage
@@ -38,7 +48,7 @@ export default async function OnboardPage() {
         bookingRequestTemplate={tenant.bookingRequestTemplate ?? ""}
         bookingApprovedTemplate={tenant.bookingApprovedTemplate ?? ""}
         bookingRejectedTemplate={tenant.bookingRejectedTemplate ?? ""}
-        bookingCollect={bookingCollectFromFlow(agent?.flow as FlowDefinition | undefined)}
+        bookingCollect={bookingCollectFromFlow(flow)}
       />
     </div>
   );

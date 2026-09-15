@@ -3,7 +3,13 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RadioCard } from "@/components/RadioCard";
-import { isCatalogId, type CatalogId } from "@/lib/flow/catalog";
+import {
+  isBookingStance,
+  isCapabilityId,
+  type BookingStance,
+  type CapabilityId,
+  type CatalogId,
+} from "@/lib/flow/catalog";
 import {
   defaultBookingCollect,
   sanitizeBookingCollect,
@@ -14,6 +20,8 @@ import { copyFor } from "@/lib/copy";
 import { fillUi, stepLabel, uiCopy, type UiLang } from "@/lib/ui";
 
 const WIZARD_STEPS = ["knowledge", "business", "flow", "done"] as const;
+const PRODUCT_CAPABILITIES: CapabilityId[] = ["booking", "orders", "docs"];
+const READY_CAPABILITIES = new Set<CapabilityId>(["booking"]);
 
 type Props = {
   name: string;
@@ -21,6 +29,8 @@ type Props = {
   intro: string;
   knowledgeText: string;
   catalogId: string;
+  capabilities?: string[];
+  bookingStance?: string;
   chatLanguage: string;
   idleResetDays: number;
   bookingCollect?: string[];
@@ -32,6 +42,23 @@ type Props = {
   uiLang?: UiLang;
 };
 
+function initialCapabilities(props: Props): CapabilityId[] {
+  if (props.capabilities?.length) {
+    return props.capabilities.filter(isCapabilityId);
+  }
+  const catalog = props.catalogId;
+  if (catalog === "faq") return [];
+  return ["booking"];
+}
+
+function initialStance(props: Props): BookingStance {
+  if (props.bookingStance && isBookingStance(props.bookingStance)) {
+    return props.bookingStance;
+  }
+  if (props.catalogId === "book") return "proactive";
+  return "passive";
+}
+
 export function OnboardWizard(props: Props) {
   const ui = uiCopy(props.uiLang === "en" ? "en" : "he");
   const router = useRouter();
@@ -40,8 +67,11 @@ export function OnboardWizard(props: Props) {
   const [phone, setPhone] = useState(props.phone);
   const [intro, setIntro] = useState(props.intro);
   const [knowledgeText, setKnowledgeText] = useState(props.knowledgeText);
-  const [catalogId, setCatalogId] = useState<CatalogId>(
-    isCatalogId(props.catalogId) ? props.catalogId : "inbox",
+  const [capabilities, setCapabilities] = useState<CapabilityId[]>(() =>
+    initialCapabilities(props),
+  );
+  const [bookingStance, setBookingStance] = useState<BookingStance>(() =>
+    initialStance(props),
   );
   const [chatLanguage, setChatLanguage] = useState<ChatLanguage>(() => {
     if (isChatLanguage(props.chatLanguage)) return props.chatLanguage;
@@ -51,6 +81,8 @@ export function OnboardWizard(props: Props) {
   const [bookingCollect, setBookingCollect] = useState<BookingCollectId[]>(() =>
     sanitizeBookingCollect(props.bookingCollect?.length ? props.bookingCollect : defaultBookingCollect),
   );
+  const bookingEnabled = capabilities.includes("booking");
+  const catalogId: CatalogId = bookingEnabled ? "inbox" : "faq";
   const [venueAddress, setVenueAddress] = useState(props.venueAddress ?? "");
   const [venueHours, setVenueHours] = useState(props.venueHours ?? "");
   const [bookingRequestTemplate, setBookingRequestTemplate] = useState(
@@ -154,6 +186,8 @@ export function OnboardWizard(props: Props) {
         intro,
         knowledgeText,
         catalogId,
+        capabilities,
+        bookingStance,
         chatLanguage,
         idleResetDays,
         bookingCollect,
@@ -312,6 +346,7 @@ export function OnboardWizard(props: Props) {
                 />
               </label>
             </div>
+            {bookingEnabled ? (
             <details className="onboard-advanced">
               <summary>{ui.common.advanced}</summary>
               <div className="stack" style={{ marginTop: "0.75rem" }}>
@@ -358,6 +393,7 @@ export function OnboardWizard(props: Props) {
                 <p className="muted">{ui.onboard.templatesHint}</p>
               </div>
             </details>
+            ) : null}
             <div className="wizard-footer">
               <button type="button" className="btn-secondary" onClick={() => setStep(0)}>
                 {ui.common.back}
@@ -373,22 +409,54 @@ export function OnboardWizard(props: Props) {
           <>
             <h2>{ui.common.flow}</h2>
             <fieldset>
-              <legend>{ui.onboard.catalogLegend}</legend>
-              <div className="radio-card-grid compact">
-                {(["inbox", "book", "faq"] as const).map((id) => (
-                  <RadioCard
-                    key={id}
-                    name="catalogId"
-                    value={id}
-                    checked={catalogId === id}
-                    onChange={() => setCatalogId(id)}
-                    title={ui.catalog[id].title}
-                    blurb={ui.catalog[id].blurb}
-                  />
-                ))}
+              <legend>{ui.onboard.capabilitiesLegend}</legend>
+              <p className="muted">{ui.onboard.capabilitiesHint}</p>
+              <div className="chip-row">
+                {PRODUCT_CAPABILITIES.map((id) => {
+                  const meta = ui.capabilities[id];
+                  const ready = READY_CAPABILITIES.has(id);
+                  const checked = capabilities.includes(id);
+                  return (
+                    <label
+                      key={id}
+                      className={`chip-toggle${checked ? " selected" : ""}${ready ? "" : " muted"}`}
+                      title={meta.blurb}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!ready}
+                        onChange={() => {
+                          if (!ready) return;
+                          setCapabilities((prev) =>
+                            prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+                          );
+                        }}
+                      />
+                      {meta.title}
+                    </label>
+                  );
+                })}
               </div>
             </fieldset>
-            {catalogId !== "faq" ? (
+            {bookingEnabled ? (
+              <>
+              <fieldset>
+                <legend>{ui.onboard.bookingStanceLegend}</legend>
+                <div className="radio-card-grid compact">
+                  {(["passive", "proactive"] as const).map((id) => (
+                    <RadioCard
+                      key={id}
+                      name="bookingStance"
+                      value={id}
+                      checked={bookingStance === id}
+                      onChange={() => setBookingStance(id)}
+                      title={ui.bookingStance[id].title}
+                      blurb={ui.bookingStance[id].blurb}
+                    />
+                  ))}
+                </div>
+              </fieldset>
               <fieldset>
                 <legend>{ui.onboard.collectLegend}</legend>
                 <p className="muted">{ui.onboard.collectHint}</p>
@@ -420,6 +488,7 @@ export function OnboardWizard(props: Props) {
                   {ui.onboard.timeAlwaysCollected}
                 </p>
               </fieldset>
+              </>
             ) : null}
             <div className="wizard-footer">
               <button type="button" className="btn-secondary" onClick={() => setStep(1)}>
@@ -441,8 +510,12 @@ export function OnboardWizard(props: Props) {
               <dd>{name}</dd>
               <dt>{ui.onboard.agentLanguageLegend}</dt>
               <dd>{ui.chatLanguage[chatLanguage].title}</dd>
-              <dt>{ui.onboard.catalogLegend}</dt>
-              <dd>{ui.catalog[catalogId].title}</dd>
+              <dt>{ui.onboard.capabilitiesLegend}</dt>
+              <dd>
+                {capabilities.length
+                  ? capabilities.map((id) => ui.capabilities[id].title).join(" · ")
+                  : ui.catalog.faq.title}
+              </dd>
             </dl>
             <div className="wizard-footer">
               <button type="button" className="btn-secondary" onClick={() => router.push("/inbox")}>

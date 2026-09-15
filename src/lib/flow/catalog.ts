@@ -1,10 +1,20 @@
 import { applyBookingCollect, defaultBookingCollect } from "./booking-collect";
 import type { BookingCollectId } from "./booking-collect";
 import { enPrompts, languageSystemRule } from "@/lib/copy";
-import type { FlowDefinition, HitlPolicy, NudgeSpec, Stage } from "./types";
+import type { FlowDefinition, HitlPolicy, NudgeSpec, Stage, TalkStage } from "./types";
 import type { ChatLanguage } from "./locale";
 
-export type CatalogId = "inbox" | "book" | "faq";
+/** Display / migration ids. `book` is legacy → inbox + proactive stance. */
+export type CatalogId = "inbox" | "faq";
+export type LegacyCatalogId = CatalogId | "book";
+export type BookingStance = "passive" | "proactive";
+export type CapabilityId = "booking" | "orders" | "docs";
+
+export type FlowBuildOpts = {
+  capabilities?: CapabilityId[];
+  bookingStance?: BookingStance;
+  requiredForBook?: BookingCollectId[];
+};
 
 export const catalogMeta: {
   id: CatalogId;
@@ -13,18 +23,13 @@ export const catalogMeta: {
 }[] = [
   {
     id: "inbox",
-    title: "Inbox (recommended)",
-    blurb: "Answer questions first; invite a visit only when they ask or need a human.",
-  },
-  {
-    id: "book",
-    title: "Booking",
-    blurb: "Biased toward setting a meeting after a short qualify.",
+    title: "Assist",
+    blurb: "Answer questions; enable capabilities (e.g. booking) as needed.",
   },
   {
     id: "faq",
     title: "FAQ only",
-    blurb: "Answer from your intro and files. No booking.",
+    blurb: "Answer from your intro and files. No transactional capabilities.",
   },
 ];
 
@@ -42,12 +47,65 @@ export function nudgeSpecForStage(stage: Stage): NudgeSpec | undefined {
   return undefined;
 }
 
+export function normalizeCatalogId(raw: string | undefined | null): CatalogId {
+  if (raw === "faq") return "faq";
+  // legacy "book" → inbox (stance recovered separately)
+  return "inbox";
+}
+
+export function isCatalogId(value: string): value is CatalogId {
+  return value === "inbox" || value === "faq";
+}
+
+export function isLegacyCatalogId(value: string): value is LegacyCatalogId {
+  return value === "inbox" || value === "faq" || value === "book";
+}
+
+export function isBookingStance(value: string): value is BookingStance {
+  return value === "passive" || value === "proactive";
+}
+
+export function isCapabilityId(value: string): value is CapabilityId {
+  return value === "booking" || value === "orders" || value === "docs";
+}
+
+/** Infer stance from legacy catalog or stored talk stage. */
+export function resolveBookingStance(opts: {
+  catalogId?: string | null;
+  stage?: TalkStage;
+  bookingStance?: string | null;
+}): BookingStance {
+  if (opts.bookingStance && isBookingStance(opts.bookingStance)) {
+    return opts.bookingStance;
+  }
+  if (opts.stage?.bookingStance && isBookingStance(opts.stage.bookingStance)) {
+    return opts.stage.bookingStance;
+  }
+  if (opts.catalogId === "book") return "proactive";
+  return "passive";
+}
+
+function talkPromptFor(opts: {
+  capabilities: CapabilityId[];
+  bookingStance: BookingStance;
+  fields: string;
+}): string {
+  const hasBooking = opts.capabilities.includes("booking");
+  if (!hasBooking) return enPrompts.catalogFaq;
+  if (opts.bookingStance === "proactive") {
+    return enPrompts.catalogBook(opts.fields);
+  }
+  return enPrompts.catalogInbox(opts.fields);
+}
+
 function talkFlow(opts: {
   prompt: string;
-  allowBook: boolean;
+  capabilities: CapabilityId[];
+  bookingStance?: BookingStance;
   requiredForBook?: BookingCollectId[];
 }): FlowDefinition {
   const collect = opts.requiredForBook ?? defaultBookingCollect;
+  const allowBook = opts.capabilities.includes("booking");
   return applyBookingCollect(
     {
       start: "talk",
@@ -57,9 +115,10 @@ function talkFlow(opts: {
         talk: {
           type: "talk",
           prompt: opts.prompt,
-          allowBook: opts.allowBook,
-          required_for_book: collect,
-          capabilities: opts.allowBook ? ["booking"] : [],
+          allowBook,
+          required_for_book: allowBook ? collect : [],
+          capabilities: [...opts.capabilities],
+          bookingStance: allowBook ? opts.bookingStance ?? "passive" : undefined,
           on_complete: "done",
           on_escalate: "escalate",
           nudge: { ...defaultTalkNudge },
@@ -74,37 +133,50 @@ function talkFlow(opts: {
         done: { type: "terminal" },
       },
     },
-    collect,
+    allowBook ? collect : [],
   );
 }
 
-export function flowForCatalog(
-  id: CatalogId,
-  requiredForBook: BookingCollectId[] = defaultBookingCollect,
-): FlowDefinition {
+/** Preferred builder: capabilities + optional booking stance. */
+export function flowForCapabilities(opts: FlowBuildOpts = {}): FlowDefinition {
+  const capabilities = (opts.capabilities ?? []).filter(isCapabilityId);
+  const bookingStance = opts.bookingStance ?? "passive";
+  const requiredForBook = opts.requiredForBook ?? defaultBookingCollect;
   const fields = requiredForBook.join(", ");
-  if (id === "book") {
-    return talkFlow({
-      allowBook: true,
-      requiredForBook,
-      prompt: enPrompts.catalogBook(fields),
-    });
-  }
-  if (id === "faq") {
-    return talkFlow({
-      allowBook: false,
-      requiredForBook,
-      prompt: enPrompts.catalogFaq,
-    });
-  }
   return talkFlow({
-    allowBook: true,
+    capabilities,
+    bookingStance,
     requiredForBook,
-    prompt: enPrompts.catalogInbox(fields),
+    prompt: talkPromptFor({ capabilities, bookingStance, fields }),
   });
 }
 
-export function hitlForCatalog(_id: CatalogId): HitlPolicy {
+/**
+ * Legacy catalog entrypoint. `book` maps to booking + proactive stance.
+ * Prefer flowForCapabilities for new code.
+ */
+export function flowForCatalog(
+  id: LegacyCatalogId | string,
+  requiredForBook: BookingCollectId[] = defaultBookingCollect,
+): FlowDefinition {
+  if (id === "faq") {
+    return flowForCapabilities({ capabilities: [], requiredForBook });
+  }
+  if (id === "book") {
+    return flowForCapabilities({
+      capabilities: ["booking"],
+      bookingStance: "proactive",
+      requiredForBook,
+    });
+  }
+  return flowForCapabilities({
+    capabilities: ["booking"],
+    bookingStance: "passive",
+    requiredForBook,
+  });
+}
+
+export function hitlForCatalog(_id?: string): HitlPolicy {
   return {
     allowRequestHuman: true,
     allowedFromStages: ["talk", "escalate"],
@@ -113,8 +185,9 @@ export function hitlForCatalog(_id: CatalogId): HitlPolicy {
   };
 }
 
-export function isCatalogId(value: string): value is CatalogId {
-  return value === "inbox" || value === "book" || value === "faq";
+/** Derive display catalog from capabilities (for channels/demo labels). */
+export function catalogIdFromCapabilities(capabilities: string[]): CatalogId {
+  return capabilities.includes("booking") ? "inbox" : "faq";
 }
 
 export function buildAgentSystemPrompt(

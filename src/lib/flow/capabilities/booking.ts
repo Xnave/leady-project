@@ -1,7 +1,14 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { copyFor, replyLang } from "@/lib/copy";
-import { askBookingField, bookingConfirmStatus, bookingFieldGaps, gateBookOnGaps, isBookingCollectActive } from "../booking";
+import {
+  askBookingField,
+  BOOKING_SESSION_FIELD_KEYS,
+  bookingConfirmStatus,
+  bookingFieldGaps,
+  gateBookOnGaps,
+  isBookingCollectActive,
+} from "../booking";
 import {
   callbackPhone,
   effectiveBookingRequired,
@@ -12,7 +19,12 @@ import { registerCapability } from "../registry";
 import type { LeadFields, TalkOutcome, TalkStage, TurnContext } from "../types";
 import { getStaffSlotOffer, markMeetingDecision, updateMeetingDetails } from "@/lib/meetings";
 import { proposesDifferentSlot } from "../slot";
-import { formatPhoneDisplay, rewritePhonesInText } from "@/lib/leads";
+import {
+  formatPhoneDisplay,
+  isCustomerNameSatisfied,
+  looksLikeIncompleteCustomerName,
+  rewritePhonesInText,
+} from "@/lib/leads";
 
 export type TalkCollected = TalkOutcome & {
   askFieldUsed?: boolean;
@@ -91,39 +103,81 @@ function updateMeetingDetailsTool(ctx: TurnContext, collected: TalkCollected) {
 export function registerBookingCapability(): void {
   registerCapability({
     id: "booking",
+    sessionFieldKeys: BOOKING_SESSION_FIELD_KEYS,
+    closingLines: () => [
+      "Prefer reply for informational turns. Call ask_field only while booking is in progress.",
+      "Call reply unless ask_field or resolve_offered_slot already set the outbound text. After update_meeting_details, still call reply in the same turn.",
+      "Meeting details (פרטי הפגישה): concrete customer wording → update_meeting_details then reply; wrong/incomplete with no replacement → reply only and ask. Always write TO the customer, never staff/CRM notes.",
+    ],
     promptSection: ({ ctx, fields }) => {
       const required = effectiveBookingRequired(ctx);
       const recent = ctx.recentMeeting;
       const lang = replyLang(ctx, lastLeadText(ctx));
       const staffNote = lastStaffNoteQuestion(ctx, lang);
+      const offered = getStaffSlotOffer(fields);
+
+      if (offered) {
+        return [
+          `A teammate offered an alternative visit slot and is waiting on the customer: "${offered.slot}" (previous was "${offered.previousSlot || "n/a"}").`,
+          "Call resolve_offered_slot with your decision:",
+          '- decision="accept" ONLY if they clearly agree to THAT exact offered slot with no other day or time named.',
+          '- decision="decline" if they reject it or name any other slot (pass proposed_slot).',
+          '- decision="unclear" if you cannot tell.',
+          "Never treat a fresh booking request as accept of the staff offer.",
+          "Do NOT call ask_field, book_meeting, or confirm_details while this offer is pending.",
+        ];
+      }
+
+      const active = isBookingCollectActive(fields, required);
+      if (active) {
+        const gaps = bookingFieldGaps(fields, required);
+        const confirm = bookingConfirmStatus(fields);
+        const storedName = String(fields.name ?? "").trim();
+        const lines = [
+          `Visit booking is in progress. Gaps: ${gaps.join(", ") || "none"}. booking_confirm=${confirm || "(none)"}.`,
+          "When they answer a booking question, call save_fields with their wording first, then ask_field for the next gap only.",
+          "time_preference: weekday + clock is enough — save as-is.",
+          "Before book_meeting: confirm_details, then save_fields booking_confirm=confirmed after they agree, then book_meeting.",
+          "CRITICAL: Never tell the customer you recorded/submitted a visit request unless you called book_meeting and it returned ok. A plain reply claiming that is a bug.",
+          "After a teammate declines a visit, collect a new time_preference and call book_meeting again — do not invent a confirmation.",
+          "Do not transition to on_complete/done while booking is in progress.",
+          "Never say the visit is confirmed — book_meeting only stores a tentative request for a human.",
+        ];
+        if (
+          required.includes("name") &&
+          storedName &&
+          looksLikeIncompleteCustomerName(storedName) &&
+          !isCustomerNameSatisfied(fields)
+        ) {
+          lines.push(
+            `Stored name "${storedName}" looks like a nickname or partial name. Ask for their full name via ask_field name. Do not re-ask after they already gave a name in this chat (save_fields marks it collected).`,
+          );
+        }
+        return lines;
+      }
+
       if (recent && (recent.status === "approved" || recent.status === "pending")) {
         const lines = [
           `Recent meeting on this lead (id=${recent.id}): status=${recent.status}, slot="${recent.slotText}", need="${recent.needText || "(empty)"}", name="${recent.contactName || ""}".`,
           "This is a CONTINUATION of that meeting thread — not a new sales conversation.",
+          "A meeting already exists for this lead. Prefer update_meeting_details for clarifications; do not treat short product answers as a new sales lead.",
           "If they give concrete meeting details (פרטי הפגישה), call update_meeting_details with their wording, then reply in the SAME turn.",
           "If they say details are wrong but give no replacement, do NOT call update_meeting_details — only reply and ask what to write. Never invent a staff/CRM note.",
           "Do NOT send a business intro, do NOT restart a product pitch, do NOT call start_booking unless they explicitly ask for a new/different meeting.",
         ];
         if (staffNote) {
-          lines.push(`Latest staff note / question still in thread: "${staffNote}". Treat the customer's reply as answering it when relevant.`);
+          lines.push(
+            `Latest staff note / question still in thread: "${staffNote}". Treat the customer's reply as answering it when relevant.`,
+          );
         }
-        if (!isBookingCollectActive(fields, required)) {
-          return lines;
-        }
-        return [...lines, `Booking collect still active. Required: ${required.join(", ") || "none"}.`];
+        return lines;
       }
-      if (!isBookingCollectActive(fields, required)) {
-        return [
-          "Booking capability available but idle.",
-          "Do NOT ask for day/time yet. Answer with reply. Call start_booking only after an explicit schedule request.",
-          "If a recent meeting exists and they only add or correct details, use update_meeting_details + reply (same turn) instead of pitching.",
-        ];
-      }
-      const gaps = bookingFieldGaps(fields, required);
+
       return [
-        `Booking in progress. Required fields: ${required.join(", ")}.`,
-        `Current gaps: ${gaps.join(", ") || "none"}.`,
-        "Never say the visit is confirmed — book_meeting only stores a tentative request for a human.",
+        "Visit booking is NOT started. Use reply to answer product/sales questions from knowledge.",
+        'Examples that must NOT trigger booking: "I want a WhatsApp agent", "how much is it", "tell me more", "I need something for Instagram".',
+        "Only call start_booking if they explicitly ask to schedule a meeting/visit/demo/call, or clearly accept an offer to book.",
+        "If a recent meeting exists and they only add or correct details, use update_meeting_details + reply (same turn) instead of pitching.",
       ];
     },
     tools: ({ ctx, stage, collected }) => {

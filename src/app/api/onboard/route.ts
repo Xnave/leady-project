@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { buildAgentSystemPrompt, flowForCatalog, hitlForCatalog, isCatalogId, type CatalogId } from "@/lib/flow/catalog";
+import {
+  catalogIdFromCapabilities,
+  flowForCapabilities,
+  hitlForCatalog,
+  isBookingStance,
+  isCapabilityId,
+  type BookingStance,
+  type CapabilityId,
+} from "@/lib/flow/catalog";
 import { sanitizeBookingCollect } from "@/lib/flow/booking-collect";
 import { isChatLanguage, type ChatLanguage } from "@/lib/flow/locale";
 import { defaultLeadSchema, validateFlow } from "@/lib/flow/validate";
 import { FlowConfigError } from "@/lib/flow/types";
+import { buildAgentSystemPrompt } from "@/lib/flow/catalog";
 import { requireTenantId } from "@/lib/tenant";
 
 export async function POST(req: Request) {
@@ -15,6 +24,8 @@ export async function POST(req: Request) {
     intro?: string;
     knowledgeText?: string;
     catalogId?: string;
+    capabilities?: unknown;
+    bookingStance?: string;
     chatLanguage?: string;
     idleResetDays?: number;
     bookingCollect?: unknown;
@@ -29,12 +40,24 @@ export async function POST(req: Request) {
   const phone = String(body.phone ?? "").trim();
   const intro = String(body.intro ?? "").trim();
   const knowledgeText = String(body.knowledgeText ?? "");
-  const catalogId: CatalogId = isCatalogId(String(body.catalogId ?? "inbox"))
-    ? (body.catalogId as CatalogId)
-    : "inbox";
   const chatLanguage: ChatLanguage = isChatLanguage(String(body.chatLanguage ?? "multi"))
     ? (body.chatLanguage as ChatLanguage)
     : "multi";
+
+  const capabilities: CapabilityId[] = Array.isArray(body.capabilities)
+    ? body.capabilities.filter((c): c is CapabilityId => typeof c === "string" && isCapabilityId(c))
+    : body.catalogId === "faq"
+      ? []
+      : ["booking"];
+
+  const bookingStance: BookingStance =
+    body.bookingStance && isBookingStance(body.bookingStance)
+      ? body.bookingStance
+      : body.catalogId === "book"
+        ? "proactive"
+        : "passive";
+
+  const catalogId = catalogIdFromCapabilities(capabilities);
 
   if (!name) {
     return NextResponse.json({ error: "Business name is required" }, { status: 400 });
@@ -47,7 +70,11 @@ export async function POST(req: Request) {
     ? Math.max(0, Math.min(365, Math.floor(idleRaw)))
     : 5;
 
-  const flow = flowForCatalog(catalogId, sanitizeBookingCollect(body.bookingCollect));
+  const flow = flowForCapabilities({
+    capabilities,
+    bookingStance,
+    requiredForBook: sanitizeBookingCollect(body.bookingCollect),
+  });
   const hitlPolicy = hitlForCatalog(catalogId);
   try {
     validateFlow(flow, defaultLeadSchema, hitlPolicy);
@@ -77,6 +104,8 @@ export async function POST(req: Request) {
       },
     });
 
+    const payload = { catalogId, capabilities, bookingStance, flow };
+
     if (!agent) {
       agent = await tx.agent.create({
         data: {
@@ -100,7 +129,7 @@ export async function POST(req: Request) {
         agentId: agent.id,
         kind: "flow",
         version: nextVersion,
-        payload: { catalogId, flow },
+        payload,
       },
     });
     await tx.agent.update({

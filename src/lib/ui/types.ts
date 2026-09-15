@@ -4,7 +4,11 @@ export type UiTheme = "system" | "light" | "dark";
 
 export type LeadStatusId = "new" | "open" | "in_progress" | "won" | "lost";
 
-export type CatalogUiId = "inbox" | "book" | "faq";
+export type CatalogUiId = "inbox" | "faq";
+
+export type CapabilityUiId = "booking" | "orders" | "docs";
+
+export type BookingStanceUiId = "passive" | "proactive";
 
 export type UiCopy = {
   product: string;
@@ -233,6 +237,9 @@ export type UiCopy = {
     idleHint: string;
     doneHint: string;
     catalogLegend: string;
+    capabilitiesLegend: string;
+    capabilitiesHint: string;
+    bookingStanceLegend: string;
     collectLegend: string;
     collectHint: string;
     timeAlwaysCollected: string;
@@ -240,6 +247,8 @@ export type UiCopy = {
     insertToken: string;
   };
   catalog: Record<CatalogUiId, { title: string; blurb: string }>;
+  capabilities: Record<CapabilityUiId, { title: string; blurb: string }>;
+  bookingStance: Record<BookingStanceUiId, { title: string; blurb: string }>;
   chatLanguage: Record<"multi" | "en" | "he", { title: string; blurb: string }>;
   bookingCollect: Record<string, { title: string; blurb: string }>;
   inbox: {

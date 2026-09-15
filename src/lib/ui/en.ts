@@ -185,7 +185,10 @@ export const en: UiCopy = {
     idleHint:
       "The first customer message always gets this intro (no AI). After a long quiet period the agent may ask whether to start a fresh conversation — it will not rotate automatically. 0 = never treat silence as a cue.",
     doneHint: "The first message is always your intro. The next message is when the agent starts talking.",
-    catalogLegend: "Conversation style",
+    catalogLegend: "Agent mode",
+    capabilitiesLegend: "Capabilities",
+    capabilitiesHint: "Turn on what this agent can do. With nothing enabled it only answers from knowledge.",
+    bookingStanceLegend: "Booking style",
     collectLegend: "What to collect for a visit",
     collectHint:
       "The agent asks only the checked items. Name and preferred time are always collected. WhatsApp already has their number - leave Phone unchecked unless you also want a typed number.",
@@ -195,16 +198,36 @@ export const en: UiCopy = {
   },
   catalog: {
     inbox: {
-      title: "Inbox (recommended)",
-      blurb: "Answer questions first; invite a visit only when they ask or need a human.",
-    },
-    book: {
-      title: "Booking",
-      blurb: "Biased toward setting a meeting after a short qualify.",
+      title: "Assist",
+      blurb: "Answer questions; capabilities below control booking and more.",
     },
     faq: {
       title: "FAQ only",
-      blurb: "Answer from your intro and files. No booking.",
+      blurb: "Answer from your intro and files. No transactional capabilities.",
+    },
+  },
+  capabilities: {
+    booking: {
+      title: "Booking",
+      blurb: "Collect visit details and send tentative meeting requests for approval.",
+    },
+    orders: {
+      title: "Orders",
+      blurb: "Coming soon — order intake for commerce flows.",
+    },
+    docs: {
+      title: "Documents",
+      blurb: "Coming soon — ask customers for documents and hand off for review.",
+    },
+  },
+  bookingStance: {
+    passive: {
+      title: "When they ask",
+      blurb: "Answer first; start booking only after an explicit schedule request.",
+    },
+    proactive: {
+      title: "Nudge toward a visit",
+      blurb: "After helping, gently invite them to schedule when it fits.",
     },
   },
   chatLanguage: {

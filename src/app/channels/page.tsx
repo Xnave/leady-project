@@ -5,7 +5,7 @@ import { getUiLang } from "@/lib/cookies";
 import { zernioConfigured } from "@/lib/zernio";
 import { requireTenantId } from "@/lib/tenant";
 import { uiCopy } from "@/lib/ui";
-import { isCatalogId } from "@/lib/flow/catalog";
+import { normalizeCatalogId } from "@/lib/flow/catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -106,9 +106,7 @@ export default async function ChannelsPage({
                 </td>
                 <td className="muted">
                   {row.live?.agent
-                    ? (isCatalogId(row.live.agent.catalogId ?? "")
-                        ? ui.catalog[row.live.agent.catalogId as "inbox" | "book" | "faq"].title
-                        : row.live.agent.name)
+                    ? ui.catalog[normalizeCatalogId(row.live.agent.catalogId)].title
                     : ui.common.empty}
                 </td>
                 <td className="table-actions">

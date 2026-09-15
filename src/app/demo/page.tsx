@@ -5,7 +5,7 @@ import { ChatThread } from "@/components/ChatThread";
 import { LeadFieldsForm } from "@/components/LeadFieldsForm";
 import { LeadProfilePanel } from "@/components/LeadProfilePanel";
 import { prisma } from "@/lib/db";
-import { isCatalogId } from "@/lib/flow/catalog";
+import { normalizeCatalogId } from "@/lib/flow/catalog";
 import { isChatLanguage } from "@/lib/flow/locale";
 import type { LeadFields, LeadSchema } from "@/lib/flow/types";
 import { getUiLang } from "@/lib/cookies";
@@ -96,7 +96,7 @@ export default async function DemoPage({
     (fields.phone ? String(fields.phone) : "") ||
     (lead?.channel.provider === "whatsapp" ? lead.externalUserId : "");
   const waUrl = lead?.channel.provider === "whatsapp" ? whatsappChatUrl(phone) : "";
-  const catalogId = agent?.catalogId && isCatalogId(agent.catalogId) ? agent.catalogId : "inbox";
+  const catalogId = normalizeCatalogId(agent?.catalogId);
   const catalogTitle = ui.catalog[catalogId]?.title ?? catalogId;
   const languageId =
     tenant?.chatLanguage && isChatLanguage(tenant.chatLanguage) ? tenant.chatLanguage : "multi";

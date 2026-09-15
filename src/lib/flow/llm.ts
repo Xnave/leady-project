@@ -19,7 +19,6 @@ import type {
   TurnContext,
 } from "./types";
 import type { TalkCollected } from "./capabilities/booking";
-import { getStaffSlotOffer } from "@/lib/meetings";
 
 function lastLeadText(ctx: TurnContext): string {
   const last = [...ctx.messages].reverse().find((m) => m.role === "lead");
@@ -220,7 +219,6 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
   }
 
   const fieldsForTurn = { ...ctx.lead.fields };
-  const offered = getStaffSlotOffer(fieldsForTurn);
   const collected: TalkCollected = {
     reply: "",
     fields: {},
@@ -232,7 +230,7 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
   const baseTools = {
     reply: tool({
       description:
-        "WhatsApp message to the customer. Call once unless ask_field or resolve_offered_slot already set the outbound text. After update_meeting_details you must still call reply in the same turn.",
+        "WhatsApp message to the customer. Call once unless another tool already set the outbound text.",
       inputSchema: z.object({ text: z.string() }),
       execute: async ({ text }: { text: string }) => {
         if (!collected.replyLocked) {
@@ -315,20 +313,10 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
   };
 
   const capabilityTools: Record<string, unknown> = {};
-  if (offered) {
-    const booking = getCapability("booking");
-    if (booking?.tools) {
-      Object.assign(
-        capabilityTools,
-        booking.tools({ ctx, stage, collected }),
-      );
-    }
-  } else {
-    for (const id of resolveTalkCapabilities(stage)) {
-      const cap = getCapability(id);
-      if (cap?.tools) {
-        Object.assign(capabilityTools, cap.tools({ ctx, stage, collected }));
-      }
+  for (const id of resolveTalkCapabilities(stage)) {
+    const cap = getCapability(id);
+    if (cap?.tools) {
+      Object.assign(capabilityTools, cap.tools({ ctx, stage, collected }));
     }
   }
 

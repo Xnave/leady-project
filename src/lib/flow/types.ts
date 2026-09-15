@@ -70,8 +70,10 @@ export type TalkStage = StageBase & {
   prompt: string;
   allowBook?: boolean;
   required_for_book?: string[];
-  /** Capability packs enabled on this stage (default: ["booking"] if allowBook). */
+  /** Capability packs enabled on this stage (explicit; empty = Q&A only). */
   capabilities?: string[];
+  /** When booking is enabled: passive (ask first) vs proactive (nudge toward visit). */
+  bookingStance?: "passive" | "proactive";
   on_complete: string;
   on_escalate: string;
 };

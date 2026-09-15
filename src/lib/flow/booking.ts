@@ -1,4 +1,5 @@
 import { copyFor } from "@/lib/copy";
+import { isCapabilitySessionKey } from "./registry";
 import { formatPhoneDisplay, isCustomerNameSatisfied } from "@/lib/leads";
 import { missingRequired } from "./helpers";
 import type { LeadFields } from "./types";
@@ -119,6 +120,12 @@ export function isBookingSessionKey(key: string): key is BookingSessionFieldKey 
   return (BOOKING_SESSION_FIELD_KEYS as readonly string[]).includes(key);
 }
 
+/** Prefer capability-registered session keys; fall back to booking keys before registry boot. */
+export function isSessionFieldKey(key: string): boolean {
+  if (isCapabilitySessionKey(key)) return true;
+  return isBookingSessionKey(key);
+}
+
 /** Split a merged working bag into durable CRM vs per-conversation session. */
 export function splitCrmAndSession(fields: LeadFields): {
   crm: LeadFields;
@@ -127,7 +134,7 @@ export function splitCrmAndSession(fields: LeadFields): {
   const crm: LeadFields = {};
   const session: LeadFields = {};
   for (const [key, value] of Object.entries(fields)) {
-    if (isBookingSessionKey(key)) session[key] = value;
+    if (isSessionFieldKey(key)) session[key] = value;
     else crm[key] = value;
   }
   return { crm, session };
