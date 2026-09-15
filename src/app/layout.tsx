@@ -13,6 +13,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     <ClerkProvider
       publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
       localization={lang === "he" ? heIL : enUS}
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
       afterSignOutUrl="/sign-in"
       signInFallbackRedirectUrl="/"
       signUpFallbackRedirectUrl="/"

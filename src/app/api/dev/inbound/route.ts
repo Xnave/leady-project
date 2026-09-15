@@ -1,12 +1,13 @@
 import { persistInboundIfNew } from "@/lib/conversations";
 import { enqueueAgentTurn, runTurnNow } from "@/lib/flow/run-turn";
+import { adminBypass } from "@/lib/admin";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
 import { NextResponse } from "next/server";
 import { redirectPath } from "@/lib/request-url";
 
 export async function POST(req: Request) {
-  if (process.env.DEV_AUTH_BYPASS !== "true") {
+  if (!adminBypass()) {
     return new NextResponse("dev only", { status: 403 });
   }
   const tenantId = await requireTenantId();

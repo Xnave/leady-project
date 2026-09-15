@@ -6,3 +6,9 @@ allowBuilds:
   prisma: true
   protobufjs: true
   unrs-resolver: true
+minimumReleaseAgeExclude:
+  - '@clerk/backend@3.18.0'
+  - '@clerk/localizations@4.17.0'
+  - '@clerk/nextjs@7.9.3'
+  - '@clerk/react@6.16.0'
+  - '@clerk/shared@4.32.0'

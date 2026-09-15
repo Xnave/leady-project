@@ -12,7 +12,6 @@ export function AccountMenu({
   return (
     <div className="sidebar-account">
       <UserButton
-        afterSignOutUrl="/sign-in"
         appearance={{
           elements: {
             avatarBox: "sidebar-account-avatar",

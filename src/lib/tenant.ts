@@ -17,7 +17,7 @@ export async function requireTenantId(): Promise<string> {
     return tenant.id;
   }
 
-  if (adminBypass() || process.env.DEV_AUTH_BYPASS === "true") {
+  if (adminBypass()) {
     const id = process.env.DEV_TENANT_ID;
     if (!id) {
       const first = await prisma.tenant.findFirst();

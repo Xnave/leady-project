@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { adminBypass } from "@/lib/admin";
 import { prisma } from "@/lib/db";
 import { syncHookMyAppChannels } from "@/lib/hookmyapp-sync";
 
@@ -9,7 +10,7 @@ export async function POST(req: Request) {
     req.headers.get("X-HookMyApp-Webhook-Secret") ??
     req.headers.get("X-Webhook-Secret") ??
     "";
-  const bypass = process.env.DEV_AUTH_BYPASS === "true";
+  const bypass = adminBypass();
   if (!secret) {
     if (!bypass) return new Response("unauthorized", { status: 401 });
   } else if (provided !== secret) {

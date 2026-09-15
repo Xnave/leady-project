@@ -1,5 +1,6 @@
 import { extractChannelIds, extractInboundMessages } from "@/lib/channels/meta";
 import { persistInboundIfNew } from "@/lib/conversations";
+import { adminBypass } from "@/lib/admin";
 import { decryptSecret, verifyHookMyAppHmac } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { enqueueAgentTurn } from "@/lib/flow/run-turn";
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
 
   if (!channel) return new Response("unknown channel", { status: 404 });
 
-  if (process.env.DEV_AUTH_BYPASS === "true" && !req.headers.get("X-HookMyApp-Signature-256")) {
+  if (adminBypass() && !req.headers.get("X-HookMyApp-Signature-256")) {
     // local simulate / unsigned payloads
   } else {
     const hmacSecret = decryptSecret(channel.hmacSecretEnc);
