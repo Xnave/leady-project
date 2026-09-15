@@ -41,6 +41,7 @@ function meetingMessageVars(opts: {
   email: string;
   need: string;
   kind: string;
+  business: string;
   note?: string;
 }) {
   const normalized = normalizeSlot(opts.slotRaw, { lang: opts.lang });
@@ -56,6 +57,7 @@ function meetingMessageVars(opts: {
       email: opts.email,
       need: opts.need,
       kind: opts.kind,
+      business: opts.business,
     }),
     note: opts.note?.trim() ?? "",
   };
@@ -94,6 +96,7 @@ export async function requestTentativeMeeting(
     email,
     need,
     kind,
+    business: ctx.tenant?.name?.trim() || copyFor(lang).chat.fallbackTeamName,
   });
   const requestText = () =>
     renderBookingMessage(
@@ -259,6 +262,7 @@ export async function markMeetingDecision(opts: {
     email: meeting.contactEmail || "",
     need: meeting.needText || "",
     kind: meeting.kind,
+    business: meeting.tenant.name?.trim() || chat.fallbackTeamName,
     note: opts.note,
   });
 
@@ -282,6 +286,7 @@ export async function markMeetingDecision(opts: {
           email: meeting.contactEmail || "",
           need: meeting.needText || "",
           kind: meeting.kind,
+          business: meeting.tenant.name?.trim() || chat.fallbackTeamName,
         }),
         alt_slot: altSlot,
       }

@@ -56,6 +56,7 @@ export function bookingVars(
     need,
     kind,
     details,
+    business: input.business?.trim() || "",
     alt_slot: input.alt_slot ?? "",
   };
 }

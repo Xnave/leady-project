@@ -90,6 +90,8 @@ export const defaultLeadSchema: LeadSchema = {
   fields: {
     intent: { type: "enum", enum: ["sales", "support", "other"] },
     name: { type: "string" },
+    /** Set when the agent collected/confirmed the name in chat (allows single-token names). */
+    name_collected_by_agent: { type: "string" },
     email: { type: "email" },
     phone: { type: "string" },
     service: { type: "string" },
@@ -99,6 +101,7 @@ export const defaultLeadSchema: LeadSchema = {
     need: { type: "string" },
     booking: { type: "string" },
     booking_confirm: { type: "string" },
+    booking_flow: { type: "string" },
   },
 };
 

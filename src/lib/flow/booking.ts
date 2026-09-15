@@ -112,6 +112,8 @@ export const BOOKING_SESSION_FIELD_KEYS = [
   "staff_slot_offer",
   "need",
   "visit_kind",
+  /** Keeps single-token names from re-entering gaps after the agent collected them. */
+  "name_collected_by_agent",
 ] as const;
 
 export type BookingSessionFieldKey = (typeof BOOKING_SESSION_FIELD_KEYS)[number];

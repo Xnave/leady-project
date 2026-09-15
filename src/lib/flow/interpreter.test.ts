@@ -511,4 +511,54 @@ describe("enforceBookingEffects", () => {
     expect(out.fields?.booking_confirm).toBe("confirmed");
     expect(out.effects?.some((e) => e.type === "book_meeting")).toBe(true);
   });
+
+  it("verifies single-token name on כן so book_meeting still runs", async () => {
+    const { enforceBookingEffects } = await import("./interpreter");
+    const stage = {
+      type: "talk" as const,
+      prompt: "",
+      allowBook: true,
+      required_for_book: ["time_preference", "name", "need"],
+      on_complete: "done",
+      on_escalate: "escalate",
+    };
+    const state = ctx({
+      conversation: {
+        id: "c1",
+        status: "open",
+        flowState: "talk",
+        flowVersion: 1,
+        nudgeCountByStage: {},
+      },
+      agent: {
+        id: "a1",
+        tenantId: "t1",
+        systemPrompt: "",
+        knowledgeText: "",
+        flow: defaultFlow(),
+        flowVersion: 1,
+        leadSchema: defaultLeadSchema,
+        hitlPolicy: defaultHitlPolicy,
+      },
+      lead: {
+        id: "l1",
+        externalUserId: "+972501234567",
+        fields: {
+          booking_flow: "active",
+          booking_confirm: "pending",
+          time_preference: "מחר ב10:00",
+          name: "נווה",
+          need: "demo",
+          phone: "+972501234567",
+        },
+      },
+      messages: [{ role: "lead", text: "כן" }],
+    });
+    const out = enforceBookingEffects(state, stage, {
+      reply: "תודה! שמרתי את הבקשה. נציג מנווה AI יחזור אליך.",
+    });
+    expect(out.fields?.name_collected_by_agent).toBe("1");
+    expect(out.fields?.booking_confirm).toBe("confirmed");
+    expect(out.effects?.some((e) => e.type === "book_meeting")).toBe(true);
+  });
 });

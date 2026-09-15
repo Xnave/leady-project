@@ -10,6 +10,8 @@ export type BookingVars = {
   need: string;
   kind: string;
   details: string;
+  /** Tenant / business display name for customer-facing booking acks. */
+  business: string;
 };
 
 export type ChatCopy = {
@@ -35,6 +37,8 @@ export type ChatCopy = {
   askNeed: string;
   askVisitKind: string;
   askTime: (hours: string) => string;
+  /** When a proposed time is outside venue hours. */
+  askTimeOutsideHours: (hours: string) => string;
   askFieldFallback: (field: string) => string;
   availability: (hours: string) => string;
   hoursLine: (hours: string) => string;

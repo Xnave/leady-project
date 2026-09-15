@@ -12,6 +12,7 @@ import {
 import {
   callbackPhone,
   effectiveBookingRequired,
+  looksLikeEmail,
   looksLikePhoneNumber,
   savedPhone,
 } from "../booking-collect";
@@ -19,6 +20,7 @@ import { registerCapability } from "../registry";
 import type { LeadFields, TalkOutcome, TalkStage, TurnContext } from "../types";
 import { getStaffSlotOffer, markMeetingDecision, updateMeetingDetails } from "@/lib/meetings";
 import { proposesDifferentSlot } from "../slot";
+import { isSlotWithinVenueHours } from "../venue-hours";
 import {
   formatPhoneDisplay,
   isCustomerNameSatisfied,
@@ -29,6 +31,8 @@ import {
 export type TalkCollected = TalkOutcome & {
   askFieldUsed?: boolean;
   replyLocked?: boolean;
+  /** Set when time_preference was rejected this turn — do not overwrite with another ask. */
+  timeRejected?: boolean;
 };
 
 function lastLeadText(ctx: TurnContext): string {
@@ -136,12 +140,16 @@ export function registerBookingCapability(): void {
         const lines = [
           `Visit booking is in progress. Gaps: ${gaps.join(", ") || "none"}. booking_confirm=${confirm || "(none)"}.`,
           "When they answer a booking question, call save_fields with their wording first, then ask_field for the next gap only.",
-          "time_preference: weekday + clock is enough — save as-is.",
-          "Before book_meeting: confirm_details, then save_fields booking_confirm=confirmed after they agree, then book_meeting.",
+          "time_preference: weekday + clock is enough — save when inside bookable hours (latest start is 30 minutes before closing, e.g. by 18:30 when hours end at 19). Bare morning clock without ערב/בוקר may be rejected as AM — ask them to clarify evening if needed.",
+          "CRITICAL: After save_fields accepts a time_preference, do NOT re-confirm the slot — immediately ask_field for the next gap only.",
+          "If outside bookable hours (including at/after closing), do not save and do not ask other fields until time is valid.",
+          "Before book_meeting: confirm_details (only when Gaps is none), then save_fields booking_confirm=confirmed after they agree, then book_meeting.",
+          "confirm_details text: use label פרטי הפגישה / Visit details for the need field — never צורך or Need.",
           "CRITICAL: Never tell the customer you recorded/submitted a visit request unless you called book_meeting and it returned ok. A plain reply claiming that is a bug.",
           "After a teammate declines a visit, collect a new time_preference and call book_meeting again — do not invent a confirmation.",
           "Do not transition to on_complete/done while booking is in progress.",
           "Never say the visit is confirmed — book_meeting only stores a tentative request for a human.",
+          "When acknowledging a saved request, name the business from context only — never invent a company name from the customer's name.",
         ];
         if (
           required.includes("name") &&
@@ -299,7 +307,7 @@ export function registerBookingCapability(): void {
 
       const fieldShape = Object.fromEntries(
         Object.keys(ctx.agent.leadSchema.fields)
-          .filter((k) => k !== "intent")
+          .filter((k) => k !== "intent" && k !== "name_collected_by_agent")
           .map((k) => [k, z.string().optional()]),
       );
       fieldShape.booking_confirm = z.string().optional();
@@ -309,7 +317,7 @@ export function registerBookingCapability(): void {
         update_meeting_details: updateMeetingDetailsTool(ctx, collected),
         save_fields: tool({
           description:
-            "Save details they already gave in chat, in their original wording. Do not invent. Do not translate names. Do not copy the WhatsApp/profile display name into name. For phone, only save after they gave or confirmed a number. Pass empty string to clear a field.",
+            "Save details they already gave in chat, in their original wording. Do not invent. Do not translate names. Do not copy the WhatsApp/profile display name into name. For phone, only save after they gave or confirmed a number. Pass empty string to clear a field. time_preference must be inside opening hours when a clock time is clear.",
           inputSchema: z.object(fieldShape),
           execute: async (raw: Record<string, unknown>) => {
             const fields: LeadFields = {};
@@ -326,18 +334,62 @@ export function registerBookingCapability(): void {
               ) {
                 return `invalid phone: ${value}`;
               }
+              if (key === "time_preference" && hours) {
+                const within = isSlotWithinVenueHours(value, hours, { lang });
+                if (within === false) {
+                  collected.askFieldUsed = true;
+                  collected.replyLocked = true;
+                  collected.timeRejected = true;
+                  collected.reply = copyFor(lang).chat.askTimeOutsideHours(hours);
+                  return JSON.stringify({
+                    ok: false,
+                    error: "outside_hours",
+                    hint: "Ask only for another day/time inside opening hours. Do not ask for name/need/phone until time_preference is saved.",
+                  });
+                }
+              }
+              if (key === "email" && value.trim() && !looksLikeEmail(value)) {
+                collected.askFieldUsed = true;
+                collected.replyLocked = true;
+                collected.timeRejected = false;
+                collected.reply = copyFor(lang).chat.askEmail;
+                return JSON.stringify({
+                  ok: false,
+                  error: "invalid_email",
+                  hint: "Ask again for a complete email only. Do not ask name or other fields until email is valid.",
+                });
+              }
               fields[key] = value.trim();
               if (key === "name" && value.trim()) {
                 fields.name_collected_by_agent = "1";
               }
             }
             collected.fields = { ...collected.fields, ...fields };
+            // Accepted in-hours time → next gap immediately (no LLM "closing hour" confirm).
+            if (
+              typeof fields.time_preference === "string" &&
+              fields.time_preference.trim() &&
+              !collected.replyLocked
+            ) {
+              const merged = { ...fieldsForTurn, ...collected.fields };
+              const gaps = bookingFieldGaps(merged, required);
+              if (gaps.length > 0) {
+                const next = gaps[0];
+                collected.askFieldUsed = true;
+                collected.replyLocked = true;
+                collected.reply = askBookingField(lang, next, {
+                  hours,
+                  deducedPhone: next === "phone" ? callbackPhone(ctx) : undefined,
+                });
+                return JSON.stringify({ ok: true, next_field: next });
+              }
+            }
             return "ok";
           },
         }),
         ask_field: tool({
           description:
-            "Ask for one missing booking field while visit booking is already in progress. Only fields in the required booking list. Sets outbound text to that ask. For name: ask for a full name when the stored value looks like a nickname or partial name, unless name_collected_by_agent is already set.",
+            "Ask for the next missing booking field (always the first gap). Only fields in the required booking list. Sets outbound text to that ask. Do not call after a failed time_preference save in the same turn.",
           inputSchema: z.object({
             field: z.enum([
               "time_preference",
@@ -352,21 +404,54 @@ export function registerBookingCapability(): void {
             if (!required.includes(field)) {
               return `skip: ${field} is not required for booking`;
             }
+            if (collected.timeRejected || (collected.replyLocked && collected.askFieldUsed)) {
+              return JSON.stringify({
+                ok: false,
+                skip: true,
+                hint: "Outbound ask already set this turn — do not ask another field.",
+              });
+            }
+            const merged = { ...fieldsForTurn, ...collected.fields };
+            const gaps = bookingFieldGaps(merged, required);
+            if (gaps.length === 0) {
+              return JSON.stringify({ ok: false, skip: true, hint: "No booking gaps left." });
+            }
+            // Always ask the first gap so the model cannot skip time_preference.
+            const next = gaps[0];
             collected.askFieldUsed = true;
             collected.replyLocked = true;
-            collected.reply = askBookingField(lang, field, {
+            collected.reply = askBookingField(lang, next, {
               hours,
-              deducedPhone: field === "phone" ? callbackPhone(ctx) : undefined,
+              deducedPhone: next === "phone" ? callbackPhone(ctx) : undefined,
             });
-            return collected.reply;
+            return JSON.stringify({
+              ok: true,
+              asked: next,
+              ...(next !== field ? { redirected_from: field } : {}),
+            });
           },
         }),
         confirm_details: tool({
           description:
-            "Present the visit details for the customer to confirm before book_meeting. Then save_fields booking_confirm=pending until they agree. Always write the phone using the display form from the system (local 0XX-XXX-XXXX), never +972.",
+            "Present the visit details for the customer to confirm before book_meeting. Only call when booking gaps are none. Label the need field as פרטי הפגישה (he) or Visit details (en) — never צורך or Need. Then save_fields booking_confirm=pending until they agree. Always write the phone using the display form from the system (local 0XX-XXX-XXXX), never +972.",
           inputSchema: z.object({ text: z.string() }),
           execute: async ({ text }: { text: string }) => {
             const merged = { ...fieldsForTurn, ...collected.fields };
+            const gaps = bookingFieldGaps(merged, required);
+            if (gaps.length > 0) {
+              const next = gaps[0];
+              collected.askFieldUsed = true;
+              collected.replyLocked = true;
+              collected.reply = askBookingField(lang, next, {
+                hours,
+                deducedPhone: next === "phone" ? callbackPhone(ctx) : undefined,
+              });
+              return JSON.stringify({
+                ok: false,
+                missing: gaps,
+                hint: `Ask for ${next} before confirm_details.`,
+              });
+            }
             const phoneRaw = savedPhone(merged) || callbackPhone(ctx) || "";
             const displayPhone = formatPhoneDisplay(phoneRaw) || phoneRaw;
             collected.reply = rewritePhonesInText(text.trim(), [
@@ -375,9 +460,11 @@ export function registerBookingCapability(): void {
               callbackPhone(ctx),
             ]);
             collected.replyLocked = true;
+            const name = String(merged.name ?? "").trim();
             collected.fields = {
               ...collected.fields,
               booking_confirm: "pending",
+              ...(name ? { name_collected_by_agent: "1" } : {}),
             };
             return "ok";
           },

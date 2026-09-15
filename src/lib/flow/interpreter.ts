@@ -3,6 +3,7 @@ import { ensureFlowRegistry } from "./capabilities";
 import { getAction, getTalkEffect, resolveTalkCapabilities, sessionFieldKeysForStage } from "./registry";
 import { talkTransitionTargets } from "./prompt-builder";
 import {
+  askBookingField,
   bookingConfirmStatus,
   bookingFieldGaps,
   isBookingCollectActive,
@@ -91,7 +92,22 @@ export function enforceBookingEffects(
   let confirm = bookingConfirmStatus(fields);
   const nextFields = { ...(out.fields ?? {}) };
 
-  if (gaps.length === 0 && confirm === "pending" && looksLikeBookingAffirmation(lastLeadMessage(ctx))) {
+  // Customer agreed to the summary — treat the listed name as verified so a
+  // single-token name cannot block book_meeting / inbox HITL after "כן".
+  if (confirm === "pending" && looksLikeBookingAffirmation(lastLeadMessage(ctx))) {
+    if (String(fields.name ?? "").trim()) {
+      nextFields.name_collected_by_agent = "1";
+    }
+  }
+
+  const fieldsAfterName = { ...fields, ...nextFields };
+  const gapsAfter = bookingFieldGaps(fieldsAfterName, required);
+
+  if (
+    gapsAfter.length === 0 &&
+    confirm === "pending" &&
+    looksLikeBookingAffirmation(lastLeadMessage(ctx))
+  ) {
     nextFields.booking_confirm = "confirmed";
     confirm = "confirmed";
   }
@@ -99,9 +115,23 @@ export function enforceBookingEffects(
   const effects = [...(out.effects ?? [])];
   const hasBook = effects.some((e) => e.type === "book_meeting");
   let nextStage = out.nextStage;
+  let reply = out.reply;
 
-  if (gaps.length === 0 && confirm === "confirmed" && !hasBook) {
+  if (gapsAfter.length === 0 && confirm === "confirmed" && !hasBook) {
     effects.push({ type: "book_meeting" });
+  }
+
+  // Affirmed while gaps remain: never keep a free-text "I saved your request".
+  if (
+    confirm === "pending" &&
+    looksLikeBookingAffirmation(lastLeadMessage(ctx)) &&
+    gapsAfter.length > 0
+  ) {
+    const lang = replyLang(ctx, lastLeadMessage(ctx));
+    const nextGap = gapsAfter[0];
+    reply = askBookingField(lang, nextGap, {
+      hours: ctx.tenant?.venueHours?.trim() ?? "",
+    });
   }
 
   // Never mark the talk goal complete while booking is still in progress.
@@ -115,10 +145,11 @@ export function enforceBookingEffects(
 
   return {
     ...out,
+    reply,
     fields: Object.keys(nextFields).length ? { ...out.fields, ...nextFields } : out.fields,
     effects,
     nextStage,
-    book: gaps.length === 0 && confirm === "confirmed" ? true : out.book,
+    book: gapsAfter.length === 0 && confirm === "confirmed" ? true : out.book,
   };
 }
 

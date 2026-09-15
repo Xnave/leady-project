@@ -32,19 +32,23 @@ export const chat: ChatCopy = {
   askTime: (hours) =>
     hours
       ? `We're open ${hours}. What day and time works for you?`
-      : "When works for you? Day and time.",
+      : "What day and time works for you?",
   askFieldFallback: (field) => `I still need ${field.replaceAll("_", " ")} to request the visit.`,
   availability: (hours) =>
     hours
-      ? `We're open ${hours}. What day and time works?`
+      ? `We're open ${hours}. What day and time works for you?`
       : "What day and time works for you?",
   hoursLine: (hours) => `Hours: ${hours}`,
+  askTimeOutsideHours: (hours) =>
+    hours
+      ? `That time is outside our opening hours (${hours}). What other day and time works for you?`
+      : "That time is outside our opening hours. What other day and time works for you?",
   bookingRequestTemplate: [
-    "Got it - I've noted a visit request for {{date}} at {{time}}. A teammate will confirm or suggest another time.",
+    "Got it - I've noted a visit request for {{date}} at {{time}}. A teammate from {{business}} will confirm or suggest another time.",
     "Name: {{name}}",
     "Phone: {{phone}}",
     "Email: {{email}}",
-    "Details: {{details}}",
+    "Visit details: {{details}}",
     "Address: {{address}}",
   ].join("\n"),
   bookingApprovedTemplate: [
@@ -80,8 +84,8 @@ export const prompts: PromptCopy = {
     "You answer simple questions from the intro and knowledge. Do not collect booking details or offer meetings.",
   talkGuardrails: ({ allowBook, fields, hours, whatsappPhone }) => {
     const hoursLine = hours
-      ? `Opening hours (include when asking for a time): ${hours}`
-      : "If opening hours are in context, include them when asking for a day/time.";
+      ? `Opening hours (for context only): ${hours}. When asking for a day/time, phrase hours in natural language — never paste this string verbatim as the message.`
+      : "If opening hours are in context, phrase them naturally when asking for a day/time — never dump a raw hours string.";
     const phoneLine = whatsappPhone
       ? `A callback number can be deduced for this chat: ${whatsappPhone}. If phone is required and not yet saved, confirm that number (or accept a different one). When they confirm, save_fields with phone=${whatsappPhone}.`
       : "If phone is required and not saved, ask for a callback number via ask_field or reply.";
@@ -134,7 +138,7 @@ Do not invent. Omit a field if it is not clearly in the text.
       `Business intro (use on first agent reply if no agent has spoken yet): ${intro}`,
       `Knowledge:\n${knowledge || "(none)"}`,
       `Venue address (only if they asked, or visit_kind is on-site): ${address || "(none)"}`,
-      `Opening hours: ${hours || "(none)"}`,
+      `Opening hours (phrase naturally when relevant — never paste verbatim as a message): ${hours || "(none)"}`,
       `Known lead fields: ${fieldsJson}`,
       channelLine,
       "Default action: call reply with a helpful answer from knowledge/intro. Do not start booking on product interest alone.",
@@ -142,6 +146,7 @@ Do not invent. Omit a field if it is not clearly in the text.
       "Contact fields are for the visit request. They do not mean the visit is confirmed.",
       "Save names in the customer's original wording. Do not translate names.",
       "Never treat the channel profile/display name as the booking name — ask them how they are called.",
+      `Always refer to the business as "${business}" — never invent a company name from the customer's name (e.g. do not turn "Dana" into "Dana AI").`,
       "Continue the topic. Never repeat the intro or your last message.",
       "Never say the appointment is confirmed. book_meeting only records a tentative request for the owner.",
       "Always call reply with the user-facing text (unless ask_field already set it). Call set_intent every turn.",

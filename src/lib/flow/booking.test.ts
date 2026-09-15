@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   askBookingField,
+  BOOKING_SESSION_FIELD_KEYS,
   bookingFieldGaps,
   gateBookOnGaps,
   mergeLeadAndSession,
@@ -9,6 +10,7 @@ import {
 import { callbackPhone, looksLikePhoneNumber } from "./booking-collect";
 import { copyFor, fillTemplate } from "@/lib/copy";
 import { flowForCatalog } from "./catalog";
+import { mergeAllowedFields } from "./helpers";
 import { conversationIdleExpired } from "./rotate-conversation";
 import { normalizeSlot } from "./slot";
 import type { TurnContext } from "./types";
@@ -36,6 +38,23 @@ describe("booking helpers", () => {
         need: "product demo",
       }),
     ).toEqual([]);
+  });
+
+  it("keeps agent-collected single-token names out of gaps across turns", () => {
+    const afterCollect = {
+      time_preference: "מחר ב18:00",
+      name: "נוה",
+      name_collected_by_agent: "1",
+      need: "רואה חשבון",
+    };
+    expect(bookingFieldGaps(afterCollect)).toEqual([]);
+    const allowed = [
+      ...Object.keys(defaultLeadSchema.fields),
+      ...BOOKING_SESSION_FIELD_KEYS,
+    ];
+    const merged = mergeAllowedFields(allowed, {}, afterCollect);
+    expect(merged.name_collected_by_agent).toBe("1");
+    expect(bookingFieldGaps(merged)).toEqual([]);
   });
 
   it("only asks for phone when that field is required", () => {
@@ -70,9 +89,11 @@ describe("booking helpers", () => {
       email: "",
       address: "1 Main St",
       hours: "",
+      business: "Acme Co",
     });
     expect(text).toMatch(/September 10, 2026/);
     expect(text).toMatch(/Dana/);
+    expect(text).toMatch(/Acme Co/);
     expect(text).not.toMatch(/^Phone:/m);
   });
 });
@@ -120,6 +141,16 @@ describe("gateBookOnGaps", () => {
   it("builds phone confirm asks from templates", () => {
     expect(askBookingField("en", "phone", { deducedPhone: "+972501234567" })).toMatch(
       /050-123-4567/,
+    );
+  });
+
+  it("asks for time and includes opening hours", () => {
+    expect(askBookingField("he", "time_preference", { hours: "א-ה 9-19" })).toMatch(/א-ה 9-19/);
+    expect(askBookingField("he", "time_preference", { hours: "א-ה 9-19" })).toMatch(
+      /באיזה יום ושעה נוח לך/,
+    );
+    expect(askBookingField("en", "time_preference", { hours: "Sun–Thu 09:00–19:00" })).toMatch(
+      /We're open Sun–Thu 09:00–19:00/,
     );
   });
 });

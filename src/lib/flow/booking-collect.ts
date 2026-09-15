@@ -103,6 +103,11 @@ export function looksLikePhoneNumber(value: string): boolean {
   return /^\+?\d[\d\s-]{7,}\d$/.test(value.trim());
 }
 
+/** Basic email shape — rejects incomplete values like "nave@". */
+export function looksLikeEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
 export function callbackPhone(ctx: TurnContext): string | undefined {
   const stored = String(ctx.lead.fields.phone ?? "").trim();
   if (stored) return stored;
