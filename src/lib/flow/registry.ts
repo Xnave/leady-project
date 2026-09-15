@@ -11,6 +11,7 @@ export type CapabilityToolFactory = (opts: {
   collected: import("./types").TalkOutcome & {
     askFieldUsed?: boolean;
     replyLocked?: boolean;
+    timeRejected?: boolean;
   };
 }) => Record<string, unknown>;
 
