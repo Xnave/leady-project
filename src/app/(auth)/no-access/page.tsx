@@ -31,6 +31,7 @@ export default async function NoAccessPage() {
         <p>{ui.page.noAccessBlurb}</p>
         <p className="muted">{ui.page.noAccessHint}</p>
         <SwitchAccountActions
+          switchLabel={''}
           signOutLabel={ui.common.signOut}
         />
       </div>
