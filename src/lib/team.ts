@@ -187,13 +187,34 @@ export async function inviteTeamMember(actor: TeamActor, emailRaw: string, role:
   }
 
   const client = await clerkClient();
-  await client.organizations.createOrganizationInvitation({
-    organizationId: actor.clerkOrgId,
-    emailAddress: email,
-    role: role === "admin" ? CLERK_ROLE_ADMIN : "org:member",
-    redirectUrl: `${appOrigin()}/activating`,
-    inviterUserId: actor.userId.startsWith("user_") ? actor.userId : undefined,
-  });
+  // Prefer add-if-exists; invitations require a custom domain on Clerk production.
+  const existing = await client.users.getUserList({ emailAddress: [email], limit: 1 });
+  const user = existing.data[0];
+  if (user) {
+    await client.organizations.createOrganizationMembership({
+      organizationId: actor.clerkOrgId,
+      userId: user.id,
+      role: role === "admin" ? CLERK_ROLE_ADMIN : "org:member",
+    });
+    return;
+  }
+  try {
+    await client.organizations.createOrganizationInvitation({
+      organizationId: actor.clerkOrgId,
+      emailAddress: email,
+      role: role === "admin" ? CLERK_ROLE_ADMIN : "org:member",
+      redirectUrl: `${appOrigin()}/activating`,
+      inviterUserId: actor.userId.startsWith("user_") ? actor.userId : undefined,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/custom domain/i.test(msg)) {
+      throw new Error(
+        "Team invites require a custom domain on Clerk. Add a domain, or ask the member to sign up first so you can add them by email.",
+      );
+    }
+    throw e;
+  }
 }
 
 export async function updateMemberRole(

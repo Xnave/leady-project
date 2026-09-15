@@ -66,6 +66,8 @@ export async function createTenant(opts: {
   const origin = (opts.publicOrigin ?? appOrigin()).replace(/\/$/, "");
 
   let ownerClerkUserId: string | null = null;
+  /** How the owner gets access when Clerk is used. */
+  let ownerAccess: "member" | "invited" | "claim_on_signin" = "claim_on_signin";
 
   if (useClerk) {
     const client = await clerkClient();
@@ -82,6 +84,8 @@ export async function createTenant(opts: {
 
     // Prefer direct membership when the owner already has a Clerk account —
     // invite emails are easy to miss in local/dev and still leave them on /no-access.
+    // On *.vercel.app without a custom domain, Clerk rejects org invitations entirely;
+    // leave ownerClerkUserId null and claimOwnerOrganizations attaches them on first sign-in.
     try {
       const existing = await client.users.getUserList({
         emailAddress: [ownerEmail],
@@ -95,14 +99,25 @@ export async function createTenant(opts: {
           role: CLERK_ROLE_ADMIN,
         });
         ownerClerkUserId = existingOwner.id;
+        ownerAccess = "member";
       } else {
-        await client.organizations.createOrganizationInvitation({
-          organizationId: org.id,
-          emailAddress: ownerEmail,
-          role: CLERK_ROLE_ADMIN,
-          redirectUrl: `${origin}/activating`,
-          ...(opts.createdByUserId ? { inviterUserId: opts.createdByUserId } : {}),
-        });
+        try {
+          await client.organizations.createOrganizationInvitation({
+            organizationId: org.id,
+            emailAddress: ownerEmail,
+            role: CLERK_ROLE_ADMIN,
+            redirectUrl: `${origin}/activating`,
+            ...(opts.createdByUserId ? { inviterUserId: opts.createdByUserId } : {}),
+          });
+          ownerAccess = "invited";
+        } catch (inviteErr) {
+          const msg = clerkErrorMessage(inviteErr);
+          if (/custom domain/i.test(msg)) {
+            ownerAccess = "claim_on_signin";
+          } else {
+            throw inviteErr;
+          }
+        }
       }
     } catch (e) {
       try {
@@ -126,6 +141,7 @@ export async function createTenant(opts: {
     }
   } else {
     clerkOrgId = `local-${crypto.randomUUID()}`;
+    ownerAccess = "member";
   }
 
   const intro = "";
@@ -155,5 +171,5 @@ export async function createTenant(opts: {
     },
   });
   await ensureLocalDemoChannel(tenant.id);
-  return tenant;
+  return { tenant, ownerAccess };
 }

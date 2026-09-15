@@ -10,6 +10,7 @@ type Labels = {
   ownerEmail: string;
   openAsTenant: string;
   createFailed: string;
+  createdClaimOnSignIn: string;
   search: string;
   forbidden: string;
 };
@@ -31,6 +32,7 @@ export function AdminClient({
   const [ownerEmail, setOwnerEmail] = useState("");
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -46,15 +48,22 @@ export function AdminClient({
   async function create(e: FormEvent) {
     e.preventDefault();
     setError("");
+    setNotice("");
     const res = await fetch("/api/admin/tenants", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name, phone, ownerEmail }),
     });
+    const data = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      ownerAccess?: "member" | "invited" | "claim_on_signin";
+    };
     if (!res.ok) {
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
       setError(data.error ?? labels.createFailed);
       return;
+    }
+    if (data.ownerAccess === "claim_on_signin") {
+      setNotice(labels.createdClaimOnSignIn);
     }
     setName("");
     setPhone("");
@@ -89,6 +98,7 @@ export function AdminClient({
         <button type="submit">{labels.createTenant}</button>
       </form>
       {error ? <p className="muted">{error}</p> : null}
+      {notice ? <p className="muted">{notice}</p> : null}
       <label>
         {labels.search}
         <input value={query} onChange={(e) => setQuery(e.target.value)} />

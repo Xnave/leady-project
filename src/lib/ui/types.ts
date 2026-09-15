@@ -344,6 +344,7 @@ export type UiCopy = {
   };
   errors: {
     createFailed: string;
+    createdClaimOnSignIn: string;
     connectFailed: string;
     noAgent: string;
     noTenant: string;

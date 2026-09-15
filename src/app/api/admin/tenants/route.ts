@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 
   const user = await currentUser();
   try {
-    const tenant = await createTenant({
+    const { tenant, ownerAccess } = await createTenant({
       name,
       phone: body.phone,
       ownerEmail,
@@ -31,6 +31,7 @@ export async function POST(req: Request) {
       id: tenant.id,
       name: tenant.name,
       ownerEmail: tenant.ownerEmail,
+      ownerAccess,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Could not create";

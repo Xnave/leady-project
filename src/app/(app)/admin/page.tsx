@@ -29,6 +29,7 @@ export default async function AdminPage() {
           ownerEmail: ui.common.ownerEmail,
           openAsTenant: ui.common.openAsTenant,
           createFailed: ui.errors.createFailed,
+          createdClaimOnSignIn: ui.errors.createdClaimOnSignIn,
           search: ui.common.search,
           forbidden: ui.errors.forbidden,
         }}

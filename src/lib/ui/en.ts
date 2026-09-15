@@ -440,6 +440,8 @@ export const en: UiCopy = {
   },
   errors: {
     createFailed: "Could not create",
+    createdClaimOnSignIn:
+      "Tenant created. Clerk invites need a custom domain — tell the owner to sign up at this app with that email; access is granted automatically.",
     connectFailed: "Could not start connect",
     noAgent: "No agent. Seed the database.",
     noTenant: "No tenant. Seed the database.",

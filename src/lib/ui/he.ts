@@ -440,6 +440,8 @@ export const he: UiCopy = {
   },
   errors: {
     createFailed: "יצירה נכשלה",
+    createdClaimOnSignIn:
+      "הדייר נוצר. הזמנות Clerk דורשות דומיין מותאם — בקשו מהבעלים להירשם באפליקציה עם אותו אימייל; הגישה תינתן אוטומטית.",
     connectFailed: "החיבור נכשל",
     noAgent: "אין סוכן. הריצו seed לבסיס הנתונים.",
     noTenant: "אין דייר. הריצו seed לבסיס הנתונים.",
