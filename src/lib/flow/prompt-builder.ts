@@ -186,14 +186,24 @@ export class PromptBuilder {
     return this;
   }
 
+  withNudgeInstruction(instruction: string, lang: "en" | "he"): this {
+    const hint =
+      instruction.trim() || copyFor(lang).prompts.nudgeDefaultInstruction;
+    this.parts.push(
+      "IGNORE tool instructions above (reply, set_intent, ask_field, etc.) — this turn is plain text generation only.",
+      copyFor(lang).prompts.nudgeTurn(hint),
+    );
+    return this;
+  }
+
   withClosing(): this {
     this.parts.push(
       "Call set_intent every turn.",
       "Prefer reply for informational turns. Call ask_field only while booking is in progress.",
-      "Call reply unless ask_field, resolve_offered_slot, or update_meeting_details already set the outbound text.",
+      "Call reply unless ask_field or resolve_offered_slot already set the outbound text. After update_meeting_details, still call reply in the same turn.",
       "Use transition when the goal is complete (on_complete) or you must hand off (on_escalate).",
       "Conversation continuity: keep the SAME thread for follow-ups, staff questions, more details, or a new booking after a closed visit. Never invent a fresh welcome mid-thread.",
-      "After a visit was approved/rescheduled: if they answer a staff note (e.g. which agents/product) or correct meeting details, call update_meeting_details — short ack only, no intro and no new demo pitch.",
+      "Meeting details (פרטי הפגישה): you decide — concrete customer wording → update_meeting_details then reply; wrong/incomplete with no replacement → reply only and ask. Always write TO the customer, never staff/CRM notes.",
       "Only if the topic is clearly a brand-new matter AND a long gap / customer wants a clean start: first ask with reply whether to open a new conversation. Call start_new_conversation(intro=...) ONLY after they clearly say yes — the intro becomes the first message on the new thread.",
     );
     return this;
@@ -219,4 +229,27 @@ export function buildTalkSystemPrompt(
     .withCapabilities(ctx, stage, fields)
     .withClosing()
     .build();
+}
+
+/** Same business context as talk, but single-message nudge mode (no tools). */
+export function buildNudgeSystemPrompt(
+  ctx: TurnContext,
+  stage: Stage,
+  instruction: string,
+  fields: LeadFields = ctx.lead.fields,
+): string {
+  const lang = replyLang(ctx, lastLeadText(ctx));
+  const builder = new PromptBuilder().withBase(ctx, lang).withStage(stage);
+
+  if (stage.type === "talk") {
+    builder
+      .withGuardrails(ctx, stage, lang)
+      .withChannel(ctx, fields)
+      .withTalkContext(ctx, stage, fields, lang)
+      .withCapabilities(ctx, stage, fields);
+  } else {
+    builder.withChannel(ctx, fields);
+  }
+
+  return builder.withNudgeInstruction(instruction, lang).build();
 }

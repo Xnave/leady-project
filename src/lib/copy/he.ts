@@ -27,7 +27,7 @@ export const chat: ChatCopy = {
   askPhoneAgain: "עדיין חסר לי מספר לחזרה כדי לקלוט את בקשת הביקור. אפשר לשלוח מספר?",
   askFieldAgain: (field) => `עדיין חסר לי ${field} כדי לשלוח את בקשת הביקור.`,
   waitingHumanHold: "קיבלנו, נציג חוזר אליך.",
-  askNeed: "מה חשוב שנכסה בפגישה?",
+  askNeed: "ספר לי בקצרה מה חשוב שנדע לקראת הפגישה?",
   askVisitKind: "איזה סוג ביקור מתאים לך?",
   askTime: (hours) =>
     hours ? `${hours}. באיזה יום ושעה נוח לך?` : "מתי נוח לך? יום ושעה.",

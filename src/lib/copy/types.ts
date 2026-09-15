@@ -75,4 +75,7 @@ export type PromptCopy = {
     address: string;
     last: string;
   }) => string;
+  /** Operator / flow hint for silence follow-ups (not the literal outbound text). */
+  nudgeDefaultInstruction: string;
+  nudgeTurn: (instruction: string) => string;
 };

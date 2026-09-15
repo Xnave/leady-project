@@ -23,8 +23,8 @@ export const salesOrSupportFlow: FlowDefinition = {
       on_complete: "schedule",
       nudge: {
         after: "PT1H",
-        template: "Still happy to help - want to finish booking?",
-        maxTimes: 1,
+        template:
+          "Brief follow-up after silence: invite them to finish booking; re-ask the next missing detail only.",
       },
     },
     answer_support: {

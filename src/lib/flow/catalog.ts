@@ -32,8 +32,8 @@ const DISPLAY_ORDER = ["talk", "escalate", "waiting_human", "done"] as const;
 
 export const defaultTalkNudge: NudgeSpec = {
   after: "PT1H",
-  template: "עדיין כאן? נשמח לעזור להמשיך.",
-  maxTimes: 1,
+  template:
+    "Brief follow-up after silence: invite them to continue the same thread; re-ask the last open question if there was one; stay warm and short.",
 };
 
 export function nudgeSpecForStage(stage: Stage): NudgeSpec | undefined {

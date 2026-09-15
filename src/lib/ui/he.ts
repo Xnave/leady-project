@@ -118,7 +118,7 @@ export const he: UiCopy = {
     decline: "דחייה",
     send: "שליחה",
     sending: "שולח…",
-    need: "צורך",
+    need: "פרטי הפגישה",
     phone: "טלפון",
     email: "אימייל",
     version: "גרסה",
@@ -224,7 +224,7 @@ export const he: UiCopy = {
   bookingCollect: {
     time_preference: { title: "מועד מועדף", blurb: "יום ושעה לביקור" },
     name: { title: "שם", blurb: "שם מלא" },
-    need: { title: "צורך", blurb: "מה חשוב לכסות בפגישה" },
+    need: { title: "פרטי הפגישה", blurb: "מה לרשום על מטרת/תוכן הפגישה" },
     phone: {
       title: "טלפון",
       blurb: "שואלים כשחסר; מאשרים כשאפשר לדעת את מספר הצ'אט (וואטסאפ).",
@@ -324,7 +324,7 @@ export const he: UiCopy = {
   },
   leadFields: {
     name: "שם",
-    need: "צורך",
+    need: "פרטי הפגישה",
     email: "אימייל",
     phone: "טלפון",
     budget: "תקציב",

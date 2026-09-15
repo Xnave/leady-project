@@ -37,7 +37,7 @@ const FIELD_LABELS: Record<"en" | "he", Record<string, string>> = {
   he: {
     time_preference: "יום ושעה",
     name: "שם",
-    need: "את מטרת הפגישה",
+    need: "פרטי הפגישה",
     phone: "מספר טלפון",
     email: "אימייל",
     visit_kind: "סוג ביקור",

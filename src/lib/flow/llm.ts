@@ -6,7 +6,7 @@ import { askBookingField } from "./booking";
 import { callbackPhone, effectiveBookingRequired } from "./booking-collect";
 import { ensureFlowRegistry } from "./capabilities";
 import { getCapability, resolveTalkCapabilities } from "./registry";
-import { buildTalkSystemPrompt, talkTransitionTargets } from "./prompt-builder";
+import { buildNudgeSystemPrompt, buildTalkSystemPrompt, talkTransitionTargets } from "./prompt-builder";
 import { hasAgentReplied, cannedIntroText } from "./intro";
 import { chatModel, llmConfigured } from "./model";
 import type {
@@ -158,6 +158,60 @@ export function heuristicTalk(ctx: TurnContext, stage: TalkStage): TalkOutcome {
   return degradeTalk(ctx, stage);
 }
 
+function formatTranscriptForNudge(ctx: TurnContext): string {
+  return ctx.messages
+    .slice(-12)
+    .map((m) => {
+      if (m.role === "lead") return `customer: ${m.text}`;
+      if (m.role === "human") return `teammate: ${m.text}`;
+      return `business: ${m.text}`;
+    })
+    .join("\n");
+}
+
+// function sanitizeNudgeOutput(text: string): string {
+//   let out = text.trim();
+//   out = out.replace(/^["'`]+|["'`]+$/g, "").trim();
+//   const rolePrefix = /^(?:agent|lead|customer|business|user|assistant|bot)\s*:\s*/i;
+//   while (rolePrefix.test(out)) {
+//     out = out.replace(rolePrefix, "").trim();
+//   }
+//   return out;
+// }
+
+/** One-shot follow-up after silence; uses talk context but no tools. */
+export async function draftNudgeReply(
+  ctx: TurnContext,
+  stage: Stage,
+  instruction: string,
+): Promise<string> {
+  const last = lastLeadText(ctx);
+  const lang = replyLang(ctx, last);
+  const hint =
+    instruction.trim() || copyFor(lang).prompts.nudgeDefaultInstruction;
+  if (!llmConfigured()) {
+    return hint;
+  }
+  try {
+    const business = ctx.tenant?.name?.trim() || "the business";
+    const { text } = await generateText({
+      model: chatModel(),
+      system: buildNudgeSystemPrompt(ctx, stage, hint),
+      prompt: [
+        `Transcript so far (you are ${business}, writing the next business message only):`,
+        formatTranscriptForNudge(ctx),
+        "",
+        "Write the next WhatsApp message from the business to the customer. Plain text only — no role labels, not as the customer.",
+      ].join("\n"),
+      maxRetries: 2,
+    });
+    return text || hint;
+  } catch (err) {
+    console.error("draftNudgeReply failed, using instruction fallback", err);
+    return hint;
+  }
+}
+
 export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<TalkOutcome> {
   ensureFlowRegistry();
 
@@ -178,7 +232,7 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
   const baseTools = {
     reply: tool({
       description:
-        "User-facing message. Call once unless ask_field or resolve_offered_slot already set the outbound text.",
+        "WhatsApp message to the customer. Call once unless ask_field or resolve_offered_slot already set the outbound text. After update_meeting_details you must still call reply in the same turn.",
       inputSchema: z.object({ text: z.string() }),
       execute: async ({ text }: { text: string }) => {
         if (!collected.replyLocked) {

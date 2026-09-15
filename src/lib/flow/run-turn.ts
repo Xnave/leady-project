@@ -80,7 +80,6 @@ export type NudgeRequestedEvent = {
     expectedStage: string;
     nudgeAt: string;
     template: string;
-    maxTimes: number;
     flowVersion: number;
     /** Inbound message id for this turn; cancel only on a later turn.requested. */
     scheduledAfterMessageId: string;
@@ -111,7 +110,6 @@ export function buildNudgeRequestedEvent(
       expectedStage: stageId,
       nudgeAt: nudgeAt.toISOString(),
       template: nudge.template,
-      maxTimes: nudge.maxTimes ?? 1,
       flowVersion: ctx.agent.flowVersion,
       scheduledAfterMessageId: triggerMessageId,
       afterUsed: after,

@@ -40,19 +40,16 @@ function lastStaffNoteQuestion(ctx: TurnContext, lang: "en" | "he"): string | un
   return undefined;
 }
 
-function updateMeetingDetailsTool(
-  ctx: TurnContext,
-  collected: TalkCollected,
-  lang: "en" | "he",
-) {
+/** Persist meeting details. Does not send WhatsApp — call reply in the same turn. */
+function updateMeetingDetailsTool(ctx: TurnContext, collected: TalkCollected) {
   const meetingId = ctx.recentMeeting?.id;
   return tool({
     description:
-      "Update the latest meeting's details (need / what they want) when the customer clarifies after a staff note or after approval/reschedule. Prefer this over a sales pitch or start_booking. Acknowledge briefly; do not re-intro the business.",
+      "Save meeting details (פרטי הפגישה) when the customer gave concrete wording to store. Does NOT send WhatsApp text — always call reply in the SAME turn with a short message TO THE CUSTOMER (ack, or ask what to write if they only said it's wrong). Pass their words only; never invent a staff/CRM summary.",
     inputSchema: z.object({
       need: z
         .string()
-        .describe("Updated meeting need / product detail in the customer's wording"),
+        .describe("Customer's meeting-details wording to store"),
       meetingId: z.string().optional(),
     }),
     execute: async ({
@@ -62,6 +59,14 @@ function updateMeetingDetailsTool(
       need: string;
       meetingId?: string;
     }) => {
+      const text = need.trim();
+      if (!text) {
+        return JSON.stringify({
+          ok: false,
+          error: "empty_need",
+          hint: "Call reply to ask the customer what to write. Do not invent details.",
+        });
+      }
       const id = (explicitId || meetingId || "").trim();
       if (!id) {
         return JSON.stringify({ ok: false, error: "no_meeting" });
@@ -69,18 +74,15 @@ function updateMeetingDetailsTool(
       const result = await updateMeetingDetails({
         tenantId: ctx.tenantId,
         meetingId: id,
-        need,
+        need: text,
       });
       if (!result.ok) return JSON.stringify(result);
       collected.fields = { ...collected.fields, need: result.needText };
-      if (!collected.replyLocked) {
-        collected.reply =
-          lang === "he"
-            ? `עדכנתי בפרטי הפגישה: ${result.needText}. תודה!`
-            : `Updated the meeting details: ${result.needText}. Thanks!`;
-        collected.replyLocked = true;
-      }
-      return JSON.stringify({ ok: true, need: result.needText });
+      return JSON.stringify({
+        ok: true,
+        need: result.needText,
+        hint: "Call reply now with a brief customer-facing message.",
+      });
     },
   });
 }
@@ -98,7 +100,8 @@ export function registerBookingCapability(): void {
         const lines = [
           `Recent meeting on this lead (id=${recent.id}): status=${recent.status}, slot="${recent.slotText}", need="${recent.needText || "(empty)"}", name="${recent.contactName || ""}".`,
           "This is a CONTINUATION of that meeting thread — not a new sales conversation.",
-          "If the customer answers a staff question or clarifies what they want (product type, agents, need, etc.), call update_meeting_details with their wording.",
+          "If they give concrete meeting details (פרטי הפגישה), call update_meeting_details with their wording, then reply in the SAME turn.",
+          "If they say details are wrong but give no replacement, do NOT call update_meeting_details — only reply and ask what to write. Never invent a staff/CRM note.",
           "Do NOT send a business intro, do NOT restart a product pitch, do NOT call start_booking unless they explicitly ask for a new/different meeting.",
         ];
         if (staffNote) {
@@ -113,7 +116,7 @@ export function registerBookingCapability(): void {
         return [
           "Booking capability available but idle.",
           "Do NOT ask for day/time yet. Answer with reply. Call start_booking only after an explicit schedule request.",
-          "If a recent meeting exists and they only add details, use update_meeting_details instead of pitching.",
+          "If a recent meeting exists and they only add or correct details, use update_meeting_details + reply (same turn) instead of pitching.",
         ];
       }
       const gaps = bookingFieldGaps(fields, required);
@@ -209,7 +212,7 @@ export function registerBookingCapability(): void {
               return JSON.stringify({ ok: true, decision: "unclear" });
             },
           }),
-          update_meeting_details: updateMeetingDetailsTool(ctx, collected, lang),
+          update_meeting_details: updateMeetingDetailsTool(ctx, collected),
         };
       }
 
@@ -217,7 +220,7 @@ export function registerBookingCapability(): void {
         return {
           start_booking: tool({
             description:
-              "Begin collecting visit/meeting details. Call ONLY when the customer explicitly asks to schedule a meeting, visit, demo, or call — or clearly accepts your offer to book one. Do NOT call for product interest alone (e.g. wanting a WhatsApp agent, asking how it works, pricing, features). Do NOT call when they are only clarifying details for an existing/approved meeting — use update_meeting_details instead.",
+              "Begin collecting visit/meeting details. Call ONLY when the customer explicitly asks to schedule a meeting, visit, demo, or call — or clearly accepts your offer to book one. Do NOT call for product interest alone (e.g. wanting a WhatsApp agent, asking how it works, pricing, features). Do NOT call when they are only clarifying details for an existing/approved meeting — use update_meeting_details + reply instead.",
             inputSchema: z.object({
               reason: z.string().optional(),
             }),
@@ -236,7 +239,7 @@ export function registerBookingCapability(): void {
               return JSON.stringify({ ok: true, next_field: first });
             },
           }),
-          update_meeting_details: updateMeetingDetailsTool(ctx, collected, lang),
+          update_meeting_details: updateMeetingDetailsTool(ctx, collected),
         };
       }
 
@@ -249,7 +252,7 @@ export function registerBookingCapability(): void {
       fieldShape.booking_flow = z.string().optional();
 
       return {
-        update_meeting_details: updateMeetingDetailsTool(ctx, collected, lang),
+        update_meeting_details: updateMeetingDetailsTool(ctx, collected),
         save_fields: tool({
           description:
             "Save details they already gave in chat, in their original wording. Do not invent. Do not translate names. Do not copy the WhatsApp/profile display name into name. For phone, only save after they gave or confirmed a number. Pass empty string to clear a field.",

@@ -27,7 +27,7 @@ export const chat: ChatCopy = {
   askFieldAgain: (field) =>
     `I still need ${field} before I can send the visit request.`,
   waitingHumanHold: "We've got this - a teammate will take over.",
-  askNeed: "What should we cover in the visit?",
+  askNeed: "In a few words — what should we know ahead of the visit?",
   askVisitKind: "What kind of visit works for you?",
   askTime: (hours) =>
     hours
@@ -146,5 +146,19 @@ Do not invent. Omit a field if it is not clearly in the text.
       "Never say the appointment is confirmed. book_meeting only records a tentative request for the owner.",
       "Always call reply with the user-facing text (unless ask_field already set it). Call set_intent every turn.",
       `Latest customer message: ${last}`,
+    ].join("\n"),
+  nudgeDefaultInstruction:
+    "Send a brief friendly follow-up because they have not replied. Continue the same thread; do not repeat the full intro or copy your last message verbatim.",
+  nudgeTurn: (instruction) =>
+    [
+      "MODE: silence nudge (follow-up only).",
+      "You are the BUSINESS assistant speaking TO the customer on WhatsApp — never the customer.",
+      "The customer (lead) has not replied for a while. Write ONE short outbound message the business sends next.",
+      "Continue the open thread from the business side: pick up the last topic or gently re-ask what you were waiting on.",
+      "Do NOT impersonate the customer, do NOT answer on their behalf, do NOT write what they might say.",
+      "Do NOT prefix with role labels (no 'agent:', 'lead:', 'customer:', 'business:'). Output plain message text only.",
+      "Do NOT start a new welcome, do NOT call tools, do NOT confirm visits, do NOT escalate.",
+      "Match the customer's language from their latest message.",
+      `Operator guidance: ${instruction}`,
     ].join("\n"),
 };

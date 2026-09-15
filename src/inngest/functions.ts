@@ -1,6 +1,7 @@
 import { inngest } from "./client";
 import { runTurnNow, sendAndSave, type NudgeRequestedEvent } from "@/lib/flow/run-turn";
 import { loadTurnContext } from "@/lib/conversations";
+import { draftNudgeReply } from "@/lib/flow/llm";
 import { prisma } from "@/lib/db";
 import type { FlowDefinition } from "@/lib/flow/types";
 
@@ -83,7 +84,6 @@ export const nudgeIfSilent = inngest.createFunction(
       expectedStage: string;
       nudgeAt: string;
       template: string;
-      maxTimes: number;
       flowVersion?: number;
       scheduledAfterMessageId?: string;
     };
@@ -109,21 +109,14 @@ export const nudgeIfSilent = inngest.createFunction(
       ) {
         return { skipped: "stale-flow" };
       }
-      const counts = (convo.nudgeCountByStage as Record<string, number>) ?? {};
-      if ((counts[data.expectedStage] ?? 0) >= data.maxTimes) return { skipped: "max" };
-
       const ctx = await loadTurnContext(data.tenantId, data.conversationId);
-      const nudgeKey = `nudge-out-${data.conversationId}-${data.expectedStage}-${data.flowVersion ?? 0}-${counts[data.expectedStage] ?? 0}`;
-      await sendAndSave(ctx, data.template, { idempotencyKey: nudgeKey });
-      await prisma.conversation.update({
-        where: { id: convo.id },
-        data: {
-          nudgeCountByStage: {
-            ...counts,
-            [data.expectedStage]: (counts[data.expectedStage] ?? 0) + 1,
-          },
-        },
-      });
+      const stage = flow.stages[data.expectedStage];
+      if (!stage) return { skipped: "missing-stage" };
+      const text = await draftNudgeReply(ctx, stage, data.template);
+      if (!text.trim()) return { skipped: "empty-nudge" };
+      const anchor = data.scheduledAfterMessageId ?? "0";
+      const nudgeKey = `nudge-out-${data.conversationId}-${data.expectedStage}-${anchor}`;
+      await sendAndSave(ctx, text, { idempotencyKey: nudgeKey });
       return { sent: true };
     });
   },
