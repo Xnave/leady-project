@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
+import { AccountMenu } from "@/components/AccountMenu";
 import type { NavCounts } from "@/lib/nav-counts";
 import type { UiCopy, UiLang, UiTheme } from "@/lib/ui";
 
@@ -15,6 +16,7 @@ const OWNER_ITEMS: { href: string; key: NavKey; countKey?: keyof NavCounts }[] =
   { href: "/onboard", key: "setup" },
   { href: "/channels", key: "channels" },
   { href: "/demo", key: "chat" },
+  { href: "/settings/team", key: "team" },
 ];
 
 const STAFF_ITEMS: { href: string; key: NavKey; adminOnly?: boolean }[] = [
@@ -40,6 +42,7 @@ const ICONS: Partial<Record<NavKey, ReactNode>> = {
   chat: <Icon d="M5 6h14v9H8l-3 4z" />,
   ops: <Icon d="M4 6h16M4 12h10M4 18h7" />,
   admin: <Icon d="M12 3 4 7v5c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V7z" />,
+  team: <Icon d="M16 11a3 3 0 1 0-2-5.2M8 11a3 3 0 1 0-2-5.2M4 20a6 6 0 0 1 8 0M12 20a6 6 0 0 1 8 0" />,
 };
 
 const THEME_OPTIONS: { id: UiTheme; key: "system" | "light" | "dark"; icon: ReactNode }[] = [
@@ -69,6 +72,8 @@ export function SidebarNav({
   tenantName,
   lang,
   theme,
+  showTeam = false,
+  showAccount = false,
 }: {
   ui: UiCopy;
   admin: boolean;
@@ -76,6 +81,8 @@ export function SidebarNav({
   tenantName?: string | null;
   lang: UiLang;
   theme: UiTheme;
+  showTeam?: boolean;
+  showAccount?: boolean;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -85,23 +92,8 @@ export function SidebarNav({
     return pathname.startsWith(href);
   }
 
-  function renderItem(item: { href: string; key: NavKey; countKey?: keyof NavCounts }) {
-    const count = item.countKey && counts ? counts[item.countKey] : 0;
-    return (
-      <Link
-        key={item.href}
-        href={item.href}
-        className={`nav-item${isActive(item.href) ? " active" : ""}`}
-        onClick={() => setOpen(false)}
-      >
-        <span className="nav-item-label">
-          {ICONS[item.key]}
-          <span>{ui.nav[item.key]}</span>
-        </span>
-        {count > 0 ? <span className="nav-badge">{count > 99 ? "99+" : count}</span> : null}
-      </Link>
-    );
-  }
+  const ownerItems = OWNER_ITEMS.filter((item) => item.key !== "team" || showTeam);
+  const staffItems = STAFF_ITEMS.filter((item) => !item.adminOnly || admin);
 
   return (
     <>
@@ -120,11 +112,46 @@ export function SidebarNav({
           <span className="sidebar-brand-mark">L</span>
           {ui.product}
         </Link>
+        {showAccount ? (
+          <AccountMenu accountLabel={ui.common.account} signOutLabel={ui.common.signOut} />
+        ) : null}
         {tenantName ? <div className="sidebar-tenant">{tenantName}</div> : null}
         <nav className="sidebar-nav">
-          {OWNER_ITEMS.map(renderItem)}
-          <div className="nav-group-label">{ui.common.staff}</div>
-          {STAFF_ITEMS.filter((item) => !item.adminOnly || admin).map(renderItem)}
+          {ownerItems.map((item) => {
+            const count = item.countKey && counts ? counts[item.countKey] : 0;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`nav-item${isActive(item.href) ? " active" : ""}`}
+                onClick={() => setOpen(false)}
+              >
+                <span className="nav-item-label">
+                  {ICONS[item.key]}
+                  <span>{ui.nav[item.key]}</span>
+                </span>
+                {count > 0 ? <span className="nav-badge">{count > 99 ? "99+" : count}</span> : null}
+              </Link>
+            );
+          })}
+          {staffItems.length > 0 ? (
+            <div className="nav-staff-group">
+              <div className="nav-group-label">{ui.common.staff}</div>
+              {staffItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`nav-item${isActive(item.href) ? " active" : ""}`}
+                  onClick={() => setOpen(false)}
+                >
+                  <span className="nav-item-label">
+                    {ICONS[item.key]}
+                    <span>{ui.nav[item.key]}</span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          ) : null}
         </nav>
         <div className="sidebar-footer">
           <span className="lang-toggle-label">{ui.langToggle.uiLanguage}</span>

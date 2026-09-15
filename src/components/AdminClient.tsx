@@ -4,19 +4,17 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 type Labels = {
-  adminUnlock: string;
-  adminSecret: string;
-  unlock: string;
   createTenant: string;
   tenantName: string;
   tenantPhone: string;
+  ownerEmail: string;
   openAsTenant: string;
-  badSecret: string;
   createFailed: string;
   search: string;
+  forbidden: string;
 };
 
-type TenantRow = { id: string; name: string; phone: string };
+type TenantRow = { id: string; name: string; phone: string; ownerEmail?: string };
 
 export function AdminClient({
   labels,
@@ -28,9 +26,9 @@ export function AdminClient({
   tenants: TenantRow[];
 }) {
   const router = useRouter();
-  const [secret, setSecret] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
 
@@ -38,24 +36,12 @@ export function AdminClient({
     const q = query.trim().toLowerCase();
     if (!q) return tenants;
     return tenants.filter(
-      (t) => t.name.toLowerCase().includes(q) || t.phone.toLowerCase().includes(q),
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        t.phone.toLowerCase().includes(q) ||
+        (t.ownerEmail ?? "").toLowerCase().includes(q),
     );
   }, [tenants, query]);
-
-  async function unlock(e: FormEvent) {
-    e.preventDefault();
-    setError("");
-    const res = await fetch("/api/admin/session", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ secret }),
-    });
-    if (!res.ok) {
-      setError(labels.badSecret);
-      return;
-    }
-    router.refresh();
-  }
 
   async function create(e: FormEvent) {
     e.preventDefault();
@@ -63,7 +49,7 @@ export function AdminClient({
     const res = await fetch("/api/admin/tenants", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, phone }),
+      body: JSON.stringify({ name, phone, ownerEmail }),
     });
     if (!res.ok) {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -72,23 +58,12 @@ export function AdminClient({
     }
     setName("");
     setPhone("");
+    setOwnerEmail("");
     router.refresh();
   }
 
   if (!unlocked) {
-    return (
-      <form onSubmit={(e) => void unlock(e)} className="card stack form-narrow">
-        <p>{labels.adminUnlock}</p>
-        <label>
-          {labels.adminSecret}
-          <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} />
-        </label>
-        <div>
-          <button type="submit">{labels.unlock}</button>
-        </div>
-        {error ? <p className="muted">{error}</p> : null}
-      </form>
-    );
+    return <p className="muted">{labels.forbidden}</p>;
   }
 
   return (
@@ -102,6 +77,15 @@ export function AdminClient({
           {labels.tenantPhone}
           <input value={phone} onChange={(e) => setPhone(e.target.value)} />
         </label>
+        <label>
+          {labels.ownerEmail}
+          <input
+            type="email"
+            value={ownerEmail}
+            onChange={(e) => setOwnerEmail(e.target.value)}
+            required
+          />
+        </label>
         <button type="submit">{labels.createTenant}</button>
       </form>
       {error ? <p className="muted">{error}</p> : null}
@@ -114,6 +98,7 @@ export function AdminClient({
           <thead>
             <tr>
               <th>{labels.tenantName}</th>
+              <th>{labels.ownerEmail}</th>
               <th>{labels.tenantPhone}</th>
               <th />
             </tr>
@@ -122,6 +107,7 @@ export function AdminClient({
             {filtered.map((t) => (
               <tr key={t.id}>
                 <td>{t.name}</td>
+                <td className="muted">{t.ownerEmail || "—"}</td>
                 <td className="muted">{t.phone || t.id}</td>
                 <td className="table-actions">
                   <form action="/api/admin/impersonate" method="post">

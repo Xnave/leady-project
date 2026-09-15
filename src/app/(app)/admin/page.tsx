@@ -12,7 +12,10 @@ export default async function AdminPage() {
   const ui = uiCopy(lang);
   const unlocked = await isAdminSession();
   const tenants = unlocked
-    ? await prisma.tenant.findMany({ orderBy: { createdAt: "desc" }, select: { id: true, name: true, phone: true } })
+    ? await prisma.tenant.findMany({
+        orderBy: { createdAt: "desc" },
+        select: { id: true, name: true, phone: true, ownerEmail: true },
+      })
     : [];
 
   return (
@@ -20,16 +23,14 @@ export default async function AdminPage() {
       <PageHeader title={ui.page.adminTitle} />
       <AdminClient
         labels={{
-          adminUnlock: ui.common.adminUnlock,
-          adminSecret: ui.common.adminSecret,
-          unlock: ui.common.unlock,
           createTenant: ui.common.createTenant,
           tenantName: ui.common.tenantName,
           tenantPhone: ui.common.tenantPhone,
+          ownerEmail: ui.common.ownerEmail,
           openAsTenant: ui.common.openAsTenant,
-          badSecret: ui.errors.badSecret,
           createFailed: ui.errors.createFailed,
           search: ui.common.search,
+          forbidden: ui.errors.forbidden,
         }}
         unlocked={unlocked}
         tenants={tenants}

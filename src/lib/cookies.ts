@@ -3,7 +3,6 @@ import { isUiLang, isUiTheme, type UiLang, type UiTheme } from "@/lib/ui";
 
 export const UI_LANG_COOKIE = "leady_ui_lang";
 export const UI_THEME_COOKIE = "leady_ui_theme";
-export const ADMIN_COOKIE = "leady_admin";
 export const TENANT_COOKIE = "leady_tenant_id";
 
 export async function getUiLang(): Promise<UiLang> {

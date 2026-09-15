@@ -14,7 +14,7 @@ import {
   leadInstagramUsername,
   whatsappChatUrl,
 } from "@/lib/leads";
-import { requireTenantId } from "@/lib/tenant";
+import { requireTenantIdForPage } from "@/lib/tenant";
 import { intentLabel, stageLabel } from "@/lib/ui/labels";
 import { meetingKindLabel, normalizeLeadStatus, uiCopy } from "@/lib/ui";
 import type { Prisma } from "@prisma/client";
@@ -53,7 +53,7 @@ export default async function LeadsPage({
   }>;
 }) {
   const { page: pageParam, size: sizeParam, q, status, stage } = await searchParams;
-  const tenantId = await requireTenantId();
+  const tenantId = await requireTenantIdForPage();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
   const pageSize = PAGE_SIZES.includes(Number(sizeParam) as (typeof PAGE_SIZES)[number])

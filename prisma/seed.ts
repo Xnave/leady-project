@@ -15,6 +15,7 @@ async function main() {
       name: "מטבחי דמו בע״מ",
       phone: "",
       intro: "אנחנו מתכננים ומתקינים מטבחים.",
+      ownerEmail: "owner@example.com",
       chatLanguage: "multi",
     },
   });

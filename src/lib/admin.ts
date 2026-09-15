@@ -1,43 +1,50 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { currentUser } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
-import { ADMIN_COOKIE, TENANT_COOKIE } from "@/lib/cookies";
+import { TENANT_COOKIE } from "@/lib/cookies";
+import { normalizeEmail } from "@/lib/org-roles";
+
+const DEFAULT_PLATFORM_ADMIN_EMAILS = [
+  "naveine97@gmail.com",
+  "snir.ai.solutions@gmail.com",
+];
 
 export function adminBypass(): boolean {
   return process.env.DEV_AUTH_BYPASS === "true";
 }
 
-function adminSecret(): string {
-  const secret = (process.env.ADMIN_SECRET ?? "").trim();
-  if (secret) return secret;
-  if (adminBypass()) return "dev-bypass";
-  return "";
+export function platformAdminEmails(): Set<string> {
+  const fromEnv = (process.env.PLATFORM_ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((e) => normalizeEmail(e))
+    .filter(Boolean);
+  if (fromEnv.length > 0) return new Set(fromEnv);
+  return new Set(DEFAULT_PLATFORM_ADMIN_EMAILS.map(normalizeEmail));
 }
 
-export function expectedAdminToken(): string {
-  const secret = adminSecret();
-  if (!secret) return "";
-  return createHmac("sha256", secret).update("leady-admin-v1").digest("hex");
+export function isPlatformAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return platformAdminEmails().has(normalizeEmail(email));
 }
 
-export function secretMatches(input: string): boolean {
-  if (adminBypass() && !process.env.ADMIN_SECRET?.trim()) return true;
-  const secret = adminSecret();
-  if (!secret) return false;
-  const a = Buffer.from(input);
-  const b = Buffer.from(secret);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+export async function primaryEmailFromClerkUser(
+  user: { primaryEmailAddressId: string | null; emailAddresses: { id: string; emailAddress: string }[] } | null,
+): Promise<string | null> {
+  if (!user) return null;
+  const primary = user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId);
+  return primary?.emailAddress ?? user.emailAddresses[0]?.emailAddress ?? null;
 }
 
 export async function isAdminSession(): Promise<boolean> {
-  const token = expectedAdminToken();
-  if (!token) return false;
-  const jar = await cookies();
-  const got = jar.get(ADMIN_COOKIE)?.value ?? "";
-  if (got && token && got.length === token.length) {
-    if (timingSafeEqual(Buffer.from(got), Buffer.from(token))) return true;
+  if (adminBypass()) return true;
+  const user = await currentUser();
+  const email = await primaryEmailFromClerkUser(user);
+  return isPlatformAdminEmail(email);
+}
+
+export async function requirePlatformAdmin(): Promise<void> {
+  if (!(await isAdminSession())) {
+    throw new Error("Forbidden");
   }
-  return adminBypass();
 }
 
 export async function impersonatedTenantId(): Promise<string | null> {

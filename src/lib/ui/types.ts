@@ -21,6 +21,7 @@ export type UiCopy = {
     channels: string;
     ops: string;
     admin: string;
+    team: string;
   };
   langToggle: { he: string; en: string; uiLanguage: string };
   themeToggle: { appearance: string; system: string; light: string; dark: string };
@@ -40,6 +41,18 @@ export type UiCopy = {
     channelsTitle: string;
     opsTitle: string;
     adminTitle: string;
+    teamTitle: string;
+    teamBlurb: string;
+    signInTitle: string;
+    signInBlurb: string;
+    clerkMissing: string;
+    noAccessTitle: string;
+    noAccessBlurb: string;
+    noAccessHint: string;
+    activating: string;
+    alreadySignedInTitle: string;
+    alreadySignedInBlurb: string;
+    switchAccountHint: string;
   };
   flow: {
     start: string;
@@ -145,10 +158,11 @@ export type UiCopy = {
     createTenant: string;
     tenantName: string;
     tenantPhone: string;
+    ownerEmail: string;
     openAsTenant: string;
-    adminUnlock: string;
-    adminSecret: string;
-    unlock: string;
+    account: string;
+    signOut: string;
+    backToSignIn: string;
     visitsWaiting: string;
     captured: string;
     conversation: string;
@@ -329,10 +343,26 @@ export type UiCopy = {
     ownersNeverSee: string;
   };
   errors: {
-    badSecret: string;
     createFailed: string;
     connectFailed: string;
     noAgent: string;
     noTenant: string;
+    forbidden: string;
+  };
+  team: {
+    inviteEmail: string;
+    inviteRole: string;
+    inviteSend: string;
+    members: string;
+    pendingInvites: string;
+    roleOwner: string;
+    roleAdmin: string;
+    roleMember: string;
+    promote: string;
+    demote: string;
+    remove: string;
+    revoke: string;
+    loadFailed: string;
+    empty: string;
   };
 };

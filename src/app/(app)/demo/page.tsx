@@ -18,7 +18,7 @@ import {
   leadInstagramUsername,
   whatsappChatUrl,
 } from "@/lib/leads";
-import { requireTenantId } from "@/lib/tenant";
+import { requireTenantIdForPage } from "@/lib/tenant";
 import { convoStatusLabel } from "@/lib/ui/labels";
 import { uiCopy } from "@/lib/ui";
 
@@ -39,7 +39,7 @@ export default async function DemoPage({
   searchParams: Promise<{ leadId?: string }>;
 }) {
   const { leadId } = await searchParams;
-  const tenantId = await requireTenantId();
+  const tenantId = await requireTenantIdForPage();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
   const tenant = await prisma.tenant.findFirst({ where: { id: tenantId } });

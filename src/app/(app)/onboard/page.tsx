@@ -4,14 +4,14 @@ import { bookingCollectFromFlow } from "@/lib/flow/booking-collect";
 import { resolveBookingStance } from "@/lib/flow/catalog";
 import { prisma } from "@/lib/db";
 import { getUiLang } from "@/lib/cookies";
-import { requireTenantId } from "@/lib/tenant";
+import { requireTenantIdForPage } from "@/lib/tenant";
 import type { FlowDefinition, TalkStage } from "@/lib/flow/types";
 import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
 
 export default async function OnboardPage() {
-  const tenantId = await requireTenantId();
+  const tenantId = await requireTenantIdForPage();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
   const tenant = await prisma.tenant.findFirst({ where: { id: tenantId } });

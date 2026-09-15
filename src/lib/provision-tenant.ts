@@ -1,7 +1,11 @@
+import { clerkClient } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { encryptSecret } from "@/lib/crypto";
+import { adminBypass } from "@/lib/admin";
 import { buildAgentSystemPrompt, flowForCatalog, hitlForCatalog } from "@/lib/flow/catalog";
 import { defaultLeadSchema } from "@/lib/flow/validate";
+import { CLERK_ROLE_ADMIN, normalizeEmail } from "@/lib/org-roles";
+import { appOrigin } from "@/lib/request-url";
 
 export async function ensureLocalDemoChannel(tenantId: string): Promise<string> {
   const agent = await prisma.agent.findFirst({ where: { tenantId } });
@@ -28,10 +32,75 @@ export async function ensureLocalDemoChannel(tenantId: string): Promise<string> 
   return row.id;
 }
 
-export async function createTenant(opts: { name: string; phone?: string }) {
+function clerkConfigured(): boolean {
+  return Boolean(process.env.CLERK_SECRET_KEY?.trim());
+}
+
+export async function createTenant(opts: {
+  name: string;
+  phone?: string;
+  ownerEmail: string;
+  /** Clerk user id of the platform admin creating the org (removed after invite). */
+  createdByUserId?: string | null;
+}) {
   const name = opts.name.trim();
   const phone = (opts.phone ?? "").trim();
-  const clerkOrgId = `local-${crypto.randomUUID()}`;
+  const ownerEmail = normalizeEmail(opts.ownerEmail);
+  if (!name) throw new Error("Name required");
+  if (!ownerEmail || !ownerEmail.includes("@")) throw new Error("Owner email required");
+
+  let clerkOrgId: string;
+  const useClerk = !adminBypass() && clerkConfigured();
+
+  let ownerClerkUserId: string | null = null;
+
+  if (useClerk) {
+    const client = await clerkClient();
+    const org = await client.organizations.createOrganization({
+      name,
+      ...(opts.createdByUserId ? { createdBy: opts.createdByUserId } : {}),
+    });
+    clerkOrgId = org.id;
+
+    // Prefer direct membership when the owner already has a Clerk account —
+    // invite emails are easy to miss in local/dev and still leave them on /no-access.
+    const existing = await client.users.getUserList({
+      emailAddress: [ownerEmail],
+      limit: 1,
+    });
+    const existingOwner = existing.data[0];
+    if (existingOwner) {
+      await client.organizations.createOrganizationMembership({
+        organizationId: org.id,
+        userId: existingOwner.id,
+        role: CLERK_ROLE_ADMIN,
+      });
+      ownerClerkUserId = existingOwner.id;
+    } else {
+      await client.organizations.createOrganizationInvitation({
+        organizationId: org.id,
+        emailAddress: ownerEmail,
+        role: CLERK_ROLE_ADMIN,
+        redirectUrl: `${appOrigin()}/activating`,
+        ...(opts.createdByUserId ? { inviterUserId: opts.createdByUserId } : {}),
+      });
+    }
+
+    // Platform admins must not remain org members — they use impersonation.
+    if (opts.createdByUserId) {
+      try {
+        await client.organizations.deleteOrganizationMembership({
+          organizationId: org.id,
+          userId: opts.createdByUserId,
+        });
+      } catch {
+        // Org may already have no membership for creator in some Clerk configs.
+      }
+    }
+  } else {
+    clerkOrgId = `local-${crypto.randomUUID()}`;
+  }
+
   const intro = "";
   const tenant = await prisma.tenant.create({
     data: {
@@ -39,6 +108,8 @@ export async function createTenant(opts: { name: string; phone?: string }) {
       name,
       phone,
       intro,
+      ownerEmail,
+      ownerClerkUserId,
       chatLanguage: "he",
     },
   });

@@ -13,6 +13,10 @@ model Tenant {
   name                   String
   phone                  String   @default("")
   intro                  String   @default("")
+  /** Immutable tenant owner email (invited at creation). */
+  ownerEmail             String   @default("")
+  /** Filled when the owner accepts the Clerk org invite. */
+  ownerClerkUserId       String?  @unique
   venueAddress           String   @default("")
   venueHours             String   @default("")
   bookingRequestTemplate String   @default("")

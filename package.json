@@ -28,6 +28,7 @@
     "@ai-sdk/anthropic": "^2.0.99",
     "@ai-sdk/google": "^2.0.94",
     "@ai-sdk/openai": "^2.0.122",
+    "@clerk/localizations": "^4.16.1",
     "@clerk/nextjs": "^6.31.4",
     "@prisma/client": "^6.14.0",
     "ai": "^5.0.28",

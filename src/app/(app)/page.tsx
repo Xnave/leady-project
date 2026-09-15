@@ -4,13 +4,13 @@ import { SetupJourney } from "@/components/SetupJourney";
 import { prisma } from "@/lib/db";
 import { getNavCounts } from "@/lib/nav-counts";
 import { getUiLang } from "@/lib/cookies";
-import { requireTenantId } from "@/lib/tenant";
+import { requireTenantIdForPage } from "@/lib/tenant";
 import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const tenantId = await requireTenantId();
+  const tenantId = await requireTenantIdForPage();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
   const [tenant, counts, liveChannel] = await Promise.all([

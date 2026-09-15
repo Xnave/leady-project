@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { getUiLang } from "@/lib/cookies";
 import { enrichInstagramLeadIdentity } from "@/lib/conversations";
 import { formatPhoneDisplay, instagramProfileUrl, leadDisplayName, leadInstagramUsername, whatsappChatUrl } from "@/lib/leads";
-import { requireTenantId } from "@/lib/tenant";
+import { requireTenantIdForPage } from "@/lib/tenant";
 import { fillUi, hitlReasonLabel, uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
@@ -42,7 +42,7 @@ export default async function InboxPage({
   searchParams: Promise<{ task?: string }>;
 }) {
   const { task: taskParam } = await searchParams;
-  const tenantId = await requireTenantId();
+  const tenantId = await requireTenantIdForPage();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
   const tasks = await loadInboxTasks(tenantId);
