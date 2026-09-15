@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
 import { isAdminSession } from "@/lib/admin";
 import { createTenant } from "@/lib/provision-tenant";
+import { requestOrigin } from "@/lib/request-url";
 
 export async function POST(req: Request) {
   if (!(await isAdminSession())) {
@@ -24,6 +25,7 @@ export async function POST(req: Request) {
       phone: body.phone,
       ownerEmail,
       createdByUserId: user?.id ?? null,
+      publicOrigin: requestOrigin(req),
     });
     return NextResponse.json({
       id: tenant.id,

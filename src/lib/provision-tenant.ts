@@ -36,12 +36,24 @@ function clerkConfigured(): boolean {
   return Boolean(process.env.CLERK_SECRET_KEY?.trim());
 }
 
+function clerkErrorMessage(e: unknown): string {
+  if (!e || typeof e !== "object") return e instanceof Error ? e.message : "Could not create";
+  const err = e as {
+    message?: string;
+    errors?: Array<{ longMessage?: string; message?: string }>;
+  };
+  const first = err.errors?.[0];
+  return first?.longMessage || first?.message || err.message || "Could not create";
+}
+
 export async function createTenant(opts: {
   name: string;
   phone?: string;
   ownerEmail: string;
   /** Clerk user id of the platform admin creating the org (removed after invite). */
   createdByUserId?: string | null;
+  /** Absolute origin for invite redirect (defaults to appOrigin()). */
+  publicOrigin?: string;
 }) {
   const name = opts.name.trim();
   const phone = (opts.phone ?? "").trim();
@@ -51,39 +63,54 @@ export async function createTenant(opts: {
 
   let clerkOrgId: string;
   const useClerk = !adminBypass() && clerkConfigured();
+  const origin = (opts.publicOrigin ?? appOrigin()).replace(/\/$/, "");
 
   let ownerClerkUserId: string | null = null;
 
   if (useClerk) {
     const client = await clerkClient();
-    const org = await client.organizations.createOrganization({
-      name,
-      ...(opts.createdByUserId ? { createdBy: opts.createdByUserId } : {}),
-    });
+    let org;
+    try {
+      org = await client.organizations.createOrganization({
+        name,
+        ...(opts.createdByUserId ? { createdBy: opts.createdByUserId } : {}),
+      });
+    } catch (e) {
+      throw new Error(clerkErrorMessage(e));
+    }
     clerkOrgId = org.id;
 
     // Prefer direct membership when the owner already has a Clerk account —
     // invite emails are easy to miss in local/dev and still leave them on /no-access.
-    const existing = await client.users.getUserList({
-      emailAddress: [ownerEmail],
-      limit: 1,
-    });
-    const existingOwner = existing.data[0];
-    if (existingOwner) {
-      await client.organizations.createOrganizationMembership({
-        organizationId: org.id,
-        userId: existingOwner.id,
-        role: CLERK_ROLE_ADMIN,
+    try {
+      const existing = await client.users.getUserList({
+        emailAddress: [ownerEmail],
+        limit: 1,
       });
-      ownerClerkUserId = existingOwner.id;
-    } else {
-      await client.organizations.createOrganizationInvitation({
-        organizationId: org.id,
-        emailAddress: ownerEmail,
-        role: CLERK_ROLE_ADMIN,
-        redirectUrl: `${appOrigin()}/activating`,
-        ...(opts.createdByUserId ? { inviterUserId: opts.createdByUserId } : {}),
-      });
+      const existingOwner = existing.data[0];
+      if (existingOwner) {
+        await client.organizations.createOrganizationMembership({
+          organizationId: org.id,
+          userId: existingOwner.id,
+          role: CLERK_ROLE_ADMIN,
+        });
+        ownerClerkUserId = existingOwner.id;
+      } else {
+        await client.organizations.createOrganizationInvitation({
+          organizationId: org.id,
+          emailAddress: ownerEmail,
+          role: CLERK_ROLE_ADMIN,
+          redirectUrl: `${origin}/activating`,
+          ...(opts.createdByUserId ? { inviterUserId: opts.createdByUserId } : {}),
+        });
+      }
+    } catch (e) {
+      try {
+        await client.organizations.deleteOrganization(org.id);
+      } catch {
+        // best-effort cleanup so failed invites don't leave orphan orgs
+      }
+      throw new Error(clerkErrorMessage(e));
     }
 
     // Platform admins must not remain org members — they use impersonation.

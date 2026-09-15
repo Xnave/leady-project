@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { redirectPath, refererRedirect, requestOrigin } from "./request-url";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { appOrigin, redirectPath, refererRedirect, requestOrigin } from "./request-url";
 
 describe("requestOrigin", () => {
   it("prefers x-forwarded host behind a tunnel", () => {
@@ -45,5 +45,24 @@ describe("refererRedirect", () => {
   it("ignores a malformed referer", () => {
     const req = post({ host: "localhost:3000", referer: "http://[" });
     expect(refererRedirect(req).href).toBe("http://localhost:3000/");
+  });
+});
+
+describe("appOrigin", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("uses Vercel production URL over a stale NEXT_PUBLIC_APP_URL", () => {
+    vi.stubEnv("VERCEL", "1");
+    vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "leady-project.vercel.app");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://stale.ngrok-free.app");
+    expect(appOrigin()).toBe("https://leady-project.vercel.app");
+  });
+
+  it("falls back to NEXT_PUBLIC_APP_URL locally", () => {
+    vi.stubEnv("VERCEL", "");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://tunnel.example.com");
+    expect(appOrigin()).toBe("https://tunnel.example.com");
   });
 });

@@ -45,7 +45,19 @@ export function refererRedirect(req: Request): URL {
   return redirectPath(req, "/");
 }
 
+/**
+ * Public app origin for invite redirects, OAuth callbacks, etc.
+ * On Vercel, prefer the deployment host so a stale ngrok NEXT_PUBLIC_APP_URL
+ * never becomes the Clerk invitation redirectUrl (that returns 400).
+ */
 export function appOrigin(): string {
+  if (process.env.VERCEL) {
+    const prod = (process.env.VERCEL_PROJECT_PRODUCTION_URL ?? "").replace(/\/$/, "");
+    if (prod) return prod.startsWith("http") ? prod : `https://${prod}`;
+    const deploy = (process.env.VERCEL_URL ?? "").replace(/\/$/, "");
+    if (deploy) return deploy.startsWith("http") ? deploy : `https://${deploy}`;
+  }
   const configured = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/$/, "");
-  return configured || "http://localhost:3000";
+  if (configured) return configured;
+  return "http://localhost:3000";
 }
