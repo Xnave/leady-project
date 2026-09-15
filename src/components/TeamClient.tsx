@@ -17,6 +17,7 @@ type Labels = {
   revoke: string;
   loadFailed: string;
   empty: string;
+  inviteClaimOnSignIn: string;
 };
 
 type Member = {
@@ -41,6 +42,7 @@ export function TeamClient({ labels }: { labels: Labels }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "member">("member");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -70,15 +72,22 @@ export function TeamClient({ labels }: { labels: Labels }) {
   async function invite(e: FormEvent) {
     e.preventDefault();
     setError("");
+    setNotice("");
     const res = await fetch("/api/team/invites", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email, role }),
     });
+    const data = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      mode?: "member" | "invited" | "pending_signin";
+    };
     if (!res.ok) {
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
       setError(data.error ?? labels.loadFailed);
       return;
+    }
+    if (data.mode === "pending_signin") {
+      setNotice(labels.inviteClaimOnSignIn);
     }
     setEmail("");
     await refresh();
@@ -150,6 +159,7 @@ export function TeamClient({ labels }: { labels: Labels }) {
         <button type="submit">{labels.inviteSend}</button>
       </form>
       {error ? <p className="muted">{error}</p> : null}
+      {notice ? <p className="muted">{notice}</p> : null}
 
       <h3>{labels.members}</h3>
       {members.length === 0 ? <p className="muted">{labels.empty}</p> : null}

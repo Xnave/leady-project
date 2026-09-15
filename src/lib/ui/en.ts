@@ -462,5 +462,7 @@ export const en: UiCopy = {
     revoke: "Revoke",
     loadFailed: "Could not load team",
     empty: "None yet.",
+    inviteClaimOnSignIn:
+      "Saved. Clerk invite emails need a custom domain — ask them to sign up here with that email; access is granted automatically.",
   },
 };

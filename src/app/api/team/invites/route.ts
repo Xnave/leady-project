@@ -10,11 +10,11 @@ export async function POST(req: Request) {
     const role = body.role;
     if (!email) return NextResponse.json({ error: "Email required" }, { status: 400 });
     if (!isInviteRole(role)) return NextResponse.json({ error: "Role must be admin or member" }, { status: 400 });
-    await inviteTeamMember(actor, email, role);
-    return NextResponse.json({ ok: true });
+    const result = await inviteTeamMember(actor, email, role);
+    return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed";
-    const status = message === "Forbidden" || message.includes("impersonat") ? 403 : 400;
+    const status = message === "Forbidden" ? 403 : 400;
     return NextResponse.json({ error: message }, { status });
   }
 }

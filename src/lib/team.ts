@@ -1,11 +1,13 @@
 import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
 import { adminBypass, isAdminSession, primaryEmailFromClerkUser } from "@/lib/admin";
+import { isClerkCustomDomainInviteError, clerkErrorMessage } from "@/lib/clerk-errors";
 import { prisma } from "@/lib/db";
 import {
   type InviteRole,
   type TenantRole,
   CLERK_ROLE_ADMIN,
   inviteRoleFromClerk,
+  isInviteRole,
   normalizeEmail,
 } from "@/lib/org-roles";
 import { appOrigin } from "@/lib/request-url";
@@ -88,13 +90,7 @@ export async function requireTeamManager(): Promise<TeamActor> {
   if (actor.role !== "owner" && actor.role !== "admin") {
     throw new Error("Forbidden");
   }
-  // Impersonating platform admin: read-only for team management (plan: no tenant invite UI while acting as platform admin).
-  if ((await isAdminSession()) && !adminBypass()) {
-    const { impersonatedTenantId } = await import("@/lib/admin");
-    if (await impersonatedTenantId()) {
-      throw new Error("Stop impersonating to manage team as a tenant user");
-    }
-  }
+  // Platform admins acting as a tenant may manage team (needed before custom domain / invites).
   return actor;
 }
 
@@ -136,11 +132,27 @@ export async function listTeam(actor: TeamActor): Promise<{
 }> {
   const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: actor.tenantId } });
   if (tenant.clerkOrgId.startsWith("local-") || tenant.clerkOrgId === "dev-org") {
-    return { members: [], invites: [], ownerEmail: tenant.ownerEmail };
+    const pending = await prisma.teamPendingInvite.findMany({
+      where: { tenantId: actor.tenantId },
+      orderBy: { createdAt: "desc" },
+    });
+    return {
+      members: [],
+      invites: pending
+        .filter((p) => isInviteRole(p.role))
+        .map((p) => ({
+          id: `local:${p.id}`,
+          email: p.email,
+          role: p.role as InviteRole,
+          status: "pending_signin",
+          createdAt: p.createdAt.getTime(),
+        })),
+      ownerEmail: tenant.ownerEmail,
+    };
   }
 
   const client = await clerkClient();
-  const [memberships, invitations] = await Promise.all([
+  const [memberships, invitations, pending] = await Promise.all([
     client.organizations.getOrganizationMembershipList({
       organizationId: actor.clerkOrgId,
       limit: 100,
@@ -149,6 +161,10 @@ export async function listTeam(actor: TeamActor): Promise<{
       organizationId: actor.clerkOrgId,
       limit: 100,
       status: ["pending"],
+    }),
+    prisma.teamPendingInvite.findMany({
+      where: { tenantId: actor.tenantId },
+      orderBy: { createdAt: "desc" },
     }),
   ]);
 
@@ -164,7 +180,7 @@ export async function listTeam(actor: TeamActor): Promise<{
     return { id: m.id, userId, email, name, role };
   });
 
-  const invites: TeamInviteRow[] = invitations.data.map((inv) => ({
+  const clerkInvites: TeamInviteRow[] = invitations.data.map((inv) => ({
     id: inv.id,
     email: inv.emailAddress,
     role: inviteRoleFromClerk(inv.role),
@@ -172,10 +188,34 @@ export async function listTeam(actor: TeamActor): Promise<{
     createdAt: inv.createdAt,
   }));
 
+  const localInvites: TeamInviteRow[] = pending
+    .filter((p) => isInviteRole(p.role))
+    .map((p) => ({
+      id: `local:${p.id}`,
+      email: p.email,
+      role: p.role as InviteRole,
+      status: "pending_signin",
+      createdAt: p.createdAt.getTime(),
+    }));
+
+  const seen = new Set(clerkInvites.map((i) => normalizeEmail(i.email)));
+  const invites = [
+    ...clerkInvites,
+    ...localInvites.filter((i) => !seen.has(normalizeEmail(i.email))),
+  ];
+
   return { members, invites, ownerEmail: tenant.ownerEmail };
 }
 
-export async function inviteTeamMember(actor: TeamActor, emailRaw: string, role: InviteRole): Promise<void> {
+export type InviteTeamResult = {
+  mode: "member" | "invited" | "pending_signin";
+};
+
+export async function inviteTeamMember(
+  actor: TeamActor,
+  emailRaw: string,
+  role: InviteRole,
+): Promise<InviteTeamResult> {
   const email = normalizeEmail(emailRaw);
   if (!email.includes("@")) throw new Error("Invalid email");
   const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: actor.tenantId } });
@@ -196,7 +236,10 @@ export async function inviteTeamMember(actor: TeamActor, emailRaw: string, role:
       userId: user.id,
       role: role === "admin" ? CLERK_ROLE_ADMIN : "org:member",
     });
-    return;
+    await prisma.teamPendingInvite.deleteMany({
+      where: { tenantId: actor.tenantId, email },
+    });
+    return { mode: "member" };
   }
   try {
     await client.organizations.createOrganizationInvitation({
@@ -206,14 +249,21 @@ export async function inviteTeamMember(actor: TeamActor, emailRaw: string, role:
       redirectUrl: `${appOrigin()}/activating`,
       inviterUserId: actor.userId.startsWith("user_") ? actor.userId : undefined,
     });
+    await prisma.teamPendingInvite.deleteMany({
+      where: { tenantId: actor.tenantId, email },
+    });
+    return { mode: "invited" };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (/custom domain/i.test(msg)) {
-      throw new Error(
-        "Team invites require a custom domain on Clerk. Add a domain, or ask the member to sign up first so you can add them by email.",
-      );
+    if (!isClerkCustomDomainInviteError(e)) {
+      throw new Error(clerkErrorMessage(e));
     }
-    throw e;
+    // Same as tenant owner: queue locally; claimPendingTeamInvites attaches on first sign-in.
+    await prisma.teamPendingInvite.upsert({
+      where: { tenantId_email: { tenantId: actor.tenantId, email } },
+      create: { tenantId: actor.tenantId, email, role },
+      update: { role },
+    });
+    return { mode: "pending_signin" };
   }
 }
 
@@ -284,6 +334,14 @@ export async function removeMember(actor: TeamActor, targetUserId: string): Prom
 }
 
 export async function revokeInvite(actor: TeamActor, invitationId: string): Promise<void> {
+  if (invitationId.startsWith("local:")) {
+    const id = invitationId.slice("local:".length);
+    await prisma.teamPendingInvite.deleteMany({
+      where: { id, tenantId: actor.tenantId },
+    });
+    return;
+  }
+
   const client = await clerkClient();
   const inv = await client.organizations.getOrganizationInvitation({
     organizationId: actor.clerkOrgId,

@@ -365,5 +365,6 @@ export type UiCopy = {
     revoke: string;
     loadFailed: string;
     empty: string;
+    inviteClaimOnSignIn: string;
   };
 };

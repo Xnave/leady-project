@@ -462,5 +462,7 @@ export const he: UiCopy = {
     revoke: "ביטול",
     loadFailed: "טעינת הצוות נכשלה",
     empty: "עדיין אין.",
+    inviteClaimOnSignIn:
+      "נשמר. הזמנות Clerk דורשות דומיין מותאם — בקשו מהם להירשם כאן עם אותו אימייל; הגישה תינתן אוטומטית.",
   },
 };

@@ -1,5 +1,6 @@
 import { clerkClient } from "@clerk/nextjs/server";
 import { claimOwnerOrganizations } from "@/lib/claim-owner";
+import { claimPendingTeamInvites } from "@/lib/claim-team";
 import { prisma } from "@/lib/db";
 import { normalizeEmail } from "@/lib/org-roles";
 
@@ -12,6 +13,7 @@ export async function resolveAccessibleOrgIds(
   email: string | null | undefined,
 ): Promise<string[]> {
   await claimOwnerOrganizations(userId, email);
+  await claimPendingTeamInvites(userId, email);
 
   const client = await clerkClient();
   const memberships = await client.users.getOrganizationMembershipList({

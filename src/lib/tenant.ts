@@ -7,6 +7,7 @@ import {
   primaryEmailFromClerkUser,
 } from "@/lib/admin";
 import { claimOwnerOrganizations } from "@/lib/claim-owner";
+import { claimPendingTeamInvites } from "@/lib/claim-team";
 import { prisma } from "@/lib/db";
 
 export async function requireTenantId(): Promise<string> {
@@ -39,7 +40,10 @@ export async function requireTenantId(): Promise<string> {
     if (memberships.data.length === 0) {
       const user = await currentUser();
       const email = await primaryEmailFromClerkUser(user);
-      const claimed = await claimOwnerOrganizations(userId, email);
+      const claimed = [
+        ...(await claimOwnerOrganizations(userId, email)),
+        ...(await claimPendingTeamInvites(userId, email)),
+      ];
       if (claimed.length > 0) {
         memberships = await client.users.getOrganizationMembershipList({
           userId,

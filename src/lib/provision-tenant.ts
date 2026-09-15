@@ -2,6 +2,7 @@ import { clerkClient } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { encryptSecret } from "@/lib/crypto";
 import { adminBypass } from "@/lib/admin";
+import { clerkErrorMessage, isClerkCustomDomainInviteError } from "@/lib/clerk-errors";
 import { buildAgentSystemPrompt, flowForCatalog, hitlForCatalog } from "@/lib/flow/catalog";
 import { defaultLeadSchema } from "@/lib/flow/validate";
 import { CLERK_ROLE_ADMIN, normalizeEmail } from "@/lib/org-roles";
@@ -34,16 +35,6 @@ export async function ensureLocalDemoChannel(tenantId: string): Promise<string> 
 
 function clerkConfigured(): boolean {
   return Boolean(process.env.CLERK_SECRET_KEY?.trim());
-}
-
-function clerkErrorMessage(e: unknown): string {
-  if (!e || typeof e !== "object") return e instanceof Error ? e.message : "Could not create";
-  const err = e as {
-    message?: string;
-    errors?: Array<{ longMessage?: string; message?: string }>;
-  };
-  const first = err.errors?.[0];
-  return first?.longMessage || first?.message || err.message || "Could not create";
 }
 
 export async function createTenant(opts: {
@@ -111,8 +102,7 @@ export async function createTenant(opts: {
           });
           ownerAccess = "invited";
         } catch (inviteErr) {
-          const msg = clerkErrorMessage(inviteErr);
-          if (/custom domain/i.test(msg)) {
+          if (isClerkCustomDomainInviteError(inviteErr)) {
             ownerAccess = "claim_on_signin";
           } else {
             throw inviteErr;

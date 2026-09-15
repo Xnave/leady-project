@@ -40,6 +40,20 @@ model Tenant {
   adminDecisionLogs    AdminDecisionLog[]
   mediaAssets          MediaAsset[]
   revisions            AgentConfigRevision[]
+  pendingTeamInvites   TeamPendingInvite[]
+}
+
+/** Local pending invites when Clerk org invitations are unavailable (e.g. *.vercel.app). */
+model TeamPendingInvite {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email     String
+  role      String
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, email])
+  @@index([email])
 }
 
 model Agent {

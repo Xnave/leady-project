@@ -36,6 +36,7 @@ export default async function TeamPage() {
           revoke: ui.team.revoke,
           loadFailed: ui.team.loadFailed,
           empty: ui.team.empty,
+          inviteClaimOnSignIn: ui.team.inviteClaimOnSignIn,
         }}
       />
     </div>
