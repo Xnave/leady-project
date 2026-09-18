@@ -166,12 +166,12 @@ export function registerBookingCapability(): void {
 
       if (recent && (recent.status === "approved" || recent.status === "pending")) {
         const lines = [
-          `Recent meeting on this lead (id=${recent.id}): status=${recent.status}, slot="${recent.slotText}", need="${recent.needText || "(empty)"}", name="${recent.contactName || ""}".`,
-          "This is a CONTINUATION of that meeting thread — not a new sales conversation.",
-          "A meeting already exists for this lead. Prefer update_meeting_details for clarifications; do not treat short product answers as a new sales lead.",
-          "If they give concrete meeting details (פרטי הפגישה), call update_meeting_details with their wording, then reply in the SAME turn.",
-          "If they say details are wrong but give no replacement, do NOT call update_meeting_details — only reply and ask what to write. Never invent a staff/CRM note.",
-          "Do NOT send a business intro, do NOT restart a product pitch, do NOT call start_booking unless they explicitly ask for a new/different meeting.",
+          `Upcoming/active meeting on this lead (id=${recent.id}): status=${recent.status}, slot="${recent.slotText}", need="${recent.needText || "(empty)"}", name="${recent.contactName || ""}".`,
+          "Only treat this turn as a meeting follow-up when their message CLEARLY relates to that meeting (details, time, confirmation, answering a staff note about it).",
+          "Bare hellos, or unrelated chat → normal reply. Do NOT mention the meeting, past need text, or ask how else to help with it.",
+          "When they clearly give/correct meeting details for that meeting: update_meeting_details then reply in the SAME turn.",
+          "If they say details are wrong but give no replacement, do NOT call update_meeting_details — only reply and ask what to write.",
+          "Do NOT send a fresh business intro. Do NOT call start_booking unless they explicitly ask for a new/different meeting.",
         ];
         if (staffNote) {
           lines.push(
@@ -185,7 +185,7 @@ export function registerBookingCapability(): void {
         "Visit booking is NOT started. Use reply to answer product/sales questions from knowledge.",
         'Examples that must NOT trigger booking: "I want a WhatsApp agent", "how much is it", "tell me more", "I need something for Instagram".',
         "Only call start_booking if they explicitly ask to schedule a meeting/visit/demo/call, or clearly accept an offer to book.",
-        "If a recent meeting exists and they only add or correct details, use update_meeting_details + reply (same turn) instead of pitching.",
+        "Past/expired meetings are irrelevant — do not mention them, do not say בהמשך לפגישה, and do not reuse their need text unless the customer explicitly brings that meeting up.",
       ];
     },
     tools: ({ ctx, stage, collected }) => {

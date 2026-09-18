@@ -7,12 +7,17 @@ import { defaultFlow, defaultHitlPolicy, defaultLeadSchema } from "@/lib/flow/va
 import type { AgentSnapshot, TurnContext } from "@/lib/flow/types";
 import type { FlowDefinition, HitlPolicy, LeadFields, LeadSchema } from "@/lib/flow/types";
 import { looksLikePhoneNumber } from "@/lib/flow/booking-collect";
+import { isMeetingStillRelevant } from "@/lib/flow/meeting-relevance";
 import {
   clearBookingSessionFields,
   mergeLeadAndSession,
   splitCrmAndSession,
 } from "@/lib/flow/booking";
-import { reopenConversation, resumeConversationAfterHitl } from "@/lib/flow/rotate-conversation";
+import {
+  closeConversationAsDone,
+  reopenConversation,
+  resumeConversationAfterHitl,
+} from "@/lib/flow/rotate-conversation";
 import {
   contactDisplayName,
   displayNameFromLeadFields,
@@ -27,6 +32,57 @@ export {
   resumeConversationAfterHitl,
   rotateConversation,
 } from "@/lib/flow/rotate-conversation";
+
+const FORCE_FRESH_INBOUND_KEY = "force_fresh_inbound";
+
+async function leadHasRelevantMeeting(tenantId: string, leadId: string): Promise<boolean> {
+  const candidates = await prisma.meeting.findMany({
+    where: {
+      tenantId,
+      leadId,
+      status: { in: ["pending", "approved"] },
+    },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    take: 8,
+    select: {
+      status: true,
+      slotText: true,
+      decidedAt: true,
+      updatedAt: true,
+    },
+  });
+  return candidates.some((m) => isMeetingStillRelevant(m));
+}
+
+/** After admin ends a chat, the next customer message must start a clean thread. */
+export async function markLeadForceFreshInbound(tenantId: string, leadId: string): Promise<void> {
+  const lead = await prisma.lead.findFirst({
+    where: { id: leadId, tenantId },
+    select: { fields: true },
+  });
+  if (!lead) return;
+  const fields = { ...((lead.fields as LeadFields) ?? {}) };
+  fields[FORCE_FRESH_INBOUND_KEY] = "1";
+  await prisma.lead.update({
+    where: { id: leadId },
+    data: { fields: fields as Prisma.InputJsonValue },
+  });
+}
+
+export async function clearLeadForceFreshInbound(tenantId: string, leadId: string): Promise<void> {
+  const lead = await prisma.lead.findFirst({
+    where: { id: leadId, tenantId },
+    select: { fields: true },
+  });
+  if (!lead) return;
+  const fields = { ...((lead.fields as LeadFields) ?? {}) };
+  if (!(FORCE_FRESH_INBOUND_KEY in fields)) return;
+  delete fields[FORCE_FRESH_INBOUND_KEY];
+  await prisma.lead.update({
+    where: { id: leadId },
+    data: { fields: fields as Prisma.InputJsonValue },
+  });
+}
 
 export async function persistInboundIfNew(opts: {
   tenantId: string;
@@ -114,41 +170,48 @@ export async function persistInboundIfNew(opts: {
   });
 
   const flow = channel.agent.flow as FlowDefinition;
+  const leadFields = (lead.fields as LeadFields) ?? {};
+  const forceFresh = String(leadFields[FORCE_FRESH_INBOUND_KEY] ?? "") === "1";
+  const hasRelevantMeeting = await leadHasRelevantMeeting(opts.tenantId, lead.id);
 
-  // No open thread: reopen the latest closed one (same history). Do NOT auto-create
-  // a new conversation + intro — the agent may offer that via start_new_conversation.
-  if (!conversation) {
-    const latestClosed = await prisma.conversation.findFirst({
-      where: { tenantId: opts.tenantId, leadId: lead.id, status: "closed" },
-      orderBy: { createdAt: "desc" },
-      select: { id: true },
+  // Admin "סיים שיחה" → next inbound must not continue a lingering open thread.
+  if (forceFresh && conversation) {
+    await closeConversationAsDone({
+      tenantId: opts.tenantId,
+      conversationId: conversation.id,
+      reason: "admin",
     });
-    if (latestClosed) {
-      const reopened = await reopenConversation({
+    conversation = null;
+  }
+
+  // Stale open thread with no upcoming meeting → close; do not keep appending forever.
+  if (conversation && !forceFresh && !hasRelevantMeeting) {
+    const lastAt = conversation.messages[0]?.createdAt?.getTime() ?? 0;
+    const staleMs = 6 * 60 * 60 * 1000;
+    const stale = !lastAt || Date.now() - lastAt >= staleMs;
+    if (stale) {
+      await closeConversationAsDone({
         tenantId: opts.tenantId,
-        conversationId: latestClosed.id,
+        conversationId: conversation.id,
+        reason: "stale_open",
       });
-      conversation = await prisma.conversation.findFirstOrThrow({
-        where: { id: reopened.conversationId },
-        include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
-      });
-      await prisma.lead.update({
-        where: { id: lead.id },
-        data: { adminUnread: true },
-      });
+      conversation = null;
     }
   }
 
+  // Never auto-reopen a closed conversation on inbound. Staff can reopen/start explicitly;
+  // the agent may call start_new_conversation after the customer agrees.
   if (!conversation) {
-    // First message ever for this lead.
-    const prevFields = (lead.fields as LeadFields) ?? {};
+    const prevFields = { ...((lead.fields as LeadFields) ?? {}) };
+    delete prevFields[FORCE_FRESH_INBOUND_KEY];
     const cleared = clearBookingSessionFields(prevFields);
-    if (JSON.stringify(prevFields) !== JSON.stringify(cleared)) {
-      await prisma.lead.update({
-        where: { id: lead.id },
-        data: { fields: cleared as Prisma.InputJsonValue },
-      });
-    }
+    await prisma.lead.update({
+      where: { id: lead.id },
+      data: {
+        fields: cleared as Prisma.InputJsonValue,
+        adminUnread: true,
+      },
+    });
     conversation = await prisma.conversation.create({
       data: {
         tenantId: opts.tenantId,
@@ -163,10 +226,6 @@ export async function persistInboundIfNew(opts: {
         session: {} as Prisma.InputJsonValue,
       },
       include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
-    });
-    await prisma.lead.update({
-      where: { id: lead.id },
-      data: { adminUnread: true },
     });
   }
 
@@ -247,9 +306,14 @@ export async function loadTurnContext(
     (looksLikePhoneNumber(fromId) ? fromId : "") ||
     undefined;
 
-  const recentMeetingRow = await prisma.meeting.findFirst({
-    where: { tenantId, leadId: conversation.lead.id },
+  const meetingCandidates = await prisma.meeting.findMany({
+    where: {
+      tenantId,
+      leadId: conversation.lead.id,
+      status: { in: ["pending", "approved"] },
+    },
     orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    take: 8,
     select: {
       id: true,
       status: true,
@@ -257,8 +321,11 @@ export async function loadTurnContext(
       needText: true,
       contactName: true,
       decidedAt: true,
+      updatedAt: true,
     },
   });
+  const recentMeetingRow =
+    meetingCandidates.find((m) => isMeetingStillRelevant(m)) ?? null;
 
   return {
     tenantId,

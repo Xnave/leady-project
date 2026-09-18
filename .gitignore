@@ -13,3 +13,5 @@ prisma/dev.db-journal
 coverage
 nginx/run/
 nginx/certs/
+.agent/
+marketing-materials/

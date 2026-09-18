@@ -53,6 +53,7 @@ const HIDDEN_CAPTURED = new Set([
   "staff_slot_offer",
   "time_preference",
   "name_collected_by_agent",
+  "force_fresh_inbound",
   "intent", // already shown in the profile block
   "meetingId",
 ]);

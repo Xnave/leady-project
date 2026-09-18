@@ -4,6 +4,10 @@ import {
   reopenConversation,
   rotateConversation,
 } from "@/lib/flow/rotate-conversation";
+import {
+  clearLeadForceFreshInbound,
+  markLeadForceFreshInbound,
+} from "@/lib/conversations";
 import { requireTenantId } from "@/lib/tenant";
 import { redirectPath } from "@/lib/request-url";
 import { prisma } from "@/lib/db";
@@ -62,6 +66,19 @@ export async function POST(
         });
         redirectConvoId = toClose;
       }
+      // Ensure no zombie open threads remain for this lead after an explicit end.
+      const leftoverOpen = await prisma.conversation.findMany({
+        where: { leadId, tenantId, status: { not: "closed" } },
+        select: { id: true },
+      });
+      for (const row of leftoverOpen) {
+        await closeConversationAsDone({
+          tenantId,
+          conversationId: row.id,
+          reason: "admin",
+        });
+      }
+      await markLeadForceFreshInbound(tenantId, leadId);
     } else if (intent === "start") {
       if (openConvo) {
         const accept = req.headers.get("accept") ?? "";
@@ -76,6 +93,7 @@ export async function POST(
           303,
         );
       }
+      await clearLeadForceFreshInbound(tenantId, leadId);
       const rotated = await rotateConversation({
         tenantId,
         leadId,
@@ -96,6 +114,7 @@ export async function POST(
       if (openConvo && openConvo.id === conversationId) {
         redirectConvoId = conversationId;
       } else {
+        await clearLeadForceFreshInbound(tenantId, leadId);
         const reopened = await reopenConversation({
           tenantId,
           conversationId,
