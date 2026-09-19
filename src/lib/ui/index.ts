@@ -38,7 +38,7 @@ export {
   actionLabel,
   hitlReasonLabel,
   leadFieldLabel,
-  meetingKindLabel,
+  requestKindLabel,
 } from "./labels";
 
 export function roleLabel(ui: UiCopy, role: string): string {

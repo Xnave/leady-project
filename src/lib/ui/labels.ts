@@ -42,8 +42,9 @@ export function actionLabel(ui: UiCopy, action: string): string {
   return lookupLabel(ui.actions, action);
 }
 
-export function meetingKindLabel(ui: UiCopy, kind: string): string {
-  return lookupLabel(ui.meetingKinds, kind);
+/** A request's kind ("visit", "stay", ...) as the operator reads it. */
+export function requestKindLabel(ui: UiCopy, kind: string): string {
+  return lookupLabel(ui.requestKinds, kind);
 }
 
 export function hitlReasonLabel(ui: UiCopy, reason: string): string {

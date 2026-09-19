@@ -10,7 +10,7 @@ export type AppendAdminDecisionOpts = {
   tenantId: string;
   leadId?: string | null;
   conversationId?: string | null;
-  /** Domain bucket, e.g. "meeting", "hitl", "lead". */
+  /** Domain bucket, e.g. "request", "hitl", "lead". */
   category: string;
   /** Action within the category, e.g. "approve", "decline", "reschedule". */
   action: string;

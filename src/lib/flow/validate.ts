@@ -102,6 +102,15 @@ export const defaultLeadSchema: LeadSchema = {
     booking: { type: "string" },
     booking_confirm: { type: "string" },
     booking_flow: { type: "string" },
+    check_in: { type: "string" },
+    check_out: { type: "string" },
+    guests: { type: "string" },
+    unit: { type: "string" },
+    reservation_flow: { type: "string" },
+    reservation_confirm: { type: "string" },
+    staff_date_offer: { type: "string" },
+    availability_status: { type: "string" },
+    availability_url: { type: "string" },
   },
 };
 

@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { bookingInstance, bookingNoun, parseBookingConfig } from "./booking-config";
+import { instanceConfig, instanceKind } from "./instances";
 import type { TalkStage, TurnContext } from "./types";
 import { defaultHitlPolicy, defaultLeadSchema } from "./validate";
 
@@ -23,11 +25,16 @@ import {
   flowForCatalog,
   resolveBookingStance,
 } from "./catalog";
-import { enforceBookingEffects } from "./interpreter";
+import { reconcileBooking } from "./capabilities/booking";
+import type { InterpreterPorts } from "./interpreter";
 import { talkTurn } from "./llm";
 import { buildTalkSystemPrompt } from "./prompt-builder";
 import {
+  getAction,
   getCapability,
+  listActions,
+  listCapabilities,
+  outcomeFlagMappings,
   resolveTalkCapabilities,
   sessionFieldKeysForStage,
 } from "./registry";
@@ -43,8 +50,9 @@ function baseCtx(
       phone: "",
       intro: "We help you book a visit.",
       chatLanguage: "en",
-      venueHours: "Sun–Thu 09:00–19:00",
-      venueAddress: "1 Main St",
+      capabilityInstances: [
+        bookingInstance({ venueHours: "Sun–Thu 09:00–19:00", venueAddress: "1 Main St" }),
+      ],
     },
     agent: {
       id: "a1",
@@ -127,15 +135,28 @@ describe("flowForCapabilities settings", () => {
     expect(resolveBookingStance({ catalogId: "book" })).toBe("proactive");
   });
 
-  it("attaches multiple capabilities including stub packs", () => {
+  it("attaches several capabilities and unions their session keys", () => {
     ensureFlowRegistry();
     const stage = flowForCapabilities({
-      capabilities: ["booking", "orders", "docs"],
+      capabilities: ["booking", "reservations"],
     }).stages.talk as TalkStage;
-    expect(resolveTalkCapabilities(stage)).toEqual(["booking", "orders", "docs"]);
+    expect(resolveTalkCapabilities(stage)).toEqual(["booking", "reservations"]);
     expect(sessionFieldKeysForStage(stage)).toEqual(
-      expect.arrayContaining(["booking_flow", "order_draft", "docs_requested"]),
+      expect.arrayContaining(["booking_flow", "reservation_flow"]),
     );
+  });
+
+  it("ignores capability ids with no registration", () => {
+    ensureFlowRegistry();
+    // A stored flow may still name a capability that has since been removed.
+    const stage = {
+      ...(flowForCapabilities({ capabilities: ["booking"] }).stages.talk as TalkStage),
+      capabilities: ["booking", "orders"],
+    };
+    expect(sessionFieldKeysForStage(stage)).toEqual(
+      expect.arrayContaining(["booking_flow"]),
+    );
+    expect(getCapability("orders")).toBeUndefined();
   });
 });
 
@@ -164,12 +185,11 @@ describe("system prompts by capability", () => {
     expect(prompt).not.toMatch(/update_meeting_details/);
   });
 
-  it("includes orders and docs stub sections when those capabilities are enabled", () => {
-    const flow = flowForCapabilities({ capabilities: ["orders", "docs"] });
+  it("includes the reservations section without booking guidance", () => {
+    const flow = flowForCapabilities({ capabilities: ["reservations"] });
     const stage = talkStage(flow);
     const prompt = buildTalkSystemPrompt(baseCtx(flow), stage, {});
-    expect(prompt).toMatch(/Orders capability is enabled/);
-    expect(prompt).toMatch(/Document collection capability is enabled/);
+    expect(prompt).toMatch(/reservation/i);
     expect(prompt).not.toMatch(/start_booking/);
   });
 
@@ -244,14 +264,15 @@ describe("capability tools surface", () => {
     expect(names).not.toContain("ask_field");
   });
 
-  it("orders/docs packs have no tools yet (prompt-only stubs)", () => {
+  it("every registered capability ships real tools", () => {
     ensureFlowRegistry();
-    expect(getCapability("orders")?.tools).toBeUndefined();
-    expect(getCapability("docs")?.tools).toBeUndefined();
+    for (const cap of listCapabilities()) {
+      expect(cap.tools, `${cap.id} has no tools`).toBeTypeOf("function");
+    }
   });
 });
 
-describe("enforceBookingEffects respects capabilities", () => {
+describe("reconcileBooking respects capabilities", () => {
   it("does not force book_meeting when booking capability is off", () => {
     const flow = flowForCapabilities({ capabilities: [] });
     const stage = talkStage(flow);
@@ -268,8 +289,8 @@ describe("enforceBookingEffects respects capabilities", () => {
         },
       },
     });
-    const out = enforceBookingEffects(ctx, stage, { reply: "ok" });
-    expect(out.effects?.some((e) => e.type === "book_meeting")).toBeFalsy();
+    const out = reconcileBooking(ctx, stage, { reply: "ok" });
+    expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBeFalsy();
   });
 
   it("injects book_meeting when booking is on and confirm is complete", () => {
@@ -289,8 +310,8 @@ describe("enforceBookingEffects respects capabilities", () => {
         },
       },
     });
-    const out = enforceBookingEffects(ctx, stage, { reply: "ok" });
-    expect(out.effects?.some((e) => e.type === "book_meeting")).toBe(true);
+    const out = reconcileBooking(ctx, stage, { reply: "ok" });
+    expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBe(true);
   });
 });
 
@@ -416,3 +437,198 @@ describe("talkTurn with mocked LLM", () => {
     expect(out.reply).toBe("Plain model reply");
   });
 });
+
+describe("kernel purity", () => {
+  /**
+   * The interpreter is the closed kernel: adding a capability must never edit it.
+   * These two tests fail if a domain name creeps back in.
+   */
+  it("interpreter.ts names no domain concept", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile(
+      new URL("./interpreter.ts", import.meta.url),
+      "utf8",
+    );
+    const forbidden = [
+      "book_meeting",
+      "create_reservation_hold",
+      "accept_offered_slot",
+      "recentMeeting",
+      "recentReservation",
+      "reservationConfig",
+      "venueHours",
+      "enforceBookingEffects",
+      "bookingFieldGaps",
+    ];
+    const found = forbidden.filter((needle) => src.includes(needle));
+    expect(found, `domain names leaked into the kernel: ${found.join(", ")}`).toEqual(
+      [],
+    );
+  });
+
+  it("InterpreterPorts has no per-capability port", () => {
+    const portNames = Object.keys(fakePorts());
+    expect(portNames).toContain("runEffect");
+    expect(portNames).not.toContain("bookMeeting");
+    expect(portNames).not.toContain("createReservationHold");
+  });
+
+  it("loadTurnContext resolves capability state generically", async () => {
+    const src = await (await import("node:fs/promises")).readFile(
+      new URL("../conversations.ts", import.meta.url),
+      "utf8",
+    );
+    expect(src).toContain("capabilityStateLoaders");
+    expect(src).not.toContain("recentMeetingRow");
+    expect(src).not.toContain("recentReservationRow");
+  });
+
+  it("registered capabilities own their durable effects", () => {
+    ensureFlowRegistry();
+    expect(listActions()).toEqual(
+      expect.arrayContaining(["book_meeting", "create_reservation_hold"]),
+    );
+    // Effects resolve through the registry, not a kernel branch.
+    expect(getAction("book_meeting")).toBeTypeOf("function");
+  });
+
+  it("legacy outcome flags are declared by capabilities, not the kernel", () => {
+    ensureFlowRegistry();
+    const flags = outcomeFlagMappings();
+    expect(flags.map((f) => f.flag)).toEqual(
+      expect.arrayContaining(["book", "acceptOfferedSlot"]),
+    );
+    expect(flags.find((f) => f.flag === "acceptOfferedSlot")?.completesStage).toBe(true);
+  });
+});
+
+describe("one request primitive", () => {
+  /**
+   * Every approval vertical shares one table, one HITL type, one decide route and
+   * one operator form. A new vertical must not add a second of any of them.
+   */
+  const readSrc = async (relative: string) =>
+    (await import("node:fs/promises")).readFile(
+      new URL(relative, import.meta.url),
+      "utf8",
+    );
+
+  it("persists every vertical on the Request table", async () => {
+    const schema = await readSrc("../../../prisma/schema.prisma");
+    expect(schema).toContain("model Request {");
+    expect(schema).not.toContain("model Meeting {");
+    expect(schema).not.toContain("model Reservation {");
+  });
+
+  it("opens one approval task type", async () => {
+    const requests = await readSrc("../requests.ts");
+    expect(requests).toContain('REQUEST_APPROVAL_TASK = "request_approval"');
+    for (const src of [await readSrc("../meetings.ts"), await readSrc("../reservations.ts")]) {
+      expect(src).not.toContain("booking_approval");
+      expect(src).not.toContain("reservation_approval");
+    }
+  });
+
+  it("routes decisions through the owning capability", () => {
+    ensureFlowRegistry();
+    for (const id of ["booking", "reservations"]) {
+      expect(getCapability(id)?.decide, `${id} cannot decide`).toBeTypeOf("function");
+    }
+  });
+
+  it("ships exactly one decide route and one decision form", async () => {
+    const { readdir } = await import("node:fs/promises");
+    const api = await readdir(new URL("../../app/api", import.meta.url));
+    expect(api).toContain("requests");
+    expect(api).not.toContain("meetings");
+    expect(api).not.toContain("reservations");
+    const components = await readdir(new URL("../../components", import.meta.url));
+    const decisionForms = components.filter((f) => f.endsWith("DecisionForm.tsx"));
+    expect(decisionForms).toEqual(["RequestDecisionForm.tsx"]);
+  });
+});
+
+describe("config lives in capability instances", () => {
+  const readSrc = async (relative: string) =>
+    (await import("node:fs/promises")).readFile(
+      new URL(relative, import.meta.url),
+      "utf8",
+    );
+
+  it("Tenant carries no per-capability column", async () => {
+    const schema = await readSrc("../../../prisma/schema.prisma");
+    const tenantModel = schema.slice(
+      schema.indexOf("model Tenant {"),
+      schema.indexOf("model TeamPendingInvite {"),
+    );
+    for (const column of [
+      "venueAddress",
+      "venueHours",
+      "bookingRequestTemplate",
+      "reservationConfig",
+    ]) {
+      expect(tenantModel, `${column} still lives on Tenant`).not.toContain(column);
+    }
+    expect(schema).toContain("model CapabilityInstance {");
+  });
+
+  it("the tenant snapshot exposes instances, not capability fields", () => {
+    const ctx = baseCtx(flowForCapabilities({ capabilities: ["booking"] }));
+    expect(ctx.tenant?.capabilityInstances?.[0]?.capabilityId).toBe("booking");
+    expect(ctx.tenant).not.toHaveProperty("venueHours");
+    expect(ctx.tenant).not.toHaveProperty("reservationConfig");
+  });
+
+  it("instance nouns override the stay/visit fallbacks", () => {
+    expect(bookingNoun(parseBookingConfig({}), "en").singular).toBe("visit");
+    expect(
+      bookingNoun(
+        parseBookingConfig({
+          nouns: { en: { singular: "fitting", plural: "fittings" } },
+        }),
+        "en",
+      ).singular,
+    ).toBe("fitting");
+  });
+
+  it("a second instance of one capability is pure config", () => {
+    // A dress shop running fittings and rentals: two rows, no new code.
+    const ctx = baseCtx(flowForCapabilities({ capabilities: ["booking"] }));
+    ctx.tenant = {
+      ...ctx.tenant!,
+      capabilityInstances: [
+        bookingInstance({ venueHours: "10:00–18:00" }),
+        {
+          id: "rental",
+          capabilityId: "reservations",
+          kind: "rental",
+          enabled: true,
+          config: { collect: ["dress", "size"] },
+        },
+      ],
+    };
+    expect(instanceConfig(ctx, "booking")).toMatchObject({ venueHours: "10:00–18:00" });
+    expect(instanceConfig(ctx, "reservations", "rental")).toMatchObject({
+      collect: ["dress", "size"],
+    });
+    expect(instanceKind(ctx, "reservations", "stay")).toBe("rental");
+  });
+});
+
+/** Minimal port set, used only to assert the shape of InterpreterPorts. */
+function fakePorts(): InterpreterPorts {
+  return {
+    classify: async () => "sales",
+    extract: async () => ({}),
+    draftQuestion: async () => "",
+    answerFaq: async () => ({ resolved: true, reply: "" }),
+    talk: async () => ({ reply: "" }),
+    runEffect: async () => ({ ok: true, reply: "" }),
+    requestHuman: async () => undefined,
+    persistStage: async () => undefined,
+    persistFields: async () => undefined,
+    sendAndSave: async () => undefined,
+    scheduleNudge: async () => undefined,
+    log: () => undefined,
+  };
+}

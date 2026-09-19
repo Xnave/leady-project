@@ -17,11 +17,6 @@ model Tenant {
   ownerEmail             String   @default("")
   /** Filled when the owner accepts the Clerk org invite. */
   ownerClerkUserId       String?  @unique
-  venueAddress           String   @default("")
-  venueHours             String   @default("")
-  bookingRequestTemplate String   @default("")
-  bookingApprovedTemplate String  @default("")
-  bookingRejectedTemplate String  @default("")
   chatLanguage           String   @default("multi")
   idleResetDays          Int      @default(5)
   mediaAnalysisEnabled   Boolean  @default(false)
@@ -31,16 +26,40 @@ model Tenant {
   updatedAt              DateTime @updatedAt
 
   agents               Agent[]
+  capabilityInstances  CapabilityInstance[]
   channelConnections   ChannelConnection[]
   leads                Lead[]
   conversations        Conversation[]
   messages             Message[]
   hitlTasks            HitlTask[]
-  meetings             Meeting[]
+  requests             Request[]
   adminDecisionLogs    AdminDecisionLog[]
   mediaAssets          MediaAsset[]
   revisions            AgentConfigRevision[]
   pendingTeamInvites   TeamPendingInvite[]
+}
+
+/**
+ * One configured request type for a tenant: "the villa's stay flow", "the dress
+ * shop's fitting flow". Onboarding a business type is a row here, not a column on
+ * Tenant and not new code — one tenant can run several instances at once.
+ */
+model CapabilityInstance {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /** Registered capability that runs this instance: "booking" | "reservations". */
+  capabilityId String
+  /** Tenant-facing kind, also the `Request.kind`: "visit" | "stay" | "fitting" | … */
+  kind         String
+  enabled      Boolean  @default(true)
+  /** Field schema, nouns, templates, availability provider, policies. */
+  config       Json     @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, kind])
+  @@index([tenantId, capabilityId])
 }
 
 /** Local pending invites when Clerk org invitations are unavailable (e.g. *.vercel.app). */
@@ -140,7 +159,7 @@ model Lead {
 
   conversations Conversation[]
   hitlTasks     HitlTask[]
-  meetings      Meeting[]
+  requests      Request[]
   adminDecisionLogs AdminDecisionLog[]
   mediaAssets   MediaAsset[]
 
@@ -172,7 +191,7 @@ model Conversation {
 
   messages  Message[]
   hitlTasks HitlTask[]
-  meetings  Meeting[]
+  requests  Request[]
 
   @@index([tenantId])
   @@index([leadId])
@@ -194,7 +213,15 @@ model Message {
   @@index([conversationId, createdAt])
 }
 
-model Meeting {
+/**
+ * One structured commitment awaiting human approval — a visit, a stay, a fitting,
+ * a rental. Verticals differ only in their `kind`, whether the time spine is a point
+ * or a span, and the typed values in `data`; they are not separate tables.
+ *
+ * The time dimension stays normalized so the calendar and conflict queries work;
+ * everything else is typed config (see `src/lib/flow/fields`).
+ */
+model Request {
   id             String    @id @default(cuid())
   tenantId       String
   tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -202,27 +229,37 @@ model Meeting {
   lead           Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  /** Capability that owns this request: "booking" | "reservations" | … */
+  capabilityId   String
+  /** Tenant-facing kind: "visit" | "stay" | "fitting" | "rental" — a CapabilityInstance id. */
+  kind           String
   status         String    @default("pending")
-  kind           String    @default("visit")
-  slotText       String
+  /** Normalized time spine: a point in time sets startAt only; a span sets both. */
+  startAt        DateTime?
+  endAt          DateTime?
+  /** Original human wording, e.g. "Thursday evening". Authoritative for display. */
+  timeText       String    @default("")
   contactName    String    @default("")
   contactEmail   String    @default("")
   contactPhone   String    @default("")
-  venueText      String    @default("")
-  hoursText      String    @default("")
-  needText       String    @default("")
+  /** Typed field values per the instance's field schema (need, guests, unit, size, …). */
+  data           Json      @default("{}")
+  /** Set only when a configured rate source produced a quote. */
+  quotedTotal    Float?
   decidedBy      String?
   decidedAt      DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  @@index([tenantId, status])
+  @@index([tenantId, status, startAt])
+  @@index([tenantId, kind, status])
   @@index([leadId])
+  @@index([conversationId])
 }
 
 /**
  * Append-only log of admin (and customer) decisions of any kind.
- * Meetings are one category today; future HITL / lead actions use the same table.
+ * `request` covers every approval vertical; HITL / lead actions use the same table.
  */
 model AdminDecisionLog {
   id             String   @id @default(cuid())
@@ -231,13 +268,13 @@ model AdminDecisionLog {
   leadId         String?
   lead           Lead?    @relation(fields: [leadId], references: [id], onDelete: Cascade)
   conversationId String?
-  /** Domain: meeting | hitl | lead | … */
+  /** Domain: request | hitl | lead | … */
   category       String
   /** Action within category: approve | decline | reschedule | … */
   action         String
   actorUserId    String
   actorLabel     String   @default("")
-  /** Type-specific payload (note, customReply, slots, meetingId, …). */
+  /** Type-specific payload (note, customReply, requestId, kind, times, …). */
   details        Json     @default("{}")
   summary        String   @default("")
   createdAt      DateTime @default(now())

@@ -8,7 +8,7 @@ import type { ChatLanguage } from "./locale";
 export type CatalogId = "inbox" | "faq";
 export type LegacyCatalogId = CatalogId | "book";
 export type BookingStance = "passive" | "proactive";
-export type CapabilityId = "booking" | "orders" | "docs";
+export type CapabilityId = "booking" | "reservations";
 
 export type FlowBuildOpts = {
   capabilities?: CapabilityId[];
@@ -66,7 +66,7 @@ export function isBookingStance(value: string): value is BookingStance {
 }
 
 export function isCapabilityId(value: string): value is CapabilityId {
-  return value === "booking" || value === "orders" || value === "docs";
+  return value === "booking" || value === "reservations";
 }
 
 /** Infer stance from legacy catalog or stored talk stage. */
@@ -91,6 +91,10 @@ function talkPromptFor(opts: {
   fields: string;
 }): string {
   const hasBooking = opts.capabilities.includes("booking");
+  const hasReservations = opts.capabilities.includes("reservations");
+  if (hasReservations && !hasBooking) {
+    return enPrompts.catalogFaq; // stay prompts come from capability section
+  }
   if (!hasBooking) return enPrompts.catalogFaq;
   if (opts.bookingStance === "proactive") {
     return enPrompts.catalogBook(opts.fields);
@@ -187,7 +191,10 @@ export function hitlForCatalog(_id?: string): HitlPolicy {
 
 /** Derive display catalog from capabilities (for channels/demo labels). */
 export function catalogIdFromCapabilities(capabilities: string[]): CatalogId {
-  return capabilities.includes("booking") ? "inbox" : "faq";
+  if (capabilities.includes("booking") || capabilities.includes("reservations")) {
+    return "inbox";
+  }
+  return "faq";
 }
 
 export function buildAgentSystemPrompt(

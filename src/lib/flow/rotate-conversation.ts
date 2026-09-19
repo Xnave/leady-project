@@ -1,7 +1,16 @@
 import { prisma } from "@/lib/db";
 import type { FlowDefinition, LeadFields } from "@/lib/flow/types";
 import { clearBookingSessionFields } from "@/lib/flow/booking";
+import { clearReservationSessionFields } from "@/lib/flow/reservation-collect";
+import { parseReservationConfig } from "@/lib/flow/reservation-config";
+import { loadInstanceConfig } from "@/lib/capability-instances";
 import { Prisma } from "@prisma/client";
+
+async function reservationConfigForTenant(tenantId: string) {
+  return parseReservationConfig(
+    await loadInstanceConfig({ tenantId, capabilityId: "reservations" }),
+  );
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -74,7 +83,11 @@ export async function closeConversationAsDone(opts: {
 
   // Compat: strip any leaked booking-session keys still parked on Lead.fields.
   const prevFields = (conversation.lead.fields as LeadFields) ?? {};
-  const nextFields = clearBookingSessionFields(prevFields);
+  const reservationConfig = await reservationConfigForTenant(opts.tenantId);
+  const nextFields = clearReservationSessionFields(
+    clearBookingSessionFields(prevFields),
+    reservationConfig,
+  );
   if (JSON.stringify(prevFields) !== JSON.stringify(nextFields)) {
     await prisma.lead.update({
       where: { id: conversation.leadId },
@@ -256,7 +269,11 @@ export async function rotateConversation(opts: {
 
   // Compat: strip leaked booking-session keys from Lead (new thread already has empty session).
   const prevFields = (lead.fields as LeadFields) ?? {};
-  const nextFields = clearBookingSessionFields(prevFields);
+  const reservationConfig = await reservationConfigForTenant(opts.tenantId);
+  const nextFields = clearReservationSessionFields(
+    clearBookingSessionFields(prevFields),
+    reservationConfig,
+  );
   const fieldsChanged = JSON.stringify(prevFields) !== JSON.stringify(nextFields);
   const markUnread = opts.reason === "idle";
   if (fieldsChanged || markUnread) {

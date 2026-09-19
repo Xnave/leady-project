@@ -7,12 +7,20 @@ import { defaultFlow, defaultHitlPolicy, defaultLeadSchema } from "@/lib/flow/va
 import type { AgentSnapshot, TurnContext } from "@/lib/flow/types";
 import type { FlowDefinition, HitlPolicy, LeadFields, LeadSchema } from "@/lib/flow/types";
 import { looksLikePhoneNumber } from "@/lib/flow/booking-collect";
-import { isMeetingStillRelevant } from "@/lib/flow/meeting-relevance";
+import { hasRelevantRequest } from "@/lib/requests";
 import {
   clearBookingSessionFields,
   mergeLeadAndSession,
   splitCrmAndSession,
 } from "@/lib/flow/booking";
+import { clearReservationSessionFields } from "@/lib/flow/reservation-collect";
+import { parseReservationConfig } from "@/lib/flow/reservation-config";
+import {
+  loadCapabilityInstances,
+  loadInstanceConfig,
+} from "@/lib/capability-instances";
+import { ensureFlowRegistry } from "@/lib/flow/capabilities";
+import { capabilityStateLoaders } from "@/lib/flow/registry";
 import {
   closeConversationAsDone,
   reopenConversation,
@@ -35,23 +43,9 @@ export {
 
 const FORCE_FRESH_INBOUND_KEY = "force_fresh_inbound";
 
-async function leadHasRelevantMeeting(tenantId: string, leadId: string): Promise<boolean> {
-  const candidates = await prisma.meeting.findMany({
-    where: {
-      tenantId,
-      leadId,
-      status: { in: ["pending", "approved"] },
-    },
-    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-    take: 8,
-    select: {
-      status: true,
-      slotText: true,
-      decidedAt: true,
-      updatedAt: true,
-    },
-  });
-  return candidates.some((m) => isMeetingStillRelevant(m));
+/** Any still-relevant request of any kind keeps the thread alive. */
+function leadHasRelevantRequest(tenantId: string, leadId: string): Promise<boolean> {
+  return hasRelevantRequest({ tenantId, leadId });
 }
 
 /** After admin ends a chat, the next customer message must start a clean thread. */
@@ -172,7 +166,7 @@ export async function persistInboundIfNew(opts: {
   const flow = channel.agent.flow as FlowDefinition;
   const leadFields = (lead.fields as LeadFields) ?? {};
   const forceFresh = String(leadFields[FORCE_FRESH_INBOUND_KEY] ?? "") === "1";
-  const hasRelevantMeeting = await leadHasRelevantMeeting(opts.tenantId, lead.id);
+  const hasRelevantMeeting = await leadHasRelevantRequest(opts.tenantId, lead.id);
 
   // Admin "סיים שיחה" → next inbound must not continue a lingering open thread.
   if (forceFresh && conversation) {
@@ -204,7 +198,16 @@ export async function persistInboundIfNew(opts: {
   if (!conversation) {
     const prevFields = { ...((lead.fields as LeadFields) ?? {}) };
     delete prevFields[FORCE_FRESH_INBOUND_KEY];
-    const cleared = clearBookingSessionFields(prevFields);
+    const reservationConfig = parseReservationConfig(
+      await loadInstanceConfig({
+        tenantId: opts.tenantId,
+        capabilityId: "reservations",
+      }),
+    );
+    const cleared = clearReservationSessionFields(
+      clearBookingSessionFields(prevFields),
+      reservationConfig,
+    );
     await prisma.lead.update({
       where: { id: lead.id },
       data: {
@@ -306,26 +309,21 @@ export async function loadTurnContext(
     (looksLikePhoneNumber(fromId) ? fromId : "") ||
     undefined;
 
-  const meetingCandidates = await prisma.meeting.findMany({
-    where: {
-      tenantId,
-      leadId: conversation.lead.id,
-      status: { in: ["pending", "approved"] },
-    },
-    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-    take: 8,
-    select: {
-      id: true,
-      status: true,
-      slotText: true,
-      needText: true,
-      contactName: true,
-      decidedAt: true,
-      updatedAt: true,
-    },
-  });
-  const recentMeetingRow =
-    meetingCandidates.find((m) => isMeetingStillRelevant(m)) ?? null;
+  // Each capability loads its own durable state and parses its own instance
+  // config; this loader stays domain-free.
+  ensureFlowRegistry();
+  const capabilityInstances = await loadCapabilityInstances(tenantId);
+  const capabilityState: Record<string, unknown> = {};
+  await Promise.all(
+    capabilityStateLoaders().map(async ({ id, load }) => {
+      const state = await load({
+        tenantId,
+        leadId: conversation.lead.id,
+        conversationId: conversation.id,
+      });
+      if (state !== undefined) capabilityState[id] = state;
+    }),
+  );
 
   return {
     tenantId,
@@ -337,11 +335,7 @@ export async function loadTurnContext(
         ? conversation.tenant.chatLanguage
         : "multi",
       idleResetDays: conversation.tenant.idleResetDays ?? 5,
-      venueAddress: conversation.tenant.venueAddress ?? "",
-      venueHours: conversation.tenant.venueHours ?? "",
-      bookingRequestTemplate: conversation.tenant.bookingRequestTemplate ?? "",
-      bookingApprovedTemplate: conversation.tenant.bookingApprovedTemplate ?? "",
-      bookingRejectedTemplate: conversation.tenant.bookingRejectedTemplate ?? "",
+      capabilityInstances,
     },
     agent,
     conversation: {
@@ -366,16 +360,7 @@ export async function loadTurnContext(
       provider: conversation.channel.provider,
       customerPhone: leadPhone,
     },
-    recentMeeting: recentMeetingRow
-      ? {
-          id: recentMeetingRow.id,
-          status: recentMeetingRow.status,
-          slotText: recentMeetingRow.slotText,
-          needText: recentMeetingRow.needText,
-          contactName: recentMeetingRow.contactName,
-          decidedAt: recentMeetingRow.decidedAt?.toISOString(),
-        }
-      : null,
+    capabilityState,
     connection: {
       id: conversation.channel.id,
       provider: conversation.channel.provider,
@@ -412,8 +397,9 @@ export async function persistTurnFields(
   leadId: string,
   conversationId: string,
   fields: Record<string, unknown>,
+  opts?: { extraSessionKeys?: readonly string[] },
 ) {
-  const { crm, session } = splitCrmAndSession(fields as LeadFields);
+  const { crm, session } = splitCrmAndSession(fields as LeadFields, opts?.extraSessionKeys);
   const displayName = displayNameFromLeadFields(crm);
   await prisma.$transaction([
     prisma.lead.update({

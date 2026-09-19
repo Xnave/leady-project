@@ -29,7 +29,7 @@ function str(details: Record<string, unknown>, key: string): string {
 
 function actionLabel(ui: UiCopy, row: DecisionLogRow): string {
   if (row.summary.trim()) return row.summary.trim();
-  if (row.category === "meeting") {
+  if (row.category === "request") {
     if (row.action === "approve") {
       return detailsFlag(row.details, "customerConfirmed")
         ? ui.inbox.decisionLogApprovedByCustomer
@@ -61,15 +61,21 @@ function badgeClass(row: DecisionLogRow): string {
   return "badge";
 }
 
+/** The time the decision landed on — the offered one after a reschedule. */
 function secondaryCell(row: DecisionLogRow): string {
-  if (row.category === "meeting") {
-    const alt = str(row.details, "alternativeSlot");
-    const slot = str(row.details, "slotText");
-    if (row.action === "reschedule" && alt) return alt;
-    return slot || alt || "—";
-  }
-  return "—";
+  return str(row.details, "timeText") || str(row.details, "previousTimeText") || "—";
 }
+
+/** Keys rendered in their own row of the expanded view. */
+const RENDERED_DETAIL_KEYS = [
+  "note",
+  "customReply",
+  "previousTimeText",
+  "timeText",
+  "requestId",
+  "capabilityId",
+  "customerConfirmed",
+];
 
 export function DecisionsLogTable({
   ui,
@@ -114,19 +120,14 @@ export function DecisionsLogTable({
             });
             const note = str(row.details, "note").trim();
             const customReply = str(row.details, "customReply").trim();
-            const previousSlot = str(row.details, "previousSlot").trim();
-            const alternativeSlot = str(row.details, "alternativeSlot").trim();
+            const previousTime = str(row.details, "previousTimeText").trim();
+            const newTime = str(row.details, "timeText").trim();
+            const rescheduled = row.action === "reschedule" && newTime !== previousTime;
+            const extraDetails = Object.entries(row.details).filter(
+              ([k, v]) => !RENDERED_DETAIL_KEYS.includes(k) && v != null && v !== "",
+            );
             const hasDetails = Boolean(
-              note ||
-                customReply ||
-                previousSlot ||
-                (row.action === "reschedule" && alternativeSlot) ||
-                Object.keys(row.details).some(
-                  (k) =>
-                    !["note", "customReply", "previousSlot", "alternativeSlot", "slotText", "meetingId", "customerConfirmed"].includes(
-                      k,
-                    ) && row.details[k] != null && row.details[k] !== "",
-                ),
+              note || customReply || rescheduled || extraDetails.length > 0,
             );
             return (
               <Fragment key={row.id}>
@@ -163,16 +164,14 @@ export function DecisionsLogTable({
                         {!hasDetails ? (
                           <p className="muted">{ui.common.empty}</p>
                         ) : null}
-                        {row.category === "meeting" && row.action === "reschedule" && previousSlot ? (
+                        {rescheduled && previousTime ? (
                           <p>
-                            {ui.inbox.decisionLogPreviousSlot}: {previousSlot}
+                            {ui.inbox.decisionLogPreviousSlot}: {previousTime}
                           </p>
                         ) : null}
-                        {row.category === "meeting" &&
-                        row.action === "reschedule" &&
-                        alternativeSlot ? (
+                        {rescheduled && newTime ? (
                           <p>
-                            {ui.meeting.alternativeSlotLabel}: {alternativeSlot}
+                            {ui.meeting.alternativeSlotLabel}: {newTime}
                           </p>
                         ) : null}
                         {note ? (
@@ -185,15 +184,11 @@ export function DecisionsLogTable({
                             {ui.inbox.customReplyLabel}: {customReply}
                           </p>
                         ) : null}
-                        {row.category !== "meeting"
-                          ? Object.entries(row.details)
-                              .filter(([, v]) => v != null && v !== "")
-                              .map(([key, value]) => (
-                                <p key={key}>
-                                  {key}: {typeof value === "string" ? value : JSON.stringify(value)}
-                                </p>
-                              ))
-                          : null}
+                        {extraDetails.map(([key, value]) => (
+                          <p key={key}>
+                            {key}: {typeof value === "string" ? value : JSON.stringify(value)}
+                          </p>
+                        ))}
                       </div>
                     </td>
                   </tr>

@@ -49,7 +49,7 @@ flowchart TB
 | Ingress | `src/app/api/webhooks/` | Verify signature, persist inbound, enqueue turn |
 | Async jobs | `src/inngest/functions.ts` | `runAgentTurn`, `nudgeIfSilent` |
 | Flow engine | `src/lib/flow/` | Types, catalog, interpreter, LLM, validation |
-| CRM | `src/lib/conversations.ts`, `leads.ts`, `meetings.ts` | Messages, leads, HITL, bookings |
+| CRM | `src/lib/conversations.ts`, `leads.ts`, `requests.ts` | Messages, leads, HITL, requests |
 | Channels | `src/lib/channels/` | HookMyApp (Meta) and Zernio send/parse |
 
 **Core design choice:** conversation state lives in Postgres, not in a graph framework. The “graph” is JSON on `Agent.flow`; the interpreter walks it per turn.
@@ -81,11 +81,12 @@ Steps: `knowledge → business → flow → done`
 
 On submit:
 
-1. Owner picks a **catalog** (`inbox` | `book` | `faq`) and **booking fields** to collect
-2. `flowForCatalog()` builds flow JSON; `validateFlow()` rejects bad config
-3. Updates `Tenant` (name, intro, venue, booking templates, language, idle reset)
-4. Creates/updates `Agent` (system prompt, knowledge, flow, HITL)
-5. On update: bumps `flowVersion`, writes `AgentConfigRevision`
+1. Owner enables **capabilities** (`booking`, `reservations`) and, for booking, a stance (passive / proactive) plus collect fields
+2. `flowForCapabilities()` builds flow JSON; `validateFlow()` rejects bad config
+3. Updates `Tenant` (name, intro, language, idle reset)
+4. Upserts a `CapabilityInstance` row per enabled capability (venue hours, templates, stay collect list, nouns live here — never as columns on Tenant)
+5. Creates/updates `Agent` (system prompt, knowledge, flow, HITL)
+6. On update: bumps `flowVersion`, writes `AgentConfigRevision`
 
 Optional: `POST /api/onboard/extract` uses LLM to parse uploaded docs into business fields.
 
@@ -169,9 +170,9 @@ Flows are **JSON stored on `Agent.flow`**, not compiled code.
 
 ### Creation paths
 
-1. **Onboarding:** `flowForCatalog(catalogId, bookingCollect)` → validate → save
+1. **Onboarding:** `flowForCapabilities(capabilities, bookingCollect)` → validate → save
 2. **Ops UI:** `POST /api/ops/agent` — change catalog, knowledge, HITL, restart policy
-3. **Programmatic:** `createTenant()` seeds inbox flow
+3. **Programmatic:** `createTenant()` seeds inbox flow + a default booking `CapabilityInstance`
 4. **Advanced:** raw JSON edit (validated on save)
 
 ### Validation (`validate.ts`)
@@ -195,13 +196,17 @@ On every save:
 
 ### Production catalogs (`catalog.ts`)
 
-Three catalog IDs, all built on a **`talk`-centric graph**:
+Two catalog IDs, both built on a **`talk`-centric graph**. Behavior comes from the
+**capabilities** attached to the talk stage, not from the catalog id — `flowForCapabilities()`
+is the preferred builder and `flowForCatalog()` is a legacy wrapper over it:
 
 | Catalog | Behavior |
 |---|---|
-| `inbox` | Greet, answer, qualify, book when ready |
-| `book` | Same style, biased toward booking |
-| `faq` | Answer only; `allowBook: false` |
+| `inbox` | Greet, answer, qualify; capabilities decide what is transactional |
+| `faq` | Answer only; no capabilities, `allowBook: false` |
+
+`book` is accepted as a **legacy alias** that maps to `inbox` plus a proactive booking
+stance (`resolveBookingStance`). It is not a distinct catalog.
 
 Shared structure:
 
@@ -213,7 +218,7 @@ start: "talk"
 restartPolicy: { onNewMessage: "fallback", fallbackStage: "talk" }
 ```
 
-Prompts come from `src/lib/copy/en.ts` (and Hebrew). Booking fields are configurable via `booking-collect.ts` (default: `time_preference`, `name`, `need`).
+Prompts come from `src/lib/copy/` (sentence mechanics) plus per-instance nouns. Booking collect fields are configurable via `booking-collect.ts`. Span collect fields, availability, and nouns live on the reservations `CapabilityInstance`.
 
 ### Legacy / reference template (`templates.ts`)
 
@@ -253,11 +258,11 @@ A string ID into `agent.flow.stages` — e.g. `"talk"`, `"done"`, `"escalate"`.
 
 | Stage type | What happens |
 |---|---|
-| `talk` | LLM gets tools: `reply`, `set_intent`, `save_fields`, `book_meeting`, `request_human`. Interpreter enforces booking gaps, HITL policy |
+| `talk` | LLM gets generic tools (`reply`, `set_intent`, `transition`) plus tools from each active capability. Interpreter runs capability `reconcile` hooks, then registered talk effects |
 | `classify` | LLM picks intent → mapped transition |
 | `collect` | Extract fields → ask for missing → nudge if silent |
 | `faq` | Answer from knowledge → resolved/unresolved path |
-| `action` | `book_meeting` or `request_human` |
+| `action` | `request_human` (kernel) or any registered action id via `runEffect` |
 | `terminal` | Conversation “done”; restart on next message per policy |
 
 5. Persist stage transitions, lead fields, outbound message
@@ -283,17 +288,17 @@ The interpreter reads `conversation.flowState`, looks up `flow.stages[stageId]`,
 
 For the primary **`talk`** stage, behavior is shaped by:
 
-- **`stage.prompt`** — catalog-specific instructions (inbox vs book vs faq)
-- **`stage.allowBook`** — whether `book_meeting` tool is meaningful
-- **`stage.required_for_book`** — fields that must be filled before booking
+- **`stage.prompt`** — catalog-specific instructions (inbox vs faq, plus booking stance)
+- **`stage.capabilities`** — which registered packs run (`booking`, `reservations`)
+- **`stage.required_for_book`** — fields that must be filled before a visit request
 - **`ctx.agent.systemPrompt`** — business name, intro, phone
 - **`ctx.agent.knowledgeText`** — FAQ content injected into talk context
 - **`ctx.agent.hitlPolicy`** — gates `request_human`
-- **`ctx.tenant`** — venue hours/address, booking templates, language, idle reset
+- **`ctx.tenant.capabilityInstances`** — per-capability config (hours, templates, collect list, nouns)
 
-The LLM system prompt is assembled in `talkSystem()` (`llm.ts`) from all of the above plus guardrails.
+The LLM system prompt is assembled in `buildTalkSystemPrompt()` (`prompt-builder.ts`) from all of the above plus capability `promptSection` hooks.
 
-**Critical rule:** the interpreter, not the LLM, decides transitions. If the LLM calls `book_meeting` but required fields are missing, `finalizeTalkReply()` blocks it and the agent asks for the gap instead.
+**Critical rule:** the interpreter, not the LLM, decides transitions. If the LLM calls `book_meeting` but required fields are missing, the booking capability's `reconcile` hook blocks it and the agent asks for the gap instead.
 
 ---
 
@@ -305,12 +310,14 @@ The LLM system prompt is assembled in `talkSystem()` (`llm.ts`) from all of the 
 |---|---|
 | Business profile, intro, knowledge | `Tenant`, `Agent.knowledgeText` |
 | Flow graph (within stage types) | `Agent.flow` JSON |
-| Catalog mode | `inbox` / `book` / `faq` |
-| Booking fields to collect | `booking-collect` on talk stage |
+| Catalog display mode | `inbox` / `faq` |
+| Enabled capabilities | talk stage `capabilities[]` |
+| Booking fields to collect | `required_for_book` on the talk stage |
+| Venue hours, booking templates, stay collect list, nouns | `CapabilityInstance.config` |
 | Lead schema keys | `Agent.leadSchema` |
 | HITL policy | `Agent.hitlPolicy` |
 | Restart policy, nudges | Flow JSON |
-| System prompt, language | Onboarding + copy files |
+| Language | `Tenant.chatLanguage` + copy files (mechanics) |
 | Channel bindings | `ChannelConnection` |
 
 ### Static (requires code deploy)
@@ -318,13 +325,15 @@ The LLM system prompt is assembled in `talkSystem()` (`llm.ts`) from all of the 
 | Piece | Why |
 |---|---|
 | Stage types (`talk`, `classify`, `collect`, `faq`, `action`, `terminal`) | Interpreter switch in `interpreter.ts` |
-| LLM tools exposed per stage | `llm.ts` |
+| Field *types* (`date`, `date_range`, `datetime_text`, `enum`, …) | `src/lib/flow/fields/` |
 | Channel adapters (Zernio, HookMyApp) | `channels/` |
-| Booking side-effect (tentative meeting + HITL) | `meetings.ts` |
-| Copy/i18n strings | `src/lib/copy/` |
+| Request persistence + HITL | `src/lib/requests.ts` |
+| Copy/i18n sentence mechanics | `src/lib/copy/` |
 | Validation rules | `validate.ts` |
 
-Adding a **new catalog** = new `CatalogId` + `flowForCatalog()` branch + prompts. Same interpreter.
+Adding a **new business type** (barber, villa, dress rental) is a `CapabilityInstance` insert: a field schema + nouns. Same interpreter, same `Request` table.
+
+Adding a **new field type** (e.g. `file`) = one handler in `fields/handlers.ts`.
 
 Adding a **new stage type** (e.g. `qualify_score`) = extend types, interpreter, validation, possibly a new LLM port.
 
@@ -332,44 +341,28 @@ Adding a **new stage type** (e.g. `qualify_score`) = extend types, interpreter, 
 
 ## Extending for different business types
 
-### Today (minimal ops work)
+A visit, a stay, a fitting and a rental are all one primitive: collect configured fields, confirm, write a pending `Request`, open HITL, let a human approve / decline / counter-offer. Verticals differ in `kind`, in whether the time spine is a point or a span, and in the typed values in `data`.
+
+### Today (config only)
 
 | Business type | How to configure |
 |---|---|
-| Restaurant / salon (book visits) | Catalog `book`, set venue hours/address, pick booking fields |
-| FAQ-heavy (hours, location, menu) | Catalog `faq`, paste knowledge |
-| Sales + support mix | Catalog `inbox`, rich knowledge + booking fields |
-| Hebrew / English | `chatLanguage`, copy files |
-| Human approval for bookings | Already built: tentative meeting → owner approves in CRM |
+| Barber / salon (point in time) | Enable `booking`; set hours; collect `datetime_text` + `enum(service)`; optional nouns `{ singular: "appointment" }` |
+| Villa / hotel (date span) | Enable `reservations`; collect guests/unit; optional link-probe availability |
+| Wedding dress (fitting + rental) | Two `CapabilityInstance` rows: booking kind `fitting`, reservations kind `rental` with nouns + dress/size fields |
+| FAQ-heavy | Catalog `faq`, paste knowledge, no capabilities |
+| Hebrew / English | `chatLanguage`; nouns per language on the instance |
 
-### Near-term extensions (data-level)
-
-- **Custom lead schema fields** — add to schema + ensure talk/collect references them
-- **Different nudge timings** — per-stage `nudge` in flow JSON
-- **Stricter/lighter HITL** — tune `hitlPolicy.allowedFromStages`, intents
-- **Multi-step legacy flows** — use `salesOrSupportFlow` pattern (classify → collect → action) for businesses that need rigid sequencing
-
-### Medium-term (code-level)
+### When code is actually required
 
 | Need | Approach |
 |---|---|
-| E-commerce (cart, inventory) | New `action` types or tools; possibly n8n webhook after `done` |
-| Appointment types / Cal.com | Wire `calcomEventTypeId`; replace tentative meeting stub |
-| Document/photo review | `analyze_media` tool + HITL `review_media` |
-| Industry-specific qualification | New `collect` stages or richer `talk` prompts per vertical catalog |
+| A field shape the kit does not have | Add a handler in `src/lib/flow/fields/handlers.ts` |
+| A new approval-style domain that is *not* a request | New capability pack + `registerAction`; still persist as `Request` if it is collect → confirm → HITL |
+| Calendar conflict queries / live availability API | New availability `kind` on instance config (today: `link_probe` \| `none`) |
 | Multiple agents per tenant | Schema supports it; routing logic by channel |
-| Drip campaigns / SLA timers | New Inngest functions (docs mention Temporal as future option) |
 
-### Vertical catalog pattern (recommended)
-
-Instead of one generic inbox for everyone:
-
-1. Add `CatalogId = "dental" | "legal" | ...`
-2. Define `flowForCatalog("dental")` with appropriate prompts and `required_for_book`
-3. Add vertical-specific copy in `copy/en.ts`
-4. Optionally use multi-stage template for rigid compliance flows
-
-Same interpreter, different JSON + prompts — no second orchestrator.
+Do **not** add a vertical catalog (`dental`, `legal`, …) or a second table. Onboarding a business type is a row, not a deploy.
 
 ---
 
@@ -404,28 +397,28 @@ Bad flow JSON fails at save time, not on a live lead.
 ### Cons
 
 **1. `talk` stage puts a lot of trust in one LLM turn**  
-Production catalogs collapsed classify/collect/faq into unified `talk`. More flexible conversation, but less rigid rails than explicit multi-stage graphs. Mitigated by interpreter enforcing booking gaps and HITL policy.
+Production catalogs collapsed classify/collect/faq into unified `talk`. More flexible conversation, but less rigid rails than explicit multi-stage graphs. Mitigated by capability `reconcile` hooks and HITL policy.
 
-**2. New behaviors often need code**  
-Truly novel stage types (scoring, branching on external APIs) require interpreter changes, not just JSON.
+**2. Novel stage types still need code**  
+Scoring, branching on external APIs, or a brand-new field type require a deploy. Ordinary verticals do not.
 
 **3. No visual flow builder for owners**  
-Ops/internal tooling only. Owners pick catalog + fields, not arbitrary graphs.
+Ops/internal tooling only. Owners pick capabilities + fields, not arbitrary graphs.
 
-**4. Booking is stubbed**  
-Tentative meeting + owner HITL approval, not full Cal.com integration yet.
+**4. Approval is human-in-the-loop**  
+Tentative `Request` + owner HITL, not a live calendar integration yet.
 
 **5. Single interpreter = single deployment**  
-All tenants share the same runtime code path. Safer for consistency, but risky if one tenant needs a forked behavior.
+All tenants share the same runtime. Safer for consistency; a forked tenant behavior is a capability hook, not a second engine.
 
 **6. Application-level tenancy**  
 RLS is documented but not in Prisma schema; isolation relies on disciplined `tenantId` filtering.
 
 **7. Inngest dependency for production webhooks**  
-Local dev needs Inngest Dev Server (`INNGEST_DEV=1`) or webhooks won’t process turns.
+Local dev needs Inngest Dev Server (`INNGEST_DEV=1`) or webhooks won’t process turns. Direct `runTurnNow()` callers must `dispatchNudgeEvent()`.
 
-**8. Copy/prompts are code, not data**  
-New languages or vertical tone require editing `copy/` files, not just tenant config.
+**8. Sentence mechanics are still code**  
+New *languages* require editing `copy/`. New *verticals* only need instance nouns.
 
 ---
 

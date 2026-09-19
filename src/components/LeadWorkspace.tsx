@@ -7,12 +7,13 @@ import { StaffChatComposer } from "@/components/ChatComposer";
 import { ChatThread } from "@/components/ChatThread";
 import { LeadChatPoll } from "@/components/LeadChatPoll";
 import { LeadFieldsForm } from "@/components/LeadFieldsForm";
-import { MeetingsTable } from "@/components/MeetingsTable";
+import { RequestsTable, type RequestTableRow } from "@/components/RequestsTable";
+import type { RequestDecisionLabels } from "@/components/RequestDecisionForm";
 import { DecisionsLogTable, type DecisionLogRow } from "@/components/DecisionsLogTable";
 import {
   convoStatusLabel,
   intentLabel,
-  meetingKindLabel,
+  requestKindLabel,
   stageLabel,
 } from "@/lib/ui/labels";
 import { formatPhoneDisplay } from "@/lib/leads";
@@ -30,20 +31,6 @@ type ConversationItem = {
   lastAt: string | Date;
   messageCount: number;
 };
-type MeetingItem = {
-  id: string;
-  status: string;
-  kind: string;
-  slotText: string;
-  contactName: string | null;
-  contactPhone: string | null;
-  contactEmail: string | null;
-  needText: string | null;
-  conversationId: string;
-  awaitingCustomerConfirm?: boolean;
-  customerConfirmed?: boolean;
-};
-
 const HIDDEN_CAPTURED = new Set([
   "instagramUsername",
   "zernioConversationId",
@@ -88,33 +75,14 @@ type Props = {
   isLatestConversation?: boolean;
   /** True when the lead already has any non-closed conversation. */
   hasOpenConversation?: boolean;
-  /** Newest conversation id (by activity) — meetings from older threads cannot be decided. */
+  /** Newest conversation id (by activity) — requests from older threads cannot be decided. */
   latestConversationId?: string;
   conversationId?: string;
   schema: LeadSchema;
   fields: LeadFields;
-  meetings: MeetingItem[];
+  requests: RequestTableRow[];
   decisionLogs: DecisionLogRow[];
-  meetingLabels: {
-    need: string;
-    name: string;
-    phone: string;
-    email: string;
-    approve: string;
-    decline: string;
-    reschedule: string;
-    alternativeSlotLabel: string;
-    alternativeSlotPlaceholder: string;
-    visitDefault: string;
-    noteLabel: string;
-    notePlaceholder: string;
-    customReplyLabel: string;
-    customReplyPlaceholder: string;
-    updateDecision: string;
-    currentStatus: string;
-    changeDecision: string;
-    cancel?: string;
-  };
+  requestLabels: RequestDecisionLabels;
   chatLabels: {
     placeholder: string;
     waitingHuman: string;
@@ -167,7 +135,7 @@ function formatCapturedValue(
     const when = typeof rec.when === "string" ? rec.when : "";
     const kindRaw = typeof rec.kind === "string" ? rec.kind.trim() : "";
     const kind =
-      kindRaw && kindRaw !== "visit" ? meetingKindLabel(ui, kindRaw) : "";
+      kindRaw && kindRaw !== "visit" ? requestKindLabel(ui, kindRaw) : "";
     return [status, when, kind].filter(Boolean).join(" · ");
   }
   return "";
@@ -180,7 +148,7 @@ export function LeadWorkspace(props: Props) {
   const locale = props.lang === "he" ? "he-IL" : "en-GB";
 
   const decisionLogs = props.decisionLogs;
-  const allMeetings = props.meetings;
+  const allRequests = props.requests;
 
   const capturedEntries = useMemo(() => {
     return Object.entries(props.fields)
@@ -488,11 +456,11 @@ export function LeadWorkspace(props: Props) {
             </div>
           ) : (
             <div className="lead-visits-panel">
-              <MeetingsTable
+              <RequestsTable
                 ui={props.ui}
                 leadId={props.leadId}
-                meetings={allMeetings}
-                labels={props.meetingLabels}
+                requests={allRequests}
+                labels={props.requestLabels}
                 emptyLabel={props.ui.common.noMeetings}
                 allowDecide
                 latestConversationId={props.latestConversationId}

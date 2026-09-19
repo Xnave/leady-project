@@ -38,10 +38,10 @@ function ports(extract: LeadFields = {}): InterpreterPorts {
     draftQuestion: async (_c, _s, missing) => `ask ${missing[0]}`,
     answerFaq: async () => ({ resolved: true, reply: "faq" }),
     talk: async () => ({ reply: "hello from talk" }),
-    bookMeeting: async (c) =>
-      c.lead.fields.email
-        ? { ok: true, reply: "booked" }
-        : { ok: false, reply: "need email" },
+    runEffect: async (c: TurnContext, effectId: string) =>
+      effectId === "book_meeting" && !c.lead.fields.email
+        ? { ok: false, reply: "need email" }
+        : { ok: true, reply: "booked" },
     requestHuman: async () => undefined,
     persistStage: async (c, id) => {
       c.conversation.flowState = id;
@@ -362,7 +362,7 @@ describe("interpretTurn", () => {
         reply: "מעולה, מחכים לך. צריך כתובת?",
         book: true,
       }),
-      bookMeeting: async () => ({
+      runEffect: async () => ({
         ok: true,
         reply: "ההזמנה נקלטה במערכת (ביקור באולם, רביעי 17:00).\nכתובת האולם: רחוב הרוגוזין 14",
       }),
@@ -411,9 +411,9 @@ describe("interpretTurn", () => {
   });
 });
 
-describe("enforceBookingEffects", () => {
+describe("reconcileBooking (booking capability reconcile hook)", () => {
   it("forces book_meeting when confirm is done and LLM only replied", async () => {
-    const { enforceBookingEffects } = await import("./interpreter");
+    const { reconcileBooking } = await import("./capabilities/booking");
     const stage = {
       type: "talk" as const,
       prompt: "",
@@ -457,16 +457,16 @@ describe("enforceBookingEffects", () => {
         { role: "lead", text: "כן" },
       ],
     });
-    const out = enforceBookingEffects(state, stage, {
+    const out = reconcileBooking(state, stage, {
       reply: "רשמתי בקשה לפגישה למחר — הצוות יבדוק.",
       nextStage: "done",
     });
-    expect(out.effects?.some((e) => e.type === "book_meeting")).toBe(true);
+    expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBe(true);
     expect(out.nextStage).toBeUndefined();
   });
 
   it("treats כן after pending confirm as confirmed + book", async () => {
-    const { enforceBookingEffects } = await import("./interpreter");
+    const { reconcileBooking } = await import("./capabilities/booking");
     const stage = {
       type: "talk" as const,
       prompt: "",
@@ -507,13 +507,13 @@ describe("enforceBookingEffects", () => {
       },
       messages: [{ role: "lead", text: "כן" }],
     });
-    const out = enforceBookingEffects(state, stage, { reply: "מעולה" });
+    const out = reconcileBooking(state, stage, { reply: "מעולה" });
     expect(out.fields?.booking_confirm).toBe("confirmed");
-    expect(out.effects?.some((e) => e.type === "book_meeting")).toBe(true);
+    expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBe(true);
   });
 
   it("verifies single-token name on כן so book_meeting still runs", async () => {
-    const { enforceBookingEffects } = await import("./interpreter");
+    const { reconcileBooking } = await import("./capabilities/booking");
     const stage = {
       type: "talk" as const,
       prompt: "",
@@ -554,11 +554,11 @@ describe("enforceBookingEffects", () => {
       },
       messages: [{ role: "lead", text: "כן" }],
     });
-    const out = enforceBookingEffects(state, stage, {
+    const out = reconcileBooking(state, stage, {
       reply: "תודה! שמרתי את הבקשה. נציג מנווה AI יחזור אליך.",
     });
     expect(out.fields?.name_collected_by_agent).toBe("1");
     expect(out.fields?.booking_confirm).toBe("confirmed");
-    expect(out.effects?.some((e) => e.type === "book_meeting")).toBe(true);
+    expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBe(true);
   });
 });

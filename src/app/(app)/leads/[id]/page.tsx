@@ -11,6 +11,14 @@ import {
   whatsappChatUrl,
 } from "@/lib/leads";
 import { requireTenantIdForPage } from "@/lib/tenant";
+import { loadInstanceFieldLabels } from "@/lib/capability-instances";
+import type { RequestRow } from "@/lib/requests";
+import {
+  requestHeadline,
+  requestSummaryLines,
+  requestTimeDisplay,
+  requestTimeShape,
+} from "@/lib/request-view";
 import { uiCopy } from "@/lib/ui";
 import { notFound } from "next/navigation";
 
@@ -28,6 +36,16 @@ export default async function LeadDetailPage({
   const tenantId = await requireTenantIdForPage();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
+  const instanceLabels = await loadInstanceFieldLabels(tenantId);
+  const requestFieldLabels: Record<string, string> = {
+    need: ui.common.need,
+    name: ui.common.name,
+    phone: ui.common.phone,
+    email: ui.common.email,
+    guests: ui.reservation.guests,
+    unit: ui.reservation.unit,
+    ...instanceLabels,
+  };
   let lead = await prisma.lead.findFirst({
     where: { id, tenantId },
     include: {
@@ -39,7 +57,7 @@ export default async function LeadDetailPage({
         },
         orderBy: { createdAt: "desc" },
       },
-      meetings: { orderBy: { createdAt: "desc" } },
+      requests: { orderBy: { createdAt: "desc" } },
       adminDecisionLogs: { orderBy: { createdAt: "desc" } },
     },
   });
@@ -58,7 +76,7 @@ export default async function LeadDetailPage({
             },
             orderBy: { createdAt: "desc" },
           },
-          meetings: { orderBy: { createdAt: "desc" } },
+          requests: { orderBy: { createdAt: "desc" } },
           adminDecisionLogs: { orderBy: { createdAt: "desc" } },
         },
       });
@@ -159,19 +177,29 @@ export default async function LeadDetailPage({
       composerDisabled={!convo || convo.status === "closed"}
       schema={schema}
       fields={fields}
-      meetings={lead.meetings.map((m) => ({
-        id: m.id,
-        status: m.status,
-        kind: m.kind,
-        slotText: m.slotText,
-        contactName: m.contactName,
-        contactPhone: m.contactPhone,
-        contactEmail: m.contactEmail,
-        needText: m.needText,
-        conversationId: m.conversationId,
-        awaitingCustomerConfirm: staffOffer?.meetingId === m.id,
-        customerConfirmed: m.status === "approved" && m.decidedBy === "customer",
-      }))}
+      requests={lead.requests.map((row) => {
+        const request = {
+          ...row,
+          data: (row.data && typeof row.data === "object"
+            ? (row.data as Record<string, unknown>)
+            : {}) as RequestRow["data"],
+        };
+        return {
+          id: request.id,
+          capabilityId: request.capabilityId,
+          status: request.status,
+          timeText: requestTimeDisplay(request),
+          timeShape: requestTimeShape(request),
+          headline: requestHeadline(request),
+          contactName: request.contactName,
+          contactPhone: request.contactPhone,
+          lines: requestSummaryLines({ request, lang, labels: requestFieldLabels }),
+          conversationId: request.conversationId,
+          awaitingCustomerConfirm: staffOffer?.meetingId === request.id,
+          customerConfirmed:
+            request.status === "approved" && request.decidedBy === "customer",
+        };
+      })}
       decisionLogs={lead.adminDecisionLogs.map((row) => ({
         id: row.id,
         category: row.category,
@@ -185,22 +213,18 @@ export default async function LeadDetailPage({
             : {},
         createdAt: row.createdAt,
       }))}
-      meetingLabels={{
-        need: ui.common.need,
-        name: ui.common.name,
-        phone: ui.common.phone,
-        email: ui.common.email,
+      requestLabels={{
         approve: ui.meeting.approve,
         decline: ui.meeting.decline,
         reschedule: ui.meeting.reschedule,
         alternativeSlotLabel: ui.meeting.alternativeSlotLabel,
         alternativeSlotPlaceholder: ui.meeting.alternativeSlotPlaceholder,
-        visitDefault: ui.meeting.visitDefault,
+        alternativeStartLabel: ui.reservation.alternativeCheckInLabel,
+        alternativeEndLabel: ui.reservation.alternativeCheckOutLabel,
         noteLabel: ui.inbox.declineNoteLabel,
         notePlaceholder: ui.inbox.declineNotePlaceholder,
         customReplyLabel: ui.inbox.customReplyLabel,
         customReplyPlaceholder: ui.inbox.customReplyPlaceholder,
-        updateDecision: ui.inbox.updateDecision,
         currentStatus: ui.inbox.currentDecision,
         changeDecision: ui.inbox.changeDecision,
         cancel: ui.common.cancel,

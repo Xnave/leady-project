@@ -40,6 +40,8 @@ export type ChatCopy = {
   /** When a proposed time is outside venue hours. */
   askTimeOutsideHours: (hours: string) => string;
   askFieldFallback: (field: string) => string;
+  /** Generic ask for a field that has a fixed set of choices. */
+  askFieldWithOptions: (field: string, options: string) => string;
   availability: (hours: string) => string;
   hoursLine: (hours: string) => string;
   bookingRequestTemplate: string;
@@ -49,6 +51,41 @@ export type ChatCopy = {
   /** Decline + offer an alternative slot ({{alt_slot}}) */
   bookingReschedule: string;
   notePrefix: string;
+  /** Span-request mechanics (dates, availability, approvals) — nouns come from config. */
+  request: RequestChatCopy;
+};
+
+/**
+ * Sentence mechanics for a date-span request. Every place the business's own
+ * word would appear takes a `noun` argument, which the capability reads from its
+ * `CapabilityInstance` config — so a villa says "stay" and a dress shop says
+ * "rental" with no copy change.
+ */
+export type RequestChatCopy = {
+  askField: (label: string) => string;
+  confirmTitle: (noun: string) => string;
+  confirmAsk: string;
+  needValidDates: string;
+  invalidDates: string;
+  stillNeed: (gaps: string) => string;
+  availabilityNotConfigured: string;
+  datesUnavailable: (url: string) => string;
+  datesAvailable: string;
+  availabilityUnknownLink: (url: string) => string;
+  availabilityUnknownHitl: string;
+  defaultRequest: (opts: {
+    noun: string;
+    from: string;
+    to: string;
+    /** Already-formatted extras, e.g. "4 guests · Garden suite". */
+    details: string;
+  }) => string;
+  defaultApproved: (noun: string, from: string, to: string) => string;
+  defaultRejected: (noun: string, from: string, to: string, note: string) => string;
+  completeBookingLink: (url: string) => string;
+  offerAltDates: (from: string, to: string) => string;
+  offerDeclineAsk: string;
+  offerUnclearAsk: string;
 };
 
 export type PromptCopy = {

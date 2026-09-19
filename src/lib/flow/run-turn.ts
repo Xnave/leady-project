@@ -6,7 +6,10 @@ import {
   persistStage,
   persistTurnFields,
 } from "@/lib/conversations";
-import { requestTentativeMeeting } from "@/lib/meetings";
+import {
+  allCapabilitySessionFieldKeys,
+  runCapabilityEffect,
+} from "@/lib/flow/registry";
 import {
   addIsoDuration,
   lastLeadMessageAt,
@@ -118,6 +121,19 @@ export function buildNudgeRequestedEvent(
   };
 }
 
+/**
+ * Send a nudge event recorded by the `scheduleNudge` port.
+ * `runAgentTurn` does this through `step.sendEvent`; callers that invoke
+ * `runTurnNow()` directly must call this or the nudge is silently dropped.
+ */
+export async function dispatchNudgeEvent(
+  nudgeEvent: NudgeRequestedEvent | null | undefined,
+): Promise<boolean> {
+  if (!nudgeEvent) return false;
+  await inngest.send(nudgeEvent);
+  return true;
+}
+
 export async function enqueueAgentTurn(opts: {
   tenantId: string;
   conversationId: string;
@@ -157,7 +173,9 @@ export async function runTurnNow(opts: {
     draftQuestion,
     answerFaq,
     talk: talkTurn,
-    bookMeeting: (c) => requestTentativeMeeting(c),
+    // One generic seam for every capability side effect — adding a capability
+    // registers an action instead of adding a port here.
+    runEffect: (c, effectId, stage) => runCapabilityEffect(c, effectId, stage),
     requestHuman: async (c, reason) => {
       const summary = await summarizeConversation(c.conversation.id);
       await pauseForHuman({
@@ -170,7 +188,9 @@ export async function runTurnNow(opts: {
     },
     persistStage: (c, stageId) => persistStage(c.tenantId, c.conversation.id, stageId),
     persistFields: (c, fields) =>
-      persistTurnFields(c.tenantId, c.lead.id, c.conversation.id, fields),
+      persistTurnFields(c.tenantId, c.lead.id, c.conversation.id, fields, {
+        extraSessionKeys: allCapabilitySessionFieldKeys(c),
+      }),
     sendAndSave: (c, text) =>
       sendAndSave(c as Awaited<ReturnType<typeof loadTurnContext>>, text, {
         idempotencyKey: outboundKey

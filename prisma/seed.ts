@@ -3,6 +3,7 @@ import { buildAgentSystemPrompt, flowForCatalog, hitlForCatalog } from "../src/l
 import { isChatLanguage } from "../src/lib/flow/locale";
 import { defaultLeadSchema } from "../src/lib/flow/validate";
 import { ensureLocalDemoChannel } from "../src/lib/provision-tenant";
+import { ensureDefaultBookingInstance } from "../src/lib/capability-instances";
 
 const prisma = new PrismaClient();
 
@@ -61,6 +62,7 @@ async function main() {
   }
 
   await ensureLocalDemoChannel(tenant.id);
+  await ensureDefaultBookingInstance(tenant.id);
 
   console.log("Seeded tenant", tenant.id);
   console.log("Set DEV_TENANT_ID=" + tenant.id);

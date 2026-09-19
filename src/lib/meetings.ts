@@ -1,5 +1,9 @@
+/**
+ * The booking vertical: a visit is a `Request` with `kind: "visit"` and a
+ * point-in-time spine. Persistence, HITL and the decision log live in
+ * `@/lib/requests`; this module owns only booking's wording and field mapping.
+ */
 import { prisma } from "@/lib/db";
-import { resolveActorLabel } from "@/lib/admin-decisions";
 import { Prisma } from "@prisma/client";
 import {
   appendStaffNote,
@@ -8,6 +12,9 @@ import {
   renderBookingMessage,
 } from "@/lib/copy";
 import { askBookingField, bookingFieldGaps } from "@/lib/flow/booking";
+import { bookingConfigFromCtx, parseBookingConfig } from "@/lib/flow/booking-config";
+import { instanceKind } from "@/lib/flow/instances";
+import { loadInstanceConfig } from "@/lib/capability-instances";
 import {
   bookingRequiredFields,
   callbackPhone,
@@ -18,17 +25,42 @@ import { normalizeSlot } from "@/lib/flow/slot";
 import { summarizeConversation } from "@/lib/flow/summarize";
 import type { TurnContext } from "@/lib/flow/types";
 import { persistTurnFields } from "@/lib/conversations";
+import {
+  createRequestWithApprovalTask,
+  decideRequest,
+  findPendingRequest,
+  getRequest,
+  loadRecentRequest,
+  timeTextToStartAt,
+  updateRequestData,
+  type RequestRow,
+} from "@/lib/requests";
 
-function venueFromTenant(ctx: TurnContext): { address: string; hours: string } {
-  return {
-    address: ctx.tenant?.venueAddress?.trim() ?? "",
-    hours: ctx.tenant?.venueHours?.trim() ?? "",
-  };
+/** Capability that owns visit requests. */
+export const BOOKING_CAPABILITY = "booking";
+/** Instance kind for a visit. */
+export const VISIT_KIND = "visit";
+
+function venueFromConfig(ctx: TurnContext): { address: string; hours: string } {
+  const config = bookingConfigFromCtx(ctx);
+  return { address: config.venueAddress, hours: config.venueHours };
 }
 
 function replyLangFromCtx(ctx: TurnContext): "en" | "he" {
   const last = [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
   return resolveReplyLanguage(ctx.tenant?.chatLanguage, last);
+}
+
+/** Typed values a visit request stores in `Request.data`. */
+type VisitData = {
+  need?: string;
+  visit_kind?: string;
+  venue?: string;
+  hours?: string;
+};
+
+function visitData(row: RequestRow): VisitData {
+  return row.data as VisitData;
 }
 
 function meetingMessageVars(opts: {
@@ -68,7 +100,7 @@ export async function requestTentativeMeeting(
 ): Promise<{ ok: boolean; reply: string }> {
   const lang = replyLangFromCtx(ctx);
   const fields = { ...ctx.lead.fields };
-  const venue = venueFromTenant(ctx);
+  const venue = venueFromConfig(ctx);
   const gaps = bookingFieldGaps(fields, bookingRequiredFields(ctx));
   if (gaps.length > 0) {
     return {
@@ -82,7 +114,7 @@ export async function requestTentativeMeeting(
   const phone = savedPhone(fields) || callbackPhone(ctx) || "";
   const slotRaw = String(fields.time_preference);
   const normalized = normalizeSlot(slotRaw, { lang });
-  const kind = String(fields.visit_kind ?? "visit");
+  const visitKind = String(fields.visit_kind ?? "visit");
   const name = String(fields.name ?? "");
   const email = String(fields.email ?? "");
   const need = String(fields.need ?? "");
@@ -95,77 +127,63 @@ export async function requestTentativeMeeting(
     phone,
     email,
     need,
-    kind,
+    kind: visitKind,
     business: ctx.tenant?.name?.trim() || copyFor(lang).chat.fallbackTeamName,
   });
   const requestText = () =>
     renderBookingMessage(
-      ctx.tenant?.bookingRequestTemplate,
+      bookingConfigFromCtx(ctx).messageTemplates.request,
       copyFor(lang).chat.bookingRequestTemplate,
       vars,
     );
 
-  const existing = await prisma.meeting.findFirst({
-    where: { conversationId: ctx.conversation.id, status: "pending" },
+  const existing = await findPendingRequest({
+    tenantId: ctx.tenantId,
+    conversationId: ctx.conversation.id,
+    capabilityId: BOOKING_CAPABILITY,
   });
   if (existing) {
     return { ok: true, reply: requestText() };
   }
 
-  const meeting = await prisma.meeting.create({
-    data: {
-      tenantId: ctx.tenantId,
-      leadId: ctx.lead.id,
-      conversationId: ctx.conversation.id,
-      status: "pending",
-      kind,
-      slotText: normalized.display,
-      contactName: name,
-      contactEmail: email,
-      contactPhone: phone,
-      venueText: venue.address,
-      hoursText: venue.hours,
-      needText: need,
-    },
-  });
-
   const summary = await summarizeConversation(ctx.conversation.id);
-
-  await prisma.hitlTask.create({
+  const request = await createRequestWithApprovalTask({
+    tenantId: ctx.tenantId,
+    leadId: ctx.lead.id,
+    conversationId: ctx.conversation.id,
+    capabilityId: BOOKING_CAPABILITY,
+    kind: instanceKind(ctx, BOOKING_CAPABILITY, VISIT_KIND),
+    startAt: timeTextToStartAt(normalized.display),
+    timeText: normalized.display,
+    contactName: name,
+    contactEmail: email,
+    contactPhone: phone,
     data: {
-      tenantId: ctx.tenantId,
-      conversationId: ctx.conversation.id,
-      leadId: ctx.lead.id,
-      type: "booking_approval",
-      reason: "booking_approval",
-      payload: {
-        meetingId: meeting.id,
-        name,
-        phone,
-        email,
-        need,
-        slot: normalized.display,
-        date: normalized.dateLabel,
-        time: normalized.timeLabel || normalized.time || "",
-        kind,
-        details: vars.details,
-        summary,
-      },
-      status: "open",
+      need,
+      visit_kind: visitKind,
+      venue: venue.address,
+      hours: venue.hours,
+    } satisfies VisitData,
+    taskPayload: {
+      need,
+      slot: normalized.display,
+      date: normalized.dateLabel,
+      time: normalized.timeLabel || normalized.time || "",
+      details: vars.details,
+      summary,
     },
   });
 
-  const booking = {
-    meetingId: meeting.id,
-    status: "pending",
-    when: normalized.display,
-    kind,
-  };
   const nextFields = {
     ...fields,
     time_preference: normalized.display,
     phone,
-    booking,
+    booking: {
+      meetingId: request.id,
+      status: "pending",
+      when: normalized.display,
+      kind: visitKind,
+    },
     need,
     booking_confirm: "confirmed",
   };
@@ -180,6 +198,40 @@ export async function requestTentativeMeeting(
   ctx.conversation.flowState = "waiting_human";
 
   return { ok: true, reply: requestText() };
+}
+
+/** Latest still-relevant visit on the lead — for post-approval follow-ups in talk. */
+export type RecentMeetingSnapshot = {
+  id: string;
+  status: string;
+  slotText: string;
+  needText: string;
+  contactName: string;
+  decidedAt?: string;
+};
+
+/**
+ * State loader for the booking capability. Registered via `loadState` so
+ * `loadTurnContext` never names this domain.
+ */
+export async function loadRecentMeeting(
+  tenantId: string,
+  leadId: string,
+): Promise<RecentMeetingSnapshot | undefined> {
+  const row = await loadRecentRequest({
+    tenantId,
+    leadId,
+    capabilityId: BOOKING_CAPABILITY,
+  });
+  if (!row) return undefined;
+  return {
+    id: row.id,
+    status: row.status,
+    slotText: row.timeText,
+    needText: visitData(row).need ?? "",
+    contactName: row.contactName,
+    decidedAt: row.decidedAt?.toISOString(),
+  };
 }
 
 export type MeetingDecision = "approve" | "decline" | "reschedule";
@@ -231,65 +283,59 @@ export async function markMeetingDecision(opts: {
 }> {
   const approved = opts.decision === "approve";
   const reschedule = opts.decision === "reschedule";
-  const meeting = await prisma.meeting.findFirstOrThrow({
-    where: { id: opts.meetingId, tenantId: opts.tenantId },
-    include: {
-      tenant: true,
-      conversation: {
-        include: {
-          messages: {
-            where: { role: "lead" },
-            orderBy: { createdAt: "desc" },
-            take: 1,
-          },
-        },
-      },
-    },
+  const request = await getRequest({
+    tenantId: opts.tenantId,
+    requestId: opts.meetingId,
   });
-  const policy = isChatLanguage(meeting.tenant.chatLanguage)
-    ? meeting.tenant.chatLanguage
-    : "multi";
-  const lang = resolveReplyLanguage(policy, meeting.conversation.messages[0]?.text ?? "");
-  const chat = copyFor(lang).chat;
-  const previousSlot = meeting.slotText;
-  const vars = meetingMessageVars({
-    lang,
-    slotRaw: previousSlot,
-    address: meeting.venueText || meeting.tenant.venueAddress || "",
-    hours: meeting.hoursText || meeting.tenant.venueHours || "",
-    name: meeting.contactName || "",
-    phone: meeting.contactPhone || "",
-    email: meeting.contactEmail || "",
-    need: meeting.needText || "",
-    kind: meeting.kind,
-    business: meeting.tenant.name?.trim() || chat.fallbackTeamName,
-    note: opts.note,
+  if (!request) throw new Error("meeting_not_found");
+
+  const tenant = await prisma.tenant.findFirstOrThrow({
+    where: { id: opts.tenantId },
+  });
+  const lastLead = await prisma.message.findFirst({
+    where: { conversationId: request.conversationId, role: "lead" },
+    orderBy: { createdAt: "desc" },
+    select: { text: true },
   });
 
+  const policy = isChatLanguage(tenant.chatLanguage) ? tenant.chatLanguage : "multi";
+  const lang = resolveReplyLanguage(policy, lastLead?.text ?? "");
+  const chat = copyFor(lang).chat;
+  const data = visitData(request);
+  const previousSlot = request.timeText;
+  const config = parseBookingConfig(
+    await loadInstanceConfig({
+      tenantId: opts.tenantId,
+      capabilityId: BOOKING_CAPABILITY,
+    }),
+  );
+  const business = tenant.name?.trim() || chat.fallbackTeamName;
+  const address = data.venue || config.venueAddress;
+  const hours = data.hours || config.venueHours;
+
+  const varsFor = (slotRaw: string, note?: string) =>
+    meetingMessageVars({
+      lang,
+      slotRaw,
+      address,
+      hours,
+      name: request.contactName,
+      phone: request.contactPhone,
+      email: request.contactEmail,
+      need: data.need ?? "",
+      kind: data.visit_kind ?? VISIT_KIND,
+      business,
+      note,
+    });
+
+  const vars = varsFor(previousSlot, opts.note);
   const altRaw = opts.alternativeSlot?.trim() ?? "";
   const altNormalized = altRaw ? normalizeSlot(altRaw, { lang }) : null;
   const altSlot = altNormalized?.display || altRaw;
   const { note: _noteVar, ...baseVars } = vars;
   const bookingOnly = { ...baseVars, alt_slot: altSlot };
-
-  const approveSlotRaw =
-    approved && (opts.customerConfirmed || !reschedule) ? meeting.slotText : previousSlot;
   const approveVars = approved
-    ? {
-        ...meetingMessageVars({
-          lang,
-          slotRaw: approveSlotRaw,
-          address: meeting.venueText || meeting.tenant.venueAddress || "",
-          hours: meeting.hoursText || meeting.tenant.venueHours || "",
-          name: meeting.contactName || "",
-          phone: meeting.contactPhone || "",
-          email: meeting.contactEmail || "",
-          need: meeting.needText || "",
-          kind: meeting.kind,
-          business: meeting.tenant.name?.trim() || chat.fallbackTeamName,
-        }),
-        alt_slot: altSlot,
-      }
+    ? { ...varsFor(previousSlot), alt_slot: altSlot }
     : bookingOnly;
 
   const custom = opts.customReply?.trim();
@@ -298,7 +344,7 @@ export async function markMeetingDecision(opts: {
     text = custom;
   } else if (approved) {
     text = renderBookingMessage(
-      meeting.tenant.bookingApprovedTemplate,
+      config.messageTemplates.approved,
       chat.bookingApprovedTemplate,
       approveVars,
     );
@@ -306,132 +352,44 @@ export async function markMeetingDecision(opts: {
     text = renderBookingMessage(undefined, chat.bookingReschedule, bookingOnly);
   } else {
     text = renderBookingMessage(
-      meeting.tenant.bookingRejectedTemplate,
+      config.messageTemplates.rejected,
       chat.bookingRejected,
       bookingOnly,
     );
   }
   text = appendStaffNote(text, opts.note, chat.notePrefix);
 
-  const relatedTasks = await prisma.hitlTask.findMany({
-    where: {
-      tenantId: opts.tenantId,
-      conversationId: meeting.conversationId,
-      type: "booking_approval",
-    },
+  await decideRequest({
+    tenantId: opts.tenantId,
+    request,
+    actorUserId: opts.actorUserId,
+    decision: opts.decision,
+    note: opts.note,
+    customReply: opts.customReply,
+    customerConfirmed: opts.customerConfirmed,
+    alternative:
+      reschedule && altSlot
+        ? { startAt: timeTextToStartAt(altSlot), timeText: altSlot }
+        : undefined,
   });
-  const related = relatedTasks.filter((t) => {
-    const payload = t.payload as { meetingId?: string };
-    return payload.meetingId === meeting.id;
-  });
 
-  const now = new Date();
-  const nextSlotText = reschedule && altSlot ? altSlot : vars.slot;
-  // Reschedule keeps the meeting pending until the customer accepts the offered slot.
-  const nextStatus = approved ? "approved" : reschedule ? "pending" : "rejected";
-  const actorLabel = resolveActorLabel(opts.actorUserId);
-
-  await prisma.$transaction([
-    prisma.meeting.update({
-      where: { id: meeting.id },
-      data: {
-        status: nextStatus,
-        decidedBy: approved || !reschedule ? opts.actorUserId : meeting.decidedBy,
-        decidedAt: approved || !reschedule ? now : meeting.decidedAt,
-        slotText: nextSlotText,
-      },
-    }),
-    prisma.adminDecisionLog.create({
-      data: {
-        tenantId: opts.tenantId,
-        leadId: meeting.leadId,
-        conversationId: meeting.conversationId,
-        category: "meeting",
-        action: opts.decision,
-        actorUserId: opts.actorUserId,
-        actorLabel,
-        summary: "",
-        details: {
-          meetingId: meeting.id,
-          note: opts.note?.trim() ?? "",
-          customReply: opts.customReply?.trim() ?? "",
-          previousSlot,
-          alternativeSlot: altSlot,
-          slotText: nextSlotText,
-          customerConfirmed: Boolean(opts.customerConfirmed),
-        } as Prisma.InputJsonValue,
-        createdAt: now,
-      },
-    }),
-    ...related.map((t) => {
-      const prevPayload = (t.payload as Record<string, unknown>) ?? {};
-      if (reschedule) {
-        return prisma.hitlTask.update({
-          where: { id: t.id },
-          data: {
-            status: "open",
-            completedBy: null,
-            completedAt: null,
-            resolution: {
-              decision: "reschedule",
-              awaitingCustomerConfirm: true,
-              meetingId: meeting.id,
-              previousSlot,
-              alternativeSlot: altSlot,
-              note: opts.note ?? "",
-              updatedAt: now.toISOString(),
-            },
-            payload: {
-              ...prevPayload,
-              meetingId: meeting.id,
-              slot: altSlot,
-              awaitingCustomerConfirm: true,
-              previousSlot,
-            },
-          },
-        });
-      }
-      return prisma.hitlTask.update({
-        where: { id: t.id },
-        data: {
-          status: "done",
-          completedBy: opts.actorUserId,
-          completedAt: t.completedAt ?? now,
-          resolution: {
-            approved,
-            decision: opts.decision,
-            meetingId: meeting.id,
-            note: opts.note ?? "",
-            customReply: opts.customReply ?? "",
-            alternativeSlot: altSlot,
-            customerConfirmed: Boolean(opts.customerConfirmed),
-            updatedAt: now.toISOString(),
-          },
-        },
-      });
-    }),
-  ]);
-
-  const lead = await prisma.lead.findFirstOrThrow({ where: { id: meeting.leadId } });
+  const lead = await prisma.lead.findFirstOrThrow({ where: { id: request.leadId } });
   const conversation = await prisma.conversation.findFirstOrThrow({
-    where: { id: meeting.conversationId },
+    where: { id: request.conversationId },
   });
   const crm = { ...((lead.fields as Record<string, unknown>) ?? {}) };
   const session = { ...((conversation.session as Record<string, unknown>) ?? {}) };
   const fields = { ...crm, ...session };
-  const nextFields: Record<string, unknown> = {
-    ...fields,
-    booking_confirm: "",
-  };
+  const nextFields: Record<string, unknown> = { ...fields, booking_confirm: "" };
   delete nextFields.time_preference;
-  // Prior meeting lives in Meeting row; clear the session pin so rebook creates a new HITL.
+  // Prior visit lives in the Request row; clear the session pin so rebook creates a new HITL.
   delete nextFields.booking;
   // Keep need from the prior visit so rebook / reschedule does not re-ask.
-  const priorNeed = meeting.needText?.trim() || String(fields.need ?? "").trim();
+  const priorNeed = data.need?.trim() || String(fields.need ?? "").trim();
   if (priorNeed) nextFields.need = priorNeed;
   if (reschedule && altSlot) {
     nextFields.staff_slot_offer = {
-      meetingId: meeting.id,
+      meetingId: request.id,
       slot: altSlot,
       previousSlot,
     } satisfies StaffSlotOffer;
@@ -443,12 +401,12 @@ export async function markMeetingDecision(opts: {
       nextFields.booking_flow = "active";
     }
   }
-  await persistTurnFields(opts.tenantId, lead.id, meeting.conversationId, nextFields);
+  await persistTurnFields(opts.tenantId, lead.id, request.conversationId, nextFields);
 
   if (approved) {
     return {
-      conversationId: meeting.conversationId,
-      leadId: meeting.leadId,
+      conversationId: request.conversationId,
+      leadId: request.leadId,
       text,
       closeAsDone: true,
       reopenTalk: false,
@@ -456,41 +414,41 @@ export async function markMeetingDecision(opts: {
   }
 
   await prisma.conversation.update({
-    where: { id: meeting.conversationId },
+    where: { id: request.conversationId },
     data: { status: "open", flowState: "talk" },
   });
 
   return {
-    conversationId: meeting.conversationId,
-    leadId: meeting.leadId,
+    conversationId: request.conversationId,
+    leadId: request.leadId,
     text,
     closeAsDone: false,
     reopenTalk: true,
   };
 }
 
-/** Update durable meeting details (e.g. need) after staff/customer follow-up. */
+/** Update durable visit details (e.g. need) after staff/customer follow-up. */
 export async function updateMeetingDetails(opts: {
   tenantId: string;
   meetingId: string;
   need?: string;
 }): Promise<{ ok: true; needText: string } | { ok: false; error: string }> {
-  const meeting = await prisma.meeting.findFirst({
-    where: { id: opts.meetingId, tenantId: opts.tenantId },
+  const request = await getRequest({
+    tenantId: opts.tenantId,
+    requestId: opts.meetingId,
   });
-  if (!meeting) return { ok: false, error: "not_found" };
+  if (!request) return { ok: false, error: "not_found" };
 
   const needText = opts.need?.trim();
-  if (needText == null || !needText) {
-    return { ok: false, error: "need_required" };
-  }
+  if (!needText) return { ok: false, error: "need_required" };
 
-  await prisma.meeting.update({
-    where: { id: meeting.id },
-    data: { needText },
+  await updateRequestData({
+    tenantId: opts.tenantId,
+    requestId: request.id,
+    patch: { need: needText },
   });
 
-  const lead = await prisma.lead.findFirst({ where: { id: meeting.leadId } });
+  const lead = await prisma.lead.findFirst({ where: { id: request.leadId } });
   if (lead) {
     const fields = { ...((lead.fields as Record<string, unknown>) ?? {}), need: needText };
     await prisma.lead.update({

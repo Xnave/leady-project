@@ -34,6 +34,8 @@ export const chat: ChatCopy = {
       ? `We're open ${hours}. What day and time works for you?`
       : "What day and time works for you?",
   askFieldFallback: (field) => `I still need ${field.replaceAll("_", " ")} to request the visit.`,
+  askFieldWithOptions: (field, options) =>
+    `Which ${field.replaceAll("_", " ")} works for you? Options: ${options}`,
   availability: (hours) =>
     hours
       ? `We're open ${hours}. What day and time works for you?`
@@ -62,6 +64,37 @@ export const chat: ChatCopy = {
   bookingReschedule:
     "Unfortunately we could not confirm the visit on {{slot}} for {{name}}. That request is cancelled. Suggested alternative: {{alt_slot}}. Does that work? We're open {{hours}}.",
   notePrefix: "Note from the team:",
+  request: {
+    askField: (label) => `What is your ${label}?`,
+    confirmTitle: (noun) => `${noun} details:`,
+    confirmAsk: "Do these details look correct?",
+    needValidDates:
+      "Need valid start and end dates (end after start) before checking availability.",
+    invalidDates: "The start/end dates are invalid.",
+    stillNeed: (gaps) => `Still need: ${gaps}`,
+    availabilityNotConfigured:
+      "Automatic availability check is not configured — a teammate will verify or we can send a booking link.",
+    datesUnavailable: (url) =>
+      url
+        ? `Those dates are unavailable. Try other dates or open: ${url}`
+        : "Those dates are unavailable.",
+    datesAvailable: "Those dates look available on the online calendar.",
+    availabilityUnknownLink: (url) =>
+      `I could not confirm availability for sure. You can check and book here: ${url}`,
+    availabilityUnknownHitl:
+      "I could not confirm availability for sure — I will have a teammate verify.",
+    defaultRequest: ({ noun, from, to, details }) =>
+      `I recorded a ${noun} request from ${from} to ${to}${details ? ` · ${details}` : ""}. A teammate will confirm or suggest other dates.`,
+    defaultApproved: (noun, from, to) =>
+      `Your ${noun} from ${from} to ${to} is confirmed. We look forward to seeing you.`,
+    defaultRejected: (noun, from, to, note) =>
+      `Unfortunately we could not confirm a ${noun} for ${from}–${to}.${note ? ` ${note}` : ""}`,
+    completeBookingLink: (url) => `To complete booking: ${url}`,
+    offerAltDates: (from, to) =>
+      `Those dates are not available. Does ${from} to ${to} work instead?`,
+    offerDeclineAsk: "No problem — which other dates work for you?",
+    offerUnclearAsk: "Just to confirm — do the offered dates work for you?",
+  },
 };
 
 export const prompts: PromptCopy = {

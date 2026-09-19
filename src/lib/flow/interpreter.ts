@@ -1,14 +1,12 @@
 import { applyRestartPolicy, assertHitlAllowed, mergeAllowedFields, missingRequired } from "./helpers";
 import { ensureFlowRegistry } from "./capabilities";
-import { getAction, getTalkEffect, resolveTalkCapabilities, sessionFieldKeysForStage } from "./registry";
-import { talkTransitionTargets } from "./prompt-builder";
 import {
-  askBookingField,
-  bookingConfirmStatus,
-  bookingFieldGaps,
-  isBookingCollectActive,
-} from "./booking";
-import { effectiveBookingRequired } from "./booking-collect";
+  getTalkEffect,
+  outcomeFlagMappings,
+  reconcileTalkOutcome,
+  sessionFieldKeysForStage,
+} from "./registry";
+import { talkTransitionTargets } from "./prompt-builder";
 import { copyFor, replyLang } from "@/lib/copy";
 import { hitlReasonKey } from "./effects";
 import type {
@@ -38,7 +36,15 @@ export type InterpreterPorts = {
     stage: FaqStage,
   ) => Promise<{ resolved: boolean; reply: string }>;
   talk: (ctx: TurnContext, stage: TalkStage) => Promise<TalkOutcome>;
-  bookMeeting: (ctx: TurnContext) => Promise<{ ok: boolean; reply: string }>;
+  /**
+   * Run a registered capability side effect by id. This is the only seam for
+   * durable domain work — adding a capability never adds a port.
+   */
+  runEffect: (
+    ctx: TurnContext,
+    effectId: string,
+    stage?: ActionStage,
+  ) => Promise<{ ok: boolean; reply: string }>;
   requestHuman: (ctx: TurnContext, reason: string) => Promise<void>;
   persistStage: (ctx: TurnContext, stageId: string) => Promise<void>;
   persistFields: (ctx: TurnContext, fields: LeadFields) => Promise<void>;
@@ -62,97 +68,6 @@ export type TurnResult = {
   reply?: string;
 };
 
-function lastLeadMessage(ctx: TurnContext): string {
-  return [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
-}
-
-/** Short customer affirmations after confirm_details. */
-function looksLikeBookingAffirmation(text: string): boolean {
-  const t = text.trim();
-  if (!t || t.length > 40) return false;
-  return /^(כן|כן\.|yep|yes|yeah|ok|okay|בסדר|מאשר|נכון|מאושר|סבבה|יאללה)[!?.]*$/iu.test(t);
-}
-
-/**
- * Ensure a confirmed booking always goes through book_meeting (HITL), never a free-text reply.
- * Also treat a short "yes" after confirm_details as booking_confirm=confirmed.
- */
-export function enforceBookingEffects(
-  ctx: TurnContext,
-  stage: TalkStage,
-  out: TalkOutcome,
-): TalkOutcome {
-  if (!resolveTalkCapabilities(stage).includes("booking")) return out;
-  if (stage.allowBook === false) return out;
-  const required = effectiveBookingRequired(ctx);
-  const fields = { ...ctx.lead.fields, ...(out.fields ?? {}) };
-  if (!isBookingCollectActive(fields, required)) return out;
-
-  const gaps = bookingFieldGaps(fields, required);
-  let confirm = bookingConfirmStatus(fields);
-  const nextFields = { ...(out.fields ?? {}) };
-
-  // Customer agreed to the summary — treat the listed name as verified so a
-  // single-token name cannot block book_meeting / inbox HITL after "כן".
-  if (confirm === "pending" && looksLikeBookingAffirmation(lastLeadMessage(ctx))) {
-    if (String(fields.name ?? "").trim()) {
-      nextFields.name_collected_by_agent = "1";
-    }
-  }
-
-  const fieldsAfterName = { ...fields, ...nextFields };
-  const gapsAfter = bookingFieldGaps(fieldsAfterName, required);
-
-  if (
-    gapsAfter.length === 0 &&
-    confirm === "pending" &&
-    looksLikeBookingAffirmation(lastLeadMessage(ctx))
-  ) {
-    nextFields.booking_confirm = "confirmed";
-    confirm = "confirmed";
-  }
-
-  const effects = [...(out.effects ?? [])];
-  const hasBook = effects.some((e) => e.type === "book_meeting");
-  let nextStage = out.nextStage;
-  let reply = out.reply;
-
-  if (gapsAfter.length === 0 && confirm === "confirmed" && !hasBook) {
-    effects.push({ type: "book_meeting" });
-  }
-
-  // Affirmed while gaps remain: never keep a free-text "I saved your request".
-  if (
-    confirm === "pending" &&
-    looksLikeBookingAffirmation(lastLeadMessage(ctx)) &&
-    gapsAfter.length > 0
-  ) {
-    const lang = replyLang(ctx, lastLeadMessage(ctx));
-    const nextGap = gapsAfter[0];
-    reply = askBookingField(lang, nextGap, {
-      hours: ctx.tenant?.venueHours?.trim() ?? "",
-    });
-  }
-
-  // Never mark the talk goal complete while booking is still in progress.
-  if (
-    nextStage === stage.on_complete ||
-    nextStage === "done" ||
-    (typeof nextStage === "string" && nextStage.endsWith("done"))
-  ) {
-    nextStage = undefined;
-  }
-
-  return {
-    ...out,
-    reply,
-    fields: Object.keys(nextFields).length ? { ...out.fields, ...nextFields } : out.fields,
-    effects,
-    nextStage,
-    book: gapsAfter.length === 0 && confirm === "confirmed" ? true : out.book,
-  };
-}
-
 async function sendWaitingHumanHold(ctx: TurnContext, ports: InterpreterPorts): Promise<void> {
   const lastLead = [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
   const lang = replyLang(ctx, lastLead);
@@ -162,24 +77,28 @@ async function sendWaitingHumanHold(ctx: TurnContext, ports: InterpreterPorts): 
   await ports.sendAndSave(ctx, hold);
 }
 
-/** Map legacy TalkOutcome flags into nextStage + effects. */
+/**
+ * Map legacy TalkOutcome flags into nextStage + effects.
+ * Domain flags come from the registry; only escalation and completion — which are
+ * kernel concerns — are handled here by name.
+ */
 export function normalizeTalkOutcome(out: TalkOutcome, stage: TalkStage): TalkOutcome {
+  ensureFlowRegistry();
   const effects: TalkEffect[] = [...(out.effects ?? [])];
   let nextStage = out.nextStage;
   const has = (type: string) => effects.some((e) => e.type === type);
+  const flags = out as unknown as Record<string, unknown>;
 
-  if (out.book && !has("book_meeting")) {
-    effects.push({ type: "book_meeting" });
+  for (const mapping of outcomeFlagMappings()) {
+    if (!flags[mapping.flag] || has(mapping.effectId)) continue;
+    effects.push({ type: mapping.effectId });
+    if (mapping.completesStage) nextStage = nextStage ?? stage.on_complete;
   }
   if (out.escalate && !has("request_human")) {
     effects.push({
       type: "request_human",
       args: { reason: out.escalateReason },
     });
-  }
-  if (out.acceptOfferedSlot && !has("accept_offered_slot")) {
-    effects.push({ type: "accept_offered_slot" });
-    nextStage = nextStage ?? stage.on_complete;
   }
   if (out.complete) {
     nextStage = nextStage ?? stage.on_complete;
@@ -291,10 +210,14 @@ export async function interpretTurn(
 
     if (stage.type === "talk") {
       const raw = await ports.talk(ctx, stage);
-      const out = enforceBookingEffects(ctx, stage, normalizeTalkOutcome(raw, stage));
+      const out = reconcileTalkOutcome({
+        ctx,
+        stage,
+        outcome: normalizeTalkOutcome(raw, stage),
+      });
       const schemaKeys = [
         ...Object.keys(ctx.agent.leadSchema.fields),
-        ...sessionFieldKeysForStage(stage),
+        ...sessionFieldKeysForStage(stage, ctx),
       ];
       const incoming: LeadFields = { ...(out.fields ?? {}) };
       if (out.intent) incoming.intent = out.intent;
@@ -303,7 +226,8 @@ export async function interpretTurn(
 
       const effectTypes = (out.effects ?? []).map((e) => e.type);
       let reply = out.reply;
-      let bookedOk: boolean | undefined;
+      let failedAction: string | undefined;
+      let completeAction: string | undefined;
       let escalateReason = "";
 
       for (const effect of out.effects ?? []) {
@@ -318,7 +242,8 @@ export async function interpretTurn(
         });
         if (result.reply !== undefined) reply = result.reply;
         if (result.escalateReason) escalateReason = result.escalateReason;
-        if (result.bookedOk !== undefined) bookedOk = result.bookedOk;
+        if (result.failedAction) failedAction = result.failedAction;
+        if (result.completeAction) completeAction = result.completeAction;
         if (result.halt) {
           ports.log("exit", {
             stageId: result.halt.stage,
@@ -336,10 +261,10 @@ export async function interpretTurn(
         }
       }
 
-      if (bookedOk === false) {
+      if (failedAction) {
         await ports.sendAndSave(ctx, reply);
-        ports.log("exit", { stageId, action: "book_meeting", ok: false, effects: effectTypes });
-        return { stage: stageId, action: "book_meeting", ok: false, effects: effectTypes };
+        ports.log("exit", { stageId, action: failedAction, ok: false, effects: effectTypes });
+        return { stage: stageId, action: failedAction, ok: false, effects: effectTypes };
       }
 
       let nextStage = out.nextStage;
@@ -389,15 +314,13 @@ export async function interpretTurn(
         continue;
       }
 
-      if (nextStage === stage.on_complete || effectTypes.includes("accept_offered_slot")) {
+      if (nextStage === stage.on_complete || completeAction) {
         await ports.sendAndSave(ctx, reply);
         await ports.persistStage(ctx, stage.on_complete);
         ctx.conversation.flowState = stage.on_complete;
         ports.log("exit", {
           stageId: stage.on_complete,
-          action: effectTypes.includes("accept_offered_slot")
-            ? "accept_offered_slot"
-            : "done",
+          action: completeAction ?? "done",
           effects: effectTypes,
         });
         return {
@@ -438,9 +361,7 @@ async function runAction(
   stage: ActionStage,
   ports: InterpreterPorts,
 ): Promise<{ ok: boolean; reply: string }> {
-  if (stage.action === "book_meeting") {
-    return ports.bookMeeting(ctx);
-  }
+  // request_human is kernel policy (HITL gating), not a capability side effect.
   if (stage.action === "request_human") {
     assertHitlAllowed(ctx, ctx.conversation.flowState);
     const reason = hitlReasonKey(String(ctx.lead.fields._escalate_reason ?? "support_unresolved"));
@@ -455,9 +376,5 @@ async function runAction(
     };
   }
 
-  const registered = getAction(stage.action);
-  if (registered) {
-    return registered(ctx, stage);
-  }
-  return { ok: false, reply: `Unknown action: ${stage.action}` };
+  return ports.runEffect(ctx, stage.action, stage);
 }

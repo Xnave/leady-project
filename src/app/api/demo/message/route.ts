@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { persistInboundIfNew } from "@/lib/conversations";
-import { enqueueAgentTurn, runTurnNow } from "@/lib/flow/run-turn";
+import { dispatchNudgeEvent, enqueueAgentTurn, runTurnNow } from "@/lib/flow/run-turn";
 import { prisma } from "@/lib/db";
 import { ensureLocalDemoChannel } from "@/lib/provision-tenant";
 import { requireTenantId } from "@/lib/tenant";
@@ -97,11 +97,12 @@ export async function POST(req: Request) {
         reason: "inngest_timeout",
       }),
     );
-    await runTurnNow({
+    const turn = await runTurnNow({
       tenantId,
       conversationId: inserted.conversationId,
       triggerMessageId: inserted.messageId,
     });
+    await dispatchNudgeEvent(turn.nudgeEvent);
   }
 
   const lead = await prisma.lead.findFirstOrThrow({

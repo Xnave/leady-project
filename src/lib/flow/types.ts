@@ -118,17 +118,26 @@ export type AgentSnapshot = {
   calcomEventTypeId?: string | null;
 };
 
+/** One configured request type on the turn context (a `CapabilityInstance` row). */
+export type CapabilityInstanceSnapshot = {
+  id: string;
+  capabilityId: string;
+  kind: string;
+  enabled: boolean;
+  config: Record<string, unknown>;
+};
+
 export type TenantSnapshot = {
   name: string;
   phone: string;
   intro: string;
   chatLanguage: ChatLanguage;
   idleResetDays?: number;
-  venueAddress?: string;
-  venueHours?: string;
-  bookingRequestTemplate?: string;
-  bookingApprovedTemplate?: string;
-  bookingRejectedTemplate?: string;
+  /**
+   * Everything a tenant configures per capability. The snapshot never grows a
+   * field when a capability is added — the capability parses its own instance.
+   */
+  capabilityInstances?: CapabilityInstanceSnapshot[];
 };
 
 export type MessageSnapshot = {
@@ -166,16 +175,6 @@ export type ChannelSnapshot = {
   customerPhone?: string;
 };
 
-/** Latest meeting on the lead — for post-approval follow-ups in talk. */
-export type RecentMeetingSnapshot = {
-  id: string;
-  status: string;
-  slotText: string;
-  needText: string;
-  contactName: string;
-  decidedAt?: string;
-};
-
 export type TurnContext = {
   tenantId: string;
   tenant?: TenantSnapshot;
@@ -184,7 +183,12 @@ export type TurnContext = {
   lead: { id: string; externalUserId: string; fields: LeadFields };
   messages: MessageSnapshot[];
   channel?: ChannelSnapshot;
-  recentMeeting?: RecentMeetingSnapshot | null;
+  /**
+   * Durable per-capability state, keyed by capability id and populated by each
+   * capability's `loadState` hook. The kernel never names a domain here — read it
+   * with `capabilityState<T>(ctx, id)` from the registry.
+   */
+  capabilityState?: Record<string, unknown>;
 };
 
 export class FlowConfigError extends Error {

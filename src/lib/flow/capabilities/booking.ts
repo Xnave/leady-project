@@ -16,10 +16,17 @@ import {
   looksLikePhoneNumber,
   savedPhone,
 } from "../booking-collect";
-import { registerCapability } from "../registry";
+import { capabilityState, registerCapability, resolveTalkCapabilities } from "../registry";
 import type { LeadFields, TalkOutcome, TalkStage, TurnContext } from "../types";
-import { getStaffSlotOffer, markMeetingDecision, updateMeetingDetails } from "@/lib/meetings";
+import {
+  getStaffSlotOffer,
+  loadRecentMeeting,
+  markMeetingDecision,
+  updateMeetingDetails,
+  type RecentMeetingSnapshot,
+} from "@/lib/meetings";
 import { proposesDifferentSlot } from "../slot";
+import { bookingNoun, bookingConfigFromCtx, venueHoursFromCtx } from "../booking-config";
 import { isSlotWithinVenueHours } from "../venue-hours";
 import {
   formatPhoneDisplay,
@@ -37,6 +44,91 @@ export type TalkCollected = TalkOutcome & {
 
 function lastLeadText(ctx: TurnContext): string {
   return [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
+}
+
+/** The lead's still-relevant meeting, loaded by this capability's `loadState` hook. */
+export function recentMeeting(ctx: TurnContext): RecentMeetingSnapshot | undefined {
+  return capabilityState<RecentMeetingSnapshot>(ctx, "booking") ?? undefined;
+}
+
+/** Short customer affirmations after confirm_details. */
+function looksLikeBookingAffirmation(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length > 40) return false;
+  return /^(כן|כן\.|yep|yes|yeah|ok|okay|בסדר|מאשר|נכון|מאושר|סבבה|יאללה)[!?.]*$/iu.test(t);
+}
+
+/**
+ * Ensure a confirmed booking always goes through book_meeting (HITL), never a
+ * free-text reply, and treat a short "yes" after confirm_details as confirmation.
+ *
+ * This used to live in the interpreter as `enforceBookingEffects`; it is registered
+ * as this capability's `reconcile` hook so the kernel stays domain-free.
+ */
+export function reconcileBooking(
+  ctx: TurnContext,
+  stage: TalkStage,
+  out: TalkOutcome,
+): TalkOutcome {
+  if (!resolveTalkCapabilities(stage).includes("booking")) return out;
+  if (stage.allowBook === false) return out;
+  const required = effectiveBookingRequired(ctx);
+  const fields = { ...ctx.lead.fields, ...(out.fields ?? {}) };
+  if (!isBookingCollectActive(fields, required)) return out;
+
+  let confirm = bookingConfirmStatus(fields);
+  const nextFields = { ...(out.fields ?? {}) };
+  const affirmed = looksLikeBookingAffirmation(lastLeadText(ctx));
+
+  // Customer agreed to the summary — treat the listed name as verified so a
+  // single-token name cannot block book_meeting / inbox HITL after "כן".
+  if (confirm === "pending" && affirmed && String(fields.name ?? "").trim()) {
+    nextFields.name_collected_by_agent = "1";
+  }
+
+  const gapsAfter = bookingFieldGaps({ ...fields, ...nextFields }, required);
+
+  if (gapsAfter.length === 0 && confirm === "pending" && affirmed) {
+    nextFields.booking_confirm = "confirmed";
+    confirm = "confirmed";
+  }
+
+  const effects = [...(out.effects ?? [])];
+  let nextStage = out.nextStage;
+  let reply = out.reply;
+
+  if (
+    gapsAfter.length === 0 &&
+    confirm === "confirmed" &&
+    !effects.some((e) => e.type === "book_meeting")
+  ) {
+    effects.push({ type: "book_meeting" });
+  }
+
+  // Affirmed while gaps remain: never keep a free-text "I saved your request".
+  if (confirm === "pending" && affirmed && gapsAfter.length > 0) {
+    reply = askBookingField(replyLang(ctx, lastLeadText(ctx)), gapsAfter[0], {
+      hours: venueHoursFromCtx(ctx),
+    });
+  }
+
+  // Never mark the talk goal complete while booking is still in progress.
+  if (
+    nextStage === stage.on_complete ||
+    nextStage === "done" ||
+    (typeof nextStage === "string" && nextStage.endsWith("done"))
+  ) {
+    nextStage = undefined;
+  }
+
+  return {
+    ...out,
+    reply,
+    fields: Object.keys(nextFields).length ? { ...out.fields, ...nextFields } : out.fields,
+    effects,
+    nextStage,
+    book: gapsAfter.length === 0 && confirm === "confirmed" ? true : out.book,
+  };
 }
 
 function pushEffect(collected: TalkCollected, effect: NonNullable<TalkOutcome["effects"]>[number]) {
@@ -58,7 +150,7 @@ function lastStaffNoteQuestion(ctx: TurnContext, lang: "en" | "he"): string | un
 
 /** Persist meeting details. Does not send WhatsApp — call reply in the same turn. */
 function updateMeetingDetailsTool(ctx: TurnContext, collected: TalkCollected) {
-  const meetingId = ctx.recentMeeting?.id;
+  const meetingId = recentMeeting(ctx)?.id;
   return tool({
     description:
       "Save meeting details (פרטי הפגישה) when the customer gave concrete wording to store. Does NOT send WhatsApp text — always call reply in the SAME turn with a short message TO THE CUSTOMER (ack, or ask what to write if they only said it's wrong). Pass their words only; never invent a staff/CRM summary.",
@@ -108,6 +200,19 @@ export function registerBookingCapability(): void {
   registerCapability({
     id: "booking",
     sessionFieldKeys: BOOKING_SESSION_FIELD_KEYS,
+    reconcile: ({ ctx, stage, outcome }) => reconcileBooking(ctx, stage, outcome),
+    loadState: ({ tenantId, leadId }) => loadRecentMeeting(tenantId, leadId),
+    decide: (input) =>
+      markMeetingDecision({
+        tenantId: input.tenantId,
+        meetingId: input.requestId,
+        actorUserId: input.actorUserId,
+        decision: input.decision,
+        note: input.note,
+        customReply: input.customReply,
+        alternativeSlot: input.alternativeStart,
+        customerConfirmed: input.customerConfirmed,
+      }),
     closingLines: () => [
       "Prefer reply for informational turns. Call ask_field only while booking is in progress.",
       "Call reply unless ask_field or resolve_offered_slot already set the outbound text. After update_meeting_details, still call reply in the same turn.",
@@ -115,14 +220,15 @@ export function registerBookingCapability(): void {
     ],
     promptSection: ({ ctx, fields }) => {
       const required = effectiveBookingRequired(ctx);
-      const recent = ctx.recentMeeting;
+      const recent = recentMeeting(ctx);
       const lang = replyLang(ctx, lastLeadText(ctx));
+      const noun = bookingNoun(bookingConfigFromCtx(ctx), "en").singular;
       const staffNote = lastStaffNoteQuestion(ctx, lang);
       const offered = getStaffSlotOffer(fields);
 
       if (offered) {
         return [
-          `A teammate offered an alternative visit slot and is waiting on the customer: "${offered.slot}" (previous was "${offered.previousSlot || "n/a"}").`,
+          `A teammate offered an alternative ${noun} slot and is waiting on the customer: "${offered.slot}" (previous was "${offered.previousSlot || "n/a"}").`,
           "Call resolve_offered_slot with your decision:",
           '- decision="accept" ONLY if they clearly agree to THAT exact offered slot with no other day or time named.',
           '- decision="decline" if they reject it or name any other slot (pass proposed_slot).',
@@ -138,17 +244,17 @@ export function registerBookingCapability(): void {
         const confirm = bookingConfirmStatus(fields);
         const storedName = String(fields.name ?? "").trim();
         const lines = [
-          `Visit booking is in progress. Gaps: ${gaps.join(", ") || "none"}. booking_confirm=${confirm || "(none)"}.`,
+          `${noun} booking is in progress. Gaps: ${gaps.join(", ") || "none"}. booking_confirm=${confirm || "(none)"}.`,
           "When they answer a booking question, call save_fields with their wording first, then ask_field for the next gap only.",
           "time_preference: weekday + clock is enough — save when inside bookable hours (latest start is 30 minutes before closing, e.g. by 18:30 when hours end at 19). Bare morning clock without ערב/בוקר may be rejected as AM — ask them to clarify evening if needed.",
           "CRITICAL: After save_fields accepts a time_preference, do NOT re-confirm the slot — immediately ask_field for the next gap only.",
           "If outside bookable hours (including at/after closing), do not save and do not ask other fields until time is valid.",
           "Before book_meeting: confirm_details (only when Gaps is none), then save_fields booking_confirm=confirmed after they agree, then book_meeting.",
-          "confirm_details text: use label פרטי הפגישה / Visit details for the need field — never צורך or Need.",
-          "CRITICAL: Never tell the customer you recorded/submitted a visit request unless you called book_meeting and it returned ok. A plain reply claiming that is a bug.",
-          "After a teammate declines a visit, collect a new time_preference and call book_meeting again — do not invent a confirmation.",
+          `confirm_details text: use label פרטי הפגישה / ${noun} details for the need field — never צורך or Need.`,
+          `CRITICAL: Never tell the customer you recorded/submitted a ${noun} request unless you called book_meeting and it returned ok. A plain reply claiming that is a bug.`,
+          `After a teammate declines a ${noun}, collect a new time_preference and call book_meeting again — do not invent a confirmation.`,
           "Do not transition to on_complete/done while booking is in progress.",
-          "Never say the visit is confirmed — book_meeting only stores a tentative request for a human.",
+          `Never say the ${noun} is confirmed — book_meeting only stores a tentative request for a human.`,
           "When acknowledging a saved request, name the business from context only — never invent a company name from the customer's name.",
         ];
         if (
@@ -182,15 +288,15 @@ export function registerBookingCapability(): void {
       }
 
       return [
-        "Visit booking is NOT started. Use reply to answer product/sales questions from knowledge.",
+        `${noun} booking is NOT started. Use reply to answer product/sales questions from knowledge.`,
         'Examples that must NOT trigger booking: "I want a WhatsApp agent", "how much is it", "tell me more", "I need something for Instagram".',
-        "Only call start_booking if they explicitly ask to schedule a meeting/visit/demo/call, or clearly accept an offer to book.",
+        `Only call start_booking if they explicitly ask to schedule a ${noun}/meeting/demo/call, or clearly accept an offer to book.`,
         "Past/expired meetings are irrelevant — do not mention them, do not say בהמשך לפגישה, and do not reuse their need text unless the customer explicitly brings that meeting up.",
       ];
     },
     tools: ({ ctx, stage, collected }) => {
       const lang = replyLang(ctx, lastLeadText(ctx));
-      const hours = ctx.tenant?.venueHours?.trim() ?? "";
+      const hours = venueHoursFromCtx(ctx);
       const required = effectiveBookingRequired(ctx);
       const fieldsForTurn = { ...ctx.lead.fields, ...collected.fields };
       const offered = getStaffSlotOffer(fieldsForTurn);

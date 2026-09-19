@@ -1,5 +1,6 @@
 import { copyFor, replyLang } from "@/lib/copy";
 import { talkGuardrails } from "./guardrails";
+import { bookingConfigFromCtx } from "./booking-config";
 import { hasAgentReplied, isIdleConversationReset } from "./intro";
 import { capabilityClosingLines, capabilityPromptSections, resolveTalkCapabilities } from "./registry";
 import type { LeadFields, Stage, TalkStage, TurnContext } from "./types";
@@ -86,13 +87,14 @@ export class PromptBuilder {
     const required = effectiveBookingRequired(ctx);
     const saved = savedPhone(ctx.lead.fields);
     const deduced = callbackPhone(ctx);
+    const booking = bookingConfigFromCtx(ctx);
     this.parts.push(
       talkGuardrails({
         allowBook:
           stage.allowBook !== false &&
           resolveTalkCapabilities(stage).includes("booking"),
         requiredForBook: required,
-        hours: ctx.tenant?.venueHours?.trim() ?? "",
+        hours: booking.venueHours,
         whatsappPhone: !saved && deduced ? deduced : undefined,
         lang,
       }),
@@ -108,6 +110,7 @@ export class PromptBuilder {
   withTalkContext(ctx: TurnContext, stage: TalkStage, fields: LeadFields, lang: "en" | "he"): this {
     const last = lastLeadText(ctx);
     const required = effectiveBookingRequired(ctx);
+    const booking = bookingConfigFromCtx(ctx);
     this.parts.push(
       copyFor(lang).prompts.talkContext({
         business: ctx.tenant?.name ?? "this business",
@@ -116,8 +119,8 @@ export class PromptBuilder {
         fieldsJson: JSON.stringify(fields),
         channelLine: "",
         requiredFields: required.join(", "),
-        hours: ctx.tenant?.venueHours?.trim() ?? "",
-        address: ctx.tenant?.venueAddress?.trim() ?? "",
+        hours: booking.venueHours,
+        address: booking.venueAddress,
         last,
       }),
     );

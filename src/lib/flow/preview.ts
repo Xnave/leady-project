@@ -76,10 +76,13 @@ export async function previewFlow(
         }
         return degradeTalk(c, stage);
       },
-      bookMeeting: async (c) => {
-        actions.push("book_meeting");
-        if (!c.lead.fields.email) return { ok: false, reply: "missing email" };
-        return { ok: true, reply: "booked" };
+      // Offline preview: record the effect instead of writing rows or opening HITL.
+      runEffect: async (c, effectId) => {
+        actions.push(effectId);
+        if (effectId === "book_meeting" && !c.lead.fields.email) {
+          return { ok: false, reply: "missing email" };
+        }
+        return { ok: true, reply: `${effectId} recorded` };
       },
       requestHuman: async () => {
         actions.push("request_human");

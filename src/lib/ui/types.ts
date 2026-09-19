@@ -6,7 +6,7 @@ export type LeadStatusId = "new" | "open" | "in_progress" | "won" | "lost";
 
 export type CatalogUiId = "inbox" | "faq";
 
-export type CapabilityUiId = "booking" | "orders" | "docs";
+export type CapabilityUiId = "booking" | "reservations";
 
 export type BookingStanceUiId = "passive" | "proactive";
 
@@ -66,7 +66,7 @@ export type UiCopy = {
   /** Labels for lead schema field keys. Unknown tenant keys fall back to a humanised key. */
   leadFields: Record<string, string>;
   /** Known meeting kinds. Tenants supply free text, so unknown values pass through humanised. */
-  meetingKinds: Record<string, string>;
+  requestKinds: Record<string, string>;
   intents: Record<string, string>;
   stageTypes: Record<string, string>;
   convoStatus: Record<string, string>;
@@ -257,6 +257,12 @@ export type UiCopy = {
     collectLegend: string;
     collectHint: string;
     timeAlwaysCollected: string;
+    reservationCollectLegend: string;
+    reservationCollectHint: string;
+    reservationDatesAlways: string;
+    reservationCustomField: string;
+    reservationCustomFieldHint: string;
+    reservationAddField: string;
     filledFields: string;
     insertToken: string;
   };
@@ -265,6 +271,7 @@ export type UiCopy = {
   bookingStance: Record<BookingStanceUiId, { title: string; blurb: string }>;
   chatLanguage: Record<"multi" | "en" | "he", { title: string; blurb: string }>;
   bookingCollect: Record<string, { title: string; blurb: string }>;
+  reservationCollect: Record<string, { title: string; blurb: string }>;
   inbox: {
     decisionLegend: string;
     approveOption: string;
@@ -272,6 +279,7 @@ export type UiCopy = {
     notePlaceholder: string;
     complete: string;
     bookingApproval: string;
+    reservationApproval: string;
     tasksWaiting: string;
     emptyHint: string;
     generalTask: string;
@@ -325,6 +333,19 @@ export type UiCopy = {
     alternativeSlotLabel: string;
     alternativeSlotPlaceholder: string;
     visitDefault: string;
+    approved: string;
+    rejected: string;
+  };
+  reservation: {
+    approve: string;
+    decline: string;
+    reschedule: string;
+    checkIn: string;
+    checkOut: string;
+    guests: string;
+    unit: string;
+    alternativeCheckInLabel: string;
+    alternativeCheckOutLabel: string;
     approved: string;
     rejected: string;
   };

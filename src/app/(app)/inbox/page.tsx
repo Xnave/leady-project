@@ -1,39 +1,93 @@
 import Link from "next/link";
 import { ChannelBadge } from "@/components/ChannelBadge";
-import { MeetingDecisionForm } from "@/components/MeetingDecisionForm";
+import {
+  RequestDecisionForm,
+  type RequestDecisionLabels,
+} from "@/components/RequestDecisionForm";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
 import { getUiLang } from "@/lib/cookies";
 import { enrichInstagramLeadIdentity } from "@/lib/conversations";
-import { formatPhoneDisplay, instagramProfileUrl, leadDisplayName, leadInstagramUsername, whatsappChatUrl } from "@/lib/leads";
+import {
+  formatPhoneDisplay,
+  instagramProfileUrl,
+  leadDisplayName,
+  leadInstagramUsername,
+  whatsappChatUrl,
+} from "@/lib/leads";
 import { requireTenantIdForPage } from "@/lib/tenant";
+import { loadInstanceFieldLabels } from "@/lib/capability-instances";
+import { REQUEST_APPROVAL_TASK, type RequestRow } from "@/lib/requests";
+import {
+  requestHeadline,
+  requestSummaryLines,
+  requestTimeDisplay,
+  requestTimeShape,
+} from "@/lib/request-view";
 import { fillUi, hitlReasonLabel, uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
 
 type InboxTask = Awaited<ReturnType<typeof loadInboxTasks>>[number];
+type Ui = ReturnType<typeof uiCopy>;
+
+const TASK_INCLUDE = {
+  lead: {
+    include: {
+      channel: true,
+      requests: { orderBy: { createdAt: "desc" }, take: 10 },
+      conversations: { orderBy: { createdAt: "desc" }, take: 1 },
+    },
+  },
+  conversation: true,
+} as const;
 
 async function loadInboxTasks(tenantId: string) {
   return prisma.hitlTask.findMany({
     where: {
       tenantId,
-      OR: [{ status: "open" }, { type: "booking_approval" }],
+      OR: [{ status: "open" }, { type: REQUEST_APPROVAL_TASK }],
     },
-    include: {
-      lead: {
-        include: {
-          channel: true,
-          meetings: { orderBy: { createdAt: "desc" }, take: 10 },
-          conversations: {
-            orderBy: { createdAt: "desc" },
-            take: 1,
-          },
-        },
-      },
-      conversation: true,
-    },
+    include: TASK_INCLUDE,
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
   });
+}
+
+/** Approval tasks carry the request id; everything else is a general HITL task. */
+function taskRequestId(task: InboxTask): string | undefined {
+  if (task.type !== REQUEST_APPROVAL_TASK) return undefined;
+  const payload = task.payload as { requestId?: string };
+  return payload.requestId;
+}
+
+function taskRequest(task: InboxTask): RequestRow | undefined {
+  const id = taskRequestId(task);
+  if (!id) return undefined;
+  const row = task.lead.requests.find((r) => r.id === id);
+  if (!row) return undefined;
+  return {
+    ...row,
+    data: (row.data && typeof row.data === "object"
+      ? (row.data as Record<string, unknown>)
+      : {}) as RequestRow["data"],
+  };
+}
+
+/** Per-capability wording, so the inbox reads naturally for each vertical. */
+function requestTaskTitle(ui: Ui, request: RequestRow | undefined): string {
+  if (!request) return ui.inbox.generalTask;
+  return request.capabilityId === "reservations"
+    ? ui.inbox.reservationApproval
+    : ui.inbox.bookingApproval;
+}
+
+function statusLabel(ui: Ui, request: RequestRow): string {
+  const decided =
+    request.capabilityId === "reservations" ? ui.reservation : ui.meeting;
+  if (request.status === "pending") return ui.common.pending;
+  if (request.status === "approved") return decided.approved;
+  if (request.status === "rejected") return decided.rejected;
+  return request.status;
 }
 
 export default async function InboxPage({
@@ -45,26 +99,36 @@ export default async function InboxPage({
   const tenantId = await requireTenantIdForPage();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
-  const tasks = await loadInboxTasks(tenantId);
+  const [tasks, instanceLabels] = await Promise.all([
+    loadInboxTasks(tenantId),
+    loadInstanceFieldLabels(tenantId),
+  ]);
   const openTasks = tasks.filter((t) => t.status === "open");
   const resolvedTasks = tasks.filter((t) => t.status !== "open");
 
-  const meetingLabels = {
+  // Field labels for the summary lines: UI presets, then tenant overrides.
+  const fieldLabels: Record<string, string> = {
     need: ui.common.need,
     name: ui.common.name,
     phone: ui.common.phone,
     email: ui.common.email,
+    guests: ui.reservation.guests,
+    unit: ui.reservation.unit,
+    ...instanceLabels,
+  };
+
+  const decisionLabels: RequestDecisionLabels = {
     approve: ui.meeting.approve,
     decline: ui.meeting.decline,
     reschedule: ui.meeting.reschedule,
     alternativeSlotLabel: ui.meeting.alternativeSlotLabel,
     alternativeSlotPlaceholder: ui.meeting.alternativeSlotPlaceholder,
-    visitDefault: ui.meeting.visitDefault,
+    alternativeStartLabel: ui.reservation.alternativeCheckInLabel,
+    alternativeEndLabel: ui.reservation.alternativeCheckOutLabel,
     noteLabel: ui.inbox.declineNoteLabel,
     notePlaceholder: ui.inbox.declineNotePlaceholder,
     customReplyLabel: ui.inbox.customReplyLabel,
     customReplyPlaceholder: ui.inbox.customReplyPlaceholder,
-    updateDecision: ui.inbox.updateDecision,
     currentStatus: ui.inbox.currentDecision,
     changeDecision: ui.inbox.changeDecision,
     cancel: ui.common.cancel,
@@ -81,16 +145,7 @@ export default async function InboxPage({
     if (changed) {
       const fresh = await prisma.hitlTask.findFirst({
         where: { id: selected.id, tenantId },
-        include: {
-          lead: {
-            include: {
-              channel: true,
-              meetings: { orderBy: { createdAt: "desc" }, take: 10 },
-              conversations: { orderBy: { createdAt: "desc" }, take: 1 },
-            },
-          },
-          conversation: true,
-        },
+        include: TASK_INCLUDE,
       });
       if (fresh) selected = fresh;
     }
@@ -100,7 +155,9 @@ export default async function InboxPage({
     <div>
       <PageHeader title={ui.page.inboxTitle} />
       <div className="inbox-stats">
-        <div className="stat-pill">{fillUi(ui.inbox.tasksWaiting, { count: openTasks.length })}</div>
+        <div className="stat-pill">
+          {fillUi(ui.inbox.tasksWaiting, { count: openTasks.length })}
+        </div>
       </div>
       {tasks.length === 0 ? (
         <div className="empty-state">
@@ -117,23 +174,42 @@ export default async function InboxPage({
               <>
                 <p className="muted">{ui.inbox.waitingTitle}</p>
                 {openTasks.map((task) => (
-                  <InboxTaskLink key={task.id} task={task} selectedId={selected?.id} ui={ui} />
+                  <InboxTaskLink
+                    key={task.id}
+                    task={task}
+                    selectedId={selected?.id}
+                    ui={ui}
+                  />
                 ))}
               </>
             ) : null}
             {resolvedTasks.length > 0 ? (
               <>
-                <p className="muted" style={{ marginTop: openTasks.length ? "1rem" : undefined }}>
+                <p
+                  className="muted"
+                  style={{ marginTop: openTasks.length ? "1rem" : undefined }}
+                >
                   {ui.inbox.historyTitle}
                 </p>
                 {resolvedTasks.map((task) => (
-                  <InboxTaskLink key={task.id} task={task} selectedId={selected?.id} ui={ui} />
+                  <InboxTaskLink
+                    key={task.id}
+                    task={task}
+                    selectedId={selected?.id}
+                    ui={ui}
+                  />
                 ))}
               </>
             ) : null}
           </div>
           {selected ? (
-            <InboxTaskDetail lang={lang} ui={ui} meetingLabels={meetingLabels} task={selected} />
+            <InboxTaskDetail
+              lang={lang}
+              ui={ui}
+              decisionLabels={decisionLabels}
+              fieldLabels={fieldLabels}
+              task={selected}
+            />
           ) : null}
         </div>
       )}
@@ -148,9 +224,8 @@ function InboxTaskLink({
 }: {
   task: InboxTask;
   selectedId?: string;
-  ui: ReturnType<typeof uiCopy>;
+  ui: Ui;
 }) {
-  const isBooking = task.type === "booking_approval";
   const open = task.status === "open";
   return (
     <Link
@@ -159,7 +234,7 @@ function InboxTaskLink({
     >
       <strong>{leadDisplayName(task.lead)}</strong>
       <div className="muted">
-        {isBooking ? ui.inbox.bookingApproval : ui.inbox.generalTask}
+        {requestTaskTitle(ui, taskRequest(task))}
         {" · "}
         {open ? ui.inbox.taskOpen : ui.inbox.taskResolved}
       </div>
@@ -170,66 +245,36 @@ function InboxTaskLink({
 function InboxTaskDetail({
   lang,
   ui,
-  meetingLabels,
+  decisionLabels,
+  fieldLabels,
   task,
 }: {
   lang: "he" | "en";
-  ui: ReturnType<typeof uiCopy>;
-  meetingLabels: {
-    need: string;
-    name: string;
-    phone: string;
-    email: string;
-    approve: string;
-    decline: string;
-    reschedule: string;
-    alternativeSlotLabel: string;
-    alternativeSlotPlaceholder: string;
-    visitDefault: string;
-    noteLabel: string;
-    notePlaceholder: string;
-    customReplyLabel: string;
-    customReplyPlaceholder: string;
-    updateDecision: string;
-    currentStatus: string;
-    changeDecision: string;
-    cancel: string;
-  };
+  ui: Ui;
+  decisionLabels: RequestDecisionLabels;
+  fieldLabels: Record<string, string>;
   task: InboxTask;
 }) {
   const payload = task.payload as {
-    meetingId?: string;
-    name?: string;
-    phone?: string;
-    email?: string;
-    need?: string;
-    slot?: string;
-    kind?: string;
+    requestId?: string;
+    awaitingCustomerConfirm?: boolean;
     summary?: string;
   };
-  const isBooking = task.type === "booking_approval" && payload.meetingId;
-  const taskTitle = isBooking ? ui.inbox.bookingApproval : ui.inbox.generalTask;
+  const request = taskRequest(task);
+  const taskTitle = requestTaskTitle(ui, request);
   const fields = (task.lead.fields ?? {}) as Record<string, string | undefined>;
   const isInstagram = task.lead.channel.provider === "instagram";
   const isWhatsapp = task.lead.channel.provider === "whatsapp";
   const igHandle = isInstagram ? leadInstagramUsername(task.lead.fields) : "";
   const phone =
-    String(fields.phone ?? "").trim() ||
-    (isWhatsapp ? task.lead.externalUserId : "");
+    String(fields.phone ?? "").trim() || (isWhatsapp ? task.lead.externalUserId : "");
   const waUrl = isWhatsapp ? whatsappChatUrl(phone) : "";
-  const meeting = task.lead.meetings.find((m) => m.id === payload.meetingId);
-  // Open inbox work must stay actionable even if a newer empty thread was started.
-  // Only lock resolved/history views when the meeting belongs to an older conversation.
   const latestConversationId = task.lead.conversations[0]?.id;
   const decisionsOnLatest =
     task.status === "open" ||
     !latestConversationId ||
-    meeting?.conversationId === latestConversationId ||
+    request?.conversationId === latestConversationId ||
     task.conversationId === latestConversationId;
-  const payloadFlags = payload as {
-    meetingId?: string;
-    awaitingCustomerConfirm?: boolean;
-  };
   const resolution = task.resolution as {
     approved?: boolean;
     note?: string;
@@ -238,10 +283,9 @@ function InboxTaskDetail({
     decision?: string;
   } | null;
   const awaitingCustomer =
-    Boolean(payloadFlags.awaitingCustomerConfirm) ||
+    Boolean(payload.awaitingCustomerConfirm) ||
     Boolean(resolution?.awaitingCustomerConfirm);
-  const meetingPending =
-    (!meeting || meeting.status === "pending") && !awaitingCustomer;
+  const pending = (!request || request.status === "pending") && !awaitingCustomer;
   const narrative =
     String(payload.summary ?? task.conversation?.summary ?? "").trim() ||
     ui.inbox.summaryEmpty;
@@ -267,7 +311,11 @@ function InboxTaskDetail({
             </a>
           ) : null}
           {igHandle ? (
-            <a href={instagramProfileUrl(igHandle)} target="_blank" rel="noopener noreferrer">
+            <a
+              href={instagramProfileUrl(igHandle)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               @{igHandle}
             </a>
           ) : null}
@@ -285,72 +333,63 @@ function InboxTaskDetail({
           </Link>
         </div>
       </div>
-      {!isBooking && task.reason ? (
+
+      {!request && task.reason ? (
         <p>
           {ui.inbox.reason}: {hitlReasonLabel(ui, task.reason)}
         </p>
       ) : null}
-      {!meetingPending && meeting ? (
+
+      {request && !pending ? (
         <p className="muted">
           {ui.inbox.currentDecision}:{" "}
-          <span className="badge">
-            {meeting.status === "pending"
-              ? ui.common.pending
-              : meeting.status === "approved"
-                ? ui.meeting.approved
-                : meeting.status === "rejected"
-                  ? ui.meeting.rejected
-                  : meeting.status}
-          </span>
+          <span className="badge">{statusLabel(ui, request)}</span>
           {resolution?.note ? ` · ${resolution.note}` : ""}
         </p>
       ) : null}
+
       <div className="inbox-preview">
         <p className="muted">{ui.inbox.summaryTitle}</p>
         <p style={{ whiteSpace: "pre-wrap" }}>{narrative}</p>
       </div>
-      {isBooking && meeting ? (
+
+      {request ? (
         <>
           {awaitingCustomer ? (
             <p className="muted">{ui.inbox.awaitingCustomerHint}</p>
           ) : null}
           {decisionsOnLatest ? (
-            <MeetingDecisionForm
-              meetingId={payload.meetingId!}
-              pending={meetingPending}
+            <RequestDecisionForm
+              requestId={request.id}
+              pending={pending}
+              timeShape={requestTimeShape(request)}
+              timeText={requestTimeDisplay(request)}
+              headline={requestHeadline(request)}
               status={
                 awaitingCustomer
                   ? ui.inbox.awaitingCustomer
-                  : meeting.status === "pending"
-                    ? ui.common.pending
-                    : meeting.status === "approved"
-                      ? resolution?.customerConfirmed
-                        ? ui.inbox.customerConfirmed
-                        : ui.meeting.approved
-                      : meeting.status === "rejected"
-                        ? ui.meeting.rejected
-                        : meeting.status
+                  : request.status === "approved" && resolution?.customerConfirmed
+                    ? ui.inbox.customerConfirmed
+                    : statusLabel(ui, request)
               }
-              labels={meetingLabels}
-              summary={{
-                name:
-                  String(fields.name ?? payload.name ?? meeting.contactName ?? "") ||
-                  undefined,
-                phone:
-                  String(fields.phone ?? payload.phone ?? meeting.contactPhone ?? "") ||
-                  undefined,
-                email: String(fields.email ?? payload.email ?? "") || undefined,
-                need:
-                  String(fields.need ?? payload.need ?? meeting.needText ?? "") || undefined,
-                slot: String(payload.slot ?? meeting.slotText ?? "") || undefined,
-                kind: String(payload.kind ?? meeting.kind ?? "") || undefined,
-              }}
+              labels={decisionLabels}
+              lines={requestSummaryLines({
+                request,
+                lang,
+                labels: fieldLabels,
+                // The CRM record wins when the lead updated their details later.
+                overrides: {
+                  name: fields.name,
+                  phone: fields.phone,
+                  email: fields.email,
+                },
+              })}
             />
           ) : (
             <p className="muted">{ui.inbox.decisionsLockedHint}</p>
           )}
         </>
-      ) : !isBooking && task.status === "open" ? (
+      ) : task.status === "open" ? (
         <form action={`/api/hitl/${task.id}/complete`} method="post" className="stack">
           <div className="radio-card-grid compact">
             <label className="radio-card">
@@ -376,9 +415,9 @@ function InboxTaskDetail({
             <button type="submit">{ui.inbox.complete}</button>
           </div>
         </form>
-      ) : !isBooking ? (
+      ) : (
         <p className="muted">{ui.inbox.taskResolved}</p>
-      ) : null}
+      )}
     </div>
   );
 }

@@ -15,13 +15,19 @@ import {
   sanitizeBookingCollect,
   type BookingCollectId,
 } from "@/lib/flow/booking-collect";
+import {
+  DEFAULT_RESERVATION_COLLECT,
+  RESERVATION_COLLECT_PRESETS,
+  parseReservationConfig,
+  type ReservationConfig,
+} from "@/lib/flow/reservation-config";
 import { isChatLanguage, looksHebrew, type ChatLanguage } from "@/lib/flow/locale";
 import { copyFor } from "@/lib/copy";
 import { fillUi, stepLabel, uiCopy, type UiLang } from "@/lib/ui";
 
 const WIZARD_STEPS = ["knowledge", "business", "flow", "done"] as const;
-const PRODUCT_CAPABILITIES: CapabilityId[] = ["booking", "orders", "docs"];
-const READY_CAPABILITIES = new Set<CapabilityId>(["booking"]);
+const PRODUCT_CAPABILITIES: CapabilityId[] = ["booking", "reservations"];
+const READY_CAPABILITIES = new Set<CapabilityId>(["booking", "reservations"]);
 
 type Props = {
   name: string;
@@ -39,6 +45,7 @@ type Props = {
   bookingRequestTemplate?: string;
   bookingApprovedTemplate?: string;
   bookingRejectedTemplate?: string;
+  reservationConfig?: unknown;
   uiLang?: UiLang;
 };
 
@@ -81,8 +88,18 @@ export function OnboardWizard(props: Props) {
   const [bookingCollect, setBookingCollect] = useState<BookingCollectId[]>(() =>
     sanitizeBookingCollect(props.bookingCollect?.length ? props.bookingCollect : defaultBookingCollect),
   );
+  const initialReservation = parseReservationConfig(props.reservationConfig);
+  const [reservationCollect, setReservationCollect] = useState<string[]>(
+    () => initialReservation.collect,
+  );
+  const [reservationFieldLabels, setReservationFieldLabels] = useState<Record<string, string>>(
+    () => initialReservation.fieldLabels ?? {},
+  );
+  const [customFieldDraft, setCustomFieldDraft] = useState("");
   const bookingEnabled = capabilities.includes("booking");
-  const catalogId: CatalogId = bookingEnabled ? "inbox" : "faq";
+  const reservationsEnabled = capabilities.includes("reservations");
+  const catalogId: CatalogId =
+    bookingEnabled || reservationsEnabled ? "inbox" : "faq";
   const [venueAddress, setVenueAddress] = useState(props.venueAddress ?? "");
   const [venueHours, setVenueHours] = useState(props.venueHours ?? "");
   const [bookingRequestTemplate, setBookingRequestTemplate] = useState(
@@ -177,6 +194,17 @@ export function OnboardWizard(props: Props) {
   async function save() {
     setSaving(true);
     setError("");
+    const reservationConfig: ReservationConfig | undefined = reservationsEnabled
+      ? {
+          ...parseReservationConfig(props.reservationConfig),
+          collect: reservationCollect.length
+            ? reservationCollect
+            : [...DEFAULT_RESERVATION_COLLECT],
+          fieldLabels: Object.keys(reservationFieldLabels).length
+            ? reservationFieldLabels
+            : undefined,
+        }
+      : undefined;
     const res = await fetch("/api/onboard", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -196,6 +224,7 @@ export function OnboardWizard(props: Props) {
         bookingRequestTemplate,
         bookingApprovedTemplate,
         bookingRejectedTemplate,
+        reservationConfig,
       }),
     });
     setSaving(false);
@@ -205,6 +234,29 @@ export function OnboardWizard(props: Props) {
       return;
     }
     setStep(3);
+  }
+
+  function toggleReservationCollect(id: string) {
+    setReservationCollect((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+
+  function addCustomReservationField() {
+    const draft = customFieldDraft.trim();
+    if (!draft) return;
+    const key = draft
+      .toLowerCase()
+      .replace(/\s+/g, "_")
+      .replace(/[^a-z0-9_]/g, "");
+    if (!/^[a-z][a-z0-9_]{0,63}$/.test(key)) return;
+    if (key === "check_in" || key === "check_out") return;
+    const label = draft.includes(" ") || draft !== key ? draft : key.replaceAll("_", " ");
+    setReservationCollect((prev) => (prev.includes(key) ? prev : [...prev, key]));
+    setReservationFieldLabels((prev) =>
+      prev[key] ? prev : { ...prev, [key]: label },
+    );
+    setCustomFieldDraft("");
   }
 
   const agentLang = chatLanguage === "he" ? "he" : "en";
@@ -489,6 +541,63 @@ export function OnboardWizard(props: Props) {
                 </p>
               </fieldset>
               </>
+            ) : null}
+            {reservationsEnabled ? (
+              <fieldset>
+                <legend>{ui.onboard.reservationCollectLegend}</legend>
+                <p className="muted">{ui.onboard.reservationCollectHint}</p>
+                <div className="chip-row">
+                  {RESERVATION_COLLECT_PRESETS.map((id) => {
+                    const meta = ui.reservationCollect[id];
+                    const checked = reservationCollect.includes(id);
+                    return (
+                      <label
+                        key={id}
+                        className={`chip-toggle${checked ? " selected" : ""}`}
+                        title={meta?.blurb}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleReservationCollect(id)}
+                        />
+                        {meta?.title ?? id}
+                      </label>
+                    );
+                  })}
+                  {reservationCollect
+                    .filter((id) => !(RESERVATION_COLLECT_PRESETS as readonly string[]).includes(id))
+                    .map((id) => (
+                      <label key={id} className="chip-toggle selected">
+                        <input
+                          type="checkbox"
+                          checked
+                          onChange={() => toggleReservationCollect(id)}
+                        />
+                        {reservationFieldLabels[id] ?? id}
+                      </label>
+                    ))}
+                </div>
+                <p className="muted">{ui.onboard.reservationDatesAlways}</p>
+                <div className="row-actions" style={{ marginTop: "0.75rem", gap: "0.5rem" }}>
+                  <input
+                    type="text"
+                    value={customFieldDraft}
+                    placeholder={ui.onboard.reservationCustomFieldHint}
+                    aria-label={ui.onboard.reservationCustomField}
+                    onChange={(e) => setCustomFieldDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addCustomReservationField();
+                      }
+                    }}
+                  />
+                  <button type="button" className="btn-secondary" onClick={addCustomReservationField}>
+                    {ui.onboard.reservationAddField}
+                  </button>
+                </div>
+              </fieldset>
             ) : null}
             <div className="wizard-footer">
               <button type="button" className="btn-secondary" onClick={() => setStep(1)}>

@@ -16,7 +16,7 @@ import {
 } from "@/lib/leads";
 import { requireTenantIdForPage } from "@/lib/tenant";
 import { intentLabel, stageLabel } from "@/lib/ui/labels";
-import { meetingKindLabel, normalizeLeadStatus, uiCopy } from "@/lib/ui";
+import { normalizeLeadStatus, requestKindLabel, uiCopy } from "@/lib/ui";
 import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -86,7 +86,7 @@ export default async function LeadsPage({
     };
   }
 
-  const [total, leads, pendingMeetings] = await Promise.all([
+  const [total, leads, pendingRequests] = await Promise.all([
     prisma.lead.count({ where }),
     prisma.lead.findMany({
       where,
@@ -103,10 +103,10 @@ export default async function LeadsPage({
             messages: { take: 1, orderBy: { createdAt: "desc" }, select: { createdAt: true } },
           },
         },
-        meetings: { where: { status: "pending" } },
+        requests: { where: { status: "pending" } },
       },
     }),
-    prisma.meeting.findMany({
+    prisma.request.findMany({
       where: {
         tenantId,
         status: "pending",
@@ -118,7 +118,8 @@ export default async function LeadsPage({
     }),
   ]);
 
-  const showVisit = leads.some((l) => l.meetings.length > 0) || pendingMeetings.length > 0;
+  const showVisit =
+    leads.some((l) => l.requests.length > 0) || pendingRequests.length > 0;
   const extraParams: Record<string, string> = {
     ...(query ? { q: query } : {}),
     ...(filterStatus ? { status: filterStatus } : {}),
@@ -167,17 +168,17 @@ export default async function LeadsPage({
           {ui.common.search}
         </button>
       </form>
-      {pendingMeetings.length > 0 ? (
+      {pendingRequests.length > 0 ? (
         <div className="card">
           <h2>{ui.common.visitsWaiting}</h2>
           <ul className="lead-list">
-            {pendingMeetings.map((m) => (
-              <li key={m.id}>
-                <Link href={`/leads/${m.leadId}`}>{leadDisplayName(m.lead)}</Link>
+            {pendingRequests.map((row) => (
+              <li key={row.id}>
+                <Link href={`/leads/${row.leadId}`}>{leadDisplayName(row.lead)}</Link>
                 {" · "}
                 <span className="badge">{ui.common.pending}</span>
                 {" · "}
-                {meetingKindLabel(ui, m.kind)} · {m.slotText}
+                {requestKindLabel(ui, row.kind)} · {row.timeText}
               </li>
             ))}
           </ul>
@@ -202,7 +203,7 @@ export default async function LeadsPage({
               const fields = lead.fields as Record<string, unknown>;
               const rawStage = lead.conversations[0]?.flowState;
               const stageText = rawStage ? stageLabel(ui, rawStage) : ui.common.empty;
-              const pending = lead.meetings.length;
+              const pending = lead.requests.length;
               const intent = fields.intent ? intentLabel(ui, String(fields.intent)) : ui.common.empty;
               const igHandle =
                 lead.channel.provider === "instagram" ? leadInstagramUsername(fields) : "";

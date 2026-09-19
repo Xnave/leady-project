@@ -37,18 +37,23 @@ Multi-tenant agent CRM. A lead messages on WhatsApp/Instagram (via Zernio) or th
 
 `src/lib/flow/interpreter.ts` is a **pure state machine**. It reads `agent.flow` (a `FlowDefinition` of `classify` / `collect` / `faq` / `talk` / `action` / `terminal` stages), decides what happens this turn, and performs every side effect through an injected `InterpreterPorts` object — never by importing the DB, the LLM, or a channel directly. That is what makes it unit-testable.
 
-Two callers wire those ports:
+`src/lib/flow/run-turn.ts` → `runTurnNow()` is the **single** place those ports are wired. `src/inngest/functions.ts` → `runAgentTurn` does not re-wire them; it wraps `runTurnNow()` in `step.run(...)` for durability/retries and forwards the returned nudge event via `step.sendEvent`. Real inbound webhooks go through `enqueueAgentTurn()`; the demo chat and ops preview call `runTurnNow()` directly.
 
-- `src/lib/flow/run-turn.ts` → `runTurnNow()`, direct calls. Used by the demo chat and the ops preview for a synchronous reply.
-- `src/inngest/functions.ts` → `runAgentTurn`, the same ports wrapped in `step.run(...)` for durability/retries. Used by real inbound webhooks via `enqueueAgentTurn()`.
+**When adding a port, `run-turn.ts` is the only file to change.** Only touch `src/inngest/functions.ts` if the turn needs a new durable step or a new event.
 
-**When adding a port or changing a signature, update both files.** They intentionally duplicate the wiring (including a copy of `maybeScheduleNudge`), so a change in one alone silently diverges the sync and async paths.
+Because nudge scheduling is split (the port records the event, the Inngest wrapper sends it), callers that invoke `runTurnNow()` directly must send the returned `nudgeEvent` themselves — `dispatchNudgeEvent()` in `run-turn.ts` does this.
 
 Turn ordering is protected by `concurrency: [{ key: "event.data.conversationId", limit: 1 }]` on `runAgentTurn`.
 
+### Capabilities, instances, and requests
+
+The interpreter names no business domain. Transactional behavior is a registered **capability** (`booking`, `reservations`) attached on the talk stage. Per-tenant configuration is a **`CapabilityInstance`** row (field schema, nouns, templates, availability) — adding a business type is an insert, not a Tenant column and not a deploy. Every approval vertical persists as one **`Request`** with a normalized `startAt`/`endAt` time spine; collect/confirm/HITL live in `src/lib/requests.ts`. Field *types* (`date`, `date_range`, `datetime_text`, `enum`, …) live in `src/lib/flow/fields/` so a new vertical is a JSON array of specs.
+
+`architecture.test.ts` ("kernel purity", "one request primitive", "config lives in capability instances") fails if a domain name creeps back into the interpreter or a second table/route/form appears.
+
 ### Flow config is validated on write, versioned, and never hand-edited at runtime
 
-`POST /api/ops/agent` rebuilds the flow from a catalog template (`src/lib/flow/catalog.ts` — `inbox` / `book` / `faq`), runs `validateFlow()` (`src/lib/flow/validate.ts`, throws `FlowConfigError`), then in one transaction writes an `AgentConfigRevision` and bumps `agent.flowVersion`. Scheduled nudges carry the `flowVersion` they were created under and skip themselves as `stale-flow` when the agent has since changed. Owners never see a flow builder; ops picks a catalog and toggles policy.
+`POST /api/ops/agent` rebuilds the flow from a catalog template (`src/lib/flow/catalog.ts` — `inbox` / `faq`, with `book` accepted as a legacy alias for inbox + proactive booking stance), runs `validateFlow()` (`src/lib/flow/validate.ts`, throws `FlowConfigError`), then in one transaction writes an `AgentConfigRevision` and bumps `agent.flowVersion`. Scheduled nudges carry the `flowVersion` they were created under and skip themselves as `stale-flow` when the agent has since changed. Owners never see a flow builder; ops picks a catalog and toggles policy.
 
 ### Tenant isolation
 

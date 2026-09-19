@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { completeHitlTask, loadTurnContext } from "@/lib/conversations";
+import { ensureFlowRegistry } from "@/lib/flow/capabilities";
+import { decideRegisteredRequest } from "@/lib/flow/registry";
 import { closeConversationAsDone } from "@/lib/flow/rotate-conversation";
-import { runTurnNow, sendAndSave } from "@/lib/flow/run-turn";
-import { markMeetingDecision } from "@/lib/meetings";
+import { dispatchNudgeEvent, runTurnNow, sendAndSave } from "@/lib/flow/run-turn";
+import { getRequest, REQUEST_APPROVAL_TASK } from "@/lib/requests";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
 import { redirectPath } from "@/lib/request-url";
@@ -21,37 +23,47 @@ export async function POST(
   const task = await prisma.hitlTask.findFirstOrThrow({
     where: { id, tenantId },
   });
-  if (task.type === "booking_approval") {
-    const payload = task.payload as { meetingId?: string };
-    if (payload.meetingId) {
-      const rawDecision = String(form.get("decision") ?? "").trim();
-      const decision =
-        rawDecision === "approve" || rawDecision === "decline" || rawDecision === "reschedule"
-          ? rawDecision
-          : approved
-            ? "approve"
-            : "decline";
-      const alternativeSlot = String(form.get("alternativeSlot") ?? "").trim();
-      const result = await markMeetingDecision({
+  const requestId =
+    task.type === REQUEST_APPROVAL_TASK
+      ? (task.payload as { requestId?: string }).requestId
+      : undefined;
+  const request = requestId
+    ? await getRequest({ tenantId, requestId })
+    : undefined;
+
+  if (request) {
+    const rawDecision = String(form.get("decision") ?? "").trim();
+    const decision =
+      rawDecision === "approve" || rawDecision === "decline" || rawDecision === "reschedule"
+        ? rawDecision
+        : approved
+          ? "approve"
+          : "decline";
+    // A span offers two alternative dates on reschedule; a point offers one slot.
+    const isSpan = Boolean(request.endAt);
+    ensureFlowRegistry();
+    const result = await decideRegisteredRequest(request.capabilityId, {
+      tenantId,
+      requestId: request.id,
+      actorUserId: "owner",
+      decision,
+      note: note || undefined,
+      customReply: customReply || undefined,
+      alternativeStart:
+        String(form.get(isSpan ? "alternativeCheckIn" : "alternativeSlot") ?? "").trim() ||
+        undefined,
+      alternativeEnd: String(form.get("alternativeCheckOut") ?? "").trim() || undefined,
+    });
+    const ctx = await loadTurnContext(tenantId, result.conversationId);
+    await sendAndSave(ctx, result.text);
+    if (result.closeAsDone) {
+      await closeConversationAsDone({
         tenantId,
-        meetingId: payload.meetingId,
-        actorUserId: "owner",
-        decision,
-        note: note || undefined,
-        customReply: customReply || undefined,
-        alternativeSlot: alternativeSlot || undefined,
+        conversationId: result.conversationId,
+        reason: "approve",
       });
-      const ctx = await loadTurnContext(tenantId, result.conversationId);
-      await sendAndSave(ctx, result.text);
-      if (result.closeAsDone) {
-        await closeConversationAsDone({
-          tenantId,
-          conversationId: result.conversationId,
-          reason: "approve",
-        });
-      }
-      return NextResponse.redirect(redirectPath(req, "/inbox"), 303);
     }
+    return NextResponse.redirect(redirectPath(req, "/inbox"), 303);
   }
 
   const { conversationId } = await completeHitlTask({
@@ -61,10 +73,11 @@ export async function POST(
     note,
     approved,
   });
-  await runTurnNow({
+  const turn = await runTurnNow({
     tenantId,
     conversationId,
     resume: true,
   });
+  await dispatchNudgeEvent(turn.nudgeEvent);
   return NextResponse.redirect(redirectPath(req, "/inbox"), 303);
 }

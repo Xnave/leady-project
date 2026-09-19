@@ -34,6 +34,7 @@ export const chat: ChatCopy = {
       ? `שעות הפעילות שלנו: ${hours}. באיזה יום ושעה נוח לך?`
       : "באיזה יום ושעה נוח לך?",
   askFieldFallback: (field) => `חסר לי עוד פרט לפגישה: ${field}.`,
+  askFieldWithOptions: (field, options) => `איזה ${field} מתאים לך? אפשרויות: ${options}`,
   availability: (hours) =>
     hours
       ? `שעות הפעילות שלנו: ${hours}. באיזה יום ושעה נוח לך?`
@@ -62,6 +63,36 @@ export const chat: ChatCopy = {
   bookingReschedule:
     "לצערנו לא הצלחנו לאשר את הפגישה ב־{{slot}} עבור {{name}}. בקשת הפגישה למועד הזה בוטלה. מוצע מועד חלופי: {{alt_slot}}. האם זה מתאים? {{hours}}.",
   notePrefix: "הערת הנציג:",
+  request: {
+    askField: (label) => `מה ה${label} שלך?`,
+    confirmTitle: (noun) => `פרטי ה${noun}:`,
+    confirmAsk: "האם הפרטים נכונים?",
+    needValidDates:
+      "צריך תאריך התחלה וסיום תקינים (סיום אחרי התחלה) לפני בדיקת זמינות.",
+    invalidDates: "תאריכי ההתחלה/סיום לא תקינים.",
+    stillNeed: (gaps) => `עדיין חסר: ${gaps}`,
+    availabilityNotConfigured:
+      "לא ניתן לבדוק זמינות אוטומטית — נעביר לנציג או נשלח קישור להזמנה.",
+    datesUnavailable: (url) =>
+      url
+        ? `התאריכים תפוסים. אפשר לבדוק תאריכים אחרים או לפתוח: ${url}`
+        : "התאריכים תפוסים.",
+    datesAvailable: "התאריכים פנויים לפי היומן המקוון.",
+    availabilityUnknownLink: (url) =>
+      `לא הצלחתי לאשר זמינות בוודאות. אפשר לבדוק ולהזמין כאן: ${url}`,
+    availabilityUnknownHitl: "לא הצלחתי לאשר זמינות בוודאות — אעביר לנציג לאישור.",
+    defaultRequest: ({ noun, from, to, details }) =>
+      `רשמתי בקשת ${noun} מ-${from} עד ${to}${details ? ` · ${details}` : ""}. נציג יאשר או יציע תאריכים אחרים.`,
+    defaultApproved: (noun, from, to) =>
+      `ה${noun} אושר ל-${from} עד ${to}. נשמח לראותכם.`,
+    defaultRejected: (noun, from, to, note) =>
+      `לצערנו לא הצלחנו לאשר ${noun} בתאריכים ${from}–${to}.${note ? ` ${note}` : ""}`,
+    completeBookingLink: (url) => `לסיום ההזמנה: ${url}`,
+    offerAltDates: (from, to) =>
+      `התאריכים המבוקשים לא זמינים. האם ${from} עד ${to} מתאים?`,
+    offerDeclineAsk: "אין בעיה — איזה תאריכים אחרים מתאימים לך?",
+    offerUnclearAsk: "רק לוודא — האם התאריכים שהוצעו מתאימים?",
+  },
 };
 
 /** System prompts stay in English so the model follows tools reliably. */

@@ -7,6 +7,7 @@ import { buildAgentSystemPrompt, flowForCatalog, hitlForCatalog } from "@/lib/fl
 import { defaultLeadSchema } from "@/lib/flow/validate";
 import { CLERK_ROLE_ADMIN, normalizeEmail } from "@/lib/org-roles";
 import { appOrigin } from "@/lib/request-url";
+import { ensureDefaultBookingInstance } from "@/lib/capability-instances";
 
 export async function ensureLocalDemoChannel(tenantId: string): Promise<string> {
   const agent = await prisma.agent.findFirst({ where: { tenantId } });
@@ -161,5 +162,6 @@ export async function createTenant(opts: {
     },
   });
   await ensureLocalDemoChannel(tenant.id);
+  await ensureDefaultBookingInstance(tenant.id);
   return { tenant, ownerAccess };
 }

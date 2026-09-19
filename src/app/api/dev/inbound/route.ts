@@ -1,5 +1,5 @@
 import { persistInboundIfNew } from "@/lib/conversations";
-import { enqueueAgentTurn, runTurnNow } from "@/lib/flow/run-turn";
+import { dispatchNudgeEvent, enqueueAgentTurn, runTurnNow } from "@/lib/flow/run-turn";
 import { adminBypass } from "@/lib/admin";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
@@ -43,11 +43,12 @@ export async function POST(req: Request) {
       },
     });
     if (!agentMsg) {
-      await runTurnNow({
+      const turn = await runTurnNow({
         tenantId,
         conversationId: inserted.conversationId,
         triggerMessageId: inserted.messageId,
       });
+      await dispatchNudgeEvent(turn.nudgeEvent);
     }
   }
   return NextResponse.redirect(redirectPath(req, "/leads"), 303);

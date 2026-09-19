@@ -10,6 +10,13 @@ import {
   type CapabilityId,
 } from "@/lib/flow/catalog";
 import { sanitizeBookingCollect } from "@/lib/flow/booking-collect";
+import { parseReservationConfig } from "@/lib/flow/reservation-config";
+import type { BookingConfig } from "@/lib/flow/booking-config";
+import {
+  DEFAULT_INSTANCE_KIND,
+  disableCapabilityInstance,
+  upsertCapabilityInstance,
+} from "@/lib/capability-instances";
 import { isChatLanguage, type ChatLanguage } from "@/lib/flow/locale";
 import { defaultLeadSchema, validateFlow } from "@/lib/flow/validate";
 import { FlowConfigError } from "@/lib/flow/types";
@@ -34,6 +41,7 @@ export async function POST(req: Request) {
     bookingRequestTemplate?: string;
     bookingApprovedTemplate?: string;
     bookingRejectedTemplate?: string;
+    reservationConfig?: unknown;
   };
 
   const name = String(body.name ?? "").trim();
@@ -84,6 +92,28 @@ export async function POST(req: Request) {
   }
 
   const systemPrompt = buildAgentSystemPrompt(name, intro, phone, chatLanguage);
+  const instanceConfigs: { capabilityId: CapabilityId; config: unknown }[] = [
+    {
+      capabilityId: "booking",
+      config: {
+        venueAddress: String(body.venueAddress ?? "").trim(),
+        venueHours: String(body.venueHours ?? "").trim(),
+        messageTemplates: {
+          request: String(body.bookingRequestTemplate ?? ""),
+          approved: String(body.bookingApprovedTemplate ?? ""),
+          rejected: String(body.bookingRejectedTemplate ?? ""),
+        },
+      } satisfies BookingConfig,
+    },
+    ...(body.reservationConfig !== undefined
+      ? [
+          {
+            capabilityId: "reservations" as const,
+            config: parseReservationConfig(body.reservationConfig),
+          },
+        ]
+      : []),
+  ];
   const tenant = await prisma.tenant.findFirstOrThrow({ where: { id: tenantId } });
   let agent = await prisma.agent.findFirst({ where: { tenantId } });
 
@@ -96,11 +126,6 @@ export async function POST(req: Request) {
         intro,
         chatLanguage,
         idleResetDays,
-        venueAddress: String(body.venueAddress ?? "").trim(),
-        venueHours: String(body.venueHours ?? "").trim(),
-        bookingRequestTemplate: String(body.bookingRequestTemplate ?? ""),
-        bookingApprovedTemplate: String(body.bookingApprovedTemplate ?? ""),
-        bookingRejectedTemplate: String(body.bookingRejectedTemplate ?? ""),
       },
     });
 
@@ -146,6 +171,18 @@ export async function POST(req: Request) {
       },
     });
   });
+
+  // One instance per capability the owner enabled; the rest stay configured but off.
+  for (const { capabilityId, config } of instanceConfigs) {
+    if (capabilities.includes(capabilityId)) {
+      await upsertCapabilityInstance({ tenantId, capabilityId, config });
+    } else {
+      await disableCapabilityInstance({
+        tenantId,
+        kind: DEFAULT_INSTANCE_KIND[capabilityId] ?? capabilityId,
+      });
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }

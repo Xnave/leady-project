@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { bookingInstance } from "./booking-config";
 import { degradeTalk } from "./llm";
 import { flowForCatalog } from "./catalog";
 import type { TalkStage, TurnContext } from "./types";
@@ -13,8 +14,9 @@ function talkCtx(text: string, extra?: Partial<TurnContext>): TurnContext {
       phone: "",
       intro: "We help you book a visit.",
       chatLanguage: "en",
-      venueHours: "Sun–Thu 09:00–19:00",
-      venueAddress: "1 Main St",
+      capabilityInstances: [
+        bookingInstance({ venueHours: "Sun–Thu 09:00–19:00", venueAddress: "1 Main St" }),
+      ],
     },
     agent: {
       id: "a1",

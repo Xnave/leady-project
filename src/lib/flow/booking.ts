@@ -1,52 +1,29 @@
 import { copyFor } from "@/lib/copy";
 import { isCapabilitySessionKey } from "./registry";
-import { formatPhoneDisplay, isCustomerNameSatisfied } from "@/lib/leads";
-import { missingRequired } from "./helpers";
+import { bookingFieldContext, bookingFieldSpecs } from "./booking-fields";
+import { askField, fieldGaps, fieldLabel } from "./fields";
 import type { LeadFields } from "./types";
+
+const DEFAULT_REQUIRED = ["time_preference", "name", "need"];
 
 export function bookingFieldGaps(
   fields: LeadFields,
-  required: string[] = ["time_preference", "name", "need"],
+  required: string[] = DEFAULT_REQUIRED,
 ): string[] {
-  const contactKeys = new Set(["phone", "email"]);
-  const withoutName = required.filter((key) => key !== "name" && !contactKeys.has(key));
-  const missing = missingRequired(fields, withoutName);
-  if (required.includes("name") && !isCustomerNameSatisfied(fields)) {
-    // Keep name near the front of the gap list (after time when both missing).
-    const timeIdx = missing.indexOf("time_preference");
-    if (timeIdx >= 0) missing.splice(timeIdx + 1, 0, "name");
-    else missing.unshift("name");
-  }
-  if (required.includes("phone") && !String(fields.phone ?? "").trim()) {
-    missing.push("phone");
-  }
-  if (required.includes("email") && !String(fields.email ?? "").trim()) {
-    missing.push("email");
-  }
-  return missing;
+  return fieldGaps(
+    bookingFieldSpecs(required),
+    fields,
+    // Gap detection never needs hours or a deduced phone, only satisfaction rules.
+    bookingFieldContext({ lang: "en" }),
+  );
 }
 
-const FIELD_LABELS: Record<"en" | "he", Record<string, string>> = {
-  en: {
-    time_preference: "a day and time",
-    name: "a name",
-    need: "what the visit is for",
-    phone: "a phone number",
-    email: "an email",
-    visit_kind: "the visit type",
-  },
-  he: {
-    time_preference: "יום ושעה",
-    name: "שם",
-    need: "פרטי הפגישה",
-    phone: "מספר טלפון",
-    email: "אימייל",
-    visit_kind: "סוג ביקור",
-  },
-};
-
 export function bookingFieldLabel(lang: "en" | "he", field: string): string {
-  return FIELD_LABELS[lang][field] ?? field.replaceAll("_", " ");
+  return fieldLabel(
+    bookingFieldSpecs([field]),
+    field,
+    bookingFieldContext({ lang }),
+  );
 }
 
 /** Canned field prompts used by the ask_field tool (templates, not dialogue policy). */
@@ -55,20 +32,15 @@ export function askBookingField(
   field: string,
   extras?: { hours?: string; deducedPhone?: string },
 ): string {
-  const hours = extras?.hours?.trim() ?? "";
-  const chat = copyFor(lang).chat;
-  if (field === "name") return chat.askName;
-  if (field === "email") return chat.askEmail;
-  if (field === "phone") {
-    const deduced = extras?.deducedPhone?.trim();
-    return deduced
-      ? chat.askPhoneConfirm(formatPhoneDisplay(deduced) || deduced)
-      : chat.askPhone;
-  }
-  if (field === "need") return chat.askNeed;
-  if (field === "visit_kind") return chat.askVisitKind;
-  if (field === "time_preference") return chat.askTime(hours);
-  return chat.askFieldFallback(bookingFieldLabel(lang, field));
+  const fctx = bookingFieldContext({
+    lang,
+    hours: extras?.hours?.trim() ?? "",
+    deducedPhone: extras?.deducedPhone?.trim(),
+  });
+  return (
+    askField(bookingFieldSpecs([field]), field, fctx) ??
+    copyFor(lang).chat.askFieldFallback(bookingFieldLabel(lang, field))
+  );
 }
 
 /** Safety validator: clear book flag when gaps remain. */
@@ -123,20 +95,24 @@ export function isBookingSessionKey(key: string): key is BookingSessionFieldKey 
 }
 
 /** Prefer capability-registered session keys; fall back to booking keys before registry boot. */
-export function isSessionFieldKey(key: string): boolean {
+export function isSessionFieldKey(key: string, extraSessionKeys?: readonly string[]): boolean {
+  if (extraSessionKeys?.includes(key)) return true;
   if (isCapabilitySessionKey(key)) return true;
   return isBookingSessionKey(key);
 }
 
 /** Split a merged working bag into durable CRM vs per-conversation session. */
-export function splitCrmAndSession(fields: LeadFields): {
+export function splitCrmAndSession(
+  fields: LeadFields,
+  extraSessionKeys?: readonly string[],
+): {
   crm: LeadFields;
   session: LeadFields;
 } {
   const crm: LeadFields = {};
   const session: LeadFields = {};
   for (const [key, value] of Object.entries(fields)) {
-    if (isSessionFieldKey(key)) session[key] = value;
+    if (isSessionFieldKey(key, extraSessionKeys)) session[key] = value;
     else crm[key] = value;
   }
   return { crm, session };

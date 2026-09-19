@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { bookingInstance } from "./booking-config";
 import { normalizeTalkOutcome } from "./interpreter";
 import { buildTalkSystemPrompt, talkTransitionTargets } from "./prompt-builder";
 import { ensureFlowRegistry } from "./capabilities";
@@ -36,8 +37,9 @@ describe("PromptBuilder", () => {
         phone: "",
         intro: "Hello from Demo.",
         chatLanguage: "en",
-        venueHours: "9-5",
-        venueAddress: "1 Main",
+        capabilityInstances: [
+          bookingInstance({ venueHours: "9-5", venueAddress: "1 Main" }),
+        ],
       },
       agent: {
         id: "a1",

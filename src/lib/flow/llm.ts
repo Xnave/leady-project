@@ -3,6 +3,7 @@ import { z } from "zod";
 import { copyFor, replyLang } from "@/lib/copy";
 import { missingRequired } from "./helpers";
 import { askBookingField } from "./booking";
+import { venueHoursFromCtx } from "./booking-config";
 import { callbackPhone, effectiveBookingRequired } from "./booking-collect";
 import { ensureFlowRegistry } from "./capabilities";
 import { getCapability, resolveTalkCapabilities } from "./registry";
@@ -26,7 +27,7 @@ function lastLeadText(ctx: TurnContext): string {
 }
 
 function venueHours(ctx: TurnContext): string {
-  return ctx.tenant?.venueHours?.trim() ?? "";
+  return venueHoursFromCtx(ctx);
 }
 
 export async function classifyIntent(

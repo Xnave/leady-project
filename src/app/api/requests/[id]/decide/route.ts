@@ -1,18 +1,29 @@
 import { NextResponse } from "next/server";
 import { loadTurnContext } from "@/lib/conversations";
+import { ensureFlowRegistry } from "@/lib/flow/capabilities";
+import { decideRegisteredRequest } from "@/lib/flow/registry";
 import { closeConversationAsDone } from "@/lib/flow/rotate-conversation";
 import { sendAndSave } from "@/lib/flow/run-turn";
-import { markMeetingDecision, type MeetingDecision } from "@/lib/meetings";
+import {
+  getRequest,
+  REQUEST_APPROVAL_TASK,
+  type RequestDecision,
+} from "@/lib/requests";
 import { requireTenantId } from "@/lib/tenant";
 import { redirectPath } from "@/lib/request-url";
 import { prisma } from "@/lib/db";
 
-function parseDecision(form: FormData): MeetingDecision {
+function parseDecision(form: FormData): RequestDecision {
   const raw = String(form.get("decision") ?? "").trim();
   if (raw === "decline" || raw === "reschedule" || raw === "approve") return raw;
   return String(form.get("approved") ?? "") === "yes" ? "approve" : "decline";
 }
 
+/**
+ * One decide endpoint for every approval vertical. The alternative offered with a
+ * reschedule is read off the shape of the request's time spine: a point takes one
+ * value, a span takes two. Wording and persistence belong to the owning capability.
+ */
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -23,56 +34,63 @@ export async function POST(
   const decision = parseDecision(form);
   const note = String(form.get("note") ?? "").trim();
   const customReply = String(form.get("customReply") ?? "").trim();
-  const alternativeSlot = String(form.get("alternativeSlot") ?? "").trim();
   const redirectTo = String(form.get("redirect") ?? "").trim() || "/inbox";
-  if (decision === "reschedule" && !alternativeSlot) {
-    return NextResponse.redirect(redirectPath(req, redirectTo), 303);
-  }
 
-  const meeting = await prisma.meeting.findFirst({
-    where: { id, tenantId },
-    select: { id: true, leadId: true, conversationId: true },
-  });
-  if (!meeting) {
+  const request = await getRequest({ tenantId, requestId: id });
+  if (!request) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
-  // Allow decide while an open booking HITL still targets this meeting (inbox work),
-  // even if a newer conversation thread exists. Otherwise require the meeting's thread
-  // to be the lead's latest conversation.
-  const openHitlForMeeting = await prisma.hitlTask.findMany({
+  const isSpan = Boolean(request.endAt);
+  const alternativeStart = String(
+    form.get(isSpan ? "alternativeCheckIn" : "alternativeSlot") ?? "",
+  ).trim();
+  const alternativeEnd = String(form.get("alternativeCheckOut") ?? "").trim();
+  if (
+    decision === "reschedule" &&
+    (!alternativeStart || (isSpan && !alternativeEnd))
+  ) {
+    return NextResponse.redirect(redirectPath(req, redirectTo), 303);
+  }
+
+  // Allow deciding while an open approval task still targets this request (inbox
+  // work), even if a newer conversation thread exists. Otherwise the request's
+  // thread must still be the lead's latest conversation.
+  const openTasks = await prisma.hitlTask.findMany({
     where: {
       tenantId,
-      leadId: meeting.leadId,
+      leadId: request.leadId,
       status: "open",
-      type: "booking_approval",
+      type: REQUEST_APPROVAL_TASK,
     },
     select: { id: true, payload: true },
   });
-  const hasOpenHitl = openHitlForMeeting.some((t) => {
-    const payload = t.payload as { meetingId?: string };
-    return payload.meetingId === meeting.id;
-  });
-  if (!hasOpenHitl) {
+  const hasOpenTask = openTasks.some(
+    (t) => (t.payload as { requestId?: string })?.requestId === request.id,
+  );
+  if (!hasOpenTask) {
     const latest = await prisma.conversation.findFirst({
-      where: { leadId: meeting.leadId, tenantId },
+      where: { leadId: request.leadId, tenantId },
       orderBy: { createdAt: "desc" },
       select: { id: true },
     });
-    if (!latest || latest.id !== meeting.conversationId) {
+    if (!latest || latest.id !== request.conversationId) {
       return NextResponse.json({ error: "stale_conversation" }, { status: 409 });
     }
   }
 
-  const result = await markMeetingDecision({
+  ensureFlowRegistry();
+  const result = await decideRegisteredRequest(request.capabilityId, {
     tenantId,
-    meetingId: id,
+    requestId: request.id,
     actorUserId: "owner",
     decision,
     note: note || undefined,
     customReply: customReply || undefined,
-    alternativeSlot: alternativeSlot || undefined,
+    alternativeStart: alternativeStart || undefined,
+    alternativeEnd: alternativeEnd || undefined,
   });
+
   const ctx = await loadTurnContext(tenantId, result.conversationId);
   await sendAndSave(ctx, result.text);
   if (result.closeAsDone) {

@@ -110,8 +110,12 @@ export function looksLikeIncompleteCustomerName(name: string | null | undefined)
 }
 
 /** True when booking may treat `name` as filled (agent-collected or looks complete). */
-export function isCustomerNameSatisfied(fields: Record<string, unknown> | null | undefined): boolean {
-  const name = typeof fields?.name === "string" ? fields.name.trim() : "";
+export function isCustomerNameSatisfied(
+  fields: Record<string, unknown> | null | undefined,
+  key: string = "name",
+): boolean {
+  const raw = fields?.[key];
+  const name = typeof raw === "string" ? raw.trim() : "";
   if (!name) return false;
   const verified =
     fields?.name_collected_by_agent === true ||
