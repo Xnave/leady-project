@@ -164,6 +164,16 @@ describe("normalize", () => {
     expect(normalizeField(staySpecs, "check_in", "sometime soon", en).ok).toBe(false);
   });
 
+  it("resolves Hebrew weekdays relative to today", () => {
+    const sat = new Date(2026, 8, 19); // Saturday 19 Sep 2026
+    expect(normalizeDateValue("בחמישי הבא", sat)).toBe("2026-09-24");
+    expect(normalizeDateValue("שבת", sat)).toBe("2026-09-26");
+    expect(normalizeField(staySpecs, "check_in", "next Thursday", { ...en, now: sat })).toEqual({
+      ok: true,
+      value: "2026-09-24",
+    });
+  });
+
   it("maps enum labels onto ids and passes unknown values through", () => {
     expect(normalizeField(staySpecs, "unit", "Villa B", en)).toEqual({
       ok: true,

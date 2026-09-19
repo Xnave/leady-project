@@ -22,7 +22,11 @@ import {
 import { flowForCapabilities, isCapabilityId } from "./catalog";
 import { getCapability } from "./registry";
 import { ensureFlowRegistry } from "./capabilities";
+import { reconcileReservations } from "./capabilities/reservations";
+import { resolveCalendarDateRange } from "./slot";
 import { copyFor } from "@/lib/copy";
+import type { TalkStage, TurnContext } from "./types";
+import { defaultHitlPolicy, defaultLeadSchema } from "./validate";
 
 describe("reservation-config", () => {
   it("defaults collect without occasion/price", () => {
@@ -263,5 +267,114 @@ describe("reservations capability registration", () => {
       expect(talk.capabilities).toContain("reservations");
       expect(talk.allowBook).toBe(false);
     }
+  });
+});
+
+describe("stay date range from speech", () => {
+  it("parses בחמישי הבא עד שבת from a Saturday", () => {
+    const sat = new Date(2026, 8, 19);
+    expect(resolveCalendarDateRange("בחמישי הבא עד שבת 2 אורחים", sat, "he")).toEqual({
+      start: "2026-09-24",
+      end: "2026-09-26",
+    });
+  });
+});
+
+describe("reconcileReservations", () => {
+  const stage: TalkStage = {
+    type: "talk",
+    prompt: "",
+    capabilities: ["reservations"],
+    on_complete: "done",
+    on_escalate: "escalate",
+  };
+
+  function ctx(fields: Record<string, unknown>, last: string): TurnContext {
+    const flow = flowForCapabilities({ capabilities: ["reservations"] });
+    return {
+      tenantId: "t1",
+      tenant: { name: "Villa", phone: "", intro: "Hello", chatLanguage: "he" },
+      agent: {
+        id: "a1",
+        tenantId: "t1",
+        systemPrompt: "",
+        knowledgeText: "",
+        flow,
+        flowVersion: 1,
+        leadSchema: defaultLeadSchema,
+        hitlPolicy: defaultHitlPolicy,
+      },
+      conversation: {
+        id: "c1",
+        status: "open",
+        flowState: "talk",
+        flowVersion: 1,
+        nudgeCountByStage: {},
+      },
+      lead: { id: "l1", externalUserId: "+1", fields },
+      messages: [{ role: "lead", text: last }],
+    };
+  }
+
+  const complete = {
+    reservation_flow: "active",
+    check_in: "2026-09-24",
+    check_out: "2026-09-26",
+    guests: "2",
+    name: "Nave Einy",
+    phone: "0526595639",
+  };
+
+  it("injects create_reservation_hold when the last collect gap is filled", () => {
+    ensureFlowRegistry();
+    const state = ctx(
+      {
+        reservation_flow: "active",
+        check_in: "2026-09-24",
+        check_out: "2026-09-26",
+        guests: "2",
+        name: "Nave Einy",
+      },
+      "0526595639",
+    );
+    const out = reconcileReservations(state, stage, {
+      reply: "מעביר לרונן",
+      fields: { phone: "0526595639" },
+    });
+    expect(out.effects?.some((e) => e.type === "create_reservation_hold")).toBe(true);
+    expect(out.fields?.reservation_confirm).toBe("confirmed");
+  });
+
+  it("does not inject a hold while a staff date offer is pending", () => {
+    ensureFlowRegistry();
+    const state = ctx(
+      {
+        ...complete,
+        staff_date_offer: {
+          reservationId: "r1",
+          checkIn: "2026-10-01",
+          checkOut: "2026-10-04",
+          previousCheckIn: "2026-09-24",
+          previousCheckOut: "2026-09-26",
+        },
+      },
+      "כן",
+    );
+    const out = reconcileReservations(state, stage, {
+      reply: "איזה סוג יחידה?",
+      effects: [{ type: "start_new_conversation", args: { intro: "hi" } }],
+    });
+    expect(out.effects?.some((e) => e.type === "create_reservation_hold")).toBeFalsy();
+    expect(out.effects?.some((e) => e.type === "start_new_conversation")).toBe(false);
+  });
+
+  it("strips start_new_conversation while collect is active", () => {
+    ensureFlowRegistry();
+    const state = ctx(complete, "כבר אמרתי לך");
+    const out = reconcileReservations(state, stage, {
+      reply: "intro",
+      effects: [{ type: "start_new_conversation", args: { intro: "fresh" } }],
+    });
+    expect(out.effects?.some((e) => e.type === "start_new_conversation")).toBe(false);
   });
 });

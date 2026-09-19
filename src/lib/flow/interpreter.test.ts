@@ -105,6 +105,30 @@ describe("interpretTurn", () => {
     expect(replies[0]).toMatch(/teammate|נציג/);
   });
 
+  it("skips closed conversations instead of restarting into talk", async () => {
+    const replies: string[] = [];
+    const state = ctx({
+      agent: { ...ctx().agent, flow: defaultFlow() },
+      conversation: {
+        id: "c1",
+        status: "closed",
+        flowState: "done",
+        flowVersion: 1,
+        nudgeCountByStage: {},
+      },
+      messages: [{ role: "lead", text: "כבר אמרתי לך" }],
+    });
+    const result = await interpretTurn(state, {}, {
+      ...ports(),
+      sendAndSave: async (_c, text) => {
+        replies.push(text);
+      },
+    });
+    expect(result.skipped).toBe("closed");
+    expect(result.action).toBe("closed");
+    expect(replies).toEqual([]);
+  });
+
   it("resumes from HITL terminal instead of exiting immediately", async () => {
     const replies: string[] = [];
     const state = ctx({

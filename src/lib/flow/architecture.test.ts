@@ -193,6 +193,27 @@ describe("system prompts by capability", () => {
     expect(prompt).not.toMatch(/start_booking/);
   });
 
+  it("tells the model to resolve_offered_dates and not re-ask when a stay offer is pending", () => {
+    const flow = flowForCapabilities({ capabilities: ["reservations"] });
+    const stage = talkStage(flow);
+    const prompt = buildTalkSystemPrompt(baseCtx(flow), stage, {
+      reservation_flow: "active",
+      guests: "2",
+      unit: "silver",
+      staff_date_offer: {
+        reservationId: "r1",
+        checkIn: "2026-10-01",
+        checkOut: "2026-10-04",
+        previousCheckIn: "2026-09-24",
+        previousCheckOut: "2026-09-26",
+      },
+    });
+    expect(prompt).toMatch(/resolve_offered_dates/);
+    expect(prompt).toMatch(/Already known/);
+    expect(prompt).toMatch(/Do NOT call ask_field/);
+    expect(prompt).toMatch(/Today is /);
+  });
+
   it("uses proactive stage prompt text when bookingStance is proactive", () => {
     const flow = flowForCapabilities({
       capabilities: ["booking"],
@@ -262,6 +283,22 @@ describe("capability tools surface", () => {
     expect(names).toContain("update_meeting_details");
     expect(names).not.toContain("start_booking");
     expect(names).not.toContain("ask_field");
+  });
+
+  it("exposes only resolve_offered_dates when a staff date offer is pending", () => {
+    const flow = flowForCapabilities({ capabilities: ["reservations"] });
+    const ctx = baseCtx(flow);
+    const names = toolNamesFromCapability("reservations", ctx, talkStage(flow), {
+      reservation_flow: "active",
+      staff_date_offer: {
+        reservationId: "r1",
+        checkIn: "2026-10-01",
+        checkOut: "2026-10-04",
+        previousCheckIn: "2026-09-24",
+        previousCheckOut: "2026-09-26",
+      },
+    });
+    expect(names).toEqual(["resolve_offered_dates"]);
   });
 
   it("every registered capability ships real tools", () => {

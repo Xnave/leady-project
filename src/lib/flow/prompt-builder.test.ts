@@ -67,6 +67,8 @@ describe("PromptBuilder", () => {
     expect(prompt).toMatch(/Allowed transition targets/);
     expect(prompt).toMatch(/Visit booking is NOT started|start_booking|Booking capability/i);
     expect(prompt).toMatch(/FIRST MESSAGE/);
+    expect(prompt).toMatch(/Today is /);
+    expect(prompt).toMatch(/Asia\/Jerusalem/);
     expect(prompt).not.toMatch(/Booking field gaps: time_preference/);
   });
 });

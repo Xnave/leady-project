@@ -1,8 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { registerCapability } from "../registry";
-import type { LeadFields, TalkOutcome, TurnContext } from "../types";
+import type { LeadFields, TalkOutcome, TalkStage, TurnContext } from "../types";
 import { copyFor, replyLang } from "@/lib/copy";
+import { looksLikeShortAffirmation } from "../affirm";
+import { todayIsoDate, zonedToday } from "../clock";
+import { resolveCalendarDateRange } from "../slot";
 import {
   RESERVATION_SESSION_FIELD_KEYS,
   reservationCollectFields,
@@ -29,6 +32,105 @@ import { persistTurnFields } from "@/lib/conversations";
 
 function lastLeadText(ctx: TurnContext): string {
   return [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isPastIsoDate(iso: string, todayIso: string): boolean {
+  return ISO_DATE.test(iso) && iso < todayIso;
+}
+
+/** Prefer dates the customer actually said when the model stored a stale calendar. */
+function applySpokenStayDates(
+  collectable: Record<string, string>,
+  spoken: string,
+  now: Date,
+  lang: "en" | "he",
+): void {
+  const range =
+    resolveCalendarDateRange(spoken, now, lang) ||
+    resolveCalendarDateRange(collectable.check_in ?? "", now, lang);
+  if (!range) return;
+  const today = todayIsoDate(now);
+  if (!collectable.check_in || isPastIsoDate(collectable.check_in, today)) {
+    collectable.check_in = range.start;
+  }
+  if (!collectable.check_out || isPastIsoDate(collectable.check_out, today)) {
+    collectable.check_out = range.end;
+  }
+}
+
+function dropNewConversation(effects: NonNullable<TalkOutcome["effects"]>) {
+  return effects.filter((e) => e.type !== "start_new_conversation");
+}
+
+/**
+ * Submit the HITL hold as soon as collection is complete. Do not wait for a
+ * spare "OK", and never rotate the thread while a stay request is in flight.
+ */
+export function reconcileReservations(
+  ctx: TurnContext,
+  stage: TalkStage,
+  out: TalkOutcome,
+): TalkOutcome {
+  if (!resolveReservationsEnabled(stage)) return out;
+  const config = reservationConfigFromCtx(ctx);
+  const fields = { ...ctx.lead.fields, ...(out.fields ?? {}) };
+  const offered = getStaffDateOffer(fields);
+  const active = isReservationCollectActive(fields) || Boolean(offered);
+  let effects = [...(out.effects ?? [])];
+  if (active) effects = dropNewConversation(effects);
+
+  if (offered) {
+    return { ...out, effects };
+  }
+  if (!isReservationCollectActive(fields)) {
+    return { ...out, effects };
+  }
+
+  const nextFields = { ...(out.fields ?? {}) };
+  const merged = { ...fields, ...nextFields };
+  const gapsBefore = reservationFieldGaps(ctx.lead.fields, config);
+  const gapsAfter = reservationFieldGaps(merged, config);
+  const datesUpdated = Boolean(
+    String(nextFields.check_in ?? "").trim() || String(nextFields.check_out ?? "").trim(),
+  );
+  const confirm = reservationConfirmStatus(merged);
+  const affirmed = looksLikeShortAffirmation(lastLeadText(ctx));
+  const checkIn = String(merged.check_in ?? "").trim();
+  const checkOut = String(merged.check_out ?? "").trim();
+  const datesOk = stayDatesValid(checkIn, checkOut);
+  const holdAlready = effects.some((e) => e.type === "create_reservation_hold");
+
+  const completedThisTurn = gapsAfter.length === 0 && gapsBefore.length > 0;
+  const confirmed =
+    confirm === "confirmed" || (confirm === "pending" && affirmed);
+  const shouldHold =
+    gapsAfter.length === 0 &&
+    datesOk &&
+    !holdAlready &&
+    (completedThisTurn || datesUpdated || confirmed);
+
+  if (shouldHold) {
+    nextFields.reservation_confirm = "confirmed";
+    effects.push({ type: "create_reservation_hold" });
+  }
+
+  let nextStage = out.nextStage;
+  if (
+    nextStage === stage.on_complete ||
+    nextStage === "done" ||
+    (typeof nextStage === "string" && nextStage.endsWith("done"))
+  ) {
+    nextStage = undefined;
+  }
+
+  return {
+    ...out,
+    fields: Object.keys(nextFields).length ? { ...out.fields, ...nextFields } : out.fields,
+    effects,
+    nextStage,
+  };
 }
 
 function pushEffect(
@@ -99,6 +201,7 @@ export function registerReservationsCapability(): void {
     sessionFieldKeys: RESERVATION_SESSION_FIELD_KEYS,
     // The tenant's configured collect list is ephemeral too, so it varies per tenant.
     dynamicSessionKeys: (ctx) => reservationEphemeralKeys(reservationConfigFromCtx(ctx)),
+    reconcile: ({ ctx, stage, outcome }) => reconcileReservations(ctx, stage, outcome),
     decide: (input) =>
       markReservationDecision({
         tenantId: input.tenantId,
@@ -123,11 +226,19 @@ export function registerReservationsCapability(): void {
       const collectList = reservationCollectFields(config).join(", ");
 
       if (offered) {
+        const known = reservationCollectFields(config)
+          .filter((k) => String(fields[k] ?? "").trim())
+          .join(", ");
         return [
           `A teammate offered alternative ${noun} dates: ${offered.checkIn} → ${offered.checkOut} (was ${offered.previousCheckIn} → ${offered.previousCheckOut}).`,
-          "If they clearly accept those exact dates, save_fields check_in/check_out then create_reservation_hold after confirm_details.",
-          "If they decline or propose other dates, reply and collect new dates — do not invent confirmation.",
-        ];
+          known ? `Already known (do not re-ask): ${known}.` : "",
+          "Call resolve_offered_dates with your decision:",
+          '- decision="accept" ONLY if they clearly agree to THOSE exact offered dates.',
+          '- decision="decline" if they reject them or name other dates.',
+          '- decision="unclear" if you cannot tell.',
+          "Do NOT call ask_field, confirm_details, start_reservation, or create_reservation_hold while this offer is pending.",
+          "Do NOT call start_new_conversation.",
+        ].filter(Boolean);
       }
 
       const active = isReservationCollectActive(fields);
@@ -138,7 +249,7 @@ export function registerReservationsCapability(): void {
           `${noun} request is in progress. Collect fields: ${collectList}. Gaps: ${gaps.join(", ") || "none"}. reservation_confirm=${confirm || "(none)"}.`,
           "Save dates as YYYY-MM-DD (check_in / check_out). check_out must be after check_in.",
           "After dates are saved, call check_availability before finishing the hold when possible.",
-          "Before create_reservation_hold: confirm_details when Gaps is none, then save_fields reservation_confirm=confirmed after they agree, then create_reservation_hold.",
+          "When Gaps is none, call create_reservation_hold in the SAME turn — do not wait for the customer to say OK. confirm_details is optional.",
           `CRITICAL: Never tell the customer you submitted a ${noun} request unless create_reservation_hold returned ok.`,
           `Never say the ${noun} is confirmed — only a human can approve.`,
           ...policyLines(config),
@@ -208,6 +319,60 @@ export function registerReservationsCapability(): void {
         return tools;
       }
 
+      if (offered) {
+        tools.resolve_offered_dates = tool({
+          description:
+            `Accept or decline staff-offered alternative ${noun} dates. Do not ask for fields already known.`,
+          inputSchema: z.object({
+            decision: z.enum(["accept", "decline", "unclear"]),
+          }),
+          execute: async ({ decision }) => {
+            const offer = getStaffDateOffer(fieldsForTurn);
+            if (!offer) return { ok: false, error: "no_offer" };
+            if (decision === "accept") {
+              collected.fields = {
+                ...(collected.fields ?? {}),
+                check_in: offer.checkIn,
+                check_out: offer.checkOut,
+                reservation_confirm: "confirmed",
+                reservation_flow: "active",
+                staff_date_offer: "",
+              };
+              ctx.lead.fields = { ...ctx.lead.fields, ...collected.fields };
+              const result = await acceptOfferedReservationDates({
+                tenantId: ctx.tenantId,
+                reservationId: offer.reservationId,
+                checkIn: offer.checkIn,
+                checkOut: offer.checkOut,
+              });
+              pushReply(collected, result.text);
+              pushEffect(collected, { type: "accept_offered_slot" });
+              await persistTurnFields(
+                ctx.tenantId,
+                ctx.lead.id,
+                ctx.conversation.id,
+                collected.fields ?? {},
+                { extraSessionKeys: reservationEphemeralKeys(config) },
+              );
+              return { ok: true, decision: "accept" };
+            }
+            if (decision === "decline") {
+              collected.fields = {
+                ...(collected.fields ?? {}),
+                staff_date_offer: "",
+                reservation_confirm: "",
+                reservation_flow: "active",
+              };
+              pushReply(collected, r.offerDeclineAsk);
+              return { ok: true, decision: "decline" };
+            }
+            pushReply(collected, r.offerUnclearAsk);
+            return { ok: true, decision: "unclear" };
+          },
+        });
+        return tools;
+      }
+
       tools.save_fields = tool({
         description: `Save ${noun} field values from the customer.`,
         inputSchema: z.object({
@@ -215,6 +380,8 @@ export function registerReservationsCapability(): void {
         }),
         execute: async ({ fields }) => {
           const { confirm, collectable } = splitReservationConfirm(fields);
+          const now = fctx.now ?? zonedToday();
+          applySpokenStayDates(collectable, lastLeadText(ctx), now, lang);
           // The field kit owns coercion (dates → ISO, option labels → ids) and
           // drops keys this tenant does not collect.
           const { values } = normalizeFields(specs, collectable, fctx);
@@ -292,69 +459,22 @@ export function registerReservationsCapability(): void {
 
       tools.create_reservation_hold = tool({
         description:
-          `Submit a tentative ${noun} request for human approval. Only after reservation_confirm=confirmed and gaps are none.`,
+          `Submit a tentative ${noun} request for human approval as soon as gaps are none. Do not wait for a spare OK.`,
         inputSchema: z.object({}),
         execute: async () => {
           const merged = { ...ctx.lead.fields, ...collected.fields };
           const gaps = reservationFieldGaps(merged, config);
           if (gaps.length) return { ok: false, gaps };
-          if (reservationConfirmStatus(merged) !== "confirmed") {
-            return { ok: false, error: "not_confirmed" };
+          if (!stayDatesValid(String(merged.check_in), String(merged.check_out))) {
+            return { ok: false, error: "invalid_dates" };
           }
-          ctx.lead.fields = merged;
+          collected.fields = {
+            ...(collected.fields ?? {}),
+            reservation_confirm: "confirmed",
+          };
+          ctx.lead.fields = { ...merged, reservation_confirm: "confirmed" };
           pushEffect(collected, { type: "create_reservation_hold" });
           return { ok: true, pending_effect: true };
-        },
-      });
-
-      tools.resolve_offered_dates = tool({
-        description:
-          `Accept or decline staff-offered alternative ${noun} dates.`,
-        inputSchema: z.object({
-          decision: z.enum(["accept", "decline", "unclear"]),
-        }),
-        execute: async ({ decision }) => {
-          const offer = getStaffDateOffer(fieldsForTurn);
-          if (!offer) return { ok: false, error: "no_offer" };
-          if (decision === "accept") {
-            collected.fields = {
-              ...(collected.fields ?? {}),
-              check_in: offer.checkIn,
-              check_out: offer.checkOut,
-              reservation_confirm: "confirmed",
-              reservation_flow: "active",
-              staff_date_offer: "",
-            };
-            ctx.lead.fields = { ...ctx.lead.fields, ...collected.fields };
-            const result = await acceptOfferedReservationDates({
-              tenantId: ctx.tenantId,
-              reservationId: offer.reservationId,
-              checkIn: offer.checkIn,
-              checkOut: offer.checkOut,
-            });
-            pushReply(collected, result.text);
-            pushEffect(collected, { type: "accept_offered_slot" });
-            await persistTurnFields(
-              ctx.tenantId,
-              ctx.lead.id,
-              ctx.conversation.id,
-              collected.fields ?? {},
-              { extraSessionKeys: reservationEphemeralKeys(config) },
-            );
-            return { ok: true, decision: "accept" };
-          }
-          if (decision === "decline") {
-            collected.fields = {
-              ...(collected.fields ?? {}),
-              staff_date_offer: "",
-              reservation_confirm: "",
-              reservation_flow: "active",
-            };
-            pushReply(collected, r.offerDeclineAsk);
-            return { ok: true, decision: "decline" };
-          }
-          pushReply(collected, r.offerUnclearAsk);
-          return { ok: true, decision: "unclear" };
         },
       });
 

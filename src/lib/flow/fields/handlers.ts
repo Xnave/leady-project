@@ -1,6 +1,8 @@
 /** One implementation per field type. Adding a vertical must never touch this file. */
 import { copyFor } from "@/lib/copy";
 import { formatPhoneDisplay, isCustomerNameSatisfied } from "@/lib/leads";
+import { zonedToday } from "../clock";
+import { resolveCalendarDate } from "../slot";
 import { isSlotWithinVenueHours } from "../venue-hours";
 import type { LeadFields } from "../types";
 import type {
@@ -30,7 +32,7 @@ export function toIsoDate(d: Date): string {
 }
 
 /** Parse loose customer date wording into YYYY-MM-DD when possible. */
-export function normalizeDateValue(raw: string, now: Date = new Date()): string | null {
+export function normalizeDateValue(raw: string, now: Date = zonedToday()): string | null {
   const t = raw.trim();
   if (ISO_DATE.test(t)) return t;
   const m = t.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/);
@@ -42,14 +44,7 @@ export function normalizeDateValue(raw: string, now: Date = new Date()): string 
       return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     }
   }
-  const lower = t.toLowerCase();
-  if (lower === "today" || t === "היום") return toIsoDate(now);
-  if (lower === "tomorrow" || t === "מחר") {
-    const n = new Date(now);
-    n.setDate(n.getDate() + 1);
-    return toIsoDate(n);
-  }
-  return null;
+  return resolveCalendarDate(t, now);
 }
 
 export function isDateRangeValid(start: string, end: string): boolean {
@@ -140,7 +135,7 @@ const dateHandler: FieldHandler<DateFieldSpec> = {
   },
   ask: (spec, key, fctx) => resolveAsk(spec, key, fctx),
   normalize: (raw, _key, _spec, fctx) => {
-    const iso = normalizeDateValue(raw, fctx.now);
+    const iso = normalizeDateValue(raw, fctx.now ?? zonedToday());
     if (!iso) return { ok: false, error: "invalid_date" };
     return { ok: true, value: iso };
   },
@@ -162,7 +157,7 @@ const dateRangeHandler: FieldHandler<DateRangeFieldSpec> = {
   },
   ask: (spec, key, fctx) => resolveAsk(spec, key, fctx),
   normalize: (raw, _key, _spec, fctx) => {
-    const iso = normalizeDateValue(raw, fctx.now);
+    const iso = normalizeDateValue(raw, fctx.now ?? zonedToday());
     if (!iso) return { ok: false, error: "invalid_date" };
     return { ok: true, value: iso };
   },

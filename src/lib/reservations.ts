@@ -402,6 +402,27 @@ export async function markReservationDecision(opts: {
     };
   }
 
+  if (!approved) {
+    const currentSession =
+      ((await prisma.conversation.findFirst({
+        where: { id: reservation.conversationId },
+        select: { session: true },
+      }))?.session as LeadFields) ?? {};
+    await prisma.conversation.update({
+      where: { id: reservation.conversationId },
+      data: {
+        status: "open",
+        flowState: "talk",
+        session: {
+          ...currentSession,
+          reservation_confirm: "",
+          reservation_flow: "active",
+          staff_date_offer: "",
+        } as Prisma.InputJsonValue,
+      },
+    });
+  }
+
   return {
     conversationId: reservation.conversationId,
     leadId: reservation.leadId,

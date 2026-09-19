@@ -126,6 +126,11 @@ export async function interpretTurn(
     flowVersion: ctx.agent.flowVersion,
   });
 
+  if (ctx.conversation.status === "closed") {
+    ports.log("exit", { reason: "closed" });
+    return { skipped: "closed", stage: ctx.conversation.flowState, action: "closed" };
+  }
+
   if (ctx.conversation.status === "waiting_human" && !event.resume) {
     await sendWaitingHumanHold(ctx, ports);
     ports.log("exit", { reason: "waiting_human" });

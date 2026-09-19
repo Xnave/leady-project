@@ -181,7 +181,11 @@ function resolveDay(text: string, now: Date, lang: "en" | "he" = "he"): Date | u
   const heNames = [...HE_WEEKDAYS].map((name, weekday) => ({ name, weekday }));
   heNames.sort((a, b) => b.name.length - a.name.length);
   for (const { name, weekday } of heNames) {
-    if (t.includes(`יום ${name}`) || new RegExp(`(?:^|[^א-ת])${name}(?:$|[^א-ת])`).test(t)) {
+    if (
+      t.includes(`יום ${name}`) ||
+      t.includes(`ב${name}`) ||
+      new RegExp(`(?:^|[^א-ת])${name}(?:$|[^א-ת])`).test(t)
+    ) {
       return nextWeekday(today, weekday);
     }
   }
@@ -215,6 +219,44 @@ function resolveDay(text: string, now: Date, lang: "en" | "he" = "he"): Date | u
   }
 
   return undefined;
+}
+
+/** YYYY-MM-DD from customer wording (weekdays, today/tomorrow, dotted dates). */
+export function resolveCalendarDate(
+  text: string,
+  now: Date = new Date(),
+  lang: "en" | "he" = "he",
+): string | null {
+  const day = resolveDay(text, now, lang);
+  return day ? toDateIso(day) : null;
+}
+
+const RANGE_SPLIT = /\s*(?:\u2013|\u2014|–|—|until|\bto\b|עד)\s*/iu;
+
+/**
+ * Start/end ISO dates from "next Thursday until Saturday" / "בחמישי הבא עד שבת".
+ * Resolves the end relative to check-in when independent weekday math would invert.
+ */
+export function resolveCalendarDateRange(
+  text: string,
+  now: Date = new Date(),
+  lang: "en" | "he" = "he",
+): { start: string; end: string } | null {
+  const parts = text
+    .split(RANGE_SPLIT)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return null;
+  const startDay = resolveDay(parts[0], now, lang);
+  if (!startDay) return null;
+  let endDay = resolveDay(parts[1], now, lang);
+  if (!endDay) return null;
+  if (toDateIso(endDay) <= toDateIso(startDay)) {
+    const fromStart = resolveDay(parts[1], startDay, lang);
+    if (!fromStart || toDateIso(fromStart) <= toDateIso(startDay)) return null;
+    endDay = fromStart;
+  }
+  return { start: toDateIso(startDay), end: toDateIso(endDay) };
 }
 
 function formatDateLabel(d: Date, lang: "en" | "he"): string {

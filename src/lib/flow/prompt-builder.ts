@@ -1,4 +1,5 @@
 import { copyFor, replyLang } from "@/lib/copy";
+import { calendarClockLine } from "./clock";
 import { talkGuardrails } from "./guardrails";
 import { bookingConfigFromCtx } from "./booking-config";
 import { hasAgentReplied, isIdleConversationReset } from "./intro";
@@ -124,6 +125,7 @@ export class PromptBuilder {
         last,
       }),
     );
+    this.parts.push(calendarClockLine());
     if (isIdleConversationReset(ctx)) {
       this.parts.push(
         "There was a long gap since the previous message. Continue in this same conversation by default. If a clean start seems better, ask whether they want a new conversation — only call start_new_conversation after they clearly agree.",

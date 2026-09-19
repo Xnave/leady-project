@@ -6,6 +6,7 @@
  * Configured fields become `enum` when the tenant supplied options, otherwise `text`.
  */
 import { copyFor } from "@/lib/copy";
+import { zonedToday } from "./clock";
 import type { FieldContext, FieldSpec } from "./fields";
 import {
   RESERVATION_CORE_FIELDS,
@@ -67,7 +68,7 @@ export function reservationFieldContext(
 ): FieldContext {
   return {
     lang,
-    now: opts?.now,
+    now: opts?.now ?? zonedToday(),
     labelFallback: reservationVocab(config, lang).fieldLabels,
     askFallback: (spec, key) => {
       const chat = copyFor(lang).chat;

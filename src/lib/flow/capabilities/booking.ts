@@ -25,6 +25,7 @@ import {
   updateMeetingDetails,
   type RecentMeetingSnapshot,
 } from "@/lib/meetings";
+import { looksLikeShortAffirmation } from "../affirm";
 import { proposesDifferentSlot } from "../slot";
 import { bookingNoun, bookingConfigFromCtx, venueHoursFromCtx } from "../booking-config";
 import { isSlotWithinVenueHours } from "../venue-hours";
@@ -53,9 +54,7 @@ export function recentMeeting(ctx: TurnContext): RecentMeetingSnapshot | undefin
 
 /** Short customer affirmations after confirm_details. */
 function looksLikeBookingAffirmation(text: string): boolean {
-  const t = text.trim();
-  if (!t || t.length > 40) return false;
-  return /^(כן|כן\.|yep|yes|yeah|ok|okay|בסדר|מאשר|נכון|מאושר|סבבה|יאללה)[!?.]*$/iu.test(t);
+  return looksLikeShortAffirmation(text);
 }
 
 /**
@@ -74,7 +73,17 @@ export function reconcileBooking(
   if (stage.allowBook === false) return out;
   const required = effectiveBookingRequired(ctx);
   const fields = { ...ctx.lead.fields, ...(out.fields ?? {}) };
-  if (!isBookingCollectActive(fields, required)) return out;
+  const offered = getStaffSlotOffer(fields);
+  const active = isBookingCollectActive(fields, required) || Boolean(offered);
+
+  let effects = [...(out.effects ?? [])];
+  if (active) {
+    effects = effects.filter((e) => e.type !== "start_new_conversation");
+  }
+
+  if (!isBookingCollectActive(fields, required)) {
+    return active ? { ...out, effects } : out;
+  }
 
   let confirm = bookingConfirmStatus(fields);
   const nextFields = { ...(out.fields ?? {}) };
@@ -93,7 +102,6 @@ export function reconcileBooking(
     confirm = "confirmed";
   }
 
-  const effects = [...(out.effects ?? [])];
   let nextStage = out.nextStage;
   let reply = out.reply;
 
