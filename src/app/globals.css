@@ -1638,7 +1638,24 @@ td .muted { font-size: var(--fs-xs); }
 
 .bubble-text {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
+.bubble-link {
+  display: block;
+  margin-top: 0.35em;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.bubble-link:hover {
+  opacity: 0.85;
+}
+.bubble.lead .bubble-link { color: var(--accent-bright, var(--accent)); }
+.bubble.agent .bubble-link,
+.bubble.human .bubble-link { color: inherit; }
 
 .bubble-time {
   margin-top: 2px;

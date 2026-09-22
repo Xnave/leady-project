@@ -1,6 +1,7 @@
 "use client";
 
-import { useLayoutEffect, useRef } from "react";
+import { Fragment, useLayoutEffect, useRef } from "react";
+import { parseMessageTextParts } from "@/lib/message-links";
 
 type Msg = {
   id: string;
@@ -15,6 +16,25 @@ type Labels = {
   today?: string;
   yesterday?: string;
 };
+
+function renderMessageText(text: string) {
+  return parseMessageTextParts(text).map((part, i) =>
+    part.kind === "url" ? (
+      <a
+        key={`a-${i}`}
+        className="bubble-link"
+        href={part.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        dir="ltr"
+      >
+        {part.href}
+      </a>
+    ) : (
+      <Fragment key={`t-${i}`}>{part.value}</Fragment>
+    ),
+  );
+}
 
 function toDate(value: string | Date | null | undefined): Date | null {
   if (!value) return null;
@@ -123,7 +143,7 @@ export function ChatThread({
         ) : (
           <div key={item.key} className={`bubble ${item.message.role}`}>
             <div className="bubble-role">{roleName(item.message.role)}</div>
-            <div className="bubble-text">{item.message.text}</div>
+            <div className="bubble-text">{renderMessageText(item.message.text)}</div>
             {item.at ? (
               <div className="bubble-time">{formatMessageTime(item.at, lang)}</div>
             ) : null}
