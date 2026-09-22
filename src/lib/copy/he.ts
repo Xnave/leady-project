@@ -88,6 +88,7 @@ export const chat: ChatCopy = {
     defaultRejected: (noun, from, to, note) =>
       `לצערנו לא הצלחנו לאשר ${noun} בתאריכים ${from}–${to}.${note ? ` ${note}` : ""}`,
     completeBookingLink: (url) => `לסיום ההזמנה: ${url}`,
+    sendBookingLink: (noun, url) => `מעולה — אפשר להשלים את ה${noun} כאן: ${url}`,
     offerAltDates: (from, to) =>
       `התאריכים המבוקשים לא זמינים. האם ${from} עד ${to} מתאים?`,
     offerDeclineAsk: "אין בעיה — איזה תאריכים אחרים מתאימים לך?",

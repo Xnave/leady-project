@@ -84,7 +84,7 @@ flowchart TB
 | [`src/lib/flow/registry.ts`](../src/lib/flow/registry.ts) | `registerCapability`, `registerAction`, `registerTalkEffect`, `reconcileTalkOutcome`, `decideRegisteredRequest`. |
 | [`src/lib/flow/capabilities/index.ts`](../src/lib/flow/capabilities/index.ts) | Bootstraps built-in packs + durable actions. |
 | [`src/lib/flow/capabilities/booking.ts`](../src/lib/flow/capabilities/booking.ts) | Point-in-time visit capability (tools + reconcile + decide). |
-| [`src/lib/flow/capabilities/reservations.ts`](../src/lib/flow/capabilities/reservations.ts) | Date-span capability (tools + decide). |
+| [`src/lib/flow/capabilities/reservations.ts`](../src/lib/flow/capabilities/reservations.ts) | Date-span capability (tools + decide). `submitMode: "hitl"` (default) or `"send_link"` (self-serve URL, no Request). |
 | [`src/lib/flow/llm.ts`](../src/lib/flow/llm.ts) | LLM ports: classify / extract / draft / faq / `talkTurn` (tools). |
 | [`src/lib/flow/types.ts`](../src/lib/flow/types.ts) | `FlowDefinition`, stages, `TurnContext`, `TalkOutcome`. |
 | [`src/lib/requests.ts`](../src/lib/requests.ts) | One persistence primitive for every approval vertical. |
@@ -180,7 +180,7 @@ Concurrency: Inngest `concurrency: [{ key: conversationId, limit: 1 }]`.
 - **HITL policy** — `assertHitlAllowed` before escalate.
 - **Capability reconcile** — e.g. booking injects `book_meeting` after customer affirmation when gaps are empty; blocks complete-while-booking.
 - **Tool execute bodies** — validation (hours, email, gaps), pushing effects, locking reply text from `ask_field`.
-- **Talk effects** — `book_meeting` / `create_reservation_hold` create Request + HITL and park on `waiting_human`; `request_human` sets escalate reason.
+- **Talk effects** — `book_meeting` / `create_reservation_hold` create Request + HITL and park on `waiting_human`; `send_reservation_link` (reservations `submitMode: "send_link"`) renders `bookingLinkTemplate`, sends it, and stays on talk with **no** Request; `request_human` sets escalate reason.
 - **Action stage** — registry/`request_human` only; no free-form LLM branch.
 - **waiting_human** without resume — no agent turn beyond hold.
 - **Stale nudge** — skip if `flowVersion` changed.
@@ -212,15 +212,15 @@ Prefer **config** (new `CapabilityInstance` with field specs + nouns) when the s
 ### Config-only (new business type)
 
 1. Enable an existing capability on the talk stage (`booking` and/or `reservations`) via onboard / `flowForCapabilities`.
-2. Upsert `CapabilityInstance` (`src/lib/capability-instances.ts` or `/api/tenant/capability-instances`) with `kind`, `config` (collect, nouns, templates, hours, availability).
-3. No interpreter change. Dress shop with fitting + rental = two instances.
+2. Upsert `CapabilityInstance` (`src/lib/capability-instances.ts` or `/api/tenant/capability-instances`) with `kind`, `config` (collect, nouns, templates, hours, availability, and for reservations optionally `submitMode: "send_link"` + `bookingLinkTemplate`).
+3. No interpreter change. Dress shop with fitting + rental = two instances. Reservation link mode skips HITL entirely — no `Request` row.
 
 ### New capability pack (code)
 
 Checklist (see also `src/lib/flow/capabilities/README.md`):
 
 1. **`src/lib/flow/capabilities/<id>.ts`** — `registerCapability({ id, promptSection, tools?, reconcile?, loadState?, decide?, sessionFieldKeys?, … })`.
-2. **`capabilities/index.ts`** — call register; `registerAction("<effect>", …)` + `registerApprovalEffect({ effectId, capabilityId })` for submit-for-approval.
+2. **`capabilities/index.ts`** — call register; for HITL submit use `registerAction` + `registerApprovalEffect`; for self-serve (no Request) use `registerAction` + `registerSelfServeEffect`.
 3. **`catalog.ts`** — add to `CapabilityId` / `isCapabilityId` if onboard should list it.
 4. **Collect** — build `FieldSpec[]` via `fields/`; config parser module if needed.
 5. **Persistence** — use `@/lib/requests` (`createRequestWithApprovalTask`, `decideRequest`). Thin wrapper in `src/lib/<vertical>.ts` for wording only. **Do not** add `Meeting`-style tables or decide routes.

@@ -1,6 +1,10 @@
 import { registerAction, registerOutcomeFlag } from "../registry";
 import type { TurnContext } from "../types";
-import { registerApprovalEffect, registerBuiltinTalkEffects } from "../effects";
+import {
+  registerApprovalEffect,
+  registerBuiltinTalkEffects,
+  registerSelfServeEffect,
+} from "../effects";
 import { registerBookingCapability } from "./booking";
 import { registerReservationsCapability } from "./reservations";
 
@@ -29,6 +33,15 @@ export function ensureFlowRegistry(): void {
   });
   registerApprovalEffect({
     effectId: "create_reservation_hold",
+    capabilityId: "reservations",
+  });
+
+  registerAction("send_reservation_link", async (ctx: TurnContext) => {
+    const { sendReservationLink } = await import("@/lib/reservations");
+    return sendReservationLink(ctx);
+  });
+  registerSelfServeEffect({
+    effectId: "send_reservation_link",
     capabilityId: "reservations",
   });
 

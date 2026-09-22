@@ -100,20 +100,26 @@ export function reconcileReservations(
   const checkIn = String(merged.check_in ?? "").trim();
   const checkOut = String(merged.check_out ?? "").trim();
   const datesOk = stayDatesValid(checkIn, checkOut);
-  const holdAlready = effects.some((e) => e.type === "create_reservation_hold");
+  const linkMode = config.submitMode === "send_link";
+  const submitEffect = linkMode ? "send_reservation_link" : "create_reservation_hold";
+  const submitAlready = effects.some(
+    (e) => e.type === "create_reservation_hold" || e.type === "send_reservation_link",
+  );
+  const alreadySentLink = confirm === "sent_link";
 
   const completedThisTurn = gapsAfter.length === 0 && gapsBefore.length > 0;
   const confirmed =
     confirm === "confirmed" || (confirm === "pending" && affirmed);
-  const shouldHold =
+  const shouldSubmit =
     gapsAfter.length === 0 &&
     datesOk &&
-    !holdAlready &&
+    !submitAlready &&
+    !alreadySentLink &&
     (completedThisTurn || datesUpdated || confirmed);
 
-  if (shouldHold) {
-    nextFields.reservation_confirm = "confirmed";
-    effects.push({ type: "create_reservation_hold" });
+  if (shouldSubmit) {
+    nextFields.reservation_confirm = linkMode ? "sent_link" : "confirmed";
+    effects.push({ type: submitEffect });
   }
 
   let nextStage = out.nextStage;
@@ -216,7 +222,7 @@ export function registerReservationsCapability(): void {
       }),
     closingLines: () => [
       "Prefer reply for informational turns. Call ask_field only while a date-span request is in progress.",
-      "Never say a request is confirmed — create_reservation_hold only stores a tentative request for a human.",
+      "Never say a request is confirmed or booked — create_reservation_hold only stores a tentative request for a human; send_reservation_link only shares a self-serve URL.",
       "Call reply unless ask_field already set the outbound text.",
     ],
     promptSection: ({ ctx, fields }) => {
@@ -224,6 +230,7 @@ export function registerReservationsCapability(): void {
       const noun = reservationVocab(config, "en").noun.singular;
       const offered = getStaffDateOffer(fields);
       const collectList = reservationCollectFields(config).join(", ");
+      const linkMode = config.submitMode === "send_link";
 
       if (offered) {
         const known = reservationCollectFields(config)
@@ -236,7 +243,7 @@ export function registerReservationsCapability(): void {
           '- decision="accept" ONLY if they clearly agree to THOSE exact offered dates.',
           '- decision="decline" if they reject them or name other dates.',
           '- decision="unclear" if you cannot tell.',
-          "Do NOT call ask_field, confirm_details, start_reservation, or create_reservation_hold while this offer is pending.",
+          "Do NOT call ask_field, confirm_details, start_reservation, create_reservation_hold, or send_reservation_link while this offer is pending.",
           "Do NOT call start_new_conversation.",
         ].filter(Boolean);
       }
@@ -245,13 +252,17 @@ export function registerReservationsCapability(): void {
       if (active) {
         const gaps = reservationFieldGaps(fields, config);
         const confirm = reservationConfirmStatus(fields);
+        const finishTool = linkMode ? "send_reservation_link" : "create_reservation_hold";
         const lines = [
           `${noun} request is in progress. Collect fields: ${collectList}. Gaps: ${gaps.join(", ") || "none"}. reservation_confirm=${confirm || "(none)"}.`,
           "Save dates as YYYY-MM-DD (check_in / check_out). check_out must be after check_in.",
-          "After dates are saved, call check_availability before finishing the hold when possible.",
-          "When Gaps is none, call create_reservation_hold in the SAME turn — do not wait for the customer to say OK. confirm_details is optional.",
-          `CRITICAL: Never tell the customer you submitted a ${noun} request unless create_reservation_hold returned ok.`,
-          `Never say the ${noun} is confirmed — only a human can approve.`,
+          linkMode
+            ? "Do not call check_availability — this tenant finishes by sending a booking link."
+            : "After dates are saved, call check_availability before finishing the hold when possible.",
+          `When Gaps is none, call ${finishTool} in the SAME turn — do not wait for the customer to say OK. confirm_details is optional.`,
+          linkMode
+            ? `CRITICAL: Never tell the customer you booked a ${noun}. Call send_reservation_link so they complete it on the website. Never claim the ${noun} is confirmed.`
+            : `CRITICAL: Never tell the customer you submitted a ${noun} request unless create_reservation_hold returned ok.\nNever say the ${noun} is confirmed — only a human can approve.`,
           ...policyLines(config),
         ];
         if (!hasRates(config)) {
@@ -263,7 +274,7 @@ export function registerReservationsCapability(): void {
             "A rate table is configured — only state prices that clearly follow it; otherwise say a teammate will confirm the total.",
           );
         }
-        if (config.bookingLinkTemplate) {
+        if (config.bookingLinkTemplate && !linkMode) {
           lines.push(
             "A bookingLinkTemplate is configured — you may share the filled link after availability check or when the customer wants to self-serve.",
           );
@@ -277,7 +288,9 @@ export function registerReservationsCapability(): void {
         `When collecting, fields are: ${collectList}.`,
         "Do not invent prices unless a rate table is configured on this tenant.",
         ...policyLines(config),
-        "Price questions without a configured rate table → do not invent amounts; offer availability check / human / booking link.",
+        linkMode
+          ? "When collection finishes the agent sends a self-serve booking link — never claim the reservation is confirmed."
+          : "Price questions without a configured rate table → do not invent amounts; offer availability check / human / booking link.",
       ];
     },
     tools: ({ ctx, stage, collected }) => {
@@ -291,6 +304,7 @@ export function registerReservationsCapability(): void {
       const fieldsForTurn = { ...ctx.lead.fields, ...collected.fields };
       const active = isReservationCollectActive(fieldsForTurn);
       const offered = getStaffDateOffer(fieldsForTurn);
+      const linkMode = config.submitMode === "send_link";
 
       const tools: Record<string, unknown> = {};
 
@@ -407,32 +421,35 @@ export function registerReservationsCapability(): void {
         },
       });
 
-      tools.check_availability = tool({
-        description:
-          `Check ${noun} availability using the tenant's configured calendar link probe (source of truth). Requires check_in and check_out as YYYY-MM-DD.`,
-        inputSchema: z.object({}),
-        execute: async () => {
-          const merged = { ...ctx.lead.fields, ...collected.fields };
-          ctx.lead.fields = merged;
-          const result = await checkStayAvailability(ctx);
-          collected.fields = {
-            ...(collected.fields ?? {}),
-            availability_status: result.status,
-            availability_url: result.url,
-          };
-          pushReply(collected, result.replyHint);
-          return {
-            ok: true,
-            status: result.status,
-            url: result.url,
-            hint: result.replyHint,
-          };
-        },
-      });
-
+      if (!linkMode) {
+        tools.check_availability = tool({
+          description:
+            `Check ${noun} availability using the tenant's configured calendar link probe (source of truth). Requires check_in and check_out as YYYY-MM-DD.`,
+          inputSchema: z.object({}),
+          execute: async () => {
+            const merged = { ...ctx.lead.fields, ...collected.fields };
+            ctx.lead.fields = merged;
+            const result = await checkStayAvailability(ctx);
+            collected.fields = {
+              ...(collected.fields ?? {}),
+              availability_status: result.status,
+              availability_url: result.url,
+            };
+            pushReply(collected, result.replyHint);
+            return {
+              ok: true,
+              status: result.status,
+              url: result.url,
+              hint: result.replyHint,
+            };
+          },
+        });
+      }
       tools.confirm_details = tool({
         description:
-          `Present ${noun} details for customer confirmation before create_reservation_hold. Only when gaps are none.`,
+          linkMode
+            ? `Present ${noun} details for customer confirmation before send_reservation_link. Only when gaps are none.`
+            : `Present ${noun} details for customer confirmation before create_reservation_hold. Only when gaps are none.`,
         inputSchema: z.object({}),
         execute: async () => {
           const merged = { ...ctx.lead.fields, ...collected.fields };
@@ -457,26 +474,49 @@ export function registerReservationsCapability(): void {
         },
       });
 
-      tools.create_reservation_hold = tool({
-        description:
-          `Submit a tentative ${noun} request for human approval as soon as gaps are none. Do not wait for a spare OK.`,
-        inputSchema: z.object({}),
-        execute: async () => {
-          const merged = { ...ctx.lead.fields, ...collected.fields };
-          const gaps = reservationFieldGaps(merged, config);
-          if (gaps.length) return { ok: false, gaps };
-          if (!stayDatesValid(String(merged.check_in), String(merged.check_out))) {
-            return { ok: false, error: "invalid_dates" };
-          }
-          collected.fields = {
-            ...(collected.fields ?? {}),
-            reservation_confirm: "confirmed",
-          };
-          ctx.lead.fields = { ...merged, reservation_confirm: "confirmed" };
-          pushEffect(collected, { type: "create_reservation_hold" });
-          return { ok: true, pending_effect: true };
-        },
-      });
+      if (linkMode) {
+        tools.send_reservation_link = tool({
+          description:
+            `Send the self-serve booking link as soon as gaps are none. Do not wait for a spare OK. Never claim the ${noun} is confirmed.`,
+          inputSchema: z.object({}),
+          execute: async () => {
+            const merged = { ...ctx.lead.fields, ...collected.fields };
+            const gaps = reservationFieldGaps(merged, config);
+            if (gaps.length) return { ok: false, gaps };
+            if (!stayDatesValid(String(merged.check_in), String(merged.check_out))) {
+              return { ok: false, error: "invalid_dates" };
+            }
+            collected.fields = {
+              ...(collected.fields ?? {}),
+              reservation_confirm: "sent_link",
+            };
+            ctx.lead.fields = { ...merged, reservation_confirm: "sent_link" };
+            pushEffect(collected, { type: "send_reservation_link" });
+            return { ok: true, pending_effect: true };
+          },
+        });
+      } else {
+        tools.create_reservation_hold = tool({
+          description:
+            `Submit a tentative ${noun} request for human approval as soon as gaps are none. Do not wait for a spare OK.`,
+          inputSchema: z.object({}),
+          execute: async () => {
+            const merged = { ...ctx.lead.fields, ...collected.fields };
+            const gaps = reservationFieldGaps(merged, config);
+            if (gaps.length) return { ok: false, gaps };
+            if (!stayDatesValid(String(merged.check_in), String(merged.check_out))) {
+              return { ok: false, error: "invalid_dates" };
+            }
+            collected.fields = {
+              ...(collected.fields ?? {}),
+              reservation_confirm: "confirmed",
+            };
+            ctx.lead.fields = { ...merged, reservation_confirm: "confirmed" };
+            pushEffect(collected, { type: "create_reservation_hold" });
+            return { ok: true, pending_effect: true };
+          },
+        });
+      }
 
       return tools;
     },

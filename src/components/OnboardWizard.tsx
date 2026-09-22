@@ -18,8 +18,10 @@ import {
 import {
   DEFAULT_RESERVATION_COLLECT,
   RESERVATION_COLLECT_PRESETS,
+  RESERVATION_CORE_FIELDS,
   parseReservationConfig,
   type ReservationConfig,
+  type ReservationSubmitMode,
 } from "@/lib/flow/reservation-config";
 import { isChatLanguage, looksHebrew, type ChatLanguage } from "@/lib/flow/locale";
 import { copyFor } from "@/lib/copy";
@@ -95,6 +97,15 @@ export function OnboardWizard(props: Props) {
   const [reservationFieldLabels, setReservationFieldLabels] = useState<Record<string, string>>(
     () => initialReservation.fieldLabels ?? {},
   );
+  const [reservationSubmitMode, setReservationSubmitMode] = useState<ReservationSubmitMode>(
+    () => initialReservation.submitMode,
+  );
+  const [bookingLinkTemplate, setBookingLinkTemplate] = useState(
+    () => initialReservation.bookingLinkTemplate ?? "",
+  );
+  const [sendLinkTemplate, setSendLinkTemplate] = useState(
+    () => initialReservation.messageTemplates?.sendLink ?? "",
+  );
   const [customFieldDraft, setCustomFieldDraft] = useState("");
   const bookingEnabled = capabilities.includes("booking");
   const reservationsEnabled = capabilities.includes("reservations");
@@ -116,6 +127,12 @@ export function OnboardWizard(props: Props) {
   const [extracting, setExtracting] = useState(false);
   const [filledCount, setFilledCount] = useState<number | null>(null);
   const extractedSourceRef = useRef("");
+
+  const bookingLinkValid =
+    reservationSubmitMode !== "send_link" ||
+    (bookingLinkTemplate.includes("{{checkIn}}") &&
+      bookingLinkTemplate.includes("{{checkOut}}") &&
+      bookingLinkTemplate.trim().length > 0);
 
   const stepTitles = [ui.common.knowledge, ui.common.business, ui.common.flow, ui.common.done];
 
@@ -203,6 +220,12 @@ export function OnboardWizard(props: Props) {
           fieldLabels: Object.keys(reservationFieldLabels).length
             ? reservationFieldLabels
             : undefined,
+          submitMode: reservationSubmitMode,
+          bookingLinkTemplate: bookingLinkTemplate.trim() || undefined,
+          messageTemplates: {
+            ...parseReservationConfig(props.reservationConfig).messageTemplates,
+            sendLink: sendLinkTemplate.trim() || undefined,
+          },
         }
       : undefined;
     const res = await fetch("/api/onboard", {
@@ -543,10 +566,24 @@ export function OnboardWizard(props: Props) {
               </>
             ) : null}
             {reservationsEnabled ? (
+              <>
               <fieldset>
                 <legend>{ui.onboard.reservationCollectLegend}</legend>
                 <p className="muted">{ui.onboard.reservationCollectHint}</p>
                 <div className="chip-row">
+                  {RESERVATION_CORE_FIELDS.map((id) => {
+                    const meta = ui.reservationCollect[id];
+                    return (
+                      <label
+                        key={id}
+                        className="chip-toggle selected muted"
+                        title={ui.onboard.reservationDatesAlways}
+                      >
+                        <input type="checkbox" checked disabled readOnly />
+                        {meta?.title ?? id}
+                      </label>
+                    );
+                  })}
                   {RESERVATION_COLLECT_PRESETS.map((id) => {
                     const meta = ui.reservationCollect[id];
                     const checked = reservationCollect.includes(id);
@@ -598,12 +635,70 @@ export function OnboardWizard(props: Props) {
                   </button>
                 </div>
               </fieldset>
+              <fieldset>
+                <legend>{ui.onboard.reservationSubmitModeLegend}</legend>
+                <div className="radio-card-grid compact">
+                  <RadioCard
+                    name="reservationSubmitMode"
+                    value="hitl"
+                    checked={reservationSubmitMode === "hitl"}
+                    onChange={() => setReservationSubmitMode("hitl")}
+                    title={ui.onboard.reservationSubmitModeHitl}
+                    blurb={ui.onboard.reservationSubmitModeHitlBlurb}
+                  />
+                  <RadioCard
+                    name="reservationSubmitMode"
+                    value="send_link"
+                    checked={reservationSubmitMode === "send_link"}
+                    onChange={() => setReservationSubmitMode("send_link")}
+                    title={ui.onboard.reservationSubmitModeLink}
+                    blurb={ui.onboard.reservationSubmitModeLinkBlurb}
+                  />
+                </div>
+                {reservationSubmitMode === "send_link" ? (
+                  <>
+                    <label style={{ display: "block", marginTop: "0.75rem" }}>
+                      {ui.onboard.reservationBookingLinkLegend}
+                      <textarea
+                        value={bookingLinkTemplate}
+                        onChange={(e) => setBookingLinkTemplate(e.target.value)}
+                        rows={3}
+                        placeholder="https://app.b-on.co.il/online/order-v2/{{propertySlug}}?dateFrom={{checkIn}}&dateTo={{checkOut}}"
+                        style={{ width: "100%", marginTop: "0.35rem" }}
+                      />
+                    </label>
+                    <p className="muted">{ui.onboard.reservationBookingLinkHint}</p>
+                    {!bookingLinkValid ? (
+                      <p className="muted" role="alert">
+                        {ui.onboard.reservationBookingLinkInvalid}
+                      </p>
+                    ) : null}
+                    <label style={{ display: "block", marginTop: "0.75rem" }}>
+                      {ui.onboard.reservationSendLinkTemplateLegend}
+                      <textarea
+                        value={sendLinkTemplate}
+                        onChange={(e) => setSendLinkTemplate(e.target.value)}
+                        rows={2}
+                        placeholder="{{bookingUrl}}"
+                        style={{ width: "100%", marginTop: "0.35rem" }}
+                      />
+                    </label>
+                    <p className="muted">{ui.onboard.reservationSendLinkTemplateHint}</p>
+                  </>
+                ) : null}
+              </fieldset>
+              </>
             ) : null}
             <div className="wizard-footer">
               <button type="button" className="btn-secondary" onClick={() => setStep(1)}>
                 {ui.common.back}
               </button>
-              <button type="button" className="btn" onClick={save} disabled={saving}>
+              <button
+                type="button"
+                className="btn"
+                onClick={save}
+                disabled={saving || (reservationsEnabled && !bookingLinkValid)}
+              >
                 {saving ? ui.common.saving : ui.common.save}
               </button>
             </div>

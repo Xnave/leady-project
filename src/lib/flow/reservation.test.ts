@@ -98,6 +98,21 @@ describe("reservation-config", () => {
     expect(cfg.policies?.[0].trigger).toBe("מסיבה");
     expect(cfg.availability.kind).toBe("link_probe");
     expect(cfg.availability.linkProbe?.unavailableMatchers[0].value).toBe("תאריכים תפוסים");
+    expect(cfg.submitMode).toBe("hitl");
+  });
+
+  it("accepts submitMode send_link only with a bookingLinkTemplate", () => {
+    const withTpl = parseReservationConfig({
+      submitMode: "send_link",
+      bookingLinkTemplate:
+        "https://app.b-on.co.il/online/order-v2/x?dateFrom={{checkIn}}&dateTo={{checkOut}}",
+      messageTemplates: { sendLink: "Book here: {{bookingUrl}}" },
+    });
+    expect(withTpl.submitMode).toBe("send_link");
+    expect(withTpl.messageTemplates?.sendLink).toContain("{{bookingUrl}}");
+
+    const withoutTpl = parseReservationConfig({ submitMode: "send_link" });
+    expect(withoutTpl.submitMode).toBe("hitl");
   });
 
   it("falls back when link_probe lacks matchers", () => {
@@ -289,11 +304,29 @@ describe("reconcileReservations", () => {
     on_escalate: "escalate",
   };
 
-  function ctx(fields: Record<string, unknown>, last: string): TurnContext {
+  function ctx(
+    fields: Record<string, unknown>,
+    last: string,
+    instanceConfig: Record<string, unknown> = {},
+  ): TurnContext {
     const flow = flowForCapabilities({ capabilities: ["reservations"] });
     return {
       tenantId: "t1",
-      tenant: { name: "Villa", phone: "", intro: "Hello", chatLanguage: "he" },
+      tenant: {
+        name: "Villa",
+        phone: "",
+        intro: "Hello",
+        chatLanguage: "he",
+        capabilityInstances: [
+          {
+            id: "stay",
+            capabilityId: "reservations",
+            kind: "stay",
+            enabled: true,
+            config: instanceConfig,
+          },
+        ],
+      },
       agent: {
         id: "a1",
         tenantId: "t1",
@@ -343,6 +376,32 @@ describe("reconcileReservations", () => {
     });
     expect(out.effects?.some((e) => e.type === "create_reservation_hold")).toBe(true);
     expect(out.fields?.reservation_confirm).toBe("confirmed");
+  });
+
+  it("injects send_reservation_link when submitMode is send_link", () => {
+    ensureFlowRegistry();
+    const state = ctx(
+      {
+        reservation_flow: "active",
+        check_in: "2026-09-24",
+        check_out: "2026-09-26",
+        guests: "2",
+        name: "Nave Einy",
+      },
+      "0526595639",
+      {
+        submitMode: "send_link",
+        bookingLinkTemplate:
+          "https://app.b-on.co.il/online/order-v2/x?dateFrom={{checkIn}}&dateTo={{checkOut}}",
+      },
+    );
+    const out = reconcileReservations(state, stage, {
+      reply: "שולח קישור",
+      fields: { phone: "0526595639" },
+    });
+    expect(out.effects?.some((e) => e.type === "send_reservation_link")).toBe(true);
+    expect(out.effects?.some((e) => e.type === "create_reservation_hold")).toBeFalsy();
+    expect(out.fields?.reservation_confirm).toBe("sent_link");
   });
 
   it("does not inject a hold while a staff date offer is pending", () => {

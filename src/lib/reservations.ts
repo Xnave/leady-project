@@ -17,6 +17,7 @@ import {
   reservationConfigFromCtx,
   reservationFieldGaps,
   stayDatesValid,
+  clearReservationSessionFields,
 } from "@/lib/flow/reservation-collect";
 import { probeAvailabilityLink } from "@/lib/flow/availability-link-probe";
 import { instanceKind } from "@/lib/flow/instances";
@@ -204,6 +205,85 @@ export async function requestTentativeReservation(
   ctx.conversation.flowState = "waiting_human";
 
   return { ok: true, reply: requestText() };
+}
+
+/**
+ * Self-serve finish: render the configured booking link and return it to the
+ * customer. Does **not** create a Request or park on waiting_human.
+ */
+export async function sendReservationLink(
+  ctx: TurnContext,
+): Promise<{ ok: boolean; reply: string }> {
+  const lang = replyLangFromCtx(ctx);
+  const config = reservationConfigFromCtx(ctx);
+  const r = copyFor(lang).chat.request;
+  const fields = { ...ctx.lead.fields };
+  const gaps = reservationFieldGaps(fields, config);
+  if (gaps.length > 0) {
+    return { ok: false, reply: r.stillNeed(gaps.join(", ")) };
+  }
+
+  const checkIn = String(fields.check_in).trim();
+  const checkOut = String(fields.check_out).trim();
+  if (!stayDatesValid(checkIn, checkOut)) {
+    return { ok: false, reply: r.invalidDates };
+  }
+
+  const template = config.bookingLinkTemplate?.trim();
+  if (!template) {
+    return { ok: false, reply: r.availabilityNotConfigured };
+  }
+
+  const phone = savedPhone(fields) || callbackPhone(ctx) || "";
+  const name = String(fields.name ?? "").trim();
+  const email = String(fields.email ?? "").trim();
+  const guests = String(fields.guests ?? "").trim();
+  const unit = String(fields.unit ?? "").trim();
+  const noun = reservationVocab(config, lang).noun.singular;
+
+  const detailKeys = config.collect.filter(
+    (k) => k !== "name" && k !== "phone" && k !== "email",
+  );
+  const details: Record<string, string> = {};
+  for (const key of detailKeys) {
+    const v = String(fields[key] ?? "").trim();
+    if (v) details[key] = v;
+  }
+
+  const vars = reservationTemplateVars({
+    checkIn,
+    checkOut,
+    name,
+    phone,
+    email,
+    guests,
+    unit,
+    business: ctx.tenant?.name?.trim() || copyFor(lang).chat.fallbackTeamName,
+    details,
+    configVars: config.availability.linkProbe?.vars,
+  });
+  const bookingUrl = renderReservationTemplate(template, vars);
+  if (!bookingUrl) {
+    return { ok: false, reply: r.availabilityNotConfigured };
+  }
+  vars.bookingUrl = bookingUrl;
+
+  const customTpl = config.messageTemplates?.sendLink?.trim();
+  const reply = customTpl
+    ? renderReservationTemplate(customTpl, vars)
+    : r.sendBookingLink(noun, bookingUrl);
+
+  // Clear ephemeral stay session so a follow-up "thanks" does not re-trigger collect.
+  const cleared = clearReservationSessionFields(
+    { ...fields, phone, name, email },
+    config,
+  );
+  await persistTurnFields(ctx.tenantId, ctx.lead.id, ctx.conversation.id, cleared, {
+    extraSessionKeys: reservationEphemeralKeys(config),
+  });
+  ctx.lead.fields = cleared;
+
+  return { ok: true, reply };
 }
 
 /**

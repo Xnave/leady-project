@@ -215,6 +215,21 @@ export const en: UiCopy = {
     reservationCustomField: "Custom field key",
     reservationCustomFieldHint: "lowercase_with_underscores",
     reservationAddField: "Add field",
+    reservationSubmitModeLegend: "How to finish a stay request",
+    reservationSubmitModeHitl: "Human approves each request",
+    reservationSubmitModeHitlBlurb:
+      "Agent collects details and creates a pending request for your inbox.",
+    reservationSubmitModeLink: "Send booking link (self-serve)",
+    reservationSubmitModeLinkBlurb:
+      "Agent collects details and sends a link so the customer books on your website. No inbox approval.",
+    reservationBookingLinkLegend: "Booking link template",
+    reservationBookingLinkHint:
+      "Use {{checkIn}} and {{checkOut}} (required). Optional: {{guests}} {{unit}} {{name}} {{phone}} {{email}} {{propertySlug}}.",
+    reservationBookingLinkInvalid:
+      "Link mode needs a URL template that includes {{checkIn}} and {{checkOut}}.",
+    reservationSendLinkTemplateLegend: "Message when sending the link (optional)",
+    reservationSendLinkTemplateHint:
+      "Leave blank for the default. Use {{bookingUrl}} plus the same date tokens.",
     filledFields: "Filled {count} business fields from the file.",
     insertToken: "Insert",
   },
@@ -274,6 +289,8 @@ export const en: UiCopy = {
     visit_kind: { title: "Visit kind", blurb: "Type of visit" },
   },
   reservationCollect: {
+    check_in: { title: "Check-in", blurb: "Always collected" },
+    check_out: { title: "Check-out", blurb: "Always collected" },
     guests: { title: "Guests", blurb: "Party size" },
     unit: { title: "Unit", blurb: "Room / villa type" },
     name: { title: "Name", blurb: "Guest full name" },

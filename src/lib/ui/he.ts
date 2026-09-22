@@ -215,6 +215,21 @@ export const he: UiCopy = {
     reservationCustomField: "מפתח שדה מותאם",
     reservationCustomFieldHint: "אותיות קטנות_עם_קווים",
     reservationAddField: "הוסף שדה",
+    reservationSubmitModeLegend: "איך לסיים בקשת אירוח",
+    reservationSubmitModeHitl: "נציג מאשר כל בקשה",
+    reservationSubmitModeHitlBlurb:
+      "הסוכן אוסף פרטים ויוצר בקשה ממתינה בתיבת הנכנסות.",
+    reservationSubmitModeLink: "שליחת קישור להזמנה (עצמי)",
+    reservationSubmitModeLinkBlurb:
+      "הסוכן אוסף פרטים ושולח קישור להשלמת ההזמנה באתר. בלי אישור בתיבה.",
+    reservationBookingLinkLegend: "תבנית קישור להזמנה",
+    reservationBookingLinkHint:
+      "חובה לכלול {{checkIn}} ו־{{checkOut}}. אופציונלי: {{guests}} {{unit}} {{name}} {{phone}} {{email}} {{propertySlug}}.",
+    reservationBookingLinkInvalid:
+      "מצב קישור דורש תבנית URL שכוללת {{checkIn}} ו־{{checkOut}}.",
+    reservationSendLinkTemplateLegend: "הודעה בשליחת הקישור (אופציונלי)",
+    reservationSendLinkTemplateHint:
+      "השאירו ריק לברירת המחדל. השתמשו ב־{{bookingUrl}} ובאותם אסימוני תאריך.",
     filledFields: "מילאנו {count} שדות עסק מהקובץ.",
     insertToken: "הוספה",
   },
@@ -274,6 +289,8 @@ export const he: UiCopy = {
     visit_kind: { title: "סוג ביקור", blurb: "סוג הפגישה" },
   },
   reservationCollect: {
+    check_in: { title: "כניסה", blurb: "תמיד נאסף" },
+    check_out: { title: "יציאה", blurb: "תמיד נאסף" },
     guests: { title: "אורחים", blurb: "מספר אורחים" },
     unit: { title: "יחידה", blurb: "סוג חדר / וילה" },
     name: { title: "שם", blurb: "שם מלא" },

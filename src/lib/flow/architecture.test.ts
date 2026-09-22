@@ -538,7 +538,11 @@ describe("kernel purity", () => {
   it("registered capabilities own their durable effects", () => {
     ensureFlowRegistry();
     expect(listActions()).toEqual(
-      expect.arrayContaining(["book_meeting", "create_reservation_hold"]),
+      expect.arrayContaining([
+        "book_meeting",
+        "create_reservation_hold",
+        "send_reservation_link",
+      ]),
     );
     // Effects resolve through the registry, not a kernel branch.
     expect(getAction("book_meeting")).toBeTypeOf("function");

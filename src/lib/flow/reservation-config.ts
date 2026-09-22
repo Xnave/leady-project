@@ -38,10 +38,14 @@ export type ReservationAvailabilityConfig = {
   onUnknown: "hitl" | "send_booking_link" | "ask_human";
 };
 
+export type ReservationSubmitMode = "hitl" | "send_link";
+
 export type ReservationMessageTemplates = {
   request?: string;
   approved?: string;
   rejected?: string;
+  /** Custom reply when submitMode is send_link. Use {{bookingUrl}} (and date tokens). */
+  sendLink?: string;
 };
 
 export type ReservationConfig = {
@@ -55,6 +59,12 @@ export type ReservationConfig = {
   policies?: ReservationPolicy[];
   /** Optional; omit = agent must not state prices. */
   rates?: unknown;
+  /**
+   * How to finish a completed collect:
+   * - `hitl` (default): create a pending Request for staff approval
+   * - `send_link`: render bookingLinkTemplate and send it (no Request / no waiting_human)
+   */
+  submitMode: ReservationSubmitMode;
   bookingLinkTemplate?: string;
   availability: ReservationAvailabilityConfig;
   messageTemplates?: ReservationMessageTemplates;
@@ -150,6 +160,7 @@ export const RESERVATION_COLLECT_PRESETS = [
 
 export const emptyReservationConfig = (): ReservationConfig => ({
   collect: [...DEFAULT_RESERVATION_COLLECT],
+  submitMode: "hitl",
   availability: { kind: "none", onUnknown: "hitl" },
 });
 
@@ -305,23 +316,27 @@ export function parseReservationConfig(raw: unknown): ReservationConfig {
     }
   }
 
-  const messageTemplates =
+  const mt =
     o.messageTemplates && typeof o.messageTemplates === "object"
-      ? {
-          request:
-            typeof (o.messageTemplates as Record<string, unknown>).request === "string"
-              ? String((o.messageTemplates as Record<string, unknown>).request)
-              : undefined,
-          approved:
-            typeof (o.messageTemplates as Record<string, unknown>).approved === "string"
-              ? String((o.messageTemplates as Record<string, unknown>).approved)
-              : undefined,
-          rejected:
-            typeof (o.messageTemplates as Record<string, unknown>).rejected === "string"
-              ? String((o.messageTemplates as Record<string, unknown>).rejected)
-              : undefined,
-        }
+      ? (o.messageTemplates as Record<string, unknown>)
+      : null;
+  const messageTemplates = mt
+    ? {
+        request: typeof mt.request === "string" ? String(mt.request) : undefined,
+        approved: typeof mt.approved === "string" ? String(mt.approved) : undefined,
+        rejected: typeof mt.rejected === "string" ? String(mt.rejected) : undefined,
+        sendLink: typeof mt.sendLink === "string" ? String(mt.sendLink) : undefined,
+      }
+    : undefined;
+
+  const bookingLinkTemplate =
+    typeof o.bookingLinkTemplate === "string" && o.bookingLinkTemplate.trim()
+      ? o.bookingLinkTemplate.trim()
       : undefined;
+
+  // send_link requires a template so we never drop the customer with no next step.
+  const submitMode: ReservationSubmitMode =
+    o.submitMode === "send_link" && bookingLinkTemplate ? "send_link" : "hitl";
 
   return {
     collect: collect.length ? collect : [...DEFAULT_RESERVATION_COLLECT],
@@ -330,10 +345,8 @@ export function parseReservationConfig(raw: unknown): ReservationConfig {
     fieldOptions: Object.keys(fieldOptions).length ? fieldOptions : undefined,
     policies: policies.length ? policies : undefined,
     rates: "rates" in o ? o.rates : undefined,
-    bookingLinkTemplate:
-      typeof o.bookingLinkTemplate === "string" && o.bookingLinkTemplate.trim()
-        ? o.bookingLinkTemplate.trim()
-        : undefined,
+    submitMode,
+    bookingLinkTemplate,
     availability,
     messageTemplates,
   };

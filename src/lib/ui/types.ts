@@ -263,6 +263,16 @@ export type UiCopy = {
     reservationCustomField: string;
     reservationCustomFieldHint: string;
     reservationAddField: string;
+    reservationSubmitModeLegend: string;
+    reservationSubmitModeHitl: string;
+    reservationSubmitModeHitlBlurb: string;
+    reservationSubmitModeLink: string;
+    reservationSubmitModeLinkBlurb: string;
+    reservationBookingLinkLegend: string;
+    reservationBookingLinkHint: string;
+    reservationBookingLinkInvalid: string;
+    reservationSendLinkTemplateLegend: string;
+    reservationSendLinkTemplateHint: string;
     filledFields: string;
     insertToken: string;
   };

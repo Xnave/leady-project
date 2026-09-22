@@ -83,6 +83,7 @@ export type RequestChatCopy = {
   defaultApproved: (noun: string, from: string, to: string) => string;
   defaultRejected: (noun: string, from: string, to: string, note: string) => string;
   completeBookingLink: (url: string) => string;
+  sendBookingLink: (noun: string, url: string) => string;
   offerAltDates: (from: string, to: string) => string;
   offerDeclineAsk: string;
   offerUnclearAsk: string;

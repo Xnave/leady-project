@@ -90,6 +90,8 @@ export const chat: ChatCopy = {
     defaultRejected: (noun, from, to, note) =>
       `Unfortunately we could not confirm a ${noun} for ${from}–${to}.${note ? ` ${note}` : ""}`,
     completeBookingLink: (url) => `To complete booking: ${url}`,
+    sendBookingLink: (noun, url) =>
+      `Great — you can finalise your ${noun} here: ${url}`,
     offerAltDates: (from, to) =>
       `Those dates are not available. Does ${from} to ${to} work instead?`,
     offerDeclineAsk: "No problem — which other dates work for you?",

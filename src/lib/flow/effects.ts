@@ -42,6 +42,33 @@ export function registerApprovalEffect(opts: {
   });
 }
 
+/**
+ * Register a talk effect that finishes without HITL: run the durable action,
+ * send the reply, leave the conversation on talk, and stop the turn.
+ * Used by self-serve flows (e.g. send booking link) that must not create a Request.
+ */
+export function registerSelfServeEffect(opts: {
+  effectId: string;
+  capabilityId: string;
+}): void {
+  registerTalkEffect(opts.effectId, async ({ ctx, stage, ports, reply }) => {
+    if (!resolveTalkCapabilities(stage).includes(opts.capabilityId)) return {};
+    const result = await ports.runEffect(ctx, opts.effectId);
+    if (!result.ok) {
+      return { reply: result.reply || reply, failedAction: opts.effectId };
+    }
+    await ports.sendAndSave(ctx, result.reply);
+    return {
+      reply: result.reply,
+      halt: {
+        stage: "talk",
+        action: opts.effectId,
+        ok: true,
+      },
+    };
+  });
+}
+
 /** Built-in talk effects — registered so the interpreter dispatches via the registry. */
 export function registerBuiltinTalkEffects(): void {
   registerTalkEffect("request_human", async ({ effect }) => ({
