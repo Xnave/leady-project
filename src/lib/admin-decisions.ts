@@ -1,5 +1,18 @@
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { Prisma } from "@prisma/client";
+import { adminBypass, primaryEmailFromClerkUser } from "@/lib/admin";
 import { prisma } from "@/lib/db";
+import {
+  GLOBAL_ADMIN_ACTOR,
+  resolveActorLabel,
+} from "@/lib/decision-actor";
+
+export {
+  AUTOMATIC_ACTOR,
+  GLOBAL_ADMIN_ACTOR,
+  formatDecisionActor,
+  resolveActorLabel,
+} from "@/lib/decision-actor";
 
 export type AdminDecisionActor = {
   actorUserId: string;
@@ -22,11 +35,24 @@ export type AppendAdminDecisionOpts = {
   createdAt?: Date;
 };
 
-export function resolveActorLabel(actorUserId: string, explicit?: string): string {
-  if (explicit?.trim()) return explicit.trim();
-  if (actorUserId === "customer") return "customer";
-  if (actorUserId === "owner") return "admin";
-  return actorUserId || "admin";
+/**
+ * Who is deciding right now. Prefer the signed-in admin email; fall back to
+ * `global_admin` when there is no identity (local DEV_AUTH_BYPASS without Clerk).
+ */
+export async function resolveStaffActor(): Promise<{
+  actorUserId: string;
+  actorLabel: string;
+}> {
+  const user = await currentUser();
+  const email = await primaryEmailFromClerkUser(user);
+  if (email) {
+    return { actorUserId: email, actorLabel: email };
+  }
+  const { userId } = await auth();
+  if (userId) {
+    return { actorUserId: userId, actorLabel: "admin" };
+  }
+  return { actorUserId: GLOBAL_ADMIN_ACTOR, actorLabel: GLOBAL_ADMIN_ACTOR };
 }
 
 /** Append-only admin decision row — use for every staff decision, not only meetings. */

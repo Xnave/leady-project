@@ -30,12 +30,17 @@ import {
   getRequest,
   isoDateToUtc,
   utcToIsoDate,
+  REQUEST_DECISION_CATEGORY,
 } from "@/lib/requests";
+import { AUTOMATIC_ACTOR } from "@/lib/decision-actor";
+import { appendAdminDecision } from "@/lib/admin-decisions";
 
 /** Capability that owns stay requests. */
 export const RESERVATIONS_CAPABILITY = "reservations";
 /** Instance kind for a stay. */
 export const STAY_KIND = "stay";
+/** Inbox history row after self-serve booking link was sent (no Request / no waiting_human). */
+export const RESERVATION_LINK_SENT_TASK = "reservation_link_sent";
 
 function replyLangFromCtx(ctx: TurnContext): "en" | "he" {
   const last = [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
@@ -282,6 +287,59 @@ export async function sendReservationLink(
     extraSessionKeys: reservationEphemeralKeys(config),
   });
   ctx.lead.fields = cleared;
+
+  const now = new Date();
+  const summary = await summarizeConversation(ctx.conversation.id);
+  await prisma.$transaction([
+    prisma.hitlTask.create({
+      data: {
+        tenantId: ctx.tenantId,
+        conversationId: ctx.conversation.id,
+        leadId: ctx.lead.id,
+        type: RESERVATION_LINK_SENT_TASK,
+        reason: RESERVATION_LINK_SENT_TASK,
+        status: "done",
+        completedBy: AUTOMATIC_ACTOR,
+        completedAt: now,
+        payload: {
+          capabilityId: RESERVATIONS_CAPABILITY,
+          kind: instanceKind(ctx, RESERVATIONS_CAPABILITY, STAY_KIND),
+          linkSent: true,
+          bookingUrl,
+          checkIn,
+          checkOut,
+          guests,
+          unit,
+          name,
+          phone,
+          email,
+          details,
+          timeText: `${checkIn} → ${checkOut}`,
+          summary,
+        } as Prisma.InputJsonValue,
+        resolution: {
+          linkSent: true,
+          decision: "link_sent",
+        } as Prisma.InputJsonValue,
+      },
+    }),
+    appendAdminDecision({
+      tenantId: ctx.tenantId,
+      leadId: ctx.lead.id,
+      conversationId: ctx.conversation.id,
+      category: REQUEST_DECISION_CATEGORY,
+      action: "link_sent",
+      actorUserId: AUTOMATIC_ACTOR,
+      details: {
+        capabilityId: RESERVATIONS_CAPABILITY,
+        bookingUrl,
+        checkIn,
+        checkOut,
+        timeText: `${checkIn} → ${checkOut}`,
+      },
+      createdAt: now,
+    }),
+  ]);
 
   return { ok: true, reply };
 }

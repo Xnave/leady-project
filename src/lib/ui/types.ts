@@ -319,8 +319,15 @@ export type UiCopy = {
     decisionLogApprovedByCustomer: string;
     decisionLogActorAdmin: string;
     decisionLogActorCustomer: string;
+    decisionLogActorAutomatic: string;
+    decisionLogActorGlobalAdmin: string;
     decisionLogPreviousSlot: string;
     decisionLogEmpty: string;
+    taskEnteredAt: string;
+    taskDecidedAt: string;
+    taskDecidedBy: string;
+    linkSent: string;
+    linkSentHint: string;
     markRead: string;
     markUnread: string;
     staffPlaceholder: string;

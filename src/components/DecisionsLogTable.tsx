@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useState, type ReactNode } from "react";
+import { formatDecisionActor } from "@/lib/decision-actor";
 import type { UiCopy } from "@/lib/ui";
 
 export type DecisionLogRow = {
@@ -37,6 +38,7 @@ function actionLabel(ui: UiCopy, row: DecisionLogRow): string {
     }
     if (row.action === "decline") return ui.inbox.decisionLogDeclined;
     if (row.action === "reschedule") return ui.inbox.decisionLogRescheduled;
+    if (row.action === "link_sent") return ui.inbox.linkSent;
   }
   return `${row.category}:${row.action}`;
 }
@@ -46,13 +48,18 @@ function detailsFlag(details: Record<string, unknown>, key: string): boolean {
 }
 
 function actorDisplay(ui: UiCopy, row: DecisionLogRow): string {
-  if (row.actorUserId === "customer" || row.actorLabel === "customer") {
-    return ui.inbox.decisionLogActorCustomer;
-  }
-  if (row.actorLabel === "admin" || row.actorUserId === "owner") {
-    return ui.inbox.decisionLogActorAdmin;
-  }
-  return row.actorLabel || row.actorUserId || ui.inbox.decisionLogActorAdmin;
+  return (
+    formatDecisionActor(
+      row.actorUserId,
+      {
+        admin: ui.inbox.decisionLogActorAdmin,
+        automatic: ui.inbox.decisionLogActorAutomatic,
+        globalAdmin: ui.inbox.decisionLogActorGlobalAdmin,
+        customer: ui.inbox.decisionLogActorCustomer,
+      },
+      row.actorLabel,
+    ) ?? ui.inbox.decisionLogActorAdmin
+  );
 }
 
 function badgeClass(row: DecisionLogRow): string {

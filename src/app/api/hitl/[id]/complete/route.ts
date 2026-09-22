@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveStaffActor } from "@/lib/admin-decisions";
 import { completeHitlTask, loadTurnContext } from "@/lib/conversations";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
 import { decideRegisteredRequest } from "@/lib/flow/registry";
@@ -42,10 +43,11 @@ export async function POST(
     // A span offers two alternative dates on reschedule; a point offers one slot.
     const isSpan = Boolean(request.endAt);
     ensureFlowRegistry();
+    const actor = await resolveStaffActor();
     const result = await decideRegisteredRequest(request.capabilityId, {
       tenantId,
       requestId: request.id,
-      actorUserId: "owner",
+      actorUserId: actor.actorUserId,
       decision,
       note: note || undefined,
       customReply: customReply || undefined,
@@ -66,10 +68,11 @@ export async function POST(
     return NextResponse.redirect(redirectPath(req, "/inbox"), 303);
   }
 
+  const actor = await resolveStaffActor();
   const { conversationId } = await completeHitlTask({
     tenantId,
     taskId: id,
-    actorUserId: "owner",
+    actorUserId: actor.actorUserId,
     note,
     approved,
   });

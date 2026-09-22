@@ -390,6 +390,10 @@ export async function decideRequest(opts: {
           status: "done",
           completedBy: opts.actorUserId,
           completedAt: t.completedAt ?? now,
+          payload: {
+            ...payload,
+            awaitingCustomerConfirm: false,
+          } as Prisma.InputJsonValue,
           resolution: {
             approved,
             decision: opts.decision,
@@ -397,6 +401,7 @@ export async function decideRequest(opts: {
             note: opts.note ?? "",
             customReply: opts.customReply ?? "",
             customerConfirmed: Boolean(opts.customerConfirmed),
+            awaitingCustomerConfirm: false,
             updatedAt: now.toISOString(),
           } as Prisma.InputJsonValue,
         },

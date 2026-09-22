@@ -5,6 +5,7 @@ import {
   type RequestDecisionLabels,
 } from "@/components/RequestDecisionForm";
 import { PageHeader } from "@/components/PageHeader";
+import { formatDecisionActor } from "@/lib/decision-actor";
 import { prisma } from "@/lib/db";
 import { getUiLang } from "@/lib/cookies";
 import { enrichInstagramLeadIdentity } from "@/lib/conversations";
@@ -18,6 +19,7 @@ import {
 import { requireTenantIdForPage } from "@/lib/tenant";
 import { loadInstanceFieldLabels } from "@/lib/capability-instances";
 import { REQUEST_APPROVAL_TASK, type RequestRow } from "@/lib/requests";
+import { RESERVATION_LINK_SENT_TASK } from "@/lib/reservations";
 import {
   requestHeadline,
   requestSummaryLines,
@@ -30,6 +32,38 @@ export const dynamic = "force-dynamic";
 
 type InboxTask = Awaited<ReturnType<typeof loadInboxTasks>>[number];
 type Ui = ReturnType<typeof uiCopy>;
+
+function formatWhen(d: Date, lang: "he" | "en") {
+  return d.toLocaleString(lang === "he" ? "he-IL" : "en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function actorLabels(ui: Ui) {
+  return {
+    admin: ui.inbox.decisionLogActorAdmin,
+    automatic: ui.inbox.decisionLogActorAutomatic,
+    globalAdmin: ui.inbox.decisionLogActorGlobalAdmin,
+  };
+}
+
+function isLinkSentTask(task: InboxTask): boolean {
+  if (task.type === RESERVATION_LINK_SENT_TASK) return true;
+  const payload = task.payload as { linkSent?: boolean };
+  const resolution = task.resolution as {
+    linkSent?: boolean;
+    decision?: string;
+  } | null;
+  return (
+    Boolean(payload.linkSent) ||
+    Boolean(resolution?.linkSent) ||
+    resolution?.decision === "link_sent"
+  );
+}
 
 const TASK_INCLUDE = {
   lead: {
@@ -46,7 +80,11 @@ async function loadInboxTasks(tenantId: string) {
   return prisma.hitlTask.findMany({
     where: {
       tenantId,
-      OR: [{ status: "open" }, { type: REQUEST_APPROVAL_TASK }],
+      OR: [
+        { status: "open" },
+        { type: REQUEST_APPROVAL_TASK },
+        { type: RESERVATION_LINK_SENT_TASK },
+      ],
     },
     include: TASK_INCLUDE,
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
@@ -74,11 +112,17 @@ function taskRequest(task: InboxTask): RequestRow | undefined {
 }
 
 /** Per-capability wording, so the inbox reads naturally for each vertical. */
-function requestTaskTitle(ui: Ui, request: RequestRow | undefined): string {
+function inboxTaskTitle(ui: Ui, task: InboxTask, request: RequestRow | undefined): string {
+  if (isLinkSentTask(task)) return ui.inbox.linkSent;
   if (!request) return ui.inbox.generalTask;
   return request.capabilityId === "reservations"
     ? ui.inbox.reservationApproval
     : ui.inbox.bookingApproval;
+}
+
+function inboxTaskStatus(ui: Ui, task: InboxTask): string {
+  if (isLinkSentTask(task)) return ui.inbox.linkSent;
+  return task.status === "open" ? ui.inbox.taskOpen : ui.inbox.taskResolved;
 }
 
 function statusLabel(ui: Ui, request: RequestRow): string {
@@ -179,6 +223,7 @@ export default async function InboxPage({
                     task={task}
                     selectedId={selected?.id}
                     ui={ui}
+                    lang={lang}
                   />
                 ))}
               </>
@@ -197,6 +242,7 @@ export default async function InboxPage({
                     task={task}
                     selectedId={selected?.id}
                     ui={ui}
+                    lang={lang}
                   />
                 ))}
               </>
@@ -221,12 +267,19 @@ function InboxTaskLink({
   task,
   selectedId,
   ui,
+  lang,
 }: {
   task: InboxTask;
   selectedId?: string;
   ui: Ui;
+  lang: "he" | "en";
 }) {
   const open = task.status === "open";
+  const request = taskRequest(task);
+  const linkSent = isLinkSentTask(task);
+  const decidedAt = request?.decidedAt ?? task.completedAt;
+  const title = inboxTaskTitle(ui, task, request);
+  const status = inboxTaskStatus(ui, task);
   return (
     <Link
       href={`/inbox?task=${task.id}`}
@@ -234,9 +287,11 @@ function InboxTaskLink({
     >
       <strong>{leadDisplayName(task.lead)}</strong>
       <div className="muted">
-        {requestTaskTitle(ui, taskRequest(task))}
-        {" · "}
-        {open ? ui.inbox.taskOpen : ui.inbox.taskResolved}
+        {linkSent ? title : `${title} · ${status}`}
+      </div>
+      <div className="muted inbox-task-when" dir="ltr">
+        {formatWhen(task.createdAt, lang)}
+        {!open && decidedAt ? ` → ${formatWhen(decidedAt, lang)}` : ""}
       </div>
     </Link>
   );
@@ -259,9 +314,12 @@ function InboxTaskDetail({
     requestId?: string;
     awaitingCustomerConfirm?: boolean;
     summary?: string;
+    linkSent?: boolean;
+    bookingUrl?: string;
   };
   const request = taskRequest(task);
-  const taskTitle = requestTaskTitle(ui, request);
+  const linkSent = isLinkSentTask(task);
+  const taskTitle = inboxTaskTitle(ui, task, request);
   const fields = (task.lead.fields ?? {}) as Record<string, string | undefined>;
   const isInstagram = task.lead.channel.provider === "instagram";
   const isWhatsapp = task.lead.channel.provider === "whatsapp";
@@ -281,28 +339,35 @@ function InboxTaskDetail({
     awaitingCustomerConfirm?: boolean;
     customerConfirmed?: boolean;
     decision?: string;
+    linkSent?: boolean;
   } | null;
+  // Only open tasks can wait on the customer; never pair with a terminal badge.
   const awaitingCustomer =
-    Boolean(payload.awaitingCustomerConfirm) ||
-    Boolean(resolution?.awaitingCustomerConfirm);
+    !linkSent &&
+    task.status === "open" &&
+    (Boolean(payload.awaitingCustomerConfirm) ||
+      Boolean(resolution?.awaitingCustomerConfirm));
   const pending = (!request || request.status === "pending") && !awaitingCustomer;
   const narrative =
     String(payload.summary ?? task.conversation?.summary ?? "").trim() ||
     ui.inbox.summaryEmpty;
+  const decidedAt = request?.decidedAt ?? task.completedAt;
+  const decidedByRaw = request?.decidedBy ?? task.completedBy;
+  const decidedByLabel = decidedByRaw
+    ? formatDecisionActor(decidedByRaw, actorLabels(ui))
+    : null;
+  const bookingUrl =
+    typeof payload.bookingUrl === "string" ? payload.bookingUrl.trim() : "";
 
   return (
     <div className="card inbox-task">
       <div className="inbox-task-header">
         <div className="inbox-task-title">
-          <span className={`badge${task.status === "open" ? " badge-warn" : ""}`}>
-            {taskTitle}
-            {task.status !== "open" ? ` · ${ui.inbox.taskResolved}` : ""}
+          <span className={`badge${task.status === "open" && !linkSent ? " badge-warn" : ""}`}>
+            {linkSent ? taskTitle : `${taskTitle}${task.status !== "open" ? ` · ${ui.inbox.taskResolved}` : ""}`}
           </span>
           {awaitingCustomer ? (
             <span className="badge badge-warn">{ui.inbox.awaitingCustomer}</span>
-          ) : null}
-          {resolution?.customerConfirmed ? (
-            <span className="badge">{ui.inbox.customerConfirmed}</span>
           ) : null}
           <span>{leadDisplayName(task.lead)}</span>
           {waUrl ? (
@@ -334,13 +399,48 @@ function InboxTaskDetail({
         </div>
       </div>
 
-      {!request && task.reason ? (
+      <dl className="inbox-task-meta">
+        <div>
+          <dt>{ui.inbox.taskEnteredAt}</dt>
+          <dd dir="ltr">{formatWhen(task.createdAt, lang)}</dd>
+        </div>
+        {decidedAt ? (
+          <div>
+            <dt>{ui.inbox.taskDecidedAt}</dt>
+            <dd dir="ltr">{formatWhen(decidedAt, lang)}</dd>
+          </div>
+        ) : null}
+        {decidedByLabel ? (
+          <div>
+            <dt>{ui.inbox.taskDecidedBy}</dt>
+            <dd dir={decidedByLabel.includes("@") ? "ltr" : undefined}>
+              {decidedByLabel}
+            </dd>
+          </div>
+        ) : null}
+      </dl>
+
+      {!request && !linkSent && task.reason ? (
         <p>
           {ui.inbox.reason}: {hitlReasonLabel(ui, task.reason)}
         </p>
       ) : null}
 
-      {request && !pending ? (
+      {linkSent ? (
+        <p className="muted">
+          {ui.inbox.linkSentHint}
+          {bookingUrl ? (
+            <>
+              {" "}
+              <a href={bookingUrl} target="_blank" rel="noopener noreferrer" dir="ltr">
+                {bookingUrl}
+              </a>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+
+      {request && !pending && !linkSent ? (
         <p className="muted">
           {ui.inbox.currentDecision}:{" "}
           <span className="badge">{statusLabel(ui, request)}</span>
@@ -353,7 +453,7 @@ function InboxTaskDetail({
         <p style={{ whiteSpace: "pre-wrap" }}>{narrative}</p>
       </div>
 
-      {request ? (
+      {linkSent ? null : request ? (
         <>
           {awaitingCustomer ? (
             <p className="muted">{ui.inbox.awaitingCustomerHint}</p>
@@ -368,9 +468,7 @@ function InboxTaskDetail({
               status={
                 awaitingCustomer
                   ? ui.inbox.awaitingCustomer
-                  : request.status === "approved" && resolution?.customerConfirmed
-                    ? ui.inbox.customerConfirmed
-                    : statusLabel(ui, request)
+                  : statusLabel(ui, request)
               }
               labels={decisionLabels}
               lines={requestSummaryLines({

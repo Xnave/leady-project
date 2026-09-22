@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveStaffActor } from "@/lib/admin-decisions";
 import { loadTurnContext } from "@/lib/conversations";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
 import { decideRegisteredRequest } from "@/lib/flow/registry";
@@ -80,10 +81,11 @@ export async function POST(
   }
 
   ensureFlowRegistry();
+  const actor = await resolveStaffActor();
   const result = await decideRegisteredRequest(request.capabilityId, {
     tenantId,
     requestId: request.id,
-    actorUserId: "owner",
+    actorUserId: actor.actorUserId,
     decision,
     note: note || undefined,
     customReply: customReply || undefined,
