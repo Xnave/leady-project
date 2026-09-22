@@ -23,6 +23,7 @@ import { ensureFlowRegistry } from "@/lib/flow/capabilities";
 import { capabilityStateLoaders } from "@/lib/flow/registry";
 import {
   closeConversationAsDone,
+  decideInboundThread,
   reopenConversation,
   resumeConversationAfterHitl,
 } from "@/lib/flow/rotate-conversation";
@@ -42,11 +43,6 @@ export {
 } from "@/lib/flow/rotate-conversation";
 
 const FORCE_FRESH_INBOUND_KEY = "force_fresh_inbound";
-
-/** Any still-relevant request of any kind keeps the thread alive. */
-function leadHasRelevantRequest(tenantId: string, leadId: string): Promise<boolean> {
-  return hasRelevantRequest({ tenantId, leadId });
-}
 
 /** After admin ends a chat, the next customer message must start a clean thread. */
 export async function markLeadForceFreshInbound(tenantId: string, leadId: string): Promise<void> {
@@ -166,7 +162,11 @@ export async function persistInboundIfNew(opts: {
   const flow = channel.agent.flow as FlowDefinition;
   const leadFields = (lead.fields as LeadFields) ?? {};
   const forceFresh = String(leadFields[FORCE_FRESH_INBOUND_KEY] ?? "") === "1";
-  const hasRelevantMeeting = await leadHasRelevantRequest(opts.tenantId, lead.id);
+  const idleResetDays = channel.tenant.idleResetDays ?? 3;
+  const relevantRequest = await hasRelevantRequest({
+    tenantId: opts.tenantId,
+    leadId: lead.id,
+  });
 
   // Admin "סיים שיחה" → next inbound must not continue a lingering open thread.
   if (forceFresh && conversation) {
@@ -178,23 +178,39 @@ export async function persistInboundIfNew(opts: {
     conversation = null;
   }
 
-  // Stale open thread with no upcoming meeting → close; do not keep appending forever.
-  if (conversation && !forceFresh && !hasRelevantMeeting) {
-    const lastAt = conversation.messages[0]?.createdAt?.getTime() ?? 0;
-    const staleMs = 6 * 60 * 60 * 1000;
-    const stale = !lastAt || Date.now() - lastAt >= staleMs;
-    if (stale) {
-      await closeConversationAsDone({
+  if (!conversation) {
+    const latestClosed = await prisma.conversation.findFirst({
+      where: { tenantId: opts.tenantId, leadId: lead.id, status: "closed" },
+      orderBy: { updatedAt: "desc" },
+      include: {
+        messages: { orderBy: { createdAt: "desc" }, take: 1 },
+      },
+    });
+    const closedLastMessageAt =
+      latestClosed?.messages[0]?.createdAt ?? latestClosed?.updatedAt ?? null;
+    const decision = decideInboundThread({
+      forceFresh,
+      hasOpenConversation: false,
+      closedLastMessageAt,
+      idleResetDays,
+      hasRelevantRequest: relevantRequest,
+    });
+    if (decision === "reopen" && latestClosed) {
+      const reopened = await reopenConversation({
         tenantId: opts.tenantId,
-        conversationId: conversation.id,
-        reason: "stale_open",
+        conversationId: latestClosed.id,
+        reason: "inbound_reopen",
       });
-      conversation = null;
+      conversation = await prisma.conversation.findFirst({
+        where: { id: reopened.conversationId, tenantId: opts.tenantId },
+        include: {
+          messages: { orderBy: { createdAt: "desc" }, take: 1 },
+        },
+      });
     }
   }
 
-  // Never auto-reopen a closed conversation on inbound. Staff can reopen/start explicitly;
-  // the agent may call start_new_conversation after the customer agrees.
+  // First inbound, staff forced a clean start, or idle past the window with no upcoming request.
   if (!conversation) {
     const prevFields = { ...((lead.fields as LeadFields) ?? {}) };
     delete prevFields[FORCE_FRESH_INBOUND_KEY];
@@ -345,6 +361,7 @@ export async function loadTurnContext(
       flowVersion: conversation.flowVersion,
       nudgeCountByStage: (conversation.nudgeCountByStage as Record<string, number>) ?? {},
       summary: conversation.summary ?? "",
+      lifecycleReason: conversation.lifecycleReason || undefined,
     },
     lead: {
       id: conversation.lead.id,

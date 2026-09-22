@@ -103,6 +103,8 @@ export type ConversationSnapshot = {
   flowVersion: number;
   nudgeCountByStage: Record<string, number>;
   summary?: string;
+  /** Why this thread opened/closed/reopened (inbound_reopen, approve, admin, …). */
+  lifecycleReason?: string;
 };
 
 export type AgentSnapshot = {

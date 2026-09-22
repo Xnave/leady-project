@@ -2,7 +2,7 @@
 
 Multi-tenant agent CRM: WhatsApp / Instagram / demo chat → Postgres → flow interpreter → reply. There is no graph framework; the “graph” is JSON on `Agent.flow`, walked each turn by a pure state machine.
 
-Related deep-dives: [nudges.md](./nudges.md), [agent-runtime.md](./agent-runtime.md), [agent-flow-as-data.md](./agent-flow-as-data.md), [agent-state-flow-concurrency.md](./agent-state-flow-concurrency.md). Agent-oriented checklist: [../AGENTS.md](../AGENTS.md).
+Related deep-dives: [nudges.md](./nudges.md), [conversation-lifecycle.md](./conversation-lifecycle.md), [agent-runtime.md](./agent-runtime.md), [agent-flow-as-data.md](./agent-flow-as-data.md), [agent-state-flow-concurrency.md](./agent-state-flow-concurrency.md). Agent-oriented checklist: [../AGENTS.md](../AGENTS.md).
 
 ---
 

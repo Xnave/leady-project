@@ -126,7 +126,11 @@ export class PromptBuilder {
       }),
     );
     this.parts.push(calendarClockLine());
-    if (isIdleConversationReset(ctx)) {
+    if (ctx.conversation.lifecycleReason === "inbound_reopen") {
+      this.parts.push(
+        "This thread was just reopened after a prior request was resolved (approved or closed). Keep the SAME conversation. A thank-you or a follow-up about that request is NOT a new matter — reply in context. Only call start_new_conversation if the customer is clearly starting a brand-new unrelated topic and a clean start is better; otherwise stay on this thread.",
+      );
+    } else if (isIdleConversationReset(ctx)) {
       this.parts.push(
         "There was a long gap since the previous message. Continue in this same conversation by default. If a clean start seems better, ask whether they want a new conversation — only call start_new_conversation after they clearly agree.",
       );

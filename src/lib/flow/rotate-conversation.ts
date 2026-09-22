@@ -21,6 +21,7 @@ export type LifecycleReason =
   | "hitl_resume"
   | "approve"
   | "inbound_create"
+  | "inbound_reopen"
   | "hitl_completed"
   | "admin_reopen"
   | "start_new_conversation"
@@ -36,6 +37,34 @@ export function conversationIdleExpired(opts: {
   if (!opts.lastMessageAt) return false;
   const now = opts.now ?? new Date();
   return now.getTime() - opts.lastMessageAt.getTime() >= days * DAY_MS;
+}
+
+export type InboundThreadDecision = "use_open" | "reopen" | "create";
+
+/**
+ * Deterministic inbound routing: keep an open thread, reopen a recent/relevant
+ * closed one, or start fresh. No LLM involved.
+ */
+export function decideInboundThread(opts: {
+  forceFresh: boolean;
+  hasOpenConversation: boolean;
+  /** Newest message on the latest closed thread; null = no closed thread. */
+  closedLastMessageAt: Date | null;
+  idleResetDays: number;
+  hasRelevantRequest: boolean;
+  now?: Date;
+}): InboundThreadDecision {
+  if (opts.forceFresh) return "create";
+  if (opts.hasOpenConversation) return "use_open";
+  if (!opts.closedLastMessageAt) return "create";
+  if (opts.hasRelevantRequest) return "reopen";
+  return conversationIdleExpired({
+    lastMessageAt: opts.closedLastMessageAt,
+    idleResetDays: opts.idleResetDays,
+    now: opts.now,
+  })
+    ? "create"
+    : "reopen";
 }
 
 async function sweepEmptyOpenThreads(opts: {
@@ -138,12 +167,13 @@ export async function resumeConversationAfterHitl(opts: {
 }
 
 /**
- * Reopen a closed conversation for staff follow-up (same thread).
- * Refuses if any other open conversation already exists for the lead.
+ * Reopen a closed conversation (same thread). Used by staff and by inbound
+ * routing after approve / short silence. Refuses if another open thread exists.
  */
 export async function reopenConversation(opts: {
   tenantId: string;
   conversationId: string;
+  reason?: LifecycleReason;
 }): Promise<{ conversationId: string }> {
   const conversation = await prisma.conversation.findFirstOrThrow({
     where: { id: opts.conversationId, tenantId: opts.tenantId },
@@ -176,7 +206,7 @@ export async function reopenConversation(opts: {
       data: {
         status: "open",
         flowState: resumeStage,
-        lifecycleReason: "admin_reopen",
+        lifecycleReason: opts.reason ?? "admin_reopen",
       },
     });
   }

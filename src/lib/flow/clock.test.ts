@@ -66,4 +66,36 @@ describe("affirm / start_new_conversation gate", () => {
     };
     expect(canCallStartNewConversation(agreed)).toBe(true);
   });
+
+  it("allows start_new_conversation on an inbound_reopen thread in one call", () => {
+    const flow = defaultFlow();
+    const reopened: TurnContext = {
+      tenantId: "t1",
+      tenant: { name: "X", phone: "", intro: "", chatLanguage: "he" },
+      agent: {
+        id: "a1",
+        tenantId: "t1",
+        systemPrompt: "",
+        knowledgeText: "",
+        flow,
+        flowVersion: 1,
+        leadSchema: defaultLeadSchema,
+        hitlPolicy: defaultHitlPolicy,
+      },
+      conversation: {
+        id: "c1",
+        status: "open",
+        flowState: "talk",
+        flowVersion: 1,
+        nudgeCountByStage: {},
+        lifecycleReason: "inbound_reopen",
+      },
+      lead: { id: "l1", externalUserId: "+1", fields: {} },
+      messages: [
+        { role: "agent", text: "האירוח אושר ל-2026-09-25 עד 2026-09-26." },
+        { role: "lead", text: "תודה רבה" },
+      ],
+    };
+    expect(canCallStartNewConversation(reopened)).toBe(true);
+  });
 });

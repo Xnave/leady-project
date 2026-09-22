@@ -115,6 +115,7 @@ Dev: `npm run dev` (demo turn is sync; Inngest only for nudges).
 | [docs/architecture.md](docs/architecture.md) | Humans + agents — current architecture |
 | [CLAUDE.md](CLAUDE.md) | Claude Code — commands + short architecture |
 | [docs/nudges.md](docs/nudges.md) | Silence reminders (Inngest cancelOn, last-lead clock) |
+| [docs/conversation-lifecycle.md](docs/conversation-lifecycle.md) | When to close / reopen / create a thread |
 | [docs/agent-runtime.md](docs/agent-runtime.md) | Turn/runtime design notes |
 | [docs/agent-flow-as-data.md](docs/agent-flow-as-data.md) | Flow JSON rationale |
 | [docs/agent-state-flow-concurrency.md](docs/agent-state-flow-concurrency.md) | Concurrency / state |

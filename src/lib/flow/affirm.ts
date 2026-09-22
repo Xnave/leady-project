@@ -23,10 +23,14 @@ export function askedToStartNewConversation(agentText: string): boolean {
 }
 
 /**
- * The start_new_conversation tool is only legal after a short yes, and only when
- * we already asked to reset or the thread is in an idle-gap turn.
+ * The start_new_conversation tool is legal when:
+ * - the customer just said a short yes after we asked to reset, or
+ * - this turn is an idle-gap / inbound-reopen where a clean start may apply.
+ * On inbound_reopen the model may decide + word the intro in the same talk call
+ * (no separate ask-then-yes turn required).
  */
 export function canCallStartNewConversation(ctx: TurnContext): boolean {
+  if (ctx.conversation.lifecycleReason === "inbound_reopen") return true;
   if (!looksLikeShortAffirmation(lastLeadText(ctx))) return false;
   const lastAgent =
     [...ctx.messages].reverse().find((m) => m.role === "agent")?.text ?? "";

@@ -11,7 +11,7 @@ import { callbackPhone, looksLikePhoneNumber } from "./booking-collect";
 import { copyFor, fillTemplate } from "@/lib/copy";
 import { flowForCatalog } from "./catalog";
 import { mergeAllowedFields } from "./helpers";
-import { conversationIdleExpired } from "./rotate-conversation";
+import { conversationIdleExpired, decideInboundThread } from "./rotate-conversation";
 import { normalizeSlot } from "./slot";
 import type { TurnContext } from "./types";
 import { defaultHitlPolicy, defaultLeadSchema } from "./validate";
@@ -234,6 +234,87 @@ describe("getStaffSlotOffer", () => {
       slot: "11 בנובמבר 2026 בשעה 10:00",
       previousSlot: "old",
     });
+  });
+});
+
+describe("decideInboundThread", () => {
+  const withinWindow = new Date("2026-09-07T10:00:00Z");
+  const pastWindow = new Date("2026-09-01T10:00:00Z");
+  const now = new Date("2026-09-08T10:00:00Z");
+
+  it("keeps an open thread", () => {
+    expect(
+      decideInboundThread({
+        forceFresh: false,
+        hasOpenConversation: true,
+        closedLastMessageAt: pastWindow,
+        idleResetDays: 5,
+        hasRelevantRequest: false,
+        now,
+      }),
+    ).toBe("use_open");
+  });
+
+  it("reopens a closed thread still inside the idle window", () => {
+    expect(
+      decideInboundThread({
+        forceFresh: false,
+        hasOpenConversation: false,
+        closedLastMessageAt: withinWindow,
+        idleResetDays: 5,
+        hasRelevantRequest: false,
+        now,
+      }),
+    ).toBe("reopen");
+  });
+
+  it("creates when silence exceeds idleResetDays and no upcoming request", () => {
+    expect(
+      decideInboundThread({
+        forceFresh: false,
+        hasOpenConversation: false,
+        closedLastMessageAt: pastWindow,
+        idleResetDays: 5,
+        hasRelevantRequest: false,
+        now,
+      }),
+    ).toBe("create");
+  });
+
+  it("reopens past the idle window when a request is still relevant", () => {
+    expect(
+      decideInboundThread({
+        forceFresh: false,
+        hasOpenConversation: false,
+        closedLastMessageAt: pastWindow,
+        idleResetDays: 5,
+        hasRelevantRequest: true,
+        now,
+      }),
+    ).toBe("reopen");
+  });
+
+  it("creates on first inbound or after staff end-chat", () => {
+    expect(
+      decideInboundThread({
+        forceFresh: false,
+        hasOpenConversation: false,
+        closedLastMessageAt: null,
+        idleResetDays: 5,
+        hasRelevantRequest: false,
+        now,
+      }),
+    ).toBe("create");
+    expect(
+      decideInboundThread({
+        forceFresh: true,
+        hasOpenConversation: false,
+        closedLastMessageAt: withinWindow,
+        idleResetDays: 5,
+        hasRelevantRequest: true,
+        now,
+      }),
+    ).toBe("create");
   });
 });
 
