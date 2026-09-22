@@ -12,7 +12,6 @@ export async function getNavCounts(tenantId: string): Promise<NavCounts> {
       where: {
         tenantId,
         adminUnread: true,
-        NOT: { externalUserId: { startsWith: "demo-" } },
       },
     }),
   ]);

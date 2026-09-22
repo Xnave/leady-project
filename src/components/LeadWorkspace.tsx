@@ -1,23 +1,21 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ChannelBadge } from "@/components/ChannelBadge";
 import { StaffChatComposer } from "@/components/ChatComposer";
 import { ChatThread } from "@/components/ChatThread";
+import { CapturedFieldsBlock } from "@/components/CapturedFieldsBlock";
 import { LeadChatPoll } from "@/components/LeadChatPoll";
-import { LeadFieldsForm } from "@/components/LeadFieldsForm";
 import { RequestsTable, type RequestTableRow } from "@/components/RequestsTable";
 import type { RequestDecisionLabels } from "@/components/RequestDecisionForm";
 import { DecisionsLogTable, type DecisionLogRow } from "@/components/DecisionsLogTable";
 import {
   convoStatusLabel,
   intentLabel,
-  requestKindLabel,
   stageLabel,
 } from "@/lib/ui/labels";
 import { formatPhoneDisplay } from "@/lib/leads";
-import { isBookingSessionKey } from "@/lib/flow/booking";
 import { normalizeLeadStatus, type UiCopy, type UiLang } from "@/lib/ui";
 import type { FlowDefinition, LeadFields, LeadSchema } from "@/lib/flow/types";
 
@@ -31,19 +29,6 @@ type ConversationItem = {
   lastAt: string | Date;
   messageCount: number;
 };
-const HIDDEN_CAPTURED = new Set([
-  "instagramUsername",
-  "zernioConversationId",
-  "booking_confirm",
-  "booking_flow",
-  "booking",
-  "staff_slot_offer",
-  "time_preference",
-  "name_collected_by_agent",
-  "force_fresh_inbound",
-  "intent", // already shown in the profile block
-  "meetingId",
-]);
 
 type Props = {
   lang: UiLang;
@@ -106,76 +91,13 @@ function Ltr({ children }: { children: ReactNode }) {
   );
 }
 
-function formatCapturedValue(
-  key: string,
-  value: unknown,
-  ui: UiCopy,
-): string {
-  if (value == null || value === "") return "";
-  if (key === "meetingId") return "";
-  if (key === "intent" && typeof value === "string") {
-    return intentLabel(ui, value);
-  }
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    if (key === "phone") return formatPhoneDisplay(String(value));
-    return String(value);
-  }
-  if (typeof value === "object") {
-    const rec = value as Record<string, unknown>;
-    // Never surface internal ids (meetingId, conversation ids, etc.).
-    const statusRaw = typeof rec.status === "string" ? rec.status : "";
-    const status =
-      statusRaw === "pending"
-        ? ui.common.pending
-        : statusRaw === "approved"
-          ? ui.meeting.approved
-          : statusRaw === "rejected"
-            ? ui.meeting.rejected
-            : statusRaw;
-    const when = typeof rec.when === "string" ? rec.when : "";
-    const kindRaw = typeof rec.kind === "string" ? rec.kind.trim() : "";
-    const kind =
-      kindRaw && kindRaw !== "visit" ? requestKindLabel(ui, kindRaw) : "";
-    return [status, when, kind].filter(Boolean).join(" · ");
-  }
-  return "";
-}
-
 export function LeadWorkspace(props: Props) {
   const [tab, setTab] = useState<"chat" | "decisions" | "meetings">("chat");
-  const [editingFields, setEditingFields] = useState(false);
   const statusId = props.status ? normalizeLeadStatus(props.status) : undefined;
   const locale = props.lang === "he" ? "he-IL" : "en-GB";
 
   const decisionLogs = props.decisionLogs;
   const allRequests = props.requests;
-
-  const capturedEntries = useMemo(() => {
-    return Object.entries(props.fields)
-      .filter(([key]) => !HIDDEN_CAPTURED.has(key) && !isBookingSessionKey(key))
-      .map(([key, value]) => ({
-        key,
-        value: formatCapturedValue(key, value, props.ui),
-        ltr: key === "phone" || key === "email",
-      }))
-      .filter((row) => row.value);
-  }, [props.fields, props.ui]);
-
-  const crmSchema: LeadSchema = useMemo(
-    () => ({
-      fields: Object.fromEntries(
-        Object.entries(props.schema.fields).filter(([key]) => !isBookingSessionKey(key)),
-      ),
-    }),
-    [props.schema],
-  );
-  const crmFields: LeadFields = useMemo(
-    () =>
-      Object.fromEntries(
-        Object.entries(props.fields).filter(([key]) => !isBookingSessionKey(key)),
-      ),
-    [props.fields],
-  );
 
   return (
     <div className="lead-page">
@@ -255,42 +177,13 @@ export function LeadWorkspace(props: Props) {
               ) : null}
             </dl>
 
-            <div className="lead-captured-block">
-              <div className="row-actions" style={{ justifyContent: "space-between" }}>
-                <h3 className="lead-subhead">{props.ui.common.captured}</h3>
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => setEditingFields((v) => !v)}
-                >
-                  {editingFields ? props.ui.common.done : props.ui.common.editDetails}
-                </button>
-              </div>
-              {editingFields ? (
-                <LeadFieldsForm
-                  ui={props.ui}
-                  action={`/api/leads/${props.leadId}/fields`}
-                  schema={crmSchema}
-                  fields={crmFields}
-                  status={props.status}
-                  statusLabels={props.ui.status}
-                  statusLegend={props.ui.common.status}
-                  saveLabel={props.ui.common.save}
-                  enumLabels={{ intent: props.ui.intents }}
-                />
-              ) : capturedEntries.length > 0 ? (
-                <dl className="detail-list">
-                  {capturedEntries.map((row) => (
-                    <div key={row.key} className="detail-row">
-                      <dt>{props.ui.leadFields[row.key] ?? row.key}</dt>
-                      <dd>{row.ltr ? <Ltr>{row.value}</Ltr> : row.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              ) : (
-                <p className="muted">{props.ui.common.empty}</p>
-              )}
-            </div>
+            <CapturedFieldsBlock
+              ui={props.ui}
+              leadId={props.leadId}
+              schema={props.schema}
+              fields={props.fields}
+              status={props.status}
+            />
 
             {props.waitingHuman ? (
               <div className="row-actions">

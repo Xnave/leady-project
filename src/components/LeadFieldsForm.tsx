@@ -18,6 +18,8 @@ export function LeadFieldsForm({
   statusLegend,
   saveLabel,
   enumLabels,
+  formId,
+  hideActions,
 }: {
   ui: UiCopy;
   action: string;
@@ -28,10 +30,14 @@ export function LeadFieldsForm({
   statusLegend?: string;
   saveLabel?: string;
   enumLabels?: Record<string, Record<string, string>>;
+  /** Optional id so an external submit button can target this form. */
+  formId?: string;
+  /** Hide the bottom save row (e.g. when Save lives in a parent header). */
+  hideActions?: boolean;
 }) {
   const current = status !== undefined ? normalizeLeadStatus(status) : undefined;
   return (
-    <form action={action} method="post" className="stack field-form">
+    <form id={formId} action={action} method="post" className="stack field-form">
       {current !== undefined ? (
         <label>
           {statusLegend ?? ui.common.status}
@@ -90,9 +96,11 @@ export function LeadFieldsForm({
           </label>
         );
       })}
-      <div className="field-form-actions">
-        <button type="submit">{saveLabel ?? ui.common.save}</button>
-      </div>
+      {hideActions ? null : (
+        <div className="field-form-actions">
+          <button type="submit">{saveLabel ?? ui.common.save}</button>
+        </div>
+      )}
     </form>
   );
 }

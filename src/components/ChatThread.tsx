@@ -86,12 +86,15 @@ export function ChatThread({
   labels,
   lang = "en",
   leadName,
+  typing = false,
 }: {
   messages: Msg[];
   labels: Labels;
   lang?: "he" | "en";
   /** When set, customer bubbles show this instead of the generic "lead" role label. */
   leadName?: string;
+  /** WhatsApp-style “agent is typing” indicator. */
+  typing?: boolean;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const lastId = messages[messages.length - 1]?.id ?? "";
@@ -100,7 +103,7 @@ export function ChatThread({
     const el = rootRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [lastId, messages.length]);
+  }, [lastId, messages.length, typing]);
 
   function roleName(role: string) {
     if (role === "lead" && leadName?.trim()) return leadName.trim();
@@ -111,7 +114,7 @@ export function ChatThread({
 
   return (
     <div className="thread" ref={rootRef}>
-      {messages.length === 0 ? <p className="muted">{labels.emptyThread}</p> : null}
+      {messages.length === 0 && !typing ? <p className="muted">{labels.emptyThread}</p> : null}
       {items.map((item) =>
         item.kind === "day" ? (
           <div key={item.key} className="thread-day">
@@ -127,6 +130,16 @@ export function ChatThread({
           </div>
         ),
       )}
+      {typing ? (
+        <div className="bubble agent typing" aria-live="polite" aria-label="…">
+          <div className="bubble-role">{roleName("agent")}</div>
+          <div className="typing-dots" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

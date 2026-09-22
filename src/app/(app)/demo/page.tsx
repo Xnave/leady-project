@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { ChannelBadge } from "@/components/ChannelBadge";
-import { ChatComposer } from "@/components/ChatComposer";
-import { ChatThread } from "@/components/ChatThread";
-import { LeadFieldsForm } from "@/components/LeadFieldsForm";
+import { DemoChat } from "@/components/DemoChat";
 import { LeadProfilePanel } from "@/components/LeadProfilePanel";
 import { prisma } from "@/lib/db";
 import { normalizeCatalogId } from "@/lib/flow/catalog";
@@ -89,7 +87,9 @@ export default async function DemoPage({
   }
   const convo = lead?.conversations[0];
   const schema = (agent?.leadSchema ?? { fields: {} }) as LeadSchema;
-  const fields = (lead?.fields as LeadFields) ?? {};
+  const crmFields = (lead?.fields as LeadFields) ?? {};
+  const sessionFields = (convo?.session as LeadFields) ?? {};
+  const fields = { ...crmFields, ...sessionFields };
   const igHandle =
     lead?.channel.provider === "instagram" ? leadInstagramUsername(fields) : "";
   const phone =
@@ -166,26 +166,34 @@ export default async function DemoPage({
                 {languageTitle}
               </p>
             </div>
-            {lead?.channel ? <ChannelBadge lang={lang} channel={lead.channel} /> : null}
+            <div className="row-actions">
+              {lead ? (
+                <Link
+                  href={`/leads/${lead.id}${convo ? `?c=${convo.id}` : ""}`}
+                  className="btn-ghost"
+                >
+                  {ui.common.openLead}
+                </Link>
+              ) : null}
+              {lead?.channel ? <ChannelBadge lang={lang} channel={lead.channel} /> : null}
+            </div>
           </div>
           {lead && convo ? (
             <>
-              <ChatThread
+              <DemoChat
                 lang={lang}
-                messages={convo.messages.map((m) => ({
+                leadId={lead.id}
+                from={lead.externalUserId}
+                disabled={convo.status === "waiting_human"}
+                leadName={leadDisplayName(lead)}
+                initialMessages={convo.messages.map((m) => ({
                   id: m.id,
                   role: m.role,
                   text: m.text,
                   createdAt: m.createdAt,
                 }))}
-                labels={threadLabels}
-                leadName={leadDisplayName(lead)}
-              />
-              <ChatComposer
-                leadId={lead.id}
-                from={lead.externalUserId}
-                disabled={convo.status === "waiting_human"}
-                labels={chatLabels}
+                composerLabels={chatLabels}
+                threadLabels={threadLabels}
               />
               {convo.status === "waiting_human" ? (
                 <p className="muted">
@@ -201,47 +209,39 @@ export default async function DemoPage({
                 </p>
               ) : null}
               <p className="muted">{ui.demo.noLeadSelected}</p>
-              <ChatComposer labels={chatLabels} />
+              <DemoChat
+                lang={lang}
+                composerLabels={chatLabels}
+                threadLabels={threadLabels}
+                initialMessages={[]}
+              />
             </>
           )}
         </section>
 
         <aside className="stack">
           {lead ? (
-            <>
-              <div className="card">
-                <h2>{ui.common.captured}</h2>
-                <LeadFieldsForm
-                  ui={ui}
-                  action={`/api/leads/${lead.id}/fields`}
-                  schema={schema}
-                  fields={fields}
-                  status={lead.status}
-                  statusLabels={ui.status}
-                  statusLegend={ui.common.status}
-                  saveLabel={ui.common.save}
-                  enumLabels={{ intent: ui.intents }}
-                />
-              </div>
-              <LeadProfilePanel
-                lang={lang}
-                ui={ui}
-                leadId={lead.id}
-                name={leadDisplayName(lead)}
-                phone={phone ? formatPhoneDisplay(phone) : undefined}
-                email={fields.email ? String(fields.email) : undefined}
-                intent={fields.intent ? String(fields.intent) : undefined}
-                status={lead.status}
-                stage={convo?.flowState}
-                convoStatus={convo?.status}
-                isDemo={isDemoLead(lead.externalUserId)}
-                channel={lead.channel}
-                waitingHuman={convo?.status === "waiting_human"}
-                instagramHandle={igHandle || undefined}
-                instagramUrl={instagramProfileUrl(igHandle) || undefined}
-                whatsappUrl={waUrl || undefined}
-              />
-            </>
+            <LeadProfilePanel
+              lang={lang}
+              ui={ui}
+              leadId={lead.id}
+              name={leadDisplayName(lead)}
+              phone={phone ? formatPhoneDisplay(phone) : undefined}
+              email={fields.email ? String(fields.email) : undefined}
+              intent={fields.intent ? String(fields.intent) : undefined}
+              status={lead.status}
+              stage={convo?.flowState}
+              convoStatus={convo?.status}
+              isDemo={isDemoLead(lead.externalUserId)}
+              channel={lead.channel}
+              waitingHuman={convo?.status === "waiting_human"}
+              instagramHandle={igHandle || undefined}
+              instagramUrl={instagramProfileUrl(igHandle) || undefined}
+              whatsappUrl={waUrl || undefined}
+              schema={schema}
+              fields={fields}
+              conversationId={convo?.id}
+            />
           ) : (
             <div className="card demo-sidebar-agent">
               <h2>{ui.demo.agentContext}</h2>

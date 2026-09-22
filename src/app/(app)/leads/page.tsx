@@ -1,15 +1,19 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { ChannelBadge } from "@/components/ChannelBadge";
+import { DeleteDemoLead } from "@/components/DeleteDemoLead";
 import { PageHeader } from "@/components/PageHeader";
 import { FormSelect } from "@/components/Select";
 import { Pagination } from "@/components/Pagination";
 import { LeadStatusSelect } from "@/components/LeadStatusSelect";
 import { MarkLeadRead } from "@/components/MarkLeadRead";
+import { ShowDemoLeadsToggle } from "@/components/ShowDemoLeadsToggle";
 import { prisma } from "@/lib/db";
 import { getUiLang } from "@/lib/cookies";
 import {
   formatPhoneDisplay,
   instagramProfileUrl,
+  isDemoLead,
   leadDisplayName,
   leadInstagramUsername,
   whatsappChatUrl,
@@ -50,12 +54,21 @@ export default async function LeadsPage({
     q?: string;
     status?: string;
     stage?: string;
+    demo?: string;
   }>;
 }) {
-  const { page: pageParam, size: sizeParam, q, status, stage } = await searchParams;
+  const {
+    page: pageParam,
+    size: sizeParam,
+    q,
+    status,
+    stage,
+    demo,
+  } = await searchParams;
   const tenantId = await requireTenantIdForPage();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
+  const showDemo = demo === "1";
   const pageSize = PAGE_SIZES.includes(Number(sizeParam) as (typeof PAGE_SIZES)[number])
     ? Number(sizeParam)
     : 20;
@@ -68,10 +81,10 @@ export default async function LeadsPage({
     ? stage!
     : "";
 
-  const where: Prisma.LeadWhereInput = {
-    tenantId,
-    NOT: { externalUserId: { startsWith: "demo-" } },
-  };
+  const where: Prisma.LeadWhereInput = { tenantId };
+  if (!showDemo) {
+    where.NOT = { externalUserId: { startsWith: "demo-" } };
+  }
   if (query) {
     where.OR = [
       { displayName: { contains: query, mode: "insensitive" } },
@@ -85,6 +98,10 @@ export default async function LeadsPage({
       some: { flowState: filterStage, messages: { some: {} } },
     };
   }
+
+  const pendingLeadFilter: Prisma.LeadWhereInput = showDemo
+    ? { tenantId }
+    : { tenantId, NOT: { externalUserId: { startsWith: "demo-" } } };
 
   const [total, leads, pendingRequests] = await Promise.all([
     prisma.lead.count({ where }),
@@ -110,7 +127,7 @@ export default async function LeadsPage({
       where: {
         tenantId,
         status: "pending",
-        lead: { NOT: { externalUserId: { startsWith: "demo-" } } },
+        lead: pendingLeadFilter,
       },
       include: { lead: true },
       orderBy: { createdAt: "desc" },
@@ -124,12 +141,14 @@ export default async function LeadsPage({
     ...(query ? { q: query } : {}),
     ...(filterStatus ? { status: filterStatus } : {}),
     ...(filterStage ? { stage: filterStage } : {}),
+    ...(showDemo ? { demo: "1" } : {}),
   };
 
   return (
     <div>
       <PageHeader title={ui.page.leadsTitle} />
       <form className="toolbar" method="get">
+        {showDemo ? <input type="hidden" name="demo" value="1" /> : null}
         <label>
           {ui.common.search}
           <input type="search" name="q" defaultValue={query} />
@@ -167,6 +186,9 @@ export default async function LeadsPage({
         <button type="submit" className="btn-secondary">
           {ui.common.search}
         </button>
+        <Suspense fallback={null}>
+          <ShowDemoLeadsToggle label={ui.common.showDemoLeads} />
+        </Suspense>
       </form>
       {pendingRequests.length > 0 ? (
         <div className="card">
@@ -201,6 +223,7 @@ export default async function LeadsPage({
           <tbody>
             {leads.map((lead) => {
               const fields = lead.fields as Record<string, unknown>;
+              const demo = isDemoLead(lead.externalUserId);
               const rawStage = lead.conversations[0]?.flowState;
               const stageText = rawStage ? stageLabel(ui, rawStage) : ui.common.empty;
               const pending = lead.requests.length;
@@ -230,6 +253,12 @@ export default async function LeadsPage({
                     <Link href={`/leads/${lead.id}`}>
                       {lead.adminUnread ? <strong>{leadDisplayName(lead)}</strong> : leadDisplayName(lead)}
                     </Link>
+                    {demo ? (
+                      <>
+                        {" "}
+                        <span className="badge badge-demo">{ui.common.demo}</span>
+                      </>
+                    ) : null}
                   </td>
                   <td>
                     {channelHref ? (
@@ -281,6 +310,13 @@ export default async function LeadsPage({
                       markReadLabel={ui.inbox.markRead}
                       markUnreadLabel={ui.inbox.markUnread}
                     />
+                    {demo ? (
+                      <DeleteDemoLead
+                        leadId={lead.id}
+                        label={ui.common.delete}
+                        confirmText={ui.common.confirmDeleteDemo}
+                      />
+                    ) : null}
                   </td>
                 </tr>
               );

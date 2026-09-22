@@ -135,6 +135,7 @@ export type UiCopy = {
     demo: string;
     delete: string;
     confirmDeleteDemo: string;
+    showDemoLeads: string;
     name: string;
     channel: string;
     status: string;

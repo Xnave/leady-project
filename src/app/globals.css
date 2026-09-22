@@ -980,6 +980,31 @@ legend {
 .toolbar label { font-size: var(--fs-2xs); letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .toolbar input,
 .toolbar select { min-height: 36px; width: auto; min-width: 160px; }
+.toolbar .show-demo-toggle {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  margin-inline-start: auto;
+  min-height: 36px;
+  font-size: var(--fs-sm);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.toolbar .show-demo-toggle input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  min-width: 1rem;
+  min-height: 1rem;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
 
 /* --------------------------------------------------------------------------
    11. Selection cards, segmented controls, chips
@@ -1297,20 +1322,14 @@ tbody tr:hover { background: var(--card-hover); }
 tbody tr:last-child td { border-bottom: 0; }
 td .muted { font-size: var(--fs-xs); }
 .table-actions { white-space: nowrap; width: 1%; }
-/* Icon-only row action (delete demo lead). The accessible name comes from the
-   component's aria-label; this only gives it a real target and a danger hover. */
-.table-actions .btn-ghost {
-  width: 32px;
-  padding: 0;
-  border-radius: 50%;
+.table-actions .btn-icon {
+  vertical-align: middle;
   font-size: var(--fs-lg);
   line-height: 1;
-  color: var(--muted);
 }
-.table-actions .btn-ghost:hover {
-  background: var(--danger-soft);
-  border-color: var(--danger-line);
+.table-actions .btn-icon:hover {
   color: var(--danger);
+  background: var(--danger-soft);
 }
 .click-row { cursor: pointer; }
 .status-select {
@@ -1767,6 +1786,29 @@ td .muted { font-size: var(--fs-xs); }
   background: var(--tick-icon) no-repeat center / 16px 11px;
   opacity: 0.95;
 }
+
+.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 2px;
+  min-height: 1.1em;
+}
+.typing-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--bubble-out-label, var(--muted));
+  opacity: 0.35;
+  animation: typing-dot 1.2s infinite ease-in-out;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes typing-dot {
+  0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+.bubble.typing::after { display: none; }
 
 /* --- Composer --- */
 .composer {
@@ -2700,7 +2742,7 @@ td .muted { font-size: var(--fs-xs); }
   .nav-item { min-height: 48px; }
   .sidebar-nav { gap: var(--space-1); }
   .btn-ghost { min-height: 44px; }
-  .table-actions .btn-ghost { width: 44px; }
+  .table-actions .btn-icon { width: 44px; height: 44px; }
   .lang-toggle button { min-height: 44px; }
   .journey-link { min-height: 44px; }
   th, td { padding: 12px var(--space-4); }

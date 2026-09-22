@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CapturedFieldsBlock } from "@/components/CapturedFieldsBlock";
 import { ChannelBadge } from "@/components/ChannelBadge";
 import {
   convoStatusLabel,
@@ -6,6 +7,7 @@ import {
   stageLabel,
 } from "@/lib/ui/labels";
 import { normalizeLeadStatus, type UiCopy, type UiLang } from "@/lib/ui";
+import type { LeadFields, LeadSchema } from "@/lib/flow/types";
 
 type Props = {
   lang: UiLang;
@@ -25,6 +27,10 @@ type Props = {
   instagramHandle?: string;
   whatsappUrl?: string;
   showOpenFullLead?: boolean;
+  /** When set, shows the same captured-data block as the lead detail page. */
+  schema?: LeadSchema;
+  fields?: LeadFields;
+  conversationId?: string;
 };
 
 export function LeadProfilePanel({
@@ -45,8 +51,14 @@ export function LeadProfilePanel({
   instagramHandle,
   whatsappUrl,
   showOpenFullLead = true,
+  schema,
+  fields,
+  conversationId,
 }: Props) {
   const statusId = status ? normalizeLeadStatus(status) : undefined;
+  const leadHref = conversationId
+    ? `/leads/${leadId}?c=${conversationId}`
+    : `/leads/${leadId}`;
 
   return (
     <div className="card lead-profile">
@@ -117,10 +129,19 @@ export function LeadProfilePanel({
           </>
         ) : null}
       </dl>
+      {schema && fields ? (
+        <CapturedFieldsBlock
+          ui={ui}
+          leadId={leadId}
+          schema={schema}
+          fields={fields}
+          status={status}
+        />
+      ) : null}
       <div className="row-actions">
         {showOpenFullLead ? (
-          <Link href={`/leads/${leadId}`} className="btn-secondary">
-            {ui.demo.openFullLead}
+          <Link href={leadHref} className="btn-secondary">
+            {ui.common.openLead}
           </Link>
         ) : null}
         {waitingHuman ? (
