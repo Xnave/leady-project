@@ -475,6 +475,21 @@ describe("talkTurn with mocked LLM", () => {
   });
 });
 
+describe("nudge-if-silent cancelOn", () => {
+  it("cancels on any later turn for the same conversation", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile(
+      new URL("../../inngest/functions.ts", import.meta.url),
+      "utf8",
+    );
+    expect(src).toContain(
+      "event.data.conversationId == async.data.conversationId && event.data.tenantId == async.data.tenantId",
+    );
+    expect(src).not.toContain("async.data.triggerMessageId");
+    expect(src).not.toContain("event.data.scheduledAfterMessageId");
+  });
+});
+
 describe("kernel purity", () => {
   /**
    * The interpreter is the closed kernel: adding a capability must never edit it.

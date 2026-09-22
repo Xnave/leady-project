@@ -2,6 +2,7 @@ import { inngest } from "./client";
 import { runTurnNow, sendAndSave, type NudgeRequestedEvent } from "@/lib/flow/run-turn";
 import { loadTurnContext } from "@/lib/conversations";
 import { draftNudgeReply } from "@/lib/flow/llm";
+import { leadRepliedSinceAnchor } from "@/lib/flow/helpers";
 import { prisma } from "@/lib/db";
 import type { FlowDefinition } from "@/lib/flow/types";
 
@@ -68,10 +69,14 @@ export const runAgentTurn = inngest.createFunction(
 export const nudgeIfSilent = inngest.createFunction(
   {
     id: "nudge-if-silent",
+    concurrency: [{ key: "event.data.conversationId", limit: 1 }],
+    // `event` = incoming turn.requested; `async` = this nudge.requested.
+    // Any new turn for the conversation cancels the pending reminder; that
+    // turn will schedule a fresh one if the stage still wants it.
     cancelOn: [
       {
         event: "agent/turn.requested",
-        if: "event.data.conversationId == async.data.conversationId && event.data.tenantId == async.data.tenantId && async.data.triggerMessageId != event.data.scheduledAfterMessageId",
+        if: "event.data.conversationId == async.data.conversationId && event.data.tenantId == async.data.tenantId",
         timeout: "30d",
       },
     ],
@@ -86,6 +91,7 @@ export const nudgeIfSilent = inngest.createFunction(
       template: string;
       flowVersion?: number;
       scheduledAfterMessageId?: string;
+      anchorLeadMessageAt?: string;
     };
     await step.sleepUntil("wait", new Date(data.nudgeAt));
     return step.run("maybe-send", async () => {
@@ -112,6 +118,12 @@ export const nudgeIfSilent = inngest.createFunction(
       const ctx = await loadTurnContext(data.tenantId, data.conversationId);
       const stage = flow.stages[data.expectedStage];
       if (!stage) return { skipped: "missing-stage" };
+      if (
+        data.anchorLeadMessageAt &&
+        leadRepliedSinceAnchor(ctx.messages, data.anchorLeadMessageAt)
+      ) {
+        return { skipped: "replied" };
+      }
       const text = await draftNudgeReply(ctx, stage, data.template);
       if (!text.trim()) return { skipped: "empty-nudge" };
       const anchor = data.scheduledAfterMessageId ?? "0";

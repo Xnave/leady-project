@@ -94,6 +94,27 @@ export function shouldScheduleNudge(ctx: TurnContext, stageId: string, stage: St
   return true;
 }
 
+/** `lastLead + after`, or null when that instant is already due (don't fire on this turn). */
+export function resolveNudgeFireAt(
+  anchorAt: Date,
+  after: string,
+  now = new Date(),
+): Date | null {
+  const at = addIsoDuration(anchorAt, after);
+  if (at.getTime() <= now.getTime()) return null;
+  return at;
+}
+
+/** True when the lead wrote after the timestamp this reminder was anchored on. */
+export function leadRepliedSinceAnchor(
+  messages: MessageSnapshot[],
+  anchorLeadMessageAt: string,
+): boolean {
+  const anchor = Date.parse(anchorLeadMessageAt);
+  if (Number.isNaN(anchor)) return false;
+  return lastLeadMessageAt(messages, new Date(0)).getTime() > anchor;
+}
+
 export function lastLeadMessageAt(messages: MessageSnapshot[], fallback = new Date()): Date {
   let latest: Date | null = null;
   for (const m of messages) {

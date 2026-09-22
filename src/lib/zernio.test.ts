@@ -154,4 +154,13 @@ describe("parseZernioMessageReceived", () => {
       }),
     ).toBeNull();
   });
+
+  it("ignores payloads with no inbound direction", () => {
+    expect(
+      parseZernioMessageReceived({
+        event: "message.received",
+        message: { text: "hi", sender: { id: "1" }, conversationId: "c1" },
+      }),
+    ).toBeNull();
+  });
 });

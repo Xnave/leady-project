@@ -11,9 +11,9 @@ import {
   runCapabilityEffect,
 } from "@/lib/flow/registry";
 import {
-  addIsoDuration,
   lastLeadMessageAt,
   resolveNudgeAfterDuration,
+  resolveNudgeFireAt,
   resolvedNudgeSpec,
   shouldScheduleNudge,
 } from "@/lib/flow/helpers";
@@ -84,7 +84,7 @@ export type NudgeRequestedEvent = {
     nudgeAt: string;
     template: string;
     flowVersion: number;
-    /** Inbound message id for this turn; cancel only on a later turn.requested. */
+    /** Inbound message id this reminder was scheduled after (outbound idempotency). */
     scheduledAfterMessageId: string;
     afterUsed: string;
     anchorLeadMessageAt: string;
@@ -103,7 +103,8 @@ export function buildNudgeRequestedEvent(
   if (!nudge) return null;
   const after = resolveNudgeAfterDuration(nudge.after);
   const anchorAt = lastLeadMessageAt(ctx.messages);
-  const nudgeAt = addIsoDuration(anchorAt, after);
+  const nudgeAt = resolveNudgeFireAt(anchorAt, after);
+  if (!nudgeAt) return null;
   return {
     name: "agent/nudge.requested",
     id: `nudge-${ctx.conversation.id}-${triggerMessageId}`,

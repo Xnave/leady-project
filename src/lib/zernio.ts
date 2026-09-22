@@ -322,7 +322,7 @@ export function parseZernioMessageReceived(payload: unknown): ZernioInbound | nu
   if (root.event !== "message.received") return null;
   const message = root.message as Record<string, unknown> | undefined;
   if (!message) return null;
-  if (message.direction === "outgoing") return null;
+  if (message.direction !== "incoming") return null;
   const account = (root.account as Record<string, unknown> | undefined) ?? {};
   const sender = (message.sender as Record<string, unknown> | undefined) ?? {};
   const conversation = (root.conversation as Record<string, unknown> | undefined) ?? {};
