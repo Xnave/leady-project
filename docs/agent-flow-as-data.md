@@ -411,48 +411,9 @@ Encode this in JSON so ops does not invent ad-hoc branches in the interpreter.
 
 ## Per-stage nudge (not a global 24h)
 
-Do **not** block the inbound turn. After sending a question, if `stage.nudge` is set, enqueue a reminder. Collect might wait 24h; qualify might wait 72h; FAQ might have no nudge.
+Do **not** block the inbound turn. After a collect ask or a talk reply, if the stage has a nudge spec (talk defaults to `PT1H`), record `agent/nudge.requested` anchored on **the lead’s last message**. Inngest sleeps and cancels that job when a new `agent/turn.requested` arrives for the same conversation.
 
-```ts
-async function maybeScheduleNudge(ctx: TurnContext, stageId: string, stage: Stage) {
-  if (!stage.nudge) return;
-  const nudgeAt = addDuration(new Date(), stage.nudge.after);
-  await inngest.send({
-    name: "agent/nudge.requested",
-    data: {
-      tenantId: ctx.tenantId,
-      conversationId: ctx.conversation.id,
-      expectedStage: stageId,
-      nudgeAt: nudgeAt.toISOString(),
-      template: stage.nudge.template,
-      maxTimes: stage.nudge.maxTimes ?? 1,
-      flowVersion: ctx.agent.flow_version,
-    },
-    id: `nudge-${ctx.conversation.id}-${stageId}-${ctx.agent.flow_version}`,
-  });
-}
-
-export const nudgeIfSilent = inngest.createFunction(
-  { id: "nudge-if-silent" },
-  { event: "agent/nudge.requested" },
-  async ({ event, step }) => {
-    await step.sleepUntil("wait", new Date(event.data.nudgeAt));
-
-    const convo = await loadConversation(event.data);
-    if (convo.status === "waiting_human") return { skipped: "hitl" };
-    if (convo.updatedAt > new Date(event.data.nudgeAt)) return { skipped: "replied" };
-    if (convo.flow_state !== event.data.expectedStage) return { skipped: "moved-on" };
-    if ((convo.nudgeCountByStage?.[event.data.expectedStage] ?? 0) >= event.data.maxTimes) {
-      return { skipped: "max" };
-    }
-
-    await sendOnChannel(convo, event.data.template);
-    await incrementNudgeCount(convo.id, event.data.expectedStage);
-  },
-);
-```
-
-No Temporal. Template and duration come from JSON, not a hardcoded string in the worker.
+Runtime, CEL `cancelOn`, skip reasons, and copy-paste examples: **[nudges.md](./nudges.md)**. No Temporal. Duration and template come from flow JSON (`NudgeSpec`), not a hardcoded string in the worker.
 
 ---
 

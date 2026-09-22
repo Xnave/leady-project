@@ -2,7 +2,7 @@
 
 Multi-tenant agent CRM. Chat preview, leads with form fields, HITL inbox, JSON flows interpreted in-process (nudges via Inngest). WhatsApp via Zernio.
 
-Design: [docs/agent-runtime.md](docs/agent-runtime.md), [docs/agent-flow-as-data.md](docs/agent-flow-as-data.md).
+Design: [docs/architecture.md](docs/architecture.md) (overview), [AGENTS.md](AGENTS.md) (for coding agents), [docs/agent-runtime.md](docs/agent-runtime.md), [docs/agent-flow-as-data.md](docs/agent-flow-as-data.md).
 
 ## Run locally
 
@@ -33,11 +33,11 @@ Inbound: `POST /api/webhooks/zernio` (`message.received`). The URL must be publi
 
 Outbound replies use the Zernio inbox API once a WhatsApp conversation id is stored from the inbound webhook. Chat preview does not send to WhatsApp.
 
-Inngest is only required for delayed nudges (`npx inngest-cli@latest dev`).
+Inngest is only required for delayed nudges (`npx inngest-cli@latest dev`). Full behavior: [docs/nudges.md](docs/nudges.md).
 
-Nudge timing is **`NUDGE_AFTER_OVERRIDE` or PT23H after the lead’s last message** (not after the agent reply). With a second Zernio webhook to production, nudges may run on **Inngest Cloud** while you watch **local :8288** — use one webhook + local stack when debugging, or open the [Inngest Cloud dashboard](https://app.inngest.com) for production.
+Nudge timing is **`NUDGE_AFTER_OVERRIDE` or `PT1H` after the lead’s last message** (not after the agent reply). With a second Zernio webhook to production, nudges may run on **Inngest Cloud** while you watch **local :8288** — use one webhook + local stack when debugging, or open the [Inngest Cloud dashboard](https://app.inngest.com) for production.
 
-Nudges fire after silence since the lead’s last message (default **23h** in flow JSON, inside WhatsApp’s 24h window). For local testing, set `NUDGE_AFTER_OVERRIDE=PT5M` in `.env` and re-seed so the agent flow includes a talk-stage nudge (`npm run db:seed`).
+For local testing, set `NUDGE_AFTER_OVERRIDE=PT5M` in `.env`. Talk stages already include a catalog nudge; you do not need to re-seed unless the agent flow was built without one.
 
 Register a **second** Zernio webhook for ngrok (production webhook can stay — you may get duplicate replies while both are active):
 

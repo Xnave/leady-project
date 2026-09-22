@@ -31,7 +31,9 @@ First-time setup: `npm install && npx prisma db push && npx prisma generate && n
 
 ## Architecture
 
-Multi-tenant agent CRM. A lead messages on WhatsApp/Instagram (via Zernio) or the in-app demo chat; an agent answers by walking a **JSON flow** stored on the agent row. Postgres is the source of truth for conversation state — there is no graph framework. Design rationale lives in `docs/agent-runtime.md`, `docs/agent-flow-as-data.md`, `docs/agent-state-flow-concurrency.md`.
+Multi-tenant agent CRM. A lead messages on WhatsApp/Instagram (via Zernio) or the in-app demo chat; an agent answers by walking a **JSON flow** stored on the agent row. Postgres is the source of truth for conversation state — there is no graph framework.
+
+**Architecture (canonical):** [`docs/architecture.md`](docs/architecture.md) — components, capabilities, LLM vs deterministic rails. **Coding agents:** [`AGENTS.md`](AGENTS.md). Deeper notes: `docs/agent-runtime.md`, `docs/agent-flow-as-data.md`, `docs/agent-state-flow-concurrency.md`.
 
 ### Flow-as-data + the ports pattern (the core abstraction)
 
@@ -41,7 +43,7 @@ Multi-tenant agent CRM. A lead messages on WhatsApp/Instagram (via Zernio) or th
 
 **When adding a port, `run-turn.ts` is the only file to change.** Only touch `src/inngest/functions.ts` if the turn needs a new durable step or a new event.
 
-Because nudge scheduling is split (the port records the event, the Inngest wrapper sends it), callers that invoke `runTurnNow()` directly must send the returned `nudgeEvent` themselves — `dispatchNudgeEvent()` in `run-turn.ts` does this.
+Because nudge scheduling is split (the port records the event, the Inngest wrapper sends it), callers that invoke `runTurnNow()` directly must send the returned `nudgeEvent` themselves — `dispatchNudgeEvent()` in `run-turn.ts` does this. Details: [`docs/nudges.md`](docs/nudges.md).
 
 Turn ordering is protected by `concurrency: [{ key: "event.data.conversationId", limit: 1 }]` on `runAgentTurn`.
 
