@@ -6,6 +6,8 @@ Design: [docs/architecture.md](docs/architecture.md) (overview), [AGENTS.md](AGE
 
 ## Run locally
 
+Full walkthrough (Postgres on Mac, Inngest, ngrok / `NEXT_PUBLIC_APP_URL`): **[docs/setup.md](docs/setup.md)**.
+
 ```bash
 npm install
 npx prisma db push && npx prisma generate && npm run db:seed
