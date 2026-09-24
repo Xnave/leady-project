@@ -1,0 +1,127 @@
+/* ==========================================================================
+   Zapidly brand layer
+   Loaded AFTER globals.css (see src/app/layout.tsx). It only re-assigns
+   tokens globals.css already defines, plus four brand-chrome tokens. No
+   selectors other than the three theme roots below, so removing the import
+   restores the old look exactly.
+
+   Source of truth for the brand: the zapidly marketing repo
+   (src/app/globals.css). Rules for using these tokens: DESIGN.md.
+
+   Selectors mirror globals.css exactly — the dark block there is
+   :root:not([data-theme="light"]) (specificity 0,2,0), so a plain :root
+   override would lose to it.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Light — warm paper, burnt-coral accent
+   -------------------------------------------------------------------------- */
+:root {
+  /* Surfaces — warm neutrals instead of WhatsApp-Web blue-grey */
+  --bg: #f5f2ee;
+  --bg-elevated: #faf8f5;
+  --bg-sunken: #ede8e2;
+  --card: #ffffff;
+  --card-hover: #f8f5f1;
+  --line: #ebe5de;
+  --line-strong: #d8cfc5;
+  /* 3.91:1 on cards, 3.51:1 on the canvas (WCAG 1.4.11) */
+  --line-control: #8a7f74;
+  --chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23655c53' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+
+  /* Text */
+  --text: #1c1916;
+  --text-soft: #4a433c;
+  /* 5.86:1 on the canvas, 6.54:1 on cards */
+  --muted: #655c53;
+
+  /* Accent — landing coral #ff7a45 is only 2.59:1 on white, so light mode
+     uses a burnt coral for text and fills (5.03:1 on canvas, white text
+     on it 5.6:1). The bright coral is kept for graphics via --accent-bright
+     (3.38:1, the non-text minimum). */
+  --accent: #b93d10;
+  --accent-bright: #e8622c;
+  --accent-hover: #9c330c;
+  --accent-soft: #fff1ea;
+  --accent-line: #f5c3a8;
+  --accent-glow: rgba(232, 98, 44, 0.22);
+  --on-accent: #ffffff;
+
+  /* Brand chrome — sidebar brand bar, logo tile, auth screens */
+  --brand-bar: #1a1714;
+  --on-brand-bar: #f5efe6;
+  --brand-mark: #ff7a45;
+  --on-brand-mark: #1a0d06;
+
+  --font-sans: "Rubik", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", sans-serif;
+
+  /* Motion — same curve as the landing page's --ease-out */
+  --transition: 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  --transition-fast: 110ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* --------------------------------------------------------------------------
+   Dark — the landing page palette (dark warm-tech)
+   -------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e0c0a;
+    --bg-elevated: #13100d;
+    --bg-sunken: #090807;
+    --card: #1a1714;
+    --card-hover: #221e1a;
+    --line: #2a2520;
+    --line-strong: #3a332c;
+    /* 4.31:1 on cards */
+    --line-control: #857b71;
+    --chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a89f94' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+
+    --text: #f5efe6;
+    --text-soft: #d9d0c5;
+    --muted: #a89f94;
+
+    /* 6.9:1 on cards; dark ink on coral is 7.36:1 */
+    --accent: #ff7a45;
+    --accent-bright: #ff7a45;
+    --accent-hover: #ff8a5a;
+    --accent-soft: rgba(255, 122, 69, 0.14);
+    --accent-line: rgba(255, 122, 69, 0.45);
+    --accent-glow: rgba(255, 122, 69, 0.26);
+    --on-accent: #1a0d06;
+
+    --brand-bar: #13100d;
+    --on-brand-bar: #f5efe6;
+    --brand-mark: #ff7a45;
+    --on-brand-mark: #1a0d06;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0e0c0a;
+  --bg-elevated: #13100d;
+  --bg-sunken: #090807;
+  --card: #1a1714;
+  --card-hover: #221e1a;
+  --line: #2a2520;
+  --line-strong: #3a332c;
+  --line-control: #857b71;
+  --chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a89f94' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+
+  --text: #f5efe6;
+  --text-soft: #d9d0c5;
+  --muted: #a89f94;
+
+  --accent: #ff7a45;
+  --accent-bright: #ff7a45;
+  --accent-hover: #ff8a5a;
+  --accent-soft: rgba(255, 122, 69, 0.14);
+  --accent-line: rgba(255, 122, 69, 0.45);
+  --accent-glow: rgba(255, 122, 69, 0.26);
+  --on-accent: #1a0d06;
+
+  --brand-bar: #13100d;
+  --on-brand-bar: #f5efe6;
+  --brand-mark: #ff7a45;
+  --on-brand-mark: #1a0d06;
+}
