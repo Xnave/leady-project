@@ -9,7 +9,7 @@
    - Hand-written CSS, zero dependencies, no Tailwind.
    ========================================================================== */
 
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Hebrew:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+Hebrew:wght@400;500;600;700&display=swap");
 
 /* --------------------------------------------------------------------------
    1. Tokens — light (WhatsApp Web)
@@ -385,14 +385,14 @@ samp {
   height: 56px;
   padding: 0 14px;
   flex-shrink: 0;
-  background: var(--wa-header);
-  color: var(--on-wa-header);
+  background: var(--brand-bar);
+  color: var(--on-brand-bar);
   font-weight: 600;
   font-size: var(--fs-lg);
   letter-spacing: -0.02em;
 }
 .sidebar-brand:hover {
-  color: var(--on-wa-header);
+  color: var(--on-brand-bar);
   text-decoration: none;
   filter: brightness(1.06);
 }
@@ -400,8 +400,8 @@ samp {
   width: 30px;
   height: 30px;
   border-radius: 9px;
-  background: var(--on-wa-header);
-  color: var(--wa-header);
+  background: var(--brand-mark);
+  color: var(--on-brand-mark);
   display: grid;
   place-items: center;
   font-size: var(--fs-md);
@@ -492,15 +492,15 @@ samp {
   height: 20px;
   padding: 0 6px;
   border-radius: var(--radius-pill);
-  background: var(--wa-green);
-  color: #072b1c;
+  background: var(--brand-mark);
+  color: var(--on-brand-mark);
   font-size: var(--fs-2xs);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1;
   flex-shrink: 0;
 }
-.nav-item.active .nav-badge { background: var(--wa-green); color: #072b1c; }
+.nav-item.active .nav-badge { background: var(--brand-mark); color: var(--on-brand-mark); }
 
 .sidebar-footer {
   padding: 10px;
@@ -551,8 +551,8 @@ samp {
 .auth-shell {
   min-height: 100dvh;
   background:
-    radial-gradient(1200px 600px at 10% -10%, color-mix(in srgb, var(--wa-green) 18%, transparent), transparent 60%),
-    radial-gradient(900px 500px at 100% 0%, color-mix(in srgb, var(--wa-header) 12%, transparent), transparent 55%),
+    radial-gradient(1200px 600px at 10% -10%, color-mix(in srgb, var(--accent-bright) 16%, transparent), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, color-mix(in srgb, var(--brand-mark) 10%, transparent), transparent 55%),
     var(--bg);
 }
 .auth-page {
@@ -578,8 +578,8 @@ samp {
   border-radius: 10px;
   display: grid;
   place-items: center;
-  background: var(--wa-header);
-  color: var(--on-wa-header);
+  background: var(--brand-mark);
+  color: var(--on-brand-mark);
   font-weight: 800;
 }
 .auth-tagline {
