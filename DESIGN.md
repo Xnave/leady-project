@@ -59,7 +59,7 @@ Rules:
 | `--accent-hover`, `--accent-soft`, `--accent-line`, `--accent-glow` | Hover, tinted background, tinted border, focus ring / selection |
 | `--on-accent` | Text/icons on an `--accent` fill (white in light, ink in dark) |
 | `--brand-bar`, `--on-brand-bar` | The sidebar brand strip and similar brand chrome |
-| `--brand-mark`, `--on-brand-mark` | Logo tile, unread count badges: bright coral + ink in both themes |
+| `--brand-mark`, `--on-brand-mark` | Unread count badges and other small brand accents: bright coral + ink in both themes |
 | `--danger*`, `--warning*`, `--info*` | Status. Each has `-soft` (background) and `-line` (border). |
 | `--wa-*`, `--bubble-*`, `--chat-bg`, `--tick` | The WhatsApp chat replica (§2.2) |
 
@@ -165,11 +165,23 @@ disabled (already styled for `button`, `.btn`, inputs in `globals.css`), and loa
 
 ## 7. Logo
 
-- Logo files: `public/brand/` (SVG). Use the mark alone at ≤32px (sidebar tile,
-  favicon), and mark + "zapidly" wordmark (lowercase, weight 600, tracking
-  −0.03em, always `dir="ltr"`) where there's room.
-- The mark sits on `--brand-bar` or `--card`; never on WhatsApp green, never
-  recoloured, never stretched. Minimum size 16px.
+The mark is a coral chat bubble holding a lightning Z ("Bubble Bolt"). Files
+in `public/brand/` (same files in the zapidly landing repo):
+
+| File | Use |
+|---|---|
+| `zapidly-mark.svg` | Mark alone: sidebar, auth screen, favicon, avatars. Square, 64 grid. |
+| `zapidly-logo-on-dark.svg` | Mark + "zapidly" wordmark, paper text: dark backgrounds, dark theme. |
+| `zapidly-logo-on-light.svg` | Same lockup, ink text: light backgrounds, emails, docs, decks. |
+
+- The wordmark in the lockups is outlined (Rubik 600, −0.03em tracking,
+  lowercase), so it renders identically with no font loaded. Don't retype it
+  in live text next to the mark; use the lockup file. In-app chrome that
+  already shows the product name as text (sidebar) uses the mark only.
+- Size by height: lockup ≥ 18px tall, mark ≥ 16px. Clear space around either
+  = half the mark's height.
+- Never recolour, stretch, rotate, add effects, or place on WhatsApp green.
+  Always LTR, including in Hebrew UI.
 - Product name in UI copy: **Zapidly** (capital Z). "Leady" is the legacy
   internal name (repo, package, cookie names). The operator UI still shows it
   (`product` in `src/lib/ui/{en,he}.ts`, `metadata.title` in `layout.tsx`), and

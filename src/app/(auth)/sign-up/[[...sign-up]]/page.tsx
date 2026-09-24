@@ -21,7 +21,7 @@ export default async function SignUpPage() {
   return (
     <div className="auth-page">
       <div className="auth-brand">
-        <span className="auth-brand-mark">L</span>
+        <img className="auth-brand-mark" src="/brand/zapidly-mark.svg" alt="" />
         <span>{ui.product}</span>
       </div>
       <SignUp

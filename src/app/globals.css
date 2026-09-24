@@ -399,13 +399,7 @@ samp {
 .sidebar-brand-mark {
   width: 30px;
   height: 30px;
-  border-radius: 9px;
-  background: var(--brand-mark);
-  color: var(--on-brand-mark);
-  display: grid;
-  place-items: center;
-  font-size: var(--fs-md);
-  font-weight: 700;
+  display: block;
   flex-shrink: 0;
 }
 
@@ -575,12 +569,7 @@ samp {
 .auth-brand-mark {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  background: var(--brand-mark);
-  color: var(--on-brand-mark);
-  font-weight: 800;
+  display: block;
 }
 .auth-tagline {
   margin: 0 0 8px;
