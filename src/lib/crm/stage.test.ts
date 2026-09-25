@@ -57,6 +57,33 @@ describe("deriveLeadStage", () => {
     expect(d).toEqual({ stage: "pending", source: "auto", reason: "request:pending" });
   });
 
+  it("holds a manual talking stage against a qualified signal", () => {
+    const d = deriveLeadStage({
+      ...base,
+      current: { stage: "talking", source: "manual", reason: "", changedAt: t0 },
+      signals: [sig("qualified")],
+    });
+    expect(d).toEqual({ stage: "talking", source: "manual", reason: "" });
+  });
+
+  it("holds a manual new stage against a qualified signal", () => {
+    const d = deriveLeadStage({
+      ...base,
+      current: { stage: "new", source: "manual", reason: "", changedAt: t0 },
+      signals: [sig("qualified")],
+    });
+    expect(d).toEqual({ stage: "new", source: "manual", reason: "" });
+  });
+
+  it("lets a won signal break a manual qualified stage", () => {
+    const d = deriveLeadStage({
+      ...base,
+      current: { stage: "qualified", source: "manual", reason: "", changedAt: t0 },
+      signals: [sig("won")],
+    });
+    expect(d).toEqual({ stage: "won", source: "auto", reason: "won" });
+  });
+
   it("lets a request change after the manual choice return to auto", () => {
     const d = deriveLeadStage({
       ...base,

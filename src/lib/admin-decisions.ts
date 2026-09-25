@@ -43,6 +43,7 @@ export async function resolveStaffActor(): Promise<{
   actorUserId: string;
   actorLabel: string;
 }> {
+  if (adminBypass()) return { actorUserId: GLOBAL_ADMIN_ACTOR, actorLabel: GLOBAL_ADMIN_ACTOR };
   const user = await currentUser();
   const email = await primaryEmailFromClerkUser(user);
   if (email) {

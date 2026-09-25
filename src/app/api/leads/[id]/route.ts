@@ -5,6 +5,7 @@ import { isPipelineStage, type PipelineStage } from "@/lib/crm/types";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
 import { isDemoLead } from "@/lib/leads";
+import { normalizeLeadStatus } from "@/lib/ui";
 
 // Legacy statuses from the old LeadStatusSelect UI, mapped onto pipeline stages.
 const LEGACY_STATUS_TO_STAGE: Record<string, PipelineStage> = {
@@ -20,6 +21,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   const tenantId = await requireTenantId();
   const body = (await req.json().catch(() => ({}))) as { status?: string };
+  const isLegacyStatus = typeof body.status === "string" && body.status in LEGACY_STATUS_TO_STAGE;
   const stage = body.status
     ? (LEGACY_STATUS_TO_STAGE[body.status] ?? (isPipelineStage(body.status) ? body.status : undefined))
     : undefined;
@@ -34,6 +36,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       reason: "",
       actor: await resolveStaffActor(),
     });
+    // Dual-write for the legacy (flag-off) list, which still reads/filters on Lead.status.
+    // Only for legacy status values — raw pipeline ids passed directly don't map to a status.
+    if (isLegacyStatus) {
+      await prisma.lead.updateMany({
+        where: { id, tenantId },
+        data: { status: normalizeLeadStatus(body.status) },
+      });
+    }
   } catch (e) {
     if (e instanceof CrmNotFound) return NextResponse.json({ error: "Not found" }, { status: 404 });
     throw e;
