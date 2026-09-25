@@ -45,6 +45,12 @@ export function digestFullText(
   return [...lines, "", `${appUrl.replace(/\/$/, "")}/leads?tab=needs`].join("\n");
 }
 
+/** Compares two phone numbers ignoring formatting (spaces, dashes, +, parens). */
+export function phoneDigitsMatch(a: string, b: string): boolean {
+  const digits = (v: string) => v.replace(/\D/g, "");
+  return digits(a) === digits(b) && digits(a).length > 0;
+}
+
 export function localDateAndHour(now: Date, tz: string): { date: string; hour: number } {
   const date = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
   const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(now));

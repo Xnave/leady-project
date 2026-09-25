@@ -134,4 +134,26 @@ export const nudgeIfSilent = inngest.createFunction(
   },
 );
 
-export const inngestFunctions = [runAgentTurn, nudgeIfSilent];
+export const crmDigest = inngest.createFunction(
+  { id: "crm-digest", retries: 2 },
+  { cron: "0 * * * *" },
+  async ({ step }) => {
+    const { digestFeatureOn } = await import("@/lib/crm/flags");
+    if (!digestFeatureOn()) return { skipped: "flag_off" };
+    const { localDateAndHour } = await import("@/lib/crm/digest");
+    const now = new Date();
+    const tenants = await step.run("tenants", () =>
+      prisma.tenant.findMany({ where: { digestEnabled: true }, select: { id: true, timezone: true, digestHour: true } }),
+    );
+    const due = tenants.filter((t) => localDateAndHour(now, t.timezone).hour === t.digestHour);
+    for (const t of due) {
+      await step.run(`digest-${t.id}`, async () => {
+        const { runDigestForTenant } = await import("@/lib/crm/digest-send");
+        return runDigestForTenant(t.id, now);
+      });
+    }
+    return { tenants: due.length };
+  },
+);
+
+export const inngestFunctions = [runAgentTurn, nudgeIfSilent, crmDigest];

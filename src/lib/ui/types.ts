@@ -34,6 +34,8 @@ export type CrmCopy = {
   needsEmptyTitle: string; needsEmpty: string; emptyTitle: string; empty: string; loadFailed: string; retry: string;
   selected: string; bulkStage: string; bulkSnooze: string; bulkRead: string; clearSelection: string;
   keysHint: string; search: string;
+  digestTitle: string; digestBlurb: string; digestEnabled: string; digestHour: string;
+  digestPhone: string; digestOptInText: string; digestFeatureOff: string; saved: string;
 };
 
 export type UiCopy = {
@@ -48,6 +50,7 @@ export type UiCopy = {
     ops: string;
     admin: string;
     team: string;
+    digest: string;
   };
   langToggle: { he: string; en: string; uiLanguage: string };
   themeToggle: { appearance: string; system: string; light: string; dark: string };

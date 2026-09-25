@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildDigest, digestFullText, digestTemplateParams, localDateAndHour, sanitizeTemplateParam } from "./digest";
+import {
+  buildDigest,
+  digestFullText,
+  digestTemplateParams,
+  localDateAndHour,
+  phoneDigitsMatch,
+  sanitizeTemplateParam,
+} from "./digest";
 
 const at = new Date("2026-09-25T05:00:00Z");
 const item = (reason: "handoff" | "approval" | "reminder" | "cold", name = "Dana", stand = "Villa · 12–15/10") => ({
@@ -58,5 +65,22 @@ describe("localDateAndHour", () => {
   it("uses the tenant timezone", () => {
     expect(localDateAndHour(new Date("2026-09-25T05:30:00Z"), "Asia/Jerusalem")).toEqual({ date: "2026-09-25", hour: 8 });
     expect(localDateAndHour(new Date("2026-09-24T22:30:00Z"), "Asia/Jerusalem")).toEqual({ date: "2026-09-25", hour: 1 });
+  });
+});
+
+describe("phoneDigitsMatch", () => {
+  it("matches the same number formatted differently", () => {
+    expect(phoneDigitsMatch("+972 50-123-4567", "+972501234567")).toBe(true);
+    expect(phoneDigitsMatch("(050) 123-4567", "0501234567")).toBe(true);
+  });
+  it("does not normalize country code vs. local prefix", () => {
+    expect(phoneDigitsMatch("+972501234567", "0501234567")).toBe(false);
+  });
+  it("does not match on empty digits", () => {
+    expect(phoneDigitsMatch("", "")).toBe(false);
+    expect(phoneDigitsMatch("+-", "")).toBe(false);
+  });
+  it("rejects different numbers", () => {
+    expect(phoneDigitsMatch("+972501234567", "+972509999999")).toBe(false);
   });
 });

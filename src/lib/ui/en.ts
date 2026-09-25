@@ -12,6 +12,7 @@ export const en: UiCopy = {
     ops: "Ops",
     admin: "Admin",
     team: "Team",
+    digest: "Daily digest",
   },
   langToggle: { he: "עברית", en: "English", uiLanguage: "UI language" },
   themeToggle: { appearance: "Appearance", system: "Match system", light: "Light", dark: "Dark" },
@@ -630,5 +631,14 @@ export const en: UiCopy = {
     clearSelection: "Clear selection",
     keysHint: "Keys: j/k move · Enter open · Esc close · s stage · n next step · z snooze · / search",
     search: "Search name, phone, note",
+    digestTitle: "Daily digest",
+    digestBlurb: "A WhatsApp summary each morning of the leads that need you.",
+    digestEnabled: "Send the daily digest to this tenant",
+    digestHour: "Send at",
+    digestPhone: "Your WhatsApp number",
+    digestOptInText:
+      "Send me a daily WhatsApp summary of leads that need me. I can turn it off here anytime.",
+    digestFeatureOff: "The WhatsApp digest isn't enabled for this account yet.",
+    saved: "Saved",
   },
 };
