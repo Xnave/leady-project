@@ -25,6 +25,14 @@ export function useToasts(): (t: ToastInput) => void {
   return push;
 }
 
+/** No provider: nothing is shown and a deferred action commits at once. */
+const noToast = (t: ToastInput) => t.onExpire?.();
+
+/** For components that also render outside a provider (the full lead page). */
+export function useToastsOptional(): (t: ToastInput) => void {
+  return useContext(ToastContext) ?? noToast;
+}
+
 export function ToastProvider({ undoLabel, children }: { undoLabel: string; children: ReactNode }) {
   const [shown, setShown] = useState<Shown[]>([]);
   const pending = useRef(new Map<number, Pending>());

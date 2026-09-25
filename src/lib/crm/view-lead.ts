@@ -144,6 +144,7 @@ export async function loadLeadView(
         id: d.id,
         category: d.category,
         action: d.action,
+        actorUserId: d.actorUserId,
         actorLabel: d.actorLabel,
         details: d.details,
         createdAt: d.createdAt,

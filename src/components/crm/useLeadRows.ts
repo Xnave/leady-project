@@ -8,6 +8,7 @@ import { fillUi, type UiCopy } from "@/lib/ui";
 import { crmApi, type SnoozeDays } from "./crm-client";
 import { presetAt } from "./format";
 import {
+  diffRow,
   matchesView,
   mergePending,
   restoreRows,
@@ -232,5 +233,27 @@ export function useLeadRows(o: {
     [refresh, failed],
   );
 
-  return { rows, leaving, setStage, snooze, setNextStep, markRead };
+  /**
+   * A change made elsewhere (the peek panel): merge it into the row through the same
+   * pending-edit path, so a stale refresh cannot revert it, then refresh the counts.
+   * The peek reports its optimistic patch first and the server's row after its reload.
+   */
+  const absorb = useCallback(
+    (patch: Partial<LeadRowDTO> & { id: string }) => {
+      const saved = snapshot([patch.id]);
+      if (saved.length) {
+        const next = { ...saved[0].row, ...patch };
+        if (!Object.keys(diffRow(saved[0].row, next)).length) return;
+        settle(
+          edit(saved, () => next),
+          true,
+        );
+      }
+      refresh();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- helpers read refs only
+    [refresh],
+  );
+
+  return { rows, leaving, setStage, snooze, setNextStep, markRead, absorb };
 }

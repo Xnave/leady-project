@@ -9,6 +9,7 @@ import type { UiCopy } from "@/lib/ui";
 import { BulkBar } from "./BulkBar";
 import { LeadsGrid } from "./LeadsGrid";
 import { LeadsHeader } from "./LeadsHeader";
+import { LeadPeek } from "./LeadPeek";
 import type { Clock } from "./format";
 import { ListBar } from "./ListBar";
 import { ListMenus, type OpenMenu } from "./ListMenus";
@@ -16,6 +17,7 @@ import { PipelineStrip } from "./PipelineStrip";
 import { isSnoozable, type ViewFilter } from "./rows";
 import { ToastProvider } from "./Toasts";
 import { useLeadRows } from "./useLeadRows";
+import { useLeadPeek } from "./useLeadPeek";
 import { useListKeyboard } from "./useListKeyboard";
 import type { RowMenu } from "./LeadRow";
 
@@ -64,7 +66,7 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
     if (typeof document === "undefined" || document.activeElement !== searchRef.current) setQInput(q);
   }
 
-  const { rows, leaving, setStage, snooze, setNextStep, markRead } = useLeadRows({ initialRows, view, ui, lang, wonLabel });
+  const { rows, leaving, setStage, snooze, setNextStep, markRead, absorb } = useLeadRows({ initialRows, view, ui, lang, wonLabel });
   const [kb, setKb] = useState(0);
   const [kbNav, setKbNav] = useState(false);
   const [sel, setSel] = useState<ReadonlySet<string>>(new Set());
@@ -72,7 +74,8 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
   // Server time first (matches the HTML), then the browser's clock and timezone after mount.
   const [clock, setClock] = useState<Clock>(() => ({ now: new Date(nowIso), local: false }));
   const qTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const cursor = Math.min(kb, Math.max(0, rows.length - 1));
+  // Row click, Enter and the message icon open the peek; with it open, the cursor follows its lead.
+  const { peekId, cursor, openLead, closePeek } = useLeadPeek({ rows, kb, setKb, markRead });
 
   // Client clock for relative times; ticks once a minute.
   useEffect(() => {
@@ -119,8 +122,6 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
   };
   useEffect(() => () => clearTimeout(qTimer.current), []);
 
-  // Task 11 replaces this with the peek panel.
-  const openLead = useCallback((id: string) => router.push(`/leads/${id}`), [router]);
 
   const onCheck = useCallback((id: string, on: boolean) => {
     setSel((cur) => {
@@ -141,10 +142,12 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
     count: rows.length,
     kb: cursor,
     menuOpen: menu !== null,
+    peekOpen: peekId !== null,
     moveTo: (i) => {
       setKbNav(true);
       setKb(i);
       rowEl(i)?.scrollIntoView({ block: "nearest" });
+      if (peekId && rows[i]) openLead(rows[i].id);
     },
     open: (i) => rows[i] && openLead(rows[i].id),
     menu: (kind, i) => {
@@ -240,6 +243,7 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
         }}
         onNext={setNextStep}
       />
+      <LeadPeek leadId={peekId} onClose={closePeek} onChanged={absorb} ui={ui} lang={lang} wonLabel={wonLabel} />
     </div>
   );
 }

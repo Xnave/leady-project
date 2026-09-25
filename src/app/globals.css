@@ -3627,8 +3627,106 @@ button.crm-stage { cursor: pointer; }
   to { opacity: 0.45; }
 }
 
+/* Lead view + peek (Task 11) */
+.crm-peek:focus { outline: none; }
+.crm-peek-top .crm-ibtn { text-decoration: none; }
+.crm-peek-title bdi { color: var(--text-soft); }
+.crm-peek-body.stale { opacity: 0.55; transition: opacity var(--transition); }
+.crm-peek-body .crm-empty { padding-block: var(--space-7); }
+.crm-lv-who { display: grid; gap: 2px; min-width: 0; }
+.crm-lv-id h2 { display: flex; align-items: center; gap: var(--space-2); min-width: 0; overflow-wrap: anywhere; }
+.crm-lv-id h2 .badge { flex: none; }
+.crm-lv-tabwrap { border-block-start: 1px solid var(--line); }
+.crm-lv-panel { min-width: 0; }
+/* The chat keeps the shared WhatsApp replica; the tab only gives it a height. */
+.crm-lv-chat { display: flex; flex-direction: column; height: min(560px, 70dvh); }
+.crm-full-main .crm-lv-chat { height: auto; flex: 1; min-height: 480px; }
+.crm-full-main .crm-lv-panel { flex: 1; display: flex; flex-direction: column; }
+.crm-composer-closed { justify-content: space-between; }
+.crm-composer-closed > span { flex: 1; min-width: 180px; font-size: var(--fs-sm); color: var(--text-soft); }
+.crm-count {
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--bg-sunken);
+  color: var(--text-soft);
+}
+.crm-muted { color: var(--muted); margin: 0; font-size: var(--fs-sm); }
+.crm-sec-flush { border-block-start: 0; }
+
+/* Next step editor */
+.crm-next-text {
+  flex: 1;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  padding: var(--space-1) var(--space-2);
+  margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
+  border-radius: var(--radius-xs);
+  cursor: text;
+  transition: background-color var(--transition-fast);
+}
+.crm-next-text b { overflow-wrap: anywhere; }
+.crm-next-text span { display: flex; align-items: center; gap: var(--space-1); }
+.crm-next-input,
+.crm-next-date {
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+.crm-next-input { width: 100%; min-height: var(--hit); padding: 0 var(--space-3); }
+.crm-next-date { width: auto; min-height: 32px; padding: 0 var(--space-2); font-variant-numeric: tabular-nums; }
+.crm-next-input:focus,
+.crm-next-date:focus { outline: none; border-color: var(--accent-bright); box-shadow: var(--ring); }
+
+/* Notes list */
+.crm-notes,
+.crm-reqs,
+.crm-tl-list { list-style: none; margin: 0; padding: 0; }
+.crm-notes,
+.crm-reqs { display: grid; gap: var(--space-2); }
+.crm-note { position: relative; padding-inline-end: calc(var(--space-2) + 32px); }
+.crm-note[aria-busy="true"] { opacity: 0.6; }
+.crm-note-pin {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-end: 2px;
+  opacity: 0;
+  transition: opacity var(--transition-fast), background-color var(--transition-fast);
+}
+.crm-note-pin:focus-visible,
+.crm-note-pin[aria-pressed="true"] { opacity: 1; }
+.crm-note-pin[aria-pressed="true"] { color: var(--accent); }
+
+/* Details: dt/dd pairs are wrapped per row; the wrapper takes no box. */
+.crm-dl-row { display: contents; }
+
+/* Timeline groups */
+.crm-tl-group { display: grid; gap: var(--space-1); }
+.crm-tl-day { margin: 0; }
+.crm-tl-t small {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.crm-tl-empty { margin: 0; color: var(--muted); font-size: var(--fs-sm); }
+
+/* Peek skeleton */
+.crm-skel.av.lg { width: 44px; height: 44px; }
+.crm-skel-stack { display: grid; gap: var(--space-2); flex: 1; }
+
 /* Hover — pointer devices only */
 @media (hover: hover) {
+  .crm-next-text:hover { background: var(--bg-sunken); }
+  .crm-note:hover .crm-note-pin { opacity: 1; }
   .crm-pipe-cell:hover { background: var(--card-hover); }
   .crm-pipe-cell[aria-pressed="true"]:hover { background: var(--accent-soft); }
   .crm-tab:hover { color: var(--text); }
@@ -3646,11 +3744,13 @@ button.crm-stage { cursor: pointer; }
 /* Touch: no hover reveal, so the floating row actions go away entirely. */
 @media (hover: none) {
   .crm-row-actions { display: none; }
+  .crm-note-pin { opacity: 1; }
   .crm-keys { display: none; }
 }
 @media (pointer: coarse) {
   .crm-fchip,
   .crm-btn-quiet,
+  .crm-next-date,
   .crm-bulk button,
   .crm-toast button,
   .crm-pop-item { min-height: var(--hit); }

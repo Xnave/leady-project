@@ -12,7 +12,7 @@ import { stageLabel } from "./StageMenu";
 export type RowMenu = "stage" | "next" | "snooze";
 type Lang = "he" | "en";
 
-const FU_ICON: Record<NonNullable<LeadRowDTO["followUpReason"]>, IconName> = {
+export const FU_ICON: Record<NonNullable<LeadRowDTO["followUpReason"]>, IconName> = {
   handoff: "hand",
   approval: "clock",
   reminder: "bell",

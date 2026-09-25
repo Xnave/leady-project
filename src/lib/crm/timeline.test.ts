@@ -27,6 +27,18 @@ describe("buildLeadTimeline", () => {
     expect(items.map((i) => i.kind)).toEqual(["next_step", "snooze"]);
   });
 
+  it("labels a manual stage event with its actor's name from the decision log", () => {
+    const items = buildLeadTimeline({
+      ...empty,
+      stageEvents: [
+        { id: "s1", from: "talking", to: "lost", source: "manual", reason: "Price", actorUserId: "u1", createdAt: d("2026-09-25T10:00:00Z") },
+        { id: "s2", from: "new", to: "talking", source: "auto", reason: "engaged", actorUserId: null, createdAt: d("2026-09-25T09:00:00Z") },
+      ],
+      decisions: [{ id: "c", category: "lead", action: "stage", actorUserId: "u1", actorLabel: "Snir", details: {}, createdAt: d("2026-09-25T10:00:00Z") }],
+    });
+    expect(items.map((i) => i.data.actor)).toEqual(["Snir", ""]);
+  });
+
   it("emits a closed conversation as a second item", () => {
     const items = buildLeadTimeline({
       ...empty,

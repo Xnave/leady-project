@@ -11,6 +11,8 @@ export type ListKeyHandlers = {
   kb: number;
   /** A popover handles its own keys while open. */
   menuOpen: boolean;
+  /** With the peek panel open only j/k act (they move the peek); arrows scroll the panel. */
+  peekOpen: boolean;
   moveTo: (index: number) => void;
   open: (index: number) => void;
   menu: (kind: RowMenu, index: number) => void;
@@ -22,6 +24,7 @@ export type ListKeyHandlers = {
 /**
  * The list's shortcuts (from the mockup): j/k and arrows move, Enter opens, s stage,
  * n next step, z snooze, / search, Esc clears. Ignored while typing or with a modifier.
+ * While the peek panel is open only j/k act; the panel handles Esc itself.
  */
 export function useListKeyboard(h: ListKeyHandlers) {
   const ref = useRef(h);
@@ -42,6 +45,7 @@ export function useListKeyboard(h: ListKeyHandlers) {
       }
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
       const has = c.count > 0;
+      if (c.peekOpen && e.key !== "j" && e.key !== "k") return;
       switch (e.key) {
         case "/":
           e.preventDefault();

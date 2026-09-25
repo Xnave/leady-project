@@ -8,7 +8,7 @@ export type TimelineItem = { id: string; at: Date; kind: TimelineKind; data: Rec
 export type TimelineSources = {
   stageEvents: { id: string; from: string; to: string; source: string; reason: string; actorUserId: string | null; createdAt: Date }[];
   notes: { id: string; body: string; authorLabel: string; pinned: boolean; createdAt: Date }[];
-  decisions: { id: string; category: string; action: string; actorLabel: string; details: unknown; createdAt: Date }[];
+  decisions: { id: string; category: string; action: string; actorUserId?: string | null; actorLabel: string; details: unknown; createdAt: Date }[];
   requests: { id: string; kind: string; status: string; timeText: string; createdAt: Date }[];
   handoffs: { id: string; reason: string; status: string; createdAt: Date; completedAt: Date | null }[];
   conversations: { id: string; status: string; lifecycleReason: string; createdAt: Date; updatedAt: Date }[];
@@ -16,8 +16,12 @@ export type TimelineSources = {
 
 export function buildLeadTimeline(src: TimelineSources): TimelineItem[] {
   const items: TimelineItem[] = [];
+  // Stage events keep only the actor's id; the label comes from that actor's decisions.
+  const actorLabels = new Map<string, string>();
+  for (const d of src.decisions) if (d.actorUserId && !actorLabels.has(d.actorUserId)) actorLabels.set(d.actorUserId, d.actorLabel);
   for (const e of src.stageEvents) {
-    items.push({ id: `stage-${e.id}`, at: e.createdAt, kind: "stage", data: { from: e.from, to: e.to, source: e.source, reason: e.reason } });
+    const actor = e.actorUserId ? (actorLabels.get(e.actorUserId) ?? "") : "";
+    items.push({ id: `stage-${e.id}`, at: e.createdAt, kind: "stage", data: { from: e.from, to: e.to, source: e.source, reason: e.reason, actor } });
   }
   for (const n of src.notes) {
     items.push({ id: `note-${n.id}`, at: n.createdAt, kind: "note", data: { body: n.body, author: n.authorLabel } });
