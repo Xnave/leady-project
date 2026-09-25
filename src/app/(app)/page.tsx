@@ -51,7 +51,7 @@ export default async function HomePage() {
       <div className="work-strip">
         <Link href="/leads" className="card stat-card">
           <span className="stat-value">{counts.leads}</span>
-          <span className="stat-label">{ui.home.quickLeads}</span>
+          <span className="stat-label">{ui.crm.tabs.needs}</span>
         </Link>
         <Link href="/inbox" className="card stat-card">
           <span className="stat-value">{counts.inbox}</span>

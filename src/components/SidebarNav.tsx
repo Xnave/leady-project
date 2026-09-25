@@ -130,7 +130,11 @@ export function SidebarNav({
                   {ICONS[item.key]}
                   <span>{ui.nav[item.key]}</span>
                 </span>
-                {count > 0 ? <span className="nav-badge">{count > 99 ? "99+" : count}</span> : null}
+                {count > 0 ? (
+                  <span className="nav-badge" title={item.key === "leads" ? ui.crm.tabs.needs : undefined}>
+                    {count > 99 ? "99+" : count}
+                  </span>
+                ) : null}
               </Link>
             );
           })}
