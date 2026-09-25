@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { defaultFlow, defaultHitlPolicy, defaultLeadSchema, validateFlow } from "./validate";
 import { FlowConfigError } from "./types";
 import { salesOrSupportFlow } from "./templates";
+import { flowForCatalog } from "./catalog";
 
 describe("validateFlow", () => {
   it("accepts the inbox talk catalog", () => {
@@ -49,5 +50,34 @@ describe("validateFlow", () => {
     expect(() => validateFlow(salesOrSupportFlow, defaultLeadSchema, hitl)).toThrow(
       /request_human/,
     );
+  });
+});
+
+describe("pipeline annotations", () => {
+  it("accepts valid pipeline ids on stages", () => {
+    const flow = structuredClone(flowForCatalog("inbox"));
+    const talkId = Object.keys(flow.stages).find((id) => flow.stages[id].type === "talk")!;
+    flow.stages[talkId] = { ...flow.stages[talkId], pipeline: "talking" };
+    expect(() => validateFlow(flow, defaultLeadSchema, defaultHitlPolicy)).not.toThrow();
+  });
+
+  it("rejects unknown pipeline ids", () => {
+    const flow = structuredClone(flowForCatalog("inbox"));
+    const talkId = Object.keys(flow.stages).find((id) => flow.stages[id].type === "talk")!;
+    flow.stages[talkId] = { ...flow.stages[talkId], pipeline: "closed_won" };
+    expect(() => validateFlow(flow, defaultLeadSchema, defaultHitlPolicy)).toThrow(/pipeline/);
+  });
+
+  it("rejects unknown ids in pipelineByIntent", () => {
+    const flow = structuredClone(flowForCatalog("inbox"));
+    flow.stages.triage = {
+      type: "classify",
+      prompt: "x",
+      intents: ["sales", "spam"],
+      transitions: { sales: flow.start, spam: flow.start },
+      pipelineByIntent: { spam: "junk" },
+    };
+    flow.start = "triage";
+    expect(() => validateFlow(flow, defaultLeadSchema, defaultHitlPolicy)).toThrow(/pipelineByIntent/);
   });
 });
