@@ -17,7 +17,8 @@ export function buildDigest(items: DigestItem[]): Digest | null {
 export function sanitizeTemplateParam(v: string, max = 80): string {
   const clean = v.replace(/[\r\n\t]+/g, " ").replace(/ {2,}/g, " ").trim();
   if (!clean) return "-";
-  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+  const chars = Array.from(clean);
+  return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : clean;
 }
 
 /** Order matches the approved template: name, total, approval, handoff, reminder, cold, top. */

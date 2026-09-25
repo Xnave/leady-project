@@ -36,6 +36,13 @@ describe("digestTemplateParams", () => {
   it("never sends an empty param", () => {
     expect(sanitizeTemplateParam("   ")).toBe("-");
   });
+  it("truncates by code point, never splitting emoji", () => {
+    const result = sanitizeTemplateParam("a".repeat(38) + "😀" + "z", 40);
+    // No lone surrogates
+    expect(result).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+    // At most 40 code points (including trailing …)
+    expect(Array.from(result).length).toBeLessThanOrEqual(40);
+  });
 });
 
 describe("digestFullText", () => {
