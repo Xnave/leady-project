@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { loadTurnContext } from "@/lib/conversations";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
+import { safeRefreshLeadState } from "@/lib/crm/refresh";
 
 /** Staff reply on a lead conversation (role=human), never as the customer. */
 export async function POST(
@@ -67,6 +68,7 @@ export async function POST(
     where: { id: leadId },
     data: { adminUnread: false },
   });
+  await safeRefreshLeadState(tenantId, leadId);
 
   return NextResponse.json({ ok: true, conversationId: conversation.id });
 }

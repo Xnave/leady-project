@@ -35,6 +35,7 @@ import {
   looksLikePlatformUserId,
 } from "@/lib/leads";
 import { fetchZernioInboxContact } from "@/lib/zernio";
+import { safeRefreshLeadState } from "@/lib/crm/refresh";
 
 export {
   reopenConversation,
@@ -262,6 +263,7 @@ export async function persistInboundIfNew(opts: {
       where: { id: lead.id },
       data: { adminUnread: true },
     });
+    await safeRefreshLeadState(opts.tenantId, lead.id);
     return { conversationId: conversation.id, messageId: message.id, leadId: lead.id };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -547,6 +549,7 @@ export async function completeHitlTask(opts: {
     tenantId: opts.tenantId,
     conversationId: task.conversationId,
   });
+  await safeRefreshLeadState(opts.tenantId, task.leadId);
   return { task, conversationId: resumed.conversationId };
 }
 

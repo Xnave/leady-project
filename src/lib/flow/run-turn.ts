@@ -30,6 +30,7 @@ import type { Stage, TurnContext } from "@/lib/flow/types";
 import { rewritePhonesInText } from "@/lib/leads";
 import { inngest } from "@/inngest/client";
 import { prisma } from "@/lib/db";
+import { safeRefreshLeadState } from "@/lib/crm/refresh";
 
 function logTurn(phase: "enter" | "exit", extra: Record<string, unknown>) {
   console.log(JSON.stringify({ msg: "runAgentTurn", phase, ...extra }));
@@ -230,6 +231,7 @@ export async function runTurnNow(opts: {
       ms: Date.now() - started,
       triggerMessageId: opts.triggerMessageId,
     });
+    await safeRefreshLeadState(opts.tenantId, ctx.lead.id);
     return { ...result, stage: ctx.agent.flow.start, nudgeEvent };
   }
 
@@ -251,5 +253,6 @@ export async function runTurnNow(opts: {
     triggerMessageId: opts.triggerMessageId,
   });
 
+  await safeRefreshLeadState(opts.tenantId, ctx.lead.id);
   return { ...result, nudgeEvent };
 }
