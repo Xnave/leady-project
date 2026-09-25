@@ -77,8 +77,11 @@ export type PendingEdit = {
 
 /** Settled edits a refresh does not reflect are re-applied this many times, then trusted to the server. */
 export const MAX_MISSES = 2;
-/** Fields the server derives differently (timezone, summary); not used to confirm an edit. */
-const UNSTABLE: (keyof LeadRowDTO)[] = ["snoozedUntil", "followUpAt", "stand", "nextStepAt", "stageSource"];
+/**
+ * Fields the server derives differently (timezone, summary, undo's manual source); not used
+ * to confirm an edit. `nextStepAt` is stable: the server stores the client's ISO as sent.
+ */
+const UNSTABLE: (keyof LeadRowDTO)[] = ["snoozedUntil", "followUpAt", "stand", "stageSource"];
 
 export function diffRow(before: LeadRowDTO, after: LeadRowDTO): Partial<LeadRowDTO> {
   const out: Record<string, unknown> = {};
@@ -88,8 +91,10 @@ export function diffRow(before: LeadRowDTO, after: LeadRowDTO): Partial<LeadRowD
   return out as Partial<LeadRowDTO>;
 }
 
+/** A refresh shows the edit when every stable patched field matches. No stable field means no proof. */
 function reflects(server: LeadRowDTO, patch: Partial<LeadRowDTO>): boolean {
-  return (Object.keys(patch) as (keyof LeadRowDTO)[]).every((k) => UNSTABLE.includes(k) || server[k] === patch[k]);
+  const keys = (Object.keys(patch) as (keyof LeadRowDTO)[]).filter((k) => !UNSTABLE.includes(k));
+  return keys.length > 0 && keys.every((k) => server[k] === patch[k]);
 }
 
 /**

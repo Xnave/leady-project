@@ -112,6 +112,24 @@ describe("mergePending", () => {
     expect([second.rows[0].stage, second.drop]).toEqual(["talking", ["b"]]);
   });
 
+  it("confirms a date-only next-step edit by its date, not by an empty field set", () => {
+    const b = row({ id: "b", nextStepText: "call", nextStepAt: "2026-09-26T06:00:00.000Z", followUpReason: "reminder", due: false });
+    const moved = withNextStep(b, "call", "2026-09-28T06:00:00.000Z");
+    const p = edit(b, moved, { settled: true });
+    expect(Object.keys(p.patch).sort()).toEqual(["followUpAt", "nextStepAt", "stand"]);
+    const stale = mergePending([b], new Map([["b", p]]), { tab: "all" });
+    expect([stale.rows[0].nextStepAt, stale.drop, stale.missed]).toEqual(["2026-09-28T06:00:00.000Z", [], ["b"]]);
+    const fresh = mergePending([moved], new Map([["b", p]]), { tab: "all" });
+    expect([fresh.rows[0].nextStepAt, fresh.drop]).toEqual(["2026-09-28T06:00:00.000Z", ["b"]]);
+  });
+
+  it("never confirms a patch made only of unstable fields", () => {
+    const b = row({ id: "b" });
+    const p = edit(b, { ...b, snoozedUntil: "2026-09-26T06:00:00.000Z" }, { settled: true });
+    const out = mergePending([b], new Map([["b", p]]), { tab: "all" });
+    expect([out.drop, out.missed]).toEqual([[], ["b"]]);
+  });
+
   it("keeps a pending snooze out of needs you", () => {
     const a = row({ id: "a" });
     const b = row({ id: "b" });
