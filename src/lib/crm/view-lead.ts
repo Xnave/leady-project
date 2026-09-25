@@ -78,7 +78,7 @@ export async function loadLeadView(
   const latestConversation = lead.conversations[0] ?? null;
   const rawMessages = latestConversation
     ? await prisma.message.findMany({
-        where: { conversationId: latestConversation.id },
+        where: { tenantId, conversationId: latestConversation.id },
         orderBy: { createdAt: "desc" },
         take: 60,
       })
