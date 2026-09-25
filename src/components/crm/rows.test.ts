@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LeadRowDTO } from "@/lib/crm/view";
-import { isSnoozable, matchesView, restoreRows, withNextStep, withStage } from "./rows";
+import { diffRow, isSnoozable, matchesView, mergePending, restoreRows, withNextStep, withSnooze, withStage, type PendingEdit } from "./rows";
 
 const row = (o: Partial<LeadRowDTO> = {}): LeadRowDTO => ({
   id: "a",
@@ -71,5 +71,58 @@ describe("restoreRows", () => {
     const out = restoreRows(cur, [{ row: b, index: 1 }, { row: c, index: 2 }]);
     expect(out.map((r) => r.id)).toEqual(["a", "b", "c"]);
     expect(out[2].stage).toBe("talking");
+  });
+});
+
+describe("mergePending", () => {
+  const edit = (before: LeadRowDTO, after: LeadRowDTO, o: Partial<PendingEdit> = {}): PendingEdit => ({
+    token: 1,
+    patch: diffRow(before, after),
+    row: after,
+    index: 0,
+    settled: false,
+    misses: 0,
+    ...o,
+  });
+
+  it("keeps an in-flight stage change when a stale refresh lands", () => {
+    const a = row({ id: "a" });
+    const b = row({ id: "b" });
+    const pending = new Map([["b", edit(b, withStage(b, "won"))]]);
+    const out = mergePending([a, b], pending, { tab: "all" });
+    expect(out.rows.map((r) => [r.id, r.stage])).toEqual([["a", "talking"], ["b", "won"]]);
+    expect(out.drop).toEqual([]);
+  });
+
+  it("drops a settled edit once the server shows it", () => {
+    const b = row({ id: "b" });
+    const won = withStage(b, "won");
+    const pending = new Map([["b", edit(b, won, { settled: true })]]);
+    const out = mergePending([won], pending, { tab: "all" });
+    expect(out.drop).toEqual(["b"]);
+    expect(out.rows[0].stage).toBe("won");
+  });
+
+  it("re-applies a settled edit a stale refresh misses, then gives up", () => {
+    const b = row({ id: "b" });
+    const p = edit(b, withStage(b, "won"), { settled: true });
+    const first = mergePending([b], new Map([["b", p]]), { tab: "all" });
+    expect([first.rows[0].stage, first.missed]).toEqual(["won", ["b"]]);
+    const second = mergePending([b], new Map([["b", { ...p, misses: 1 }]]), { tab: "all" });
+    expect([second.rows[0].stage, second.drop]).toEqual(["talking", ["b"]]);
+  });
+
+  it("keeps a pending snooze out of needs you", () => {
+    const a = row({ id: "a" });
+    const b = row({ id: "b" });
+    const pending = new Map([["a", edit(a, withSnooze(a, "2026-09-26T06:00:00.000Z"))]]);
+    expect(mergePending([a, b], pending, { tab: "needs" }).rows.map((r) => r.id)).toEqual(["b"]);
+  });
+
+  it("puts back a row the server has not returned yet (undo in flight)", () => {
+    const a = row({ id: "a" });
+    const b = row({ id: "b" });
+    const pending = new Map([["b", edit(withStage(b, "lost"), b, { index: 0 })]]);
+    expect(mergePending([a], pending, { tab: "needs" }).rows.map((r) => r.id)).toEqual(["b", "a"]);
   });
 });

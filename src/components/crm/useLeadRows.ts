@@ -1,16 +1,25 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useRef, useState, useTransition } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, useTransition } from "react";
 import type { LeadRowDTO } from "@/lib/crm/view";
 import type { PipelineStage } from "@/lib/crm/types";
 import { fillUi, type UiCopy } from "@/lib/ui";
 import { crmApi, type SnoozeDays } from "./crm-client";
 import { presetAt } from "./format";
-import { matchesView, restoreRows, withNextStep, withSnooze, withStage, type ViewFilter } from "./rows";
+import {
+  matchesView,
+  mergePending,
+  restoreRows,
+  withNextStep,
+  withSnooze,
+  withStage,
+  type ViewFilter,
+} from "./rows";
 import { snoozeLabel } from "./SnoozeMenu";
 import { stageLabel } from "./StageMenu";
 import { useToasts } from "./Toasts";
+import { usePendingEdits, type Tokens } from "./usePendingEdits";
 
 /** Matches the `.crm-row` opacity/transform transition. */
 const LEAVE_MS = 160;
@@ -19,7 +28,9 @@ type Saved = { row: LeadRowDTO; index: number }[];
 /**
  * The list's rows with optimistic owner actions. Every action updates locally first,
  * rolls back with an error toast on failure, and reconciles with `router.refresh()`.
- * A snooze is deferred: it only reaches the server when its undo toast runs out.
+ * In-flight edits are kept in `pending` and laid over every refresh, so one action's
+ * refresh never reverts another that has not committed yet. A snooze is deferred: it
+ * only reaches the server when its undo toast runs out.
  */
 export function useLeadRows(o: {
   initialRows: LeadRowDTO[];
@@ -39,24 +50,20 @@ export function useLeadRows(o: {
   const viewRef = useRef(o.view);
   viewRef.current = o.view;
   const leavingRef = useRef(new Set<string>());
-  /** Snoozes still inside their undo window: a refresh must not bring these rows back. */
-  const pendingSnooze = useRef(new Map<string, LeadRowDTO>());
+  const { pending, track, settle, afterMerge } = usePendingEdits();
 
-  // New server rows (URL change or refresh) replace local state, keeping pending snoozes applied.
-  const [src, setSrc] = useState(o.initialRows);
-  if (src !== o.initialRows) {
-    setSrc(o.initialRows);
-    setRows(
-      o.initialRows.flatMap((r) => {
-        const p = pendingSnooze.current.get(r.id);
-        if (!p) return [r];
-        const snoozed = withSnooze(r, p.snoozedUntil ?? "");
-        return matchesView(snoozed, o.view) ? [snoozed] : [];
-      }),
-    );
+  // New server rows (URL change or refresh) replace local state, with in-flight edits re-applied.
+  const firstRows = useRef(o.initialRows);
+  useLayoutEffect(() => {
+    if (o.initialRows === firstRows.current) return;
+    firstRows.current = o.initialRows;
+    const { rows: merged, drop, missed } = mergePending(o.initialRows, pending.current, viewRef.current);
+    afterMerge(drop, missed);
     leavingRef.current = new Set();
     setLeaving(new Set());
-  }
+    setRows(merged);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- afterMerge / pending are ref-backed
+  }, [o.initialRows]);
 
   const refresh = useCallback(() => startTransition(() => router.refresh()), [router]);
   const failed = useCallback(() => toast({ msg: ui.crm.loadFailed }), [toast, ui]);
@@ -72,7 +79,7 @@ export function useLeadRows(o: {
   };
 
   /** Apply changed rows; ones that no longer fit the view fade out, then drop. */
-  const apply = useCallback((changed: LeadRowDTO[]) => {
+  const apply = (changed: LeadRowDTO[]) => {
     const byId = new Map(changed.map((r) => [r.id, r]));
     setRows((cur) => cur.map((r) => byId.get(r.id) ?? r));
     const gone = changed.filter((r) => !matchesView(r, viewRef.current)).map((r) => r.id);
@@ -83,44 +90,61 @@ export function useLeadRows(o: {
       setRows((cur) => cur.filter((r) => !still.includes(r.id)));
       setLeavingIds((s) => still.forEach((id) => s.delete(id)));
     }, LEAVE_MS);
-  }, []);
+  };
 
-  const restore = useCallback((saved: Saved) => {
+  /** Optimistic edit: apply locally and track it as in flight. */
+  const edit = (saved: Saved, change: (r: LeadRowDTO) => LeadRowDTO): Tokens => {
+    const after = saved.map((s) => change(s.row));
+    apply(after);
+    return track(saved.map((s, i) => ({ before: s.row, after: after[i], index: s.index })));
+  };
+
+  const restore = (saved: Saved) => {
     setLeavingIds((s) => saved.forEach((x) => s.delete(x.row.id)));
     setRows((cur) => restoreRows(cur, saved));
-  }, []);
+  };
 
   const setStage = useCallback(
     (ids: string[], stage: PipelineStage, reason: string) => {
       const saved = snapshot(ids);
       if (!saved.length) return;
-      apply(saved.map((s) => withStage(s.row, stage)));
+      const tokens = edit(saved, (r) => withStage(r, stage));
       const call =
         saved.length === 1
           ? crmApi.setStage(saved[0].row.id, stage, reason)
           : crmApi.bulk({ ids: saved.map((s) => s.row.id), op: "stage", stage, reason });
       call.then(
         () => {
+          settle(tokens, true);
           refresh();
           toast({
             msg: fillUi(ui.crm.stageSet, { stage: stageLabel(ui, wonLabel, stage) }),
             undo: () => {
               restore(saved);
-              Promise.all(saved.map((s) => crmApi.setStage(s.row.id, s.row.stage))).then(refresh, () => {
-                failed();
-                refresh();
-              });
+              const undoTokens = track(saved.map((s) => ({ before: withStage(s.row, stage), after: s.row, index: s.index })));
+              Promise.all(saved.map((s) => crmApi.setStage(s.row.id, s.row.stage))).then(
+                () => {
+                  settle(undoTokens, true);
+                  refresh();
+                },
+                () => {
+                  settle(undoTokens, false);
+                  failed();
+                  refresh();
+                },
+              );
             },
           });
         },
         () => {
+          settle(tokens, false);
           restore(saved);
           failed();
         },
       );
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot reads refs only
-    [apply, restore, refresh, failed, toast, ui, wonLabel],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- helpers read refs only
+    [refresh, failed, toast, ui, wonLabel],
   );
 
   const snooze = useCallback(
@@ -128,14 +152,12 @@ export function useLeadRows(o: {
       const saved = snapshot(ids);
       if (!saved.length) return;
       const until = presetAt(days);
-      saved.forEach((s) => pendingSnooze.current.set(s.row.id, withSnooze(s.row, until)));
-      apply(saved.map((s) => withSnooze(s.row, until)));
+      const tokens = edit(saved, (r) => withSnooze(r, until));
       const label = snoozeLabel(ui, days);
-      const drop = () => saved.forEach((s) => pendingSnooze.current.delete(s.row.id));
       toast({
         msg: fillUi(ui.crm.snoozed, { when: lang === "en" ? label.toLowerCase() : label }),
         undo: () => {
-          drop();
+          settle(tokens, false);
           restore(saved);
         },
         onExpire: () => {
@@ -145,11 +167,11 @@ export function useLeadRows(o: {
               : crmApi.bulk({ ids: saved.map((s) => s.row.id), op: "snooze", days });
           call.then(
             () => {
-              drop();
+              settle(tokens, true);
               refresh();
             },
             () => {
-              drop();
+              settle(tokens, false);
               restore(saved);
               failed();
             },
@@ -157,8 +179,8 @@ export function useLeadRows(o: {
         },
       });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot reads refs only
-    [apply, restore, refresh, failed, toast, ui, lang],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- helpers read refs only
+    [refresh, failed, toast, ui, lang],
   );
 
   const setNextStep = useCallback(
@@ -167,38 +189,47 @@ export function useLeadRows(o: {
       if (!saved.length) return;
       const at = presetAt(days);
       const t = text || saved[0].row.nextStepText || null;
-      apply([withNextStep(saved[0].row, t, at)]);
+      const tokens = edit(saved, (r) => withNextStep(r, t, at));
       crmApi.setNextStep(id, { text: t, at }).then(
         () => {
+          settle(tokens, true);
           refresh();
           toast({ msg: ui.crm.nextSaved });
         },
         () => {
+          settle(tokens, false);
           restore(saved);
           failed();
         },
       );
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot reads refs only
-    [apply, restore, refresh, failed, toast, ui],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- helpers read refs only
+    [refresh, failed, toast, ui],
   );
 
   const markRead = useCallback(
     (ids: string[]) => {
       const saved = snapshot(ids).filter((s) => s.row.unread);
       if (!saved.length) return;
-      apply(saved.map((s) => ({ ...s.row, unread: false })));
+      const tokens = edit(saved, (r) => ({ ...r, unread: false }));
       const call =
         saved.length === 1
           ? crmApi.markRead(saved[0].row.id)
           : crmApi.bulk({ ids: saved.map((s) => s.row.id), op: "read" });
-      call.then(refresh, () => {
-        restore(saved);
-        failed();
-      });
+      call.then(
+        () => {
+          settle(tokens, true);
+          refresh();
+        },
+        () => {
+          settle(tokens, false);
+          restore(saved);
+          failed();
+        },
+      );
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot reads refs only
-    [apply, restore, refresh, failed],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- helpers read refs only
+    [refresh, failed],
   );
 
   return { rows, leaving, setStage, snooze, setNextStep, markRead };

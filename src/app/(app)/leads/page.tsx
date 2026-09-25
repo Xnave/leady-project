@@ -75,6 +75,7 @@ export default async function LeadsPage({
       wonLabel={wonLabel}
       ui={ui}
       lang={lang}
+      nowIso={new Date().toISOString()}
     />
   );
 }

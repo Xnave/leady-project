@@ -1,6 +1,13 @@
 /** Time formatting for the CRM screens. Pure: every function takes `now` for tests. */
 type Lang = "he" | "en";
 
+/**
+ * The list's clock. `now` starts as the server's request time so the first client render
+ * matches the HTML; `local` turns true after mount. Only timezone-free strings (`relTime`)
+ * may render while `local` is false; `absTime` / `untilTime` depend on the browser's zone.
+ */
+export type Clock = { now: Date; local: boolean };
+
 const MIN = 60_000;
 const DAY = 1440;
 

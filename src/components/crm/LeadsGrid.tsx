@@ -2,6 +2,7 @@
 
 import type { CrmTab, LeadRowDTO } from "@/lib/crm/view";
 import type { UiCopy } from "@/lib/ui";
+import type { Clock } from "./format";
 import { Icon } from "./Icon";
 import { LeadRow, type RowMenu } from "./LeadRow";
 
@@ -17,7 +18,7 @@ export function LeadsGrid({
   ui,
   lang,
   wonLabel,
-  now,
+  clock,
   onPointer,
   onOpen,
   onCheck,
@@ -33,7 +34,7 @@ export function LeadsGrid({
   ui: UiCopy;
   lang: "he" | "en";
   wonLabel: string;
-  now: Date;
+  clock: Clock;
   onPointer: () => void;
   onOpen: (id: string) => void;
   onCheck: (id: string, on: boolean) => void;
@@ -69,7 +70,7 @@ export function LeadsGrid({
             ui={ui}
             lang={lang}
             wonLabel={wonLabel}
-            now={now}
+            clock={clock}
             onOpen={onOpen}
             onCheck={onCheck}
             onMenu={onMenu}

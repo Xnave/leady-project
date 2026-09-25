@@ -60,3 +60,69 @@ export function restoreRows(cur: LeadRowDTO[], saved: { row: LeadRowDTO; index: 
   }
   return out;
 }
+
+/**
+ * An optimistic edit still waiting on (or just confirmed by) the server. `patch` is what
+ * changed; `row`/`index` let a row the server does not return yet be put back in place.
+ */
+export type PendingEdit = {
+  token: number;
+  patch: Partial<LeadRowDTO>;
+  row: LeadRowDTO;
+  index: number;
+  /** The request succeeded; drop the edit once a refresh shows it (or after `MAX_MISSES`). */
+  settled: boolean;
+  misses: number;
+};
+
+/** Settled edits a refresh does not reflect are re-applied this many times, then trusted to the server. */
+export const MAX_MISSES = 2;
+/** Fields the server derives differently (timezone, summary); not used to confirm an edit. */
+const UNSTABLE: (keyof LeadRowDTO)[] = ["snoozedUntil", "followUpAt", "stand", "nextStepAt", "stageSource"];
+
+export function diffRow(before: LeadRowDTO, after: LeadRowDTO): Partial<LeadRowDTO> {
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(after) as (keyof LeadRowDTO)[]) {
+    if (after[k] !== before[k]) out[k] = after[k];
+  }
+  return out as Partial<LeadRowDTO>;
+}
+
+function reflects(server: LeadRowDTO, patch: Partial<LeadRowDTO>): boolean {
+  return (Object.keys(patch) as (keyof LeadRowDTO)[]).every((k) => UNSTABLE.includes(k) || server[k] === patch[k]);
+}
+
+/**
+ * Server rows with in-flight edits laid over them, so a refresh started before an edit
+ * committed cannot revert it. Returns which settled edits to drop (confirmed or given up)
+ * and which were missed (the refresh did not show them yet).
+ */
+export function mergePending(
+  server: LeadRowDTO[],
+  pending: ReadonlyMap<string, PendingEdit>,
+  view: ViewFilter,
+): { rows: LeadRowDTO[]; drop: string[]; missed: string[] } {
+  const drop: string[] = [];
+  const missed: string[] = [];
+  const keep = (id: string, p: PendingEdit, confirmed: boolean) => {
+    if (!p.settled) return true;
+    if (confirmed || p.misses + 1 >= MAX_MISSES) {
+      drop.push(id);
+      return false;
+    }
+    missed.push(id);
+    return true;
+  };
+  const seen = new Set<string>();
+  const rows = server.map((r) => {
+    seen.add(r.id);
+    const p = pending.get(r.id);
+    return p && keep(r.id, p, reflects(r, p.patch)) ? { ...r, ...p.patch } : r;
+  });
+  // Rows the server left out (e.g. an undo that has not landed yet) go back where they were.
+  for (const [id, p] of [...pending].sort((a, b) => a[1].index - b[1].index)) {
+    if (seen.has(id) || !keep(id, p, false)) continue;
+    rows.splice(Math.min(p.index, rows.length), 0, p.row);
+  }
+  return { rows: rows.filter((r) => matchesView(r, view)), drop, missed };
+}

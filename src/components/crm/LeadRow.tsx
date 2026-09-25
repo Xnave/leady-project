@@ -4,7 +4,7 @@ import { memo, type MouseEvent } from "react";
 import type { LeadRowDTO } from "@/lib/crm/view";
 import { isActiveStage } from "@/lib/crm/types";
 import { fillUi, type UiCopy } from "@/lib/ui";
-import { absTime, initials, relTime, untilTime } from "./format";
+import { absTime, initials, relTime, untilTime, type Clock } from "./format";
 import { Icon, type IconName } from "./Icon";
 import { isSnoozable } from "./rows";
 import { stageLabel } from "./StageMenu";
@@ -19,12 +19,14 @@ const FU_ICON: Record<NonNullable<LeadRowDTO["followUpReason"]>, IconName> = {
   cold: "cold",
 };
 
-function FollowUp({ r, ui, lang, now }: { r: LeadRowDTO; ui: UiCopy; lang: Lang; now: Date }) {
+function FollowUp({ r, ui, lang, clock }: { r: LeadRowDTO; ui: UiCopy; lang: Lang; clock: Clock }) {
+  const { now, local } = clock;
   if (r.snoozedUntil && new Date(r.snoozedUntil) > now) {
     return (
-      <span className="crm-fu crm-fu-cold" suppressHydrationWarning>
+      <span className="crm-fu crm-fu-cold">
         <Icon name="clock" small />
-        {ui.crm.snooze} · {untilTime(r.snoozedUntil, lang, now)}
+        {ui.crm.snooze}
+        {local ? ` · ${untilTime(r.snoozedUntil, lang, now)}` : null}
       </span>
     );
   }
@@ -35,21 +37,21 @@ function FollowUp({ r, ui, lang, now }: { r: LeadRowDTO; ui: UiCopy; lang: Lang;
       <span className={`crm-fu crm-fu-${r.followUpReason}`}>
         <Icon name={FU_ICON[r.followUpReason]} small />
         {ui.crm.reasons[r.followUpReason]}
-        <span className="crm-fu-age" suppressHydrationWarning>· {age}</span>
+        <span className="crm-fu-age">· {age}</span>
       </span>
     );
   }
   if (r.nextStepAt) {
     return (
-      <span className="crm-fu-none" title={absTime(r.nextStepAt, lang)} suppressHydrationWarning>
-        <Icon name="bell" small /> {untilTime(r.nextStepAt, lang, now)}
+      <span className="crm-fu-none" title={local ? absTime(r.nextStepAt, lang) : undefined}>
+        <Icon name="bell" small /> {local ? untilTime(r.nextStepAt, lang, now) : null}
       </span>
     );
   }
   return <span className="crm-fu-none">—</span>;
 }
 
-function LastContact({ r, ui, lang, now }: { r: LeadRowDTO; ui: UiCopy; lang: Lang; now: Date }) {
+function LastContact({ r, ui, lang, clock }: { r: LeadRowDTO; ui: UiCopy; lang: Lang; clock: Clock }) {
   let win = null;
   if (r.channel === "whatsapp" && isActiveStage(r.stage)) {
     if (r.windowClosed) win = <span className="crm-win">{ui.crm.windowClosed}</span>;
@@ -64,9 +66,7 @@ function LastContact({ r, ui, lang, now }: { r: LeadRowDTO; ui: UiCopy; lang: La
   return (
     <span className="crm-last" role="gridcell">
       <span className="crm-last-t">
-        <b title={absTime(r.lastAt, lang)} suppressHydrationWarning>
-          {relTime(r.lastAt, lang, now)}
-        </b>
+        <b title={clock.local ? absTime(r.lastAt, lang) : undefined}>{relTime(r.lastAt, lang, clock.now)}</b>
         {" · "}
         {r.lastBy === "them" ? ui.crm.them : ui.crm.us}
       </span>
@@ -75,10 +75,6 @@ function LastContact({ r, ui, lang, now }: { r: LeadRowDTO; ui: UiCopy; lang: La
   );
 }
 
-/**
- * Time text renders against the server's `now` first and re-renders on the client
- * right after mount (browser clock and timezone), hence `suppressHydrationWarning`.
- */
 type Props = {
   row: LeadRowDTO;
   kb: boolean;
@@ -87,13 +83,13 @@ type Props = {
   ui: UiCopy;
   lang: Lang;
   wonLabel: string;
-  now: Date;
+  clock: Clock;
   onOpen: (id: string) => void;
   onCheck: (id: string, on: boolean) => void;
   onMenu: (kind: RowMenu, id: string, anchor: HTMLElement) => void;
 };
 
-export const LeadRow = memo(function LeadRow({ row: r, kb, checked, leaving, ui, lang, wonLabel, now, onOpen, onCheck, onMenu }: Props) {
+export const LeadRow = memo(function LeadRow({ row: r, kb, checked, leaving, ui, lang, wonLabel, clock, onOpen, onCheck, onMenu }: Props) {
   const cls = ["crm-row", r.unread && "unread", kb && "kb", checked && "checked", leaving && "leaving"]
     .filter(Boolean)
     .join(" ");
@@ -155,9 +151,9 @@ export const LeadRow = memo(function LeadRow({ row: r, kb, checked, leaving, ui,
         )}
       </span>
       <span className="crm-col-fu" role="gridcell">
-        <FollowUp r={r} ui={ui} lang={lang} now={now} />
+        <FollowUp r={r} ui={ui} lang={lang} clock={clock} />
       </span>
-      <LastContact r={r} ui={ui} lang={lang} now={now} />
+      <LastContact r={r} ui={ui} lang={lang} clock={clock} />
       <span className="crm-row-actions" role="gridcell">
         <button type="button" className="crm-ibtn" aria-label={ui.crm.message} title={ui.crm.message} onClick={() => onOpen(r.id)}>
           <Icon name="msg" />

@@ -9,6 +9,7 @@ import type { UiCopy } from "@/lib/ui";
 import { BulkBar } from "./BulkBar";
 import { LeadsGrid } from "./LeadsGrid";
 import { LeadsHeader } from "./LeadsHeader";
+import type { Clock } from "./format";
 import { ListBar } from "./ListBar";
 import { ListMenus, type OpenMenu } from "./ListMenus";
 import { PipelineStrip } from "./PipelineStrip";
@@ -31,6 +32,8 @@ type Props = {
   wonLabel: string;
   ui: UiCopy;
   lang: "he" | "en";
+  /** The server's request time, so relative times hydrate identically. */
+  nowIso: string;
 };
 
 const SEARCH_DEBOUNCE_MS = 250;
@@ -43,7 +46,7 @@ export function LeadsList(props: Props) {
   );
 }
 
-function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, page, pageSize, wonLabel, ui, lang }: Props) {
+function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, page, pageSize, wonLabel, ui, lang, nowIso }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -66,14 +69,16 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
   const [kbNav, setKbNav] = useState(false);
   const [sel, setSel] = useState<ReadonlySet<string>>(new Set());
   const [menu, setMenu] = useState<OpenMenu | null>(null);
-  const [now, setNow] = useState(() => new Date());
+  // Server time first (matches the HTML), then the browser's clock and timezone after mount.
+  const [clock, setClock] = useState<Clock>(() => ({ now: new Date(nowIso), local: false }));
   const qTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const cursor = Math.min(kb, Math.max(0, rows.length - 1));
 
   // Client clock for relative times; ticks once a minute.
   useEffect(() => {
-    setNow(new Date());
-    const t = setInterval(() => setNow(new Date()), 60_000);
+    const tick = () => setClock({ now: new Date(), local: true });
+    tick();
+    const t = setInterval(tick, 60_000);
     return () => clearInterval(t);
   }, []);
 
@@ -82,27 +87,35 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
     document.title = counts.needs ? `(${counts.needs}) ${base}` : base;
   }, [counts.needs, ui]);
 
+  // Latest view for the search debounce, which fires after later renders.
+  const viewRef = useRef(view);
+  viewRef.current = view;
+
   const navigate = useCallback(
     (next: ViewFilter & { q: string }) => {
-      const params = new URLSearchParams(searchParams.toString());
+      // Any navigation carries the current search text, so a pending debounce is now redundant.
+      clearTimeout(qTimer.current);
+      // Read the URL at call time: a debounced call must not reuse params from when it was queued.
+      const params = new URLSearchParams(window.location.search);
       const set = (k: string, v?: string) => (v ? params.set(k, v) : params.delete(k));
       set("tab", next.tab);
       set("stage", next.stage);
       set("ch", next.channel);
       set("q", next.q.trim());
       params.delete("page");
-      setView({ tab: next.tab, stage: next.stage, channel: next.channel });
+      viewRef.current = { tab: next.tab, stage: next.stage, channel: next.channel };
+      setView(viewRef.current);
       setKb(0);
       setSel(new Set());
       startNav(() => router.replace(`${pathname}?${params.toString()}`, { scroll: false }));
     },
-    [pathname, router, searchParams],
+    [pathname, router],
   );
 
   const onQ = (value: string) => {
     setQInput(value);
     clearTimeout(qTimer.current);
-    qTimer.current = setTimeout(() => navigate({ ...view, q: value }), SEARCH_DEBOUNCE_MS);
+    qTimer.current = setTimeout(() => navigate({ ...viewRef.current, q: value }), SEARCH_DEBOUNCE_MS);
   };
   useEffect(() => () => clearTimeout(qTimer.current), []);
 
@@ -187,7 +200,7 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
         ui={ui}
         lang={lang}
         wonLabel={wonLabel}
-        now={now}
+        clock={clock}
         onPointer={() => setKbNav(false)}
         onOpen={openLead}
         onCheck={onCheck}
