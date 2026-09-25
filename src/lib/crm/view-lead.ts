@@ -191,6 +191,7 @@ export async function loadLeadView(
     })),
     timeline,
     conversationId: latestConversation?.id ?? null,
+    conversationStatus: latestConversation?.status ?? null,
     messages: messages.map((m) => ({ id: m.id, role: m.role, text: m.text, createdAt: m.createdAt.toISOString() })),
     details: buildDetails(fields, ui),
     requests: requestRows.map((r) => ({

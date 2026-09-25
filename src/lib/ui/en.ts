@@ -553,6 +553,7 @@ export const en: UiCopy = {
     windowLeft: "{h}h window left",
     windowClosed: "Window closed",
     windowClosedNote: "The 24h window is closed. Reply from your phone or with a template.",
+    conversationClosed: "Conversation closed",
     auto: "Auto",
     manual: "Manual",
     autoReasons: {

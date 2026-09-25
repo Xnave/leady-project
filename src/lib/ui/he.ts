@@ -553,6 +553,7 @@ export const he: UiCopy = {
     windowLeft: "{h} ש׳ לחלון",
     windowClosed: "חלון סגור",
     windowClosedNote: "חלון 24 השעות נסגר. אפשר לכתוב רק מהטלפון או בתבנית.",
+    conversationClosed: "השיחה נסגרה",
     auto: "אוטומטי",
     manual: "ידני",
     autoReasons: {

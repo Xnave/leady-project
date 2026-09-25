@@ -22,7 +22,8 @@ export function LeadChat({
   lang: "he" | "en";
   onSent: () => void;
 }) {
-  const closed = dto.channel === "whatsapp" && dto.windowClosed;
+  const conversationClosed = dto.conversationStatus === "closed";
+  const windowClosed = dto.channel === "whatsapp" && dto.windowClosed;
   return (
     <div className="crm-lv-chat">
       <ChatThread
@@ -31,7 +32,11 @@ export function LeadChat({
         leadName={dto.name}
         labels={{ emptyThread: ui.chat.emptyThread, roles: ui.roles, today: ui.chat.today, yesterday: ui.chat.yesterday }}
       />
-      {closed ? (
+      {conversationClosed ? (
+        <div className="composer crm-composer-closed">
+          <span>{ui.crm.conversationClosed}</span>
+        </div>
+      ) : windowClosed ? (
         <div className="composer crm-composer-closed">
           <span>{ui.crm.windowClosedNote}</span>
           {dto.waUrl ? (

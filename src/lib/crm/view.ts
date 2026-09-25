@@ -74,6 +74,8 @@ export type LeadViewDTO = LeadRowDTO & {
   notes: { id: string; body: string; authorLabel: string; pinned: boolean; createdAt: string }[];
   timeline: { day: string; items: (Omit<TimelineItem, "at"> & { at: string })[] }[];
   conversationId: string | null;
+  /** The latest conversation's status ("open" | "waiting_human" | "closed" | …), or null with none yet. */
+  conversationStatus: string | null;
   messages: { id: string; role: string; text: string; createdAt: string }[];
   details: { label: string; value: string }[];
   requests: { id: string; headline: string; status: string }[];

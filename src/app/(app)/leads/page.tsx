@@ -3,6 +3,7 @@ import { getUiLang } from "@/lib/cookies";
 import { crmV2Enabled } from "@/lib/crm/flags";
 import { loadLeadRows, type CrmTab } from "@/lib/crm/view";
 import { isPipelineStage } from "@/lib/crm/types";
+import { loadWonLabel } from "@/lib/crm/won-label";
 import { prisma } from "@/lib/db";
 import { requireTenantIdForPage } from "@/lib/tenant";
 import { uiCopy } from "@/lib/ui";
@@ -32,12 +33,7 @@ export default async function LeadsPage({
   const channel = sp.ch === "whatsapp" || sp.ch === "instagram" ? sp.ch : undefined;
   const q = sp.q?.trim() ?? "";
   const showDemo = sp.demo === "1";
-  const instances = await prisma.capabilityInstance.findMany({
-    where: { tenantId, enabled: true },
-    select: { capabilityId: true },
-  });
-  const caps = [...new Set(instances.map((i) => i.capabilityId))];
-  const wonLabel = (caps.length === 1 && ui.crm.wonByCapability[caps[0]]) || ui.crm.stages.won;
+  const wonLabel = await loadWonLabel(tenantId, ui);
 
   const load = (t: CrmTab) =>
     loadLeadRows({

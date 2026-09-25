@@ -1,8 +1,12 @@
 import { LeadWorkspace } from "@/components/LeadWorkspace";
+import { LeadPage } from "@/components/crm/LeadPage";
 import { prisma } from "@/lib/db";
 import type { FlowDefinition, LeadFields, LeadSchema } from "@/lib/flow/types";
 import { getUiLang } from "@/lib/cookies";
 import { enrichInstagramLeadIdentity } from "@/lib/conversations";
+import { crmV2Enabled } from "@/lib/crm/flags";
+import { loadLeadView } from "@/lib/crm/view";
+import { loadWonLabel } from "@/lib/crm/won-label";
 import {
   instagramProfileUrl,
   isDemoLead,
@@ -36,6 +40,18 @@ export default async function LeadDetailPage({
   const tenantId = await requireTenantIdForPage();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
+
+  const tenantFlags = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { crmV2: true } });
+  if (crmV2Enabled(tenantFlags)) {
+    const dto = await loadLeadView(tenantId, id, ui, lang);
+    if (!dto) notFound();
+    if (dto.unread) {
+      await prisma.lead.updateMany({ where: { id, tenantId }, data: { adminUnread: false } });
+    }
+    const wonLabel = await loadWonLabel(tenantId, ui);
+    return <LeadPage dto={dto} ui={ui} lang={lang} wonLabel={wonLabel} />;
+  }
+
   const instanceLabels = await loadInstanceFieldLabels(tenantId);
   const requestFieldLabels: Record<string, string> = {
     need: ui.common.need,
