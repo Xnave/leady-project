@@ -680,12 +680,7 @@ describe("crm purity", () => {
     const path = await import("node:path");
     for (const name of PURE) {
       const file = path.resolve(__dirname, `../crm/${name}.ts`);
-      let src: string;
-      try {
-        src = await readFile(file, "utf8");
-      } catch {
-        continue; // module lands in a later task
-      }
+      const src = await readFile(file, "utf8");
       expect(src, `${name}.ts imports prisma`).not.toMatch(/@\/lib\/db|@prisma\/client/);
       const code = src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
       expect(code, `${name}.ts names a domain`).not.toMatch(DOMAIN);
