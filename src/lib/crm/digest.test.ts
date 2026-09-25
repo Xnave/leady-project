@@ -4,6 +4,7 @@ import {
   digestFullText,
   digestTemplateParams,
   localDateAndHour,
+  pendingRecipients,
   phoneDigitsMatch,
   sanitizeTemplateParam,
 } from "./digest";
@@ -82,5 +83,22 @@ describe("phoneDigitsMatch", () => {
   });
   it("rejects different numbers", () => {
     expect(phoneDigitsMatch("+972501234567", "+972509999999")).toBe(false);
+  });
+});
+
+describe("pendingRecipients", () => {
+  const all = [{ clerkUserId: "a" }, { clerkUserId: "b" }, { clerkUserId: "c" }];
+
+  it("returns everyone when nothing has been sent", () => {
+    expect(pendingRecipients(all, [])).toEqual(all);
+  });
+  it("excludes recipients already in the sent list", () => {
+    expect(pendingRecipients(all, ["b"])).toEqual([{ clerkUserId: "a" }, { clerkUserId: "c" }]);
+  });
+  it("returns empty once everyone is in the sent list", () => {
+    expect(pendingRecipients(all, ["a", "b", "c"])).toEqual([]);
+  });
+  it("ignores sent ids that aren't in the recipient list", () => {
+    expect(pendingRecipients(all, ["z"])).toEqual(all);
   });
 });

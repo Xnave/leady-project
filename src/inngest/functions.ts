@@ -141,7 +141,10 @@ export const crmDigest = inngest.createFunction(
     const { digestFeatureOn } = await import("@/lib/crm/flags");
     if (!digestFeatureOn()) return { skipped: "flag_off" };
     const { localDateAndHour } = await import("@/lib/crm/digest");
-    const now = new Date();
+    // Memoized so replays (retries, step re-execution) see the same instant
+    // instead of drifting to whatever wall-clock time the replay happens at.
+    const nowIso = await step.run("now", () => new Date().toISOString());
+    const now = new Date(nowIso);
     const tenants = await step.run("tenants", () =>
       prisma.tenant.findMany({ where: { digestEnabled: true }, select: { id: true, timezone: true, digestHour: true } }),
     );

@@ -51,6 +51,15 @@ export function phoneDigitsMatch(a: string, b: string): boolean {
   return digits(a) === digits(b) && digits(a).length > 0;
 }
 
+/**
+ * Recipients not yet in a day's sent list. Used to resume a digest run after
+ * a partial failure: only whoever isn't already recorded gets sent to again.
+ */
+export function pendingRecipients<T extends { clerkUserId: string }>(all: T[], sentIds: string[]): T[] {
+  const sent = new Set(sentIds);
+  return all.filter((r) => !sent.has(r.clerkUserId));
+}
+
 export function localDateAndHour(now: Date, tz: string): { date: string; hour: number } {
   const date = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
   const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(now));

@@ -13,6 +13,7 @@ import {
   digestFullText,
   digestTemplateParams,
   localDateAndHour,
+  pendingRecipients,
   phoneDigitsMatch,
   type DigestItem,
 } from "./digest";
@@ -64,6 +65,15 @@ export async function loadDueDigestItems(tenantId: string, now: Date): Promise<D
  * Sends one tenant's digest for `now`, if it hasn't already gone out today
  * (tenant-local day) and there is at least one opted-in recipient with
  * something to report. No-op unless `digestFeatureOn()`.
+ *
+ * Items are loaded and the digest built BEFORE `DigestLog` is touched: an
+ * empty digest writes nothing, so a later run the same day (once something
+ * becomes due) can still send. Once the digest is non-empty, the day's log
+ * row is claimed (found-or-created) and each successful send appends its
+ * recipient's `clerkUserId` to `DigestLog.recipients` — so a retry after a
+ * partial failure (one send throws mid-loop) only sends to whoever is still
+ * missing from that list, instead of either re-sending to everyone or
+ * skipping the whole day via `already_sent`.
  */
 export async function runDigestForTenant(
   tenantId: string,
@@ -77,17 +87,27 @@ export async function runDigestForTenant(
   const { date } = localDateAndHour(now, tenant.timezone);
   const recipients = await prisma.digestRecipient.findMany({ where: { tenantId, optedInAt: { not: null } } });
   if (recipients.length === 0) return { sent: 0, skipped: "no_recipients" as const };
-  // Claim the day first — the unique index makes a retry a no-op.
-  try {
-    await prisma.digestLog.create({ data: { tenantId, date } });
-  } catch {
-    return { sent: 0, skipped: "already_sent" as const };
-  }
+
   const items = await loadDueDigestItems(tenantId, now);
   const digest = buildDigest(items);
   if (!digest) return { sent: 0, skipped: "empty" as const };
+
+  // Find or create today's log row. The unique index means a concurrent
+  // create loses the race harmlessly — re-read picks up whichever row won.
+  let log = await prisma.digestLog.findUnique({ where: { tenantId_date: { tenantId, date } } });
+  if (!log) {
+    try {
+      log = await prisma.digestLog.create({ data: { tenantId, date, itemCount: digest.total } });
+    } catch {
+      log = await prisma.digestLog.findUniqueOrThrow({ where: { tenantId_date: { tenantId, date } } });
+    }
+  }
+  const sentIds = Array.isArray(log.recipients) ? [...(log.recipients as string[])] : [];
+  const pending = pendingRecipients(recipients, sentIds);
+  if (pending.length === 0) return { sent: 0, skipped: "already_sent" as const };
+
   let sent = 0;
-  for (const r of recipients) {
+  for (const r of pending) {
     const params = digestTemplateParams(digest, r.label || tenant.name);
     await sendWhatsAppTemplate({
       accountId: env("DIGEST_WHATSAPP_ACCOUNT_ID"),
@@ -96,11 +116,14 @@ export async function runDigestForTenant(
       variables: Object.fromEntries(params.map((v, i) => [String(i + 1), v])),
     });
     sent++;
+    sentIds.push(r.clerkUserId);
+    // Persist after each send so a crash mid-loop still leaves an accurate
+    // "who's done" list for the next retry.
+    await prisma.digestLog.update({
+      where: { tenantId_date: { tenantId, date } },
+      data: { itemCount: digest.total, recipients: sentIds },
+    });
   }
-  await prisma.digestLog.update({
-    where: { tenantId_date: { tenantId, date } },
-    data: { itemCount: digest.total, recipients: recipients.map((r) => r.clerkUserId) },
-  });
   return { sent };
 }
 
