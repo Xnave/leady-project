@@ -13,18 +13,11 @@ import {
   type LeadRowDTO,
   type LeadRowInput,
 } from "./view";
+import { needsWhere } from "./needs";
 import { ACTIVE_STAGES, CLOSED_STAGES, FOLLOW_UP_PRIORITY, type FollowUpReason, type PipelineStage } from "./types";
 
 function demoWhere(showDemo: boolean): Prisma.LeadWhereInput {
   return showDemo ? {} : { NOT: { externalUserId: { startsWith: "demo-" } } };
-}
-
-function needsWhere(now: Date): Prisma.LeadWhereInput {
-  return {
-    followUpReason: { not: null },
-    followUpAt: { lte: now },
-    OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }],
-  };
 }
 
 function tabWhere(tab: CrmTab, now: Date): Prisma.LeadWhereInput {

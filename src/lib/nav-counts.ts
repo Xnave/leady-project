@@ -1,3 +1,4 @@
+import { needsWhere } from "@/lib/crm/needs";
 import { prisma } from "@/lib/db";
 
 export type NavCounts = {
@@ -7,17 +8,10 @@ export type NavCounts = {
 };
 
 export async function getNavCounts(tenantId: string): Promise<NavCounts> {
-  const now = new Date();
   const [inbox, needsYou] = await Promise.all([
     prisma.hitlTask.count({ where: { tenantId, status: "open" } }),
-    prisma.lead.count({
-      where: {
-        tenantId,
-        followUpReason: { not: null },
-        followUpAt: { lte: now },
-        OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }],
-      },
-    }),
+    // Demo leads count here on purpose (owner request, 7cc16f2); the CRM list hides them unless "show demo" is on.
+    prisma.lead.count({ where: { tenantId, ...needsWhere(new Date()) } }),
   ]);
   return { inbox, leads: needsYou };
 }
