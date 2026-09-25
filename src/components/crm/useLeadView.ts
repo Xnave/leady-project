@@ -7,18 +7,31 @@ import { fillUi, type UiCopy } from "@/lib/ui";
 import { crmApi, type SnoozeDays } from "./crm-client";
 import { presetAt } from "./format";
 import { rowPatchFromView } from "./lead-view";
-import { withNextStep, withSnooze, withStage } from "./rows";
+import { undoPatch, withNextStep, withSnooze, withStage, type PeekReport } from "./rows";
 import { snoozeLabel } from "./SnoozeMenu";
 import { stageLabel } from "./StageMenu";
 import { useToastsOptional, type ToastInput } from "./Toasts";
 
-export type RowChange = Partial<LeadRowDTO> & { id: string };
 /**
  * `optimistic`: shown before the request lands. `confirmed`: the request succeeded (the
- * row is the reloaded server view when the reload worked). `failed`: roll back to this row.
+ * row is the reloaded server view when the reload worked). `failed`: undo this action.
  */
-export type ChangePhase = "optimistic" | "confirmed" | "failed";
+export type ChangePhase = PeekReport["phase"];
 type Note = LeadViewDTO["notes"][number];
+
+/** Action tokens, unique across remounts (0 means "no action", e.g. a reload after a chat send). */
+let nextAction = 1;
+
+/** The fields `after` changed, with their `before` values, for any object shape. */
+function undoFields<T extends object>(before: T, after: T): Partial<T> {
+  const out: Partial<T> = {};
+  for (const k of Object.keys(after) as (keyof T)[]) if (after[k] !== before[k]) out[k] = before[k];
+  return out;
+}
+
+/** The list-row fields this action changed, with their values from before it. */
+const rowUndo = (before: LeadViewDTO, after: LeadViewDTO) =>
+  undoPatch(rowPatchFromView(before) as LeadRowDTO, rowPatchFromView(after) as LeadRowDTO);
 
 /**
  * One lead's view with optimistic owner actions. Each action patches the view at once,
@@ -32,7 +45,7 @@ export function useLeadView(o: {
   ui: UiCopy;
   lang: "he" | "en";
   wonLabel: string;
-  onChanged?: (row: RowChange, phase: ChangePhase) => void;
+  onChanged?: (report: PeekReport) => void;
 }) {
   const { ui, lang, wonLabel } = o;
   const toast = useToastsOptional();
@@ -53,49 +66,61 @@ export function useLeadView(o: {
   const reloadSeq = useRef(0);
 
   const report = useCallback(
-    (next: LeadViewDTO, phase: ChangePhase) => changedRef.current?.(rowPatchFromView(next), phase),
+    (next: LeadViewDTO, phase: ChangePhase, action: number, undo?: Partial<LeadRowDTO>) =>
+      changedRef.current?.({ row: rowPatchFromView(next), phase, action, undo }),
     [],
   );
 
-  const reload = useCallback(async () => {
+  /** Undo one action locally and in the list: only the fields it changed go back. */
+  const rollback = useCallback(
+    (before: LeadViewDTO, after: LeadViewDTO, action: number) => {
+      const undo = undoFields(before, after);
+      setD((cur) => (cur.id === before.id ? { ...cur, ...undo } : cur));
+      report(before, "failed", action, rowUndo(before, after));
+    },
+    [report],
+  );
+
+  /** Reload the view; `action` is the action whose success it confirms (0 for none). */
+  const reload = useCallback(async (action = 0) => {
     const id = dRef.current.id;
     const seq = ++reloadSeq.current;
     try {
       const fresh = await crmApi.view(id);
       if (seq !== reloadSeq.current || inflight.current > 0 || dRef.current.id !== fresh.id) return;
       setD(fresh);
-      report(fresh, "confirmed");
+      report(fresh, "confirmed", action);
     } catch {
       // The request itself succeeded: confirm the optimistic row so the list stops holding it.
-      if (seq === reloadSeq.current && inflight.current === 0) report(dRef.current, "confirmed");
+      if (seq === reloadSeq.current && inflight.current === 0) report(dRef.current, "confirmed", action);
     }
   }, [report]);
 
   /** Apply `change` locally, run `call`, then reload. Resolves true on success. */
   const mutate = useCallback(
     (change: (cur: LeadViewDTO) => LeadViewDTO, call: () => Promise<unknown>, done?: ToastInput): Promise<boolean> => {
+      const action = nextAction++;
       const before = dRef.current;
       const after = change(before);
       setD(after);
-      report(after, "optimistic");
+      report(after, "optimistic", action);
       inflight.current += 1;
       return call().then(
         () => {
           inflight.current -= 1;
           if (done) toast(done);
-          void reload();
+          void reload(action);
           return true;
         },
         () => {
           inflight.current -= 1;
-          if (dRef.current.id === before.id) setD(before);
-          report(before, "failed");
+          rollback(before, after, action);
           toast({ msg: ui.crm.loadFailed });
           return false;
         },
       );
     },
-    [reload, report, toast, ui],
+    [reload, report, rollback, toast, ui],
   );
 
   const setStage = (stage: PipelineStage, reason: string) => {
@@ -141,28 +166,26 @@ export function useLeadView(o: {
 
   /** Deferred like the list's snooze: it reaches the server when the undo toast runs out. */
   const snooze = (days: SnoozeDays) => {
+    const action = nextAction++;
     const before = dRef.current;
     const after = { ...before, ...withSnooze(before, presetAt(days)) };
     setD(after);
-    report(after, "optimistic");
+    report(after, "optimistic", action);
     const label = snoozeLabel(ui, days);
-    const rollback = () => {
-      if (dRef.current.id === before.id) setD(before);
-      report(before, "failed");
-    };
+    const undo = () => rollback(before, after, action);
     toast({
       msg: fillUi(ui.crm.snoozed, { when: lang === "en" ? label.toLowerCase() : label }),
-      undo: rollback,
+      undo,
       onExpire: () => {
         inflight.current += 1;
         crmApi.snooze(before.id, days).then(
           () => {
             inflight.current -= 1;
-            void reload();
+            void reload(action);
           },
           () => {
             inflight.current -= 1;
-            rollback();
+            undo();
             toast({ msg: ui.crm.loadFailed });
           },
         );

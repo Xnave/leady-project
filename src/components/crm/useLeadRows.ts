@@ -3,13 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useLayoutEffect, useRef, useState, useTransition } from "react";
 import type { LeadRowDTO } from "@/lib/crm/view";
-import type { ChangePhase } from "./useLeadView";
 import type { PipelineStage } from "@/lib/crm/types";
 import { fillUi, type UiCopy } from "@/lib/ui";
 import { crmApi, type SnoozeDays } from "./crm-client";
 import { presetAt } from "./format";
 import {
-  diffRow,
   matchesView,
   mergePending,
   restoreRows,
@@ -21,6 +19,7 @@ import {
 import { snoozeLabel } from "./SnoozeMenu";
 import { stageLabel } from "./StageMenu";
 import { useToasts } from "./Toasts";
+import { useLeadAbsorb } from "./useLeadAbsorb";
 import { usePendingEdits, type Tokens } from "./usePendingEdits";
 
 /** Matches the `.crm-row` opacity/transform transition. */
@@ -234,35 +233,8 @@ export function useLeadRows(o: {
     [refresh, failed],
   );
 
-  /**
-   * A change made in the peek panel, through the same pending-edit path as the list's own
-   * actions. `optimistic` tracks it unsettled (a refresh cannot revert it); `confirmed`
-   * settles it and refreshes the counts; `failed` drops it, restores the row, refreshes.
-   */
-  const absorb = useCallback(
-    (patch: Partial<LeadRowDTO> & { id: string }, phase: ChangePhase) => {
-      const id = patch.id;
-      const held = pending.current.get(id);
-      const saved = snapshot([id]);
-      const next = saved.length ? { ...saved[0].row, ...patch } : null;
-      const changed = Boolean(next && Object.keys(diffRow(saved[0].row, next)).length);
-      if (phase === "optimistic") {
-        if (changed) edit(saved, () => next!);
-        return;
-      }
-      if (phase === "failed") {
-        if (held) settle(new Map([[id, held.token]]), false);
-        if (changed) apply([next!]);
-      } else if (changed) {
-        settle(edit(saved, () => next!), true);
-      } else if (held) {
-        settle(new Map([[id, held.token]]), true);
-      }
-      refresh();
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- helpers read refs only
-    [refresh],
-  );
+  /** Reports from the peek panel, per action (see `useLeadAbsorb`). */
+  const absorb = useLeadAbsorb({ pending, snapshot, edit, apply, settle, refresh });
 
   return { rows, leaving, setStage, snooze, setNextStep, markRead, absorb };
 }

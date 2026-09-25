@@ -131,3 +131,36 @@ export function mergePending(
   }
   return { rows: rows.filter((r) => matchesView(r, view)), drop, missed };
 }
+
+/**
+ * One report from the peek panel about one of its actions. `action` identifies the action
+ * (0 = no action, e.g. a reload after a chat send). A `failed` report carries `undo`: only
+ * the fields this action changed, with their values from before it.
+ */
+export type PeekReport = {
+  row: Partial<LeadRowDTO> & { id: string };
+  phase: "optimistic" | "confirmed" | "failed";
+  action: number;
+  undo?: Partial<LeadRowDTO>;
+};
+
+/**
+ * What the list does with a peek report. `held` is the action that owns the lead's pending
+ * edit: undefined when there is none, or a value no action has (e.g. -1) when the list's own
+ * action owns it. Only the owning action may settle or roll back; a report from an older,
+ * superseded action leaves the row to the newer action's own reports.
+ * - `track`: apply and hold unsettled. `settle`: apply and settle. `apply`: apply server truth.
+ * - `rollback`: drop the pending edit and restore `undo`. `refresh`: only refresh. `ignore`: nothing.
+ */
+export type AbsorbStep = "track" | "settle" | "apply" | "rollback" | "refresh" | "ignore";
+
+export function absorbStep(phase: PeekReport["phase"], action: number, held: number | undefined): AbsorbStep {
+  if (phase === "optimistic") return "track";
+  if (phase === "confirmed") return held === undefined ? "apply" : held === action ? "settle" : "refresh";
+  return held === undefined ? "refresh" : held === action ? "rollback" : "ignore";
+}
+
+/** The fields `after` changed, with their `before` values (a per-action rollback). */
+export function undoPatch(before: LeadRowDTO, after: LeadRowDTO): Partial<LeadRowDTO> {
+  return diffRow(after, before);
+}

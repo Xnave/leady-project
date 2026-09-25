@@ -13,7 +13,8 @@ import { LeadTimeline } from "./LeadTimeline";
 import { NextStepEditor } from "./NextStepEditor";
 import { StageStepper } from "./StageStepper";
 import { useClock } from "./useClock";
-import { useLeadView, type ChangePhase, type RowChange } from "./useLeadView";
+import type { PeekReport } from "./rows";
+import { useLeadView } from "./useLeadView";
 
 type Props = {
   dto: LeadViewDTO;
@@ -21,7 +22,7 @@ type Props = {
   lang: "he" | "en";
   variant: "peek" | "page";
   /** Row fields changed by an action here: optimistic, then confirmed (or failed, to roll back). */
-  onChanged?: (row: RowChange, phase: ChangePhase) => void;
+  onChanged?: (report: PeekReport) => void;
   wonLabel: string;
   /** Controlled tab, so the peek keeps the tab while j/k moves between leads. */
   tab?: LeadTab;

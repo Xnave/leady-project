@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { LeadRowDTO } from "@/lib/crm/view";
-import { diffRow, isSnoozable, matchesView, mergePending, restoreRows, withNextStep, withSnooze, withStage, type PendingEdit } from "./rows";
+import {
+  absorbStep,
+  diffRow,
+  isSnoozable,
+  matchesView,
+  mergePending,
+  restoreRows,
+  undoPatch,
+  withNextStep,
+  withSnooze,
+  withStage,
+  type PendingEdit,
+} from "./rows";
 
 const row = (o: Partial<LeadRowDTO> = {}): LeadRowDTO => ({
   id: "a",
@@ -155,5 +167,36 @@ describe("mergePending", () => {
     const b = row({ id: "b" });
     const pending = new Map([["b", edit(withStage(b, "lost"), b, { index: 0 })]]);
     expect(mergePending([a], pending, { tab: "needs" }).rows.map((r) => r.id)).toEqual(["b", "a"]);
+  });
+});
+
+describe("absorbStep (peek reports, per action)", () => {
+  it("tracks optimistic reports, settles only the owning action's confirm", () => {
+    expect(absorbStep("optimistic", 1, undefined)).toBe("track");
+    expect(absorbStep("confirmed", 2, 2)).toBe("settle");
+    // An older action's confirm while a newer one owns the edit: refresh only, no settle.
+    expect(absorbStep("confirmed", 1, 2)).toBe("refresh");
+    // Nothing pending (e.g. a reload after a chat send): apply the server row.
+    expect(absorbStep("confirmed", 0, undefined)).toBe("apply");
+  });
+
+  it("a superseded action's failure leaves the row to the newer action", () => {
+    // Mark-done (action 1) then a stage change (action 2) on the same lead; 1 fails.
+    expect(absorbStep("failed", 1, 2)).toBe("ignore");
+    // The list's own action owns the edit (held = -1): also leave it alone.
+    expect(absorbStep("failed", 1, -1)).toBe("ignore");
+    expect(absorbStep("failed", 2, 2)).toBe("rollback");
+    expect(absorbStep("failed", 3, undefined)).toBe("refresh");
+  });
+
+  it("rolls back only the fields the failed action changed", () => {
+    const start = row({ nextStepText: "call", nextStepAt: "2026-09-27T06:00:00.000Z" });
+    const done = { ...start, nextStepText: null, nextStepAt: null };
+    const undo = undoPatch(start, done);
+    expect(undo).toEqual({ nextStepText: "call", nextStepAt: "2026-09-27T06:00:00.000Z" });
+    // A newer, still-pending stage change on the same row survives the rollback.
+    const current = withStage(done, "qualified");
+    const rolled = { ...current, ...undo };
+    expect([rolled.stage, rolled.nextStepText]).toEqual(["qualified", "call"]);
   });
 });
