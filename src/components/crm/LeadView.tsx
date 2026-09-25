@@ -13,15 +13,15 @@ import { LeadTimeline } from "./LeadTimeline";
 import { NextStepEditor } from "./NextStepEditor";
 import { StageStepper } from "./StageStepper";
 import { useClock } from "./useClock";
-import { useLeadView, type RowChange } from "./useLeadView";
+import { useLeadView, type ChangePhase, type RowChange } from "./useLeadView";
 
 type Props = {
   dto: LeadViewDTO;
   ui: UiCopy;
   lang: "he" | "en";
   variant: "peek" | "page";
-  /** Row fields changed by an action here (optimistic first, then as the server has them). */
-  onChanged?: (row: RowChange) => void;
+  /** Row fields changed by an action here: optimistic, then confirmed (or failed, to roll back). */
+  onChanged?: (row: RowChange, phase: ChangePhase) => void;
   wonLabel: string;
   /** Controlled tab, so the peek keeps the tab while j/k moves between leads. */
   tab?: LeadTab;

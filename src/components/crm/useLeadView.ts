@@ -13,6 +13,11 @@ import { stageLabel } from "./StageMenu";
 import { useToastsOptional, type ToastInput } from "./Toasts";
 
 export type RowChange = Partial<LeadRowDTO> & { id: string };
+/**
+ * `optimistic`: shown before the request lands. `confirmed`: the request succeeded (the
+ * row is the reloaded server view when the reload worked). `failed`: roll back to this row.
+ */
+export type ChangePhase = "optimistic" | "confirmed" | "failed";
 type Note = LeadViewDTO["notes"][number];
 
 /**
@@ -27,7 +32,7 @@ export function useLeadView(o: {
   ui: UiCopy;
   lang: "he" | "en";
   wonLabel: string;
-  onChanged?: (row: RowChange) => void;
+  onChanged?: (row: RowChange, phase: ChangePhase) => void;
 }) {
   const { ui, lang, wonLabel } = o;
   const toast = useToastsOptional();
@@ -47,7 +52,10 @@ export function useLeadView(o: {
   const inflight = useRef(0);
   const reloadSeq = useRef(0);
 
-  const report = useCallback((next: LeadViewDTO) => changedRef.current?.(rowPatchFromView(next)), []);
+  const report = useCallback(
+    (next: LeadViewDTO, phase: ChangePhase) => changedRef.current?.(rowPatchFromView(next), phase),
+    [],
+  );
 
   const reload = useCallback(async () => {
     const id = dRef.current.id;
@@ -56,9 +64,10 @@ export function useLeadView(o: {
       const fresh = await crmApi.view(id);
       if (seq !== reloadSeq.current || inflight.current > 0 || dRef.current.id !== fresh.id) return;
       setD(fresh);
-      report(fresh);
+      report(fresh, "confirmed");
     } catch {
-      // The optimistic state stays; the next action or reopen reloads.
+      // The request itself succeeded: confirm the optimistic row so the list stops holding it.
+      if (seq === reloadSeq.current && inflight.current === 0) report(dRef.current, "confirmed");
     }
   }, [report]);
 
@@ -68,7 +77,7 @@ export function useLeadView(o: {
       const before = dRef.current;
       const after = change(before);
       setD(after);
-      report(after);
+      report(after, "optimistic");
       inflight.current += 1;
       return call().then(
         () => {
@@ -80,7 +89,7 @@ export function useLeadView(o: {
         () => {
           inflight.current -= 1;
           if (dRef.current.id === before.id) setD(before);
-          report(before);
+          report(before, "failed");
           toast({ msg: ui.crm.loadFailed });
           return false;
         },
@@ -135,11 +144,11 @@ export function useLeadView(o: {
     const before = dRef.current;
     const after = { ...before, ...withSnooze(before, presetAt(days)) };
     setD(after);
-    report(after);
+    report(after, "optimistic");
     const label = snoozeLabel(ui, days);
     const rollback = () => {
       if (dRef.current.id === before.id) setD(before);
-      report(before);
+      report(before, "failed");
     };
     toast({
       msg: fillUi(ui.crm.snoozed, { when: lang === "en" ? label.toLowerCase() : label }),

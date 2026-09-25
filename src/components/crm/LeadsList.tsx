@@ -75,7 +75,7 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
   const [clock, setClock] = useState<Clock>(() => ({ now: new Date(nowIso), local: false }));
   const qTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Row click, Enter and the message icon open the peek; with it open, the cursor follows its lead.
-  const { peekId, cursor, openLead, closePeek } = useLeadPeek({ rows, kb, setKb, markRead });
+  const { peekId, cursor, gap, openLead, closePeek } = useLeadPeek({ rows, kb, setKb, markRead });
 
   // Client clock for relative times; ticks once a minute.
   useEffect(() => {
@@ -143,6 +143,7 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
     kb: cursor,
     menuOpen: menu !== null,
     peekOpen: peekId !== null,
+    gap,
     moveTo: (i) => {
       setKbNav(true);
       setKb(i);

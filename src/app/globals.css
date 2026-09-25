@@ -3643,6 +3643,16 @@ button.crm-stage { cursor: pointer; }
 .crm-full-main .crm-lv-chat { height: auto; flex: 1; min-height: 480px; }
 .crm-full-main .crm-lv-panel { flex: 1; display: flex; flex-direction: column; }
 .crm-composer-closed { justify-content: space-between; }
+/* R8: the follow-up bar holds the lead view's one primary action, so the shared composer's
+   Send renders as a secondary button here (same tokens as .btn-secondary; the composer
+   keeps its own shape). The :not()s outweigh the global submit-button rule. The legacy
+   lead page and the demo chat are unaffected. */
+.crm-lv-chat .composer button[type="submit"]:not(.btn-ghost):not(.btn-secondary) {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line-control);
+  box-shadow: none;
+}
 .crm-composer-closed > span { flex: 1; min-width: 180px; font-size: var(--fs-sm); color: var(--text-soft); }
 .crm-count {
   font-size: var(--fs-2xs);
@@ -3726,6 +3736,12 @@ button.crm-stage { cursor: pointer; }
 /* Hover — pointer devices only */
 @media (hover: hover) {
   .crm-next-text:hover { background: var(--bg-sunken); }
+  .crm-lv-chat .composer button[type="submit"]:not(.btn-ghost):not(.btn-secondary):hover {
+    background: var(--card-hover);
+    border-color: var(--muted);
+    color: var(--text);
+    box-shadow: none;
+  }
   .crm-note:hover .crm-note-pin { opacity: 1; }
   .crm-pipe-cell:hover { background: var(--card-hover); }
   .crm-pipe-cell[aria-pressed="true"]:hover { background: var(--accent-soft); }

@@ -17,7 +17,7 @@ type Line = { icon: IconName; accent?: boolean; title: string; sub?: string };
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 
 /** One timeline item as an icon, a sentence and an optional detail line. */
-function describe(it: Item, ui: UiCopy, lang: Lang, wonLabel: string): Line {
+function describe(it: Item, ui: UiCopy, lang: Lang, wonLabel: string, clock: Clock | null): Line {
   const t = ui.crm.timeline;
   const d = it.data;
   const actor = str(d.actor) || str(d.author);
@@ -43,7 +43,8 @@ function describe(it: Item, ui: UiCopy, lang: Lang, wonLabel: string): Line {
         ? { icon: "check", title: fillUi(t.nextDone, { actor }) }
         : { icon: "bell", title: fillUi(t.nextSet, { actor }), sub: str(d.text) };
     case "snooze":
-      return { icon: "clock", title: fillUi(t.snooze, { actor, when: d.until ? absTime(str(d.until), lang) : "" }) };
+      // Timezone-dependent: only once the client clock is mounted.
+      return { icon: "clock", title: fillUi(t.snooze, { actor, when: clock && d.until ? absTime(str(d.until), lang) : "" }) };
     case "request": {
       const ev = str(d.event);
       if (ev === "created") return { icon: "cal", accent: true, title: t.requestCreated, sub: str(d.timeText) };
@@ -94,7 +95,7 @@ export function LeadTimeline({
             <h3 className="crm-tl-day">{clock ? dayLabel(g.day, clock.now, lang, days) : "\u00a0"}</h3>
             <ol className="crm-tl-list">
               {g.items.map((it) => {
-                const line = describe(it, ui, lang, wonLabel);
+                const line = describe(it, ui, lang, wonLabel, clock);
                 return (
                   <li key={it.id} className="crm-tl-item">
                     <span className={line.accent ? "crm-tl-ic acc" : "crm-tl-ic"} aria-hidden="true">

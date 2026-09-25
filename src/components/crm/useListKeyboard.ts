@@ -13,6 +13,8 @@ export type ListKeyHandlers = {
   menuOpen: boolean;
   /** With the peek panel open only j/k act (they move the peek); arrows scroll the panel. */
   peekOpen: boolean;
+  /** The cursor's row left the view, so the row now at `kb` counts as the next one. */
+  gap?: boolean;
   moveTo: (index: number) => void;
   open: (index: number) => void;
   menu: (kind: RowMenu, index: number) => void;
@@ -55,7 +57,7 @@ export function useListKeyboard(h: ListKeyHandlers) {
         case "ArrowDown":
           if (!has) return;
           e.preventDefault();
-          c.moveTo(Math.min(c.count - 1, c.kb + 1));
+          c.moveTo(Math.min(c.count - 1, c.gap ? c.kb : c.kb + 1));
           return;
         case "k":
         case "ArrowUp":

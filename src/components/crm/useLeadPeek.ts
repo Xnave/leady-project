@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { LeadRowDTO } from "@/lib/crm/view";
 
 /**
@@ -16,15 +16,21 @@ export function useLeadPeek(o: {
 }) {
   const { rows, kb, setKb, markRead } = o;
   const [peekId, setPeekId] = useState<string | null>(null);
+  // Read at call time, so `openLead` keeps one identity and the memoised rows don't re-render.
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
   const peekIndex = peekId ? rows.findIndex((r) => r.id === peekId) : -1;
   const cursor = peekIndex >= 0 ? peekIndex : Math.min(kb, Math.max(0, rows.length - 1));
 
   const openLead = useCallback(
     (id: string) => {
+      // The cursor moves to the opened row, so it stays put if that row later leaves the view.
+      const i = rowsRef.current.findIndex((r) => r.id === id);
+      if (i >= 0) setKb(i);
       setPeekId(id);
       markRead([id]);
     },
-    [markRead],
+    [setKb, markRead],
   );
 
   const closePeek = useCallback(() => {
@@ -40,5 +46,8 @@ export function useLeadPeek(o: {
     }, 0);
   }, [peekId, peekIndex, setKb]);
 
-  return { peekId, cursor, openLead, closePeek };
+  /** The peeked row has left the view: the row now under the cursor is already the "next" one. */
+  const gap = peekId !== null && peekIndex < 0;
+
+  return { peekId, cursor, gap, openLead, closePeek };
 }

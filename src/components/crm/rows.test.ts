@@ -137,6 +137,19 @@ describe("mergePending", () => {
     expect(mergePending([a, b], pending, { tab: "needs" }).rows.map((r) => r.id)).toEqual(["b"]);
   });
 
+  it("keeps an unsettled (optimistic peek) edit across any number of stale refreshes", () => {
+    const b = row({ id: "b" });
+    const p = edit(b, withNextStep(b, "call back", "2026-09-27T06:00:00.000Z"));
+    const pending = new Map([["b", p]]);
+    for (let i = 0; i < 5; i++) {
+      const out = mergePending([b], pending, { tab: "all" });
+      expect([out.rows[0].nextStepText, out.drop, out.missed]).toEqual(["call back", [], []]);
+    }
+    // Once settled (the peek's confirmed report), the next refresh that shows it drops it.
+    const done = mergePending([p.row], new Map([["b", { ...p, settled: true }]]), { tab: "all" });
+    expect(done.drop).toEqual(["b"]);
+  });
+
   it("puts back a row the server has not returned yet (undo in flight)", () => {
     const a = row({ id: "a" });
     const b = row({ id: "b" });

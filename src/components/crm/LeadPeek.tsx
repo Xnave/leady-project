@@ -7,7 +7,7 @@ import { crmApi } from "./crm-client";
 import { Icon } from "./Icon";
 import type { LeadTab } from "./LeadTabs";
 import { LeadView } from "./LeadView";
-import type { RowChange } from "./useLeadView";
+import type { ChangePhase, RowChange } from "./useLeadView";
 
 /** Matches the `.crm-peek` slide-out; content stays until the panel is out of view. */
 const EXIT_MS = 260;
@@ -56,7 +56,7 @@ export function LeadPeek({
 }: {
   leadId: string | null;
   onClose: () => void;
-  onChanged: (row: RowChange) => void;
+  onChanged: (row: RowChange, phase: ChangePhase) => void;
   ui: UiCopy;
   lang: "he" | "en";
   wonLabel: string;
