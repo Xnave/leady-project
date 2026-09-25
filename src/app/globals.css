@@ -3537,6 +3537,96 @@ button.crm-stage { cursor: pointer; }
 
 .crm-keys { font-size: var(--fs-xs); color: var(--muted); margin-block-start: var(--space-3); }
 
+/* Leads list (Task 10): header tools, icons, keyboard-nav and loading states */
+.crm-i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.crm-i.sm { width: 14px; height: 14px; }
+/* A stage dot outside a chip: the wrapper only carries the crm-s-* colour. */
+.crm-dot-only { display: contents; }
+.crm-tools { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.crm-search {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  font-weight: 400;
+  gap: var(--space-2);
+  min-height: var(--hit);
+  min-width: 260px;
+  padding-inline: var(--space-3) var(--space-2);
+  background: var(--card);
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.crm-search:focus-within { border-color: var(--accent-bright); box-shadow: var(--ring); }
+.crm-search input {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+.crm-search input:hover,
+.crm-search input:focus { outline: none; box-shadow: none; border: 0; }
+.crm-kbd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  padding: 0 var(--space-1);
+  line-height: 18px;
+}
+.crm-search:focus-within .crm-kbd { visibility: hidden; }
+.crm-tools .show-demo-toggle {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  font-weight: 400;
+  gap: var(--space-2);
+  min-height: var(--hit);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.crm-tools .show-demo-toggle input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.crm-name-t { overflow: hidden; text-overflow: ellipsis; }
+.crm-last-t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crm-name .badge { flex: none; }
+/* The keyboard cursor (::before rule) marks the row; no second focus ring. */
+.crm-row:focus { outline: none; }
+/* Keyboard moves are instant: no background fade while j/k-ing. */
+.crm-list.kbnav .crm-row { transition: opacity var(--transition), transform var(--transition); }
+.crm-list[aria-busy="true"] { opacity: 0.6; transition: opacity var(--transition); }
+.crm-bulk button:disabled { opacity: 0.45; cursor: default; }
+.crm-bulk .crm-bulk-x { display: grid; place-items: center; min-width: 32px; padding: 0; background: none; }
+
+/* Loading skeleton (leads/loading.tsx) */
+.crm-skel {
+  display: block;
+  height: 12px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-sunken);
+  animation: crm-skel-pulse 1.2s ease-in-out infinite alternate;
+}
+.crm-skel.av { width: 34px; height: 34px; border-radius: 50%; flex: none; }
+.crm-skel.chip { width: 96px; height: 28px; }
+.crm-skel.w40 { width: 40%; }
+.crm-skel.w60 { width: 60%; }
+.crm-skel.w80 { width: 80%; }
+.crm-row.skel { cursor: default; }
+.crm-pipe-cell.skel { cursor: default; gap: var(--space-2); }
+@keyframes crm-skel-pulse {
+  from { opacity: 1; }
+  to { opacity: 0.45; }
+}
+
 /* Hover — pointer devices only */
 @media (hover: hover) {
   .crm-pipe-cell:hover { background: var(--card-hover); }
@@ -3556,6 +3646,7 @@ button.crm-stage { cursor: pointer; }
 /* Touch: no hover reveal, so the floating row actions go away entirely. */
 @media (hover: none) {
   .crm-row-actions { display: none; }
+  .crm-keys { display: none; }
 }
 @media (pointer: coarse) {
   .crm-fchip,
@@ -3605,6 +3696,9 @@ button.crm-stage { cursor: pointer; }
   .crm-sec,
   .crm-tl { padding-inline: var(--space-4); }
   .crm-lv-tabs { padding-inline: var(--space-4); }
+  .crm-page .page-header-actions,
+  .crm-tools { inline-size: 100%; }
+  .crm-search { flex: 1; min-width: 0; }
 }
 
 /* --------------------------------------------------------------------------
@@ -3637,6 +3731,7 @@ button.crm-stage { cursor: pointer; }
   }
   .crm-peek:not(.on) { opacity: 0; }
   .crm-peek.on { opacity: 1; }
+  .crm-skel { animation: none; }
   .crm-ibtn:active,
   .crm-btn-quiet:active,
   .crm-bulk button:active { transform: none; }
