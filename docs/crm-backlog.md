@@ -68,3 +68,14 @@ Each item gives the problem, what the market does, and what we already have to b
 ## Native mobile app
 
 - Push notifications and a faster phone workflow. Revisit once the responsive web version has been used for a while.
+
+## Follow-ups from phase 1 implementation
+
+- Stage-change Undo marks the source manual; the API needs a `source: "auto"` restore option.
+- Before enabling the digest: verify Zernio's `WHATSAPP_BULK_PATH`, get the Meta template approved, and supply the platform number.
+- The Needs you tab is capped at 200 with no "200 of N" note.
+- ARIA: the menu contains h6/input; the header has 6 columns vs 7 row cells; the j/k cursor is not announced.
+- The empty timeline uses "No leads here" copy.
+- `LeadDetails` has untranslated unknown statuses.
+- The closed-conversation note has no CTA.
+- Demo / dev inbound routes return 500 without the Inngest dev server (`inngest.send` for nudges), which contradicts the CLAUDE.md claim. Investigate.

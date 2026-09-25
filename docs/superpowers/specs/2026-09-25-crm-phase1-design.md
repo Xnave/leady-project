@@ -71,10 +71,10 @@ Supporting a new flow type means annotating its JSON in the catalog template. `v
 ### 3.3 Manual override
 
 - The owner can set any of the 7 stages from the list row, the peek panel or the lead page. This sets `stageSource = manual`.
-- A manual stage holds until a **strong event**, after which the lead returns to `auto`:
-  - a request is created or decided;
-  - a signal ranks above the manual stage. This applies only when the manual stage is one of the ranked stages (`new` to `won`). A manual `lost` or `not_relevant` is never outranked by a signal; only the other strong events in this list end it;
-  - a new inbound message arrives on a lead marked `lost` or `not_relevant`. The timeline records this as "revived".
+- A manual stage holds until a **strong event**, after which the lead returns to `auto`. As implemented in `src/lib/crm/stage.ts` (`deriveLeadStage`, ruling R4):
+  - a request changes (is created or decided) after the manual choice;
+  - for a manual **ranked** stage (`new` to `won`): an automatic signal ranked `pending` or `won`, **and** ranked above the current manual stage. A `talking` or `qualified` signal never overrides a manual stage, however low that manual stage ranks — only a `pending`/`won` signal that also outranks it does;
+  - for a manual `lost` or `not_relevant`: the lead writes again (the timeline records this as "revived"), or a request changes. A signal can never override these two on its own.
 - A manual `won` survives new inbound messages (for example, a past customer asking a question).
 - Nothing sets a lead to `lost` automatically in phase 1.
 - A flow with no annotations still works. Automatic mode gives `new` and `talking`, and the owner sets the rest by hand.
@@ -104,13 +104,14 @@ All of these must be true:
 
 ### 4.3 No cron needed for the list
 
-`refreshLeadState` stores `followUpAt` in advance. For example, when the bot replies it stores `cold` due at reply time + 20h. The "Needs you" tab is then a plain query:
+`refreshLeadState` stores `followUpAt` in advance. For example, when the bot replies it stores `cold` due at reply time + 20h. The "Needs you" tab is then a plain query — `needsWhere()` in `src/lib/crm/needs.ts`:
 
 ```
 followUpReason IS NOT NULL AND followUpAt <= now()
 AND (snoozedUntil IS NULL OR snoozedUntil <= now())
-AND stage IN (new, talking, qualified, pending)
 ```
+
+There is no `stage IN (...)` filter. `handoff` and `approval` apply at any stage — a past `won` customer can still open a new handoff and needs a reply — so filtering the query by stage would hide them. Only `cold` is limited to the active stages (`new`, `talking`, `qualified`, `pending`); that limit is enforced when `cold` is set (§4.2), not by filtering the query.
 
 Leads appear in the tab as time passes, with no scheduled job. A cron runs only for the digest (section 6).
 

@@ -53,6 +53,10 @@ The interpreter names no business domain. Transactional behavior is a registered
 
 `architecture.test.ts` ("kernel purity", "one request primitive", "config lives in capability instances") fails if a domain name creeps back into the interpreter or a second table/route/form appears.
 
+### CRM (pipeline + follow-ups)
+
+CRM state: `refreshLeadState()` in `src/lib/crm/refresh.ts` is the only writer of Lead stage/follow-up columns; call `safeRefreshLeadState` after any event that changes messages, requests or HITL tasks.
+
 ### Flow config is validated on write, versioned, and never hand-edited at runtime
 
 `POST /api/ops/agent` rebuilds the flow from a catalog template (`src/lib/flow/catalog.ts` — `inbox` / `faq`, with `book` accepted as a legacy alias for inbox + proactive booking stance), runs `validateFlow()` (`src/lib/flow/validate.ts`, throws `FlowConfigError`), then in one transaction writes an `AgentConfigRevision` and bumps `agent.flowVersion`. Scheduled nudges carry the `flowVersion` they were created under and skip themselves as `stale-flow` when the agent has since changed. Owners never see a flow builder; ops picks a catalog and toggles policy.
