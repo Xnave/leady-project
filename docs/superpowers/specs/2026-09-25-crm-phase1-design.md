@@ -324,6 +324,8 @@ Every relation cascades on tenant and lead delete. Every query filters on `tenan
    - `closed` → manual `lost`;
    - every other lead → automatic.
    - `lastLeadMessageAt` and `lastOutboundAt` come from `Message`.
+   - A migrated lead keeps its `updatedAt` as `stageChangedAt` and gets a `LeadStageEvent` (`new` → stage, source `manual`, reason `migrated`). Re-runs skip any lead that already has a stage event.
+   - **Run `npm run crm:backfill` BEFORE enabling `crmV2` / `CRM_V2_ALL` for any tenant.**
 2. Flag `CRM_V2` (per tenant): the new `/leads` and lead page. The old page stays reachable until the new one is signed off. Rollout order: dev tenant, then one real tenant, then everyone.
 3. Flag `DIGEST_WHATSAPP_ENABLED` plus `Tenant.digestEnabled`. The Meta template is submitted on day 1.
 4. After sign-off, stop reading `Lead.status` and drop it in a follow-up migration.

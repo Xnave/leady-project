@@ -157,6 +157,8 @@ Read paths: `view.ts` holds `whereItStands()` and shared DTOs; `view-rows.ts` lo
 
 Two independent flags gate this: `Tenant.crmV2` (or env `CRM_V2_ALL=true`) turns the new lead view on per tenant; `DIGEST_WHATSAPP_ENABLED=true` (env) plus `Tenant.digestEnabled` turns on the WhatsApp daily digest. The digest content builder (`crm/digest.ts`) is pure — given due items it returns counts and Meta-safe template params; `crm/digest-send.ts` does the Prisma/Zernio work and idempotency (`DigestLog`); the `crmDigest` Inngest cron (`src/inngest/functions.ts`) runs hourly and calls it for tenants whose local hour matches `digestHour`.
 
+**Rollout order:** run `npm run crm:backfill` (`scripts/crm-backfill.ts`) BEFORE enabling `crmV2` or `CRM_V2_ALL` for any tenant. It maps legacy `Lead.status` won/lost/closed to a manual stage (keeping the lead's `updatedAt` as `stageChangedAt`, plus a `migrated` `LeadStageEvent`) and derives every lead's stage and follow-up. It is safe to re-run: it skips leads that already have a stage event.
+
 ---
 
 ## How a turn runs
