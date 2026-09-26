@@ -5,11 +5,12 @@
  *
  * Re-running is safe:
  * - The legacy mapping touches only leads that are still `auto` and have no
- *   LeadStageEvent at all, so a lead already migrated, or one an owner or the
- *   automation has moved since, is never re-mapped or overwritten.
+ *   MANUAL LeadStageEvent (an owner action, or a prior migration — migrated
+ *   events are `source: "manual"`). Auto events written by ordinary chat
+ *   traffic before the backfill do not block the mapping.
  * - The refresh pass writes only what changed (refreshLeadState).
  * Not safe to assume: a lead whose legacy status changed after a previous run
- * but that already has stage events keeps its current stage.
+ * but that already has a manual stage event keeps its current stage.
  */
 import { prisma } from "../src/lib/db";
 import { refreshLeadState } from "../src/lib/crm/refresh";
@@ -19,7 +20,7 @@ async function main() {
     where: {
       status: { in: ["won", "lost", "closed"] },
       stageSource: "auto",
-      stageEvents: { none: {} },
+      stageEvents: { none: { source: "manual" } },
     },
     select: { id: true, tenantId: true, status: true, updatedAt: true },
   });
