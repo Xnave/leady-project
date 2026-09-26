@@ -73,7 +73,7 @@ Supporting a new flow type means annotating its JSON in the catalog template. `v
 - The owner can set any of the 7 stages from the list row, the peek panel or the lead page. This sets `stageSource = manual`.
 - A manual stage holds until a **strong event**, after which the lead returns to `auto`. As implemented in `src/lib/crm/stage.ts` (`deriveLeadStage`, ruling R4):
   - a request changes (is created or decided) after the manual choice;
-  - for a manual **ranked** stage (`new` to `won`): an automatic signal ranked `pending` or `won`, **and** ranked above the current manual stage. A `talking` or `qualified` signal never overrides a manual stage, however low that manual stage ranks — only a `pending`/`won` signal that also outranks it does;
+  - for a manual **ranked** stage (`new` to `won`): an automatic signal ranked `pending` or `won`, **and** ranked above the current manual stage, **and** new evidence after the manual choice: the lead wrote after it (a request change already counts on its own, above). Signals carry no time, so a request approved or opened before the owner's choice never snaps the stage back by itself. A `talking` or `qualified` signal never overrides a manual stage, however low that manual stage ranks — only a `pending`/`won` signal that also outranks it does;
   - for a manual `lost` or `not_relevant`: the lead writes again (the timeline records this as "revived"), or a request changes. A signal can never override these two on its own.
 - A manual `won` survives new inbound messages (for example, a past customer asking a question).
 - Nothing sets a lead to `lost` automatically in phase 1.
