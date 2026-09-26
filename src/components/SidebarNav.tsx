@@ -9,7 +9,7 @@ import type { UiCopy, UiLang, UiTheme } from "@/lib/ui";
 
 type NavKey = keyof UiCopy["nav"];
 
-const OWNER_ITEMS: { href: string; key: NavKey; countKey?: keyof NavCounts }[] = [
+const OWNER_ITEMS: { href: string; key: NavKey; countKey?: "inbox" | "leads" }[] = [
   { href: "/", key: "home" },
   { href: "/inbox", key: "inbox", countKey: "inbox" },
   { href: "/leads", key: "leads", countKey: "leads" },
@@ -17,6 +17,7 @@ const OWNER_ITEMS: { href: string; key: NavKey; countKey?: keyof NavCounts }[] =
   { href: "/channels", key: "channels" },
   { href: "/demo", key: "chat" },
   { href: "/settings/team", key: "team" },
+  { href: "/settings/digest", key: "digest" },
 ];
 
 const STAFF_ITEMS: { href: string; key: NavKey; adminOnly?: boolean }[] = [
@@ -43,6 +44,7 @@ const ICONS: Partial<Record<NavKey, ReactNode>> = {
   ops: <Icon d="M4 6h16M4 12h10M4 18h7" />,
   admin: <Icon d="M12 3 4 7v5c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V7z" />,
   team: <Icon d="M16 11a3 3 0 1 0-2-5.2M8 11a3 3 0 1 0-2-5.2M4 20a6 6 0 0 1 8 0M12 20a6 6 0 0 1 8 0" />,
+  digest: <Icon d="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5" />,
 };
 
 const THEME_OPTIONS: { id: UiTheme; key: "system" | "light" | "dark"; icon: ReactNode }[] = [
@@ -130,7 +132,11 @@ export function SidebarNav({
                   {ICONS[item.key]}
                   <span>{ui.nav[item.key]}</span>
                 </span>
-                {count > 0 ? <span className="nav-badge">{count > 99 ? "99+" : count}</span> : null}
+                {count > 0 ? (
+                  <span className="nav-badge" title={item.key === "leads" && counts?.crmV2 ? ui.crm.tabs.needs : undefined}>
+                    {count > 99 ? "99+" : count}
+                  </span>
+                ) : null}
               </Link>
             );
           })}

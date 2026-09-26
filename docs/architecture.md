@@ -70,6 +70,7 @@ flowchart TB
 | Fields | `src/lib/flow/fields/` | Typed collect kit (`date`, `enum`, …) |
 | Persistence | `src/lib/requests.ts`, `conversations.ts` | Request + HITL; messages; turn context |
 | Channels | `src/lib/channels/`, `zernio.ts` | Send / parse |
+| CRM | `src/lib/crm/` | Pipeline stage + follow-up queue derived from turn/request/HITL events; owner actions; daily digest |
 
 ---
 
@@ -145,6 +146,18 @@ A barber vs villa vs dress shop is mostly **instance config**, not a new table.
 ### Typed field kit
 
 `src/lib/flow/fields/` — each *type* implements ask / normalize / gaps / render once. Capabilities describe collect lists as `FieldSpec[]`. New verticals should add specs, not per-field `if (id === "guests")` branches.
+
+### CRM: pipeline + follow-ups (`src/lib/crm/`)
+
+A `Lead` carries a pipeline stage (`new … won / lost / not_relevant`) and a follow-up reason (`handoff` > `approval` > `reminder` > `cold`), derived from turn/request/HITL activity rather than tracked by hand. The pure modules — `types.ts`, `stage.ts`, `followup.ts`, `signals.ts`, `plan.ts`, `timeline.ts`, `digest.ts` — take a snapshot and return a decision; they name no business domain, same rule as the interpreter, and `architecture.test.ts` ("crm purity") fails if one creeps in.
+
+`refreshLeadState()` (`src/lib/crm/refresh.ts`) is the **single writer** of these Lead columns: it loads a snapshot, calls the pure `planLeadState`, and applies the patch (plus a `LeadStageEvent` when the stage changes) in one transaction. Every call site that isn't an explicit owner action uses `safeRefreshLeadState`, which logs and swallows errors — CRM bookkeeping must never fail a turn or a webhook. Deliberate owner changes (set stage, snooze, mark done) go through `src/lib/crm/actions.ts` instead, which writes directly and records its own `LeadStageEvent`.
+
+Read paths: `view.ts` holds `whereItStands()` and shared DTOs; `view-rows.ts` loads the `/leads` list; `view-lead.ts` loads one lead's full page. The "needs you" predicate — the one `WHERE` clause behind the follow-up queue — lives in `crm/needs.ts` so the list and the digest can't drift apart.
+
+Two independent flags gate this: `Tenant.crmV2` (or env `CRM_V2_ALL=true`) turns the new lead view on per tenant; `DIGEST_WHATSAPP_ENABLED=true` (env) plus `Tenant.digestEnabled` turns on the WhatsApp daily digest. The digest content builder (`crm/digest.ts`) is pure — given due items it returns counts and Meta-safe template params; `crm/digest-send.ts` does the Prisma/Zernio work and idempotency (`DigestLog`); the `crmDigest` Inngest cron (`src/inngest/functions.ts`) runs hourly and calls it for tenants whose local hour matches `digestHour`.
+
+**Rollout order:** run `npm run crm:backfill` (`scripts/crm-backfill.ts`) BEFORE enabling `crmV2` or `CRM_V2_ALL` for any tenant. It maps legacy `Lead.status` won/lost/closed to a manual stage (keeping the lead's `updatedAt` as `stageChangedAt`, plus a `migrated` `LeadStageEvent`) and derives every lead's stage and follow-up. It is safe to re-run: it skips leads that already have a stage event.
 
 ---
 

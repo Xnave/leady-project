@@ -13,7 +13,7 @@ export default async function HomePage() {
   const tenantId = await requireTenantIdForPage();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
-  const [tenant, counts, liveChannel] = await Promise.all([
+  const [tenant, counts, liveChannel, totalLeads] = await Promise.all([
     prisma.tenant.findFirst({ where: { id: tenantId } }),
     getNavCounts(tenantId),
     prisma.channelConnection.findFirst({
@@ -23,6 +23,7 @@ export default async function HomePage() {
         NOT: { providerAccountId: { startsWith: "demo-" } },
       },
     }),
+    prisma.lead.count({ where: { tenantId, NOT: { externalUserId: { startsWith: "demo-" } } } }),
   ]);
   const needsSetup = !(tenant?.intro ?? "").trim();
   const hasChannel = Boolean(liveChannel);
@@ -32,7 +33,7 @@ export default async function HomePage() {
     { href: "/onboard", label: ui.home.stepSetup, done: !needsSetup },
     { href: "/channels", label: ui.home.stepChannels, done: hasChannel },
     { href: "/demo", label: ui.home.stepChat, done: !needsSetup },
-    { href: "/leads", label: ui.home.stepLeads, done: counts.leads > 0, count: counts.leads },
+    { href: "/leads", label: ui.home.stepLeads, done: totalLeads > 0, count: counts.leads },
     { href: "/inbox", label: ui.home.stepInbox, done: counts.inbox === 0, count: counts.inbox },
   ];
 
@@ -51,7 +52,7 @@ export default async function HomePage() {
       <div className="work-strip">
         <Link href="/leads" className="card stat-card">
           <span className="stat-value">{counts.leads}</span>
-          <span className="stat-label">{ui.home.quickLeads}</span>
+          <span className="stat-label">{counts.crmV2 ? ui.crm.tabs.needs : ui.home.quickLeads}</span>
         </Link>
         <Link href="/inbox" className="card stat-card">
           <span className="stat-value">{counts.inbox}</span>

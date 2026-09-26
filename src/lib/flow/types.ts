@@ -30,6 +30,8 @@ export type HitlPolicy = {
 
 type StageBase = {
   nudge?: NudgeSpec;
+  /** CRM pipeline stage id while a conversation sits on this stage (see src/lib/crm/types.ts). */
+  pipeline?: string;
 };
 
 export type ClassifyStage = StageBase & {
@@ -37,6 +39,8 @@ export type ClassifyStage = StageBase & {
   prompt: string;
   intents: string[];
   transitions: Record<string, string>;
+  /** Intent → CRM pipeline stage id, e.g. { spam: "not_relevant" }. */
+  pipelineByIntent?: Record<string, string>;
 };
 
 export type CollectStage = StageBase & {

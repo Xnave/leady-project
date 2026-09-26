@@ -19,6 +19,7 @@
     "db:import:production": "bash scripts/db-import-local-to-production.sh",
     "db:seed": "tsx prisma/seed.ts",
     "zernio:webhook:dev": "tsx scripts/zernio-register-dev-webhook.ts",
+    "crm:backfill": "tsx scripts/crm-backfill.ts",
     "typecheck": "tsc --noEmit"
   },
   "prisma": {

@@ -226,6 +226,30 @@ export async function listZernioWebhookSettings(): Promise<ZernioWebhookSettings
   return data.webhooks ?? [];
 }
 
+/**
+ * Path of Zernio's bulk template send (SDK: whatsapp.sendWhatsAppBulk).
+ * Verify against the API reference before enabling the digest — this has not
+ * been confirmed against a live send (no platform number / approved template
+ * yet). See task-14 report for details.
+ */
+const WHATSAPP_BULK_PATH = "/whatsapp/bulk";
+
+export async function sendWhatsAppTemplate(opts: {
+  accountId: string;
+  phone: string;
+  template: { name: string; language: string };
+  variables: Record<string, string>;
+}): Promise<void> {
+  await zernio(WHATSAPP_BULK_PATH, {
+    method: "POST",
+    body: JSON.stringify({
+      accountId: opts.accountId,
+      recipients: [{ phone: opts.phone, variables: opts.variables }],
+      template: opts.template,
+    }),
+  });
+}
+
 export async function sendZernioInboxMessage(opts: {
   accountId: string;
   conversationId: string;

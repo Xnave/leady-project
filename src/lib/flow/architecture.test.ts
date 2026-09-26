@@ -671,6 +671,23 @@ describe("config lives in capability instances", () => {
   });
 });
 
+describe("crm purity", () => {
+  const PURE = ["types", "stage", "followup", "signals", "plan", "timeline", "digest"];
+  const DOMAIN = /\b(booking|reservation|meeting|visit|stay)s?\b/i;
+
+  it("pure CRM modules import no Prisma and name no business domain", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const path = await import("node:path");
+    for (const name of PURE) {
+      const file = path.resolve(__dirname, `../crm/${name}.ts`);
+      const src = await readFile(file, "utf8");
+      expect(src, `${name}.ts imports prisma`).not.toMatch(/@\/lib\/db|@prisma\/client/);
+      const code = src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      expect(code, `${name}.ts names a domain`).not.toMatch(DOMAIN);
+    }
+  });
+});
+
 /** Minimal port set, used only to assert the shape of InterpreterPorts. */
 function fakePorts(): InterpreterPorts {
   return {

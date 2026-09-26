@@ -2,7 +2,7 @@ import { en } from "./en";
 import { he } from "./he";
 import type { UiCopy, UiLang, UiTheme } from "./types";
 
-export type { UiCopy, UiLang, UiTheme, LeadStatusId, CatalogUiId } from "./types";
+export type { UiCopy, CrmCopy, UiLang, UiTheme, LeadStatusId, CatalogUiId } from "./types";
 export { LEAD_STATUSES, normalizeLeadStatus } from "./status";
 
 export function isUiLang(value: string | undefined | null): value is UiLang {

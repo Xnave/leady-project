@@ -408,6 +408,9 @@ export async function decideRequest(opts: {
       });
     }),
   ]);
+
+  const { safeRefreshLeadState } = await import("@/lib/crm/refresh");
+  await safeRefreshLeadState(opts.tenantId, request.leadId);
 }
 
 /** Move a request onto a new time spine without changing its decision state. */

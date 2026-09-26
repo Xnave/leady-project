@@ -1,0 +1,104 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildDigest,
+  digestFullText,
+  digestTemplateParams,
+  localDateAndHour,
+  pendingRecipients,
+  phoneDigitsMatch,
+  sanitizeTemplateParam,
+} from "./digest";
+
+const at = new Date("2026-09-25T05:00:00Z");
+const item = (reason: "handoff" | "approval" | "reminder" | "cold", name = "Dana", stand = "Villa · 12–15/10") => ({
+  leadId: name, name, reason, stand, at,
+});
+
+describe("buildDigest", () => {
+  it("returns null with nothing due", () => {
+    expect(buildDigest([])).toBeNull();
+  });
+  it("counts reasons and picks the most urgent top item", () => {
+    const d = buildDigest([item("cold", "A"), item("approval", "B"), item("cold", "C")])!;
+    expect(d.total).toBe(3);
+    expect(d.counts).toEqual({ handoff: 0, approval: 1, reminder: 0, cold: 2 });
+    expect(d.top.name).toBe("B");
+  });
+});
+
+describe("digestTemplateParams", () => {
+  it("produces 7 params in template order", () => {
+    const d = buildDigest([item("handoff", "Yossi", "Group of 12"), item("cold", "Ori")])!;
+    expect(digestTemplateParams(d, "Snir")).toEqual(["Snir", "2", "0", "1", "0", "1", "Yossi · Group of 12"]);
+  });
+  it("strips line breaks, tabs and runs of spaces, and truncates", () => {
+    const d = buildDigest([item("handoff", "Dana\nCohen", "a\t\tb     c " + "x".repeat(200))])!;
+    const p = digestTemplateParams(d, "  Snir  ");
+    for (const v of p) {
+      expect(v).not.toMatch(/[\n\t]/);
+      expect(v).not.toMatch(/ {4,}/);
+    }
+    expect(p[0]).toBe("Snir");
+    expect(p[6].length).toBeLessThanOrEqual(80);
+  });
+  it("never sends an empty param", () => {
+    expect(sanitizeTemplateParam("   ")).toBe("-");
+  });
+  it("truncates by code point, never splitting emoji", () => {
+    const result = sanitizeTemplateParam("a".repeat(38) + "😀" + "z", 40);
+    // No lone surrogates
+    expect(result).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+    // At most 40 code points (including trailing …)
+    expect(Array.from(result).length).toBeLessThanOrEqual(40);
+  });
+});
+
+describe("digestFullText", () => {
+  it("lists every item with its reason and a link", () => {
+    const text = digestFullText([item("approval", "Dana"), item("cold", "Ori")], { handoff: "H", approval: "Needs approval", reminder: "R", cold: "Gone cold" }, "https://app.example");
+    expect(text).toContain("Dana · Needs approval");
+    expect(text).toContain("Ori · Gone cold");
+    expect(text).toContain("https://app.example/leads?tab=needs");
+  });
+});
+
+describe("localDateAndHour", () => {
+  it("uses the tenant timezone", () => {
+    expect(localDateAndHour(new Date("2026-09-25T05:30:00Z"), "Asia/Jerusalem")).toEqual({ date: "2026-09-25", hour: 8 });
+    expect(localDateAndHour(new Date("2026-09-24T22:30:00Z"), "Asia/Jerusalem")).toEqual({ date: "2026-09-25", hour: 1 });
+  });
+});
+
+describe("phoneDigitsMatch", () => {
+  it("matches the same number formatted differently", () => {
+    expect(phoneDigitsMatch("+972 50-123-4567", "+972501234567")).toBe(true);
+    expect(phoneDigitsMatch("(050) 123-4567", "0501234567")).toBe(true);
+  });
+  it("does not normalize country code vs. local prefix", () => {
+    expect(phoneDigitsMatch("+972501234567", "0501234567")).toBe(false);
+  });
+  it("does not match on empty digits", () => {
+    expect(phoneDigitsMatch("", "")).toBe(false);
+    expect(phoneDigitsMatch("+-", "")).toBe(false);
+  });
+  it("rejects different numbers", () => {
+    expect(phoneDigitsMatch("+972501234567", "+972509999999")).toBe(false);
+  });
+});
+
+describe("pendingRecipients", () => {
+  const all = [{ clerkUserId: "a" }, { clerkUserId: "b" }, { clerkUserId: "c" }];
+
+  it("returns everyone when nothing has been sent", () => {
+    expect(pendingRecipients(all, [])).toEqual(all);
+  });
+  it("excludes recipients already in the sent list", () => {
+    expect(pendingRecipients(all, ["b"])).toEqual([{ clerkUserId: "a" }, { clerkUserId: "c" }]);
+  });
+  it("returns empty once everyone is in the sent list", () => {
+    expect(pendingRecipients(all, ["a", "b", "c"])).toEqual([]);
+  });
+  it("ignores sent ids that aren't in the recipient list", () => {
+    expect(pendingRecipients(all, ["z"])).toEqual(all);
+  });
+});
