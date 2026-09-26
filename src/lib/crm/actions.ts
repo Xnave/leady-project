@@ -1,6 +1,6 @@
 import { appendAdminDecision } from "@/lib/admin-decisions";
 import { prisma } from "@/lib/db";
-import { refreshLeadState } from "./refresh";
+import { safeRefreshLeadState } from "./refresh";
 import type { PipelineStage } from "./types";
 
 export type Actor = { actorUserId: string; actorLabel: string };
@@ -48,7 +48,8 @@ export async function setManualStage(o: {
       details: { from: lead.stage, to: o.stage, reason: o.reason },
     }),
   ]);
-  await refreshLeadState(o.tenantId, lead.id, { now });
+  // The write is committed; a refresh failure must not turn it into a 500.
+  await safeRefreshLeadState(o.tenantId, lead.id, { now });
 }
 
 export async function setNextStep(o: {
@@ -75,7 +76,7 @@ export async function setNextStep(o: {
       details: done ? {} : { text: o.text, at: o.at?.toISOString() },
     }),
   ]);
-  await refreshLeadState(o.tenantId, lead.id);
+  await safeRefreshLeadState(o.tenantId, lead.id);
 }
 
 export async function snoozeLead(o: { tenantId: string; leadId: string; until: Date; actor: Actor }) {

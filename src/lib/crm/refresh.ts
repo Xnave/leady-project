@@ -106,9 +106,13 @@ export async function refreshLeadState(
 }
 
 /** For turn / webhook paths: CRM bookkeeping must never fail the caller. */
-export async function safeRefreshLeadState(tenantId: string, leadId: string): Promise<void> {
+export async function safeRefreshLeadState(
+  tenantId: string,
+  leadId: string,
+  opts?: { now?: Date; actorUserId?: string },
+): Promise<void> {
   try {
-    await refreshLeadState(tenantId, leadId);
+    await refreshLeadState(tenantId, leadId, opts);
   } catch (err) {
     console.error(JSON.stringify({ msg: "crm.refresh_failed", tenantId, leadId, error: String(err) }));
   }
