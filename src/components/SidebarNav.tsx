@@ -9,7 +9,7 @@ import type { UiCopy, UiLang, UiTheme } from "@/lib/ui";
 
 type NavKey = keyof UiCopy["nav"];
 
-const OWNER_ITEMS: { href: string; key: NavKey; countKey?: keyof NavCounts }[] = [
+const OWNER_ITEMS: { href: string; key: NavKey; countKey?: "inbox" | "leads" }[] = [
   { href: "/", key: "home" },
   { href: "/inbox", key: "inbox", countKey: "inbox" },
   { href: "/leads", key: "leads", countKey: "leads" },
@@ -133,7 +133,7 @@ export function SidebarNav({
                   <span>{ui.nav[item.key]}</span>
                 </span>
                 {count > 0 ? (
-                  <span className="nav-badge" title={item.key === "leads" ? ui.crm.tabs.needs : undefined}>
+                  <span className="nav-badge" title={item.key === "leads" && counts?.crmV2 ? ui.crm.tabs.needs : undefined}>
                     {count > 99 ? "99+" : count}
                   </span>
                 ) : null}

@@ -52,7 +52,7 @@ export default async function HomePage() {
       <div className="work-strip">
         <Link href="/leads" className="card stat-card">
           <span className="stat-value">{counts.leads}</span>
-          <span className="stat-label">{ui.crm.tabs.needs}</span>
+          <span className="stat-label">{counts.crmV2 ? ui.crm.tabs.needs : ui.home.quickLeads}</span>
         </Link>
         <Link href="/inbox" className="card stat-card">
           <span className="stat-value">{counts.inbox}</span>
