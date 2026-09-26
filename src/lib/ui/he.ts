@@ -533,7 +533,7 @@ export const he: UiCopy = {
     },
     wonByCapability: { booking: "נקבע", reservations: "הוזמן" },
     tabs: { needs: "צריך אותך", active: "פעילים", won: "נסגרו", closed: "אבוד / לא רלוונטי", all: "הכל" },
-    wonWindow: "30 יום",
+    wonWindow: "30 ימים אחרונים",
     cols: { lead: "ליד", stage: "שלב", stand: "איפה זה עומד", followUp: "מעקב", last: "קשר אחרון" },
     reasons: { handoff: "הועבר אליך", approval: "ממתין לאישורך", reminder: "תזכורת", cold: "התקרר" },
     reasonsLong: {

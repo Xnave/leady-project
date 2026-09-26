@@ -2855,12 +2855,13 @@ td .muted { font-size: var(--fs-xs); }
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
-.crm-pipe-n small {
-  font-size: var(--fs-xs);
+.crm-pipe-sub {
   font-weight: 400;
   color: var(--muted);
-  margin-inline-start: var(--space-1);
-  letter-spacing: 0;
+}
+.crm-pipe-sub::before {
+  content: "·";
+  margin-inline-end: var(--space-1);
 }
 .crm-pipe-bar {
   height: 3px;
@@ -2943,12 +2944,14 @@ td .muted { font-size: var(--fs-xs); }
   border-radius: var(--radius);
   overflow: hidden;
 }
+.crm-list { --crm-actions-w: 108px; }
 .crm-lhead,
 .crm-row {
   display: grid;
   align-items: center;
   gap: var(--space-3);
-  grid-template-columns: 28px minmax(160px, 1.3fr) 150px minmax(0, 2fr) 170px 140px;
+  /* Last track holds the row quick actions, so they never cover a data column. */
+  grid-template-columns: 28px minmax(160px, 1.3fr) 150px minmax(0, 2fr) 170px 140px var(--crm-actions-w);
   padding: 0 var(--space-4);
 }
 .crm-lhead {
@@ -3040,10 +3043,7 @@ td .muted { font-size: var(--fs-xs); }
 
 /* Row quick actions: revealed on hover, keyboard cursor or focus. */
 .crm-row-actions {
-  position: absolute;
-  inset-inline-end: var(--space-3);
-  inset-block-start: 50%;
-  transform: translateY(-50%);
+  justify-self: end;
   display: flex;
   gap: 2px;
   padding: 3px;
@@ -3777,7 +3777,7 @@ button.crm-stage { cursor: pointer; }
 /* List width breakpoints */
 @container crm-list (max-width: 860px) {
   .crm-lhead,
-  .crm-row { grid-template-columns: 28px minmax(140px, 1.3fr) 140px minmax(0, 2fr) 150px; }
+  .crm-row { grid-template-columns: 28px minmax(140px, 1.3fr) 140px minmax(0, 2fr) 150px var(--crm-actions-w); }
   .crm-lhead > :nth-child(6),
   .crm-row > .crm-last { display: none; }
 }

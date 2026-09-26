@@ -58,6 +58,7 @@ export function LeadsGrid({
         <span role="columnheader">{c.stand}</span>
         <span role="columnheader">{c.followUp}</span>
         <span role="columnheader">{c.last}</span>
+        <span role="columnheader" />
       </div>
       {rows.length ? (
         rows.map((r, i) => (

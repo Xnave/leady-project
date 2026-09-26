@@ -37,11 +37,9 @@ export function PipelineStrip({
               <span className="crm-sdot" />
             </span>
             {stageLabel(ui, wonLabel, s)}
+            {s === "won" ? <span className="crm-pipe-sub">{ui.crm.wonWindow}</span> : null}
           </span>
-          <span className="crm-pipe-n">
-            {n(s)}
-            {s === "won" ? <small>{ui.crm.wonWindow}</small> : null}
-          </span>
+          <span className="crm-pipe-n">{n(s)}</span>
           <span className="crm-pipe-bar" aria-hidden="true">
             <span style={{ inlineSize: `${(n(s) / max) * 100}%` }} />
           </span>

@@ -533,7 +533,7 @@ export const en: UiCopy = {
     },
     wonByCapability: { booking: "Booked", reservations: "Reserved" },
     tabs: { needs: "Needs you", active: "Active", won: "Won", closed: "Lost / not relevant", all: "All" },
-    wonWindow: "30 days",
+    wonWindow: "last 30 days",
     cols: { lead: "Lead", stage: "Stage", stand: "Where it stands", followUp: "Follow-up", last: "Last contact" },
     reasons: { handoff: "Handed to you", approval: "Needs approval", reminder: "Reminder", cold: "Gone cold" },
     reasonsLong: {
