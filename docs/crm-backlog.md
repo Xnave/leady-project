@@ -79,3 +79,8 @@ Each item gives the problem, what the market does, and what we already have to b
 - `LeadDetails` has untranslated unknown statuses.
 - The closed-conversation note has no CTA.
 - Demo / dev inbound routes return 500 without the Inngest dev server (`inngest.send` for nudges), which contradicts the CLAUDE.md claim. Investigate.
+
+## Must fix before enabling the WhatsApp digest (`DIGEST_WHATSAPP_ENABLED`)
+
+- **Replies can be faked when the webhook secret is unset.** The Zernio signature check only runs if a secret is configured. Without one, anyone who messages the platform number with an owner's phone as the sender can pull that tenant's lead list. Fix: refuse digest replies unless the secret is set and the signature checks out.
+- **Opt-in never checks who owns the phone.** Any user can sign any number up for daily templates. Add a one-time code or a reply-to-confirm step, and make phone numbers unique across opted-in recipients. Today, when two tenants share a number, the first match wins.
