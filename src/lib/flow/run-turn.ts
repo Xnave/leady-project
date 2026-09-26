@@ -73,6 +73,9 @@ export async function sendAndSave(
         ? ctx.lead.fields.zernioConversationId
         : undefined,
   });
+  // Callers outside a turn (request decision, HITL completion, nudges) send
+  // after their own refresh ran, so recompute lastOutboundAt/cold here.
+  await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
 }
 
 export type NudgeRequestedEvent = {
