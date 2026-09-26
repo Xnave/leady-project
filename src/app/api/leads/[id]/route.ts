@@ -21,10 +21,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   const tenantId = await requireTenantId();
   const body = (await req.json().catch(() => ({}))) as { status?: string };
-  const isLegacyStatus = typeof body.status === "string" && body.status in LEGACY_STATUS_TO_STAGE;
-  const stage = body.status
-    ? (LEGACY_STATUS_TO_STAGE[body.status] ?? (isPipelineStage(body.status) ? body.status : undefined))
-    : undefined;
+  const status = typeof body.status === "string" ? body.status : "";
+  // Own keys only: `in` / plain indexing would match prototype keys like "constructor".
+  const isLegacyStatus = Object.hasOwn(LEGACY_STATUS_TO_STAGE, status);
+  const stage = isLegacyStatus
+    ? LEGACY_STATUS_TO_STAGE[status]
+    : isPipelineStage(status)
+      ? status
+      : undefined;
   if (!stage) {
     return NextResponse.json({ error: "Bad status" }, { status: 400 });
   }
@@ -41,7 +45,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (isLegacyStatus) {
       await prisma.lead.updateMany({
         where: { id, tenantId },
-        data: { status: normalizeLeadStatus(body.status) },
+        data: { status: normalizeLeadStatus(status) },
       });
     }
   } catch (e) {
