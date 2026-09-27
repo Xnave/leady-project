@@ -2944,7 +2944,7 @@ td .muted { font-size: var(--fs-xs); }
   border-radius: var(--radius);
   overflow: hidden;
 }
-.crm-list { --crm-actions-w: 108px; }
+.crm-list { --crm-actions-w: 142px; }
 .crm-lhead,
 .crm-row {
   display: grid;
@@ -3015,7 +3015,7 @@ td .muted { font-size: var(--fs-xs); }
 .crm-av-ch.wa { background: var(--wa-green); }
 .crm-av-ch.ig { background: var(--text-soft); }
 .crm-name {
-  font-weight: 500;
+  font-weight: 400;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3023,8 +3023,9 @@ td .muted { font-size: var(--fs-xs); }
   align-items: center;
   gap: 6px;
 }
-.crm-row.unread .crm-name { font-weight: 600; }
-.crm-udot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-bright); flex: none; }
+/* Unread = bold name and bold "where it stands" (email-style), no dot. */
+.crm-row.unread .crm-name { font-weight: 700; color: var(--text); }
+.crm-row.unread .crm-stand { color: var(--text); font-weight: 500; }
 .crm-handle { font-size: var(--fs-xs); color: var(--muted); }
 .crm-stand {
   font-size: var(--fs-sm);

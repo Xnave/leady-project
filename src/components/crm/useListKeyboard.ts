@@ -19,13 +19,15 @@ export type ListKeyHandlers = {
   open: (index: number) => void;
   menu: (kind: RowMenu, index: number) => void;
   canSnooze: (index: number) => boolean;
+  /** Flip the row's read state. */
+  toggleRead: (index: number) => void;
   escape: () => void;
   focusSearch: () => void;
 };
 
 /**
  * The list's shortcuts (from the mockup): j/k and arrows move, Enter opens, s stage,
- * n next step, z snooze, / search, Esc clears. Ignored while typing or with a modifier.
+ * n next step, z snooze, u read/unread, / search, Esc clears. Ignored while typing or with a modifier.
  * While the peek panel is open only j/k act; the panel handles Esc itself.
  */
 export function useListKeyboard(h: ListKeyHandlers) {
@@ -76,6 +78,11 @@ export function useListKeyboard(h: ListKeyHandlers) {
           if (!has) return;
           e.preventDefault();
           c.menu(e.key === "s" ? "stage" : "next", c.kb);
+          return;
+        case "u":
+          if (!has) return;
+          e.preventDefault();
+          c.toggleRead(c.kb);
           return;
         case "z":
           if (!has || !c.canSnooze(c.kb)) return;

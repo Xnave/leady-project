@@ -87,9 +87,10 @@ type Props = {
   onOpen: (id: string) => void;
   onCheck: (id: string, on: boolean) => void;
   onMenu: (kind: RowMenu, id: string, anchor: HTMLElement) => void;
+  onToggleRead: (id: string, unread: boolean) => void;
 };
 
-export const LeadRow = memo(function LeadRow({ row: r, kb, checked, leaving, ui, lang, wonLabel, clock, onOpen, onCheck, onMenu }: Props) {
+export const LeadRow = memo(function LeadRow({ row: r, kb, checked, leaving, ui, lang, wonLabel, clock, onOpen, onCheck, onMenu, onToggleRead }: Props) {
   const cls = ["crm-row", r.unread && "unread", kb && "kb", checked && "checked", leaving && "leaving"]
     .filter(Boolean)
     .join(" ");
@@ -117,7 +118,6 @@ export const LeadRow = memo(function LeadRow({ row: r, kb, checked, leaving, ui,
         </span>
         <span className="crm-who-t">
           <span className="crm-name">
-            {r.unread ? <span className="crm-udot" /> : null}
             <bdi className="crm-name-t">{r.name}</bdi>
             {r.demo ? <span className="badge badge-demo">{ui.common.demo}</span> : null}
           </span>
@@ -155,6 +155,15 @@ export const LeadRow = memo(function LeadRow({ row: r, kb, checked, leaving, ui,
       </span>
       <LastContact r={r} ui={ui} lang={lang} clock={clock} />
       <span className="crm-row-actions" role="gridcell">
+        <button
+          type="button"
+          className="crm-ibtn"
+          aria-label={r.unread ? ui.inbox.markRead : ui.inbox.markUnread}
+          title={`${r.unread ? ui.inbox.markRead : ui.inbox.markUnread} (u)`}
+          onClick={() => onToggleRead(r.id, !r.unread)}
+        >
+          <Icon name={r.unread ? "mailOpen" : "mail"} />
+        </button>
         <button type="button" className="crm-ibtn" aria-label={ui.crm.message} title={ui.crm.message} onClick={() => onOpen(r.id)}>
           <Icon name="msg" />
         </button>

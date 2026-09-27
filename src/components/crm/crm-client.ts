@@ -15,7 +15,7 @@ async function send<T = { ok: boolean }>(url: string, method: string, body?: unk
 export type SnoozeDays = 1 | 3 | 7;
 export type BulkBody = {
   ids: string[];
-  op: "stage" | "snooze" | "read";
+  op: "stage" | "snooze" | "read" | "unread";
   stage?: string;
   reason?: string;
   days?: SnoozeDays;
@@ -33,5 +33,6 @@ export const crmApi = {
   bulk: (body: BulkBody) => send<{ ok: boolean; done: number }>(`/api/leads/bulk`, "PATCH", body, body.op === "snooze"),
   /** The read route is a POST that takes `{ unread }`. */
   markRead: (id: string) => send(`/api/leads/${id}/read`, "POST", { unread: false }),
+  setUnread: (id: string, unread: boolean) => send(`/api/leads/${id}/read`, "POST", { unread }),
   view: (id: string) => send<LeadViewDTO>(`/api/leads/${id}/view`, "GET"),
 };

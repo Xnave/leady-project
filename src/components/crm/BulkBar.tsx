@@ -12,6 +12,7 @@ export function BulkBar({
   onStage,
   onSnooze,
   onRead,
+  onUnread,
   onClear,
 }: {
   count: number;
@@ -20,6 +21,7 @@ export function BulkBar({
   onStage: (anchor: HTMLElement) => void;
   onSnooze: (anchor: HTMLElement) => void;
   onRead: () => void;
+  onUnread: () => void;
   onClear: () => void;
 }) {
   const at = (fn: (a: HTMLElement) => void) => (e: MouseEvent<HTMLButtonElement>) => fn(e.currentTarget);
@@ -34,6 +36,9 @@ export function BulkBar({
       </button>
       <button type="button" onClick={onRead}>
         {ui.crm.bulkRead}
+      </button>
+      <button type="button" onClick={onUnread}>
+        {ui.crm.bulkUnread}
       </button>
       <button type="button" className="crm-bulk-x" onClick={onClear} aria-label={ui.crm.clearSelection} title={ui.crm.clearSelection}>
         <Icon name="x" />

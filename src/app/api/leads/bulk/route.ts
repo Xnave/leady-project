@@ -58,8 +58,11 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ ok: true, done });
   }
 
-  if (body.op === "read") {
-    const res = await prisma.lead.updateMany({ where: { id: { in: ids }, tenantId }, data: { adminUnread: false } });
+  if (body.op === "read" || body.op === "unread") {
+    const res = await prisma.lead.updateMany({
+      where: { id: { in: ids }, tenantId },
+      data: { adminUnread: body.op === "unread" },
+    });
     return NextResponse.json({ ok: true, done: res.count });
   }
 

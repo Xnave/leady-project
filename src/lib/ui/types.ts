@@ -32,7 +32,7 @@ export type CrmCopy = {
   lostReasons: string[]; notRelevantReasons: string[]; reasonPrompt: string;
   stageSet: string; undo: string; openFull: string; close: string; message: string; channelFilter: string;
   needsEmptyTitle: string; needsEmpty: string; emptyTitle: string; empty: string; loadFailed: string; retry: string;
-  selected: string; bulkStage: string; bulkSnooze: string; bulkRead: string; clearSelection: string;
+  selected: string; bulkStage: string; bulkSnooze: string; bulkRead: string; bulkUnread: string; clearSelection: string;
   keysHint: string; search: string;
   digestTitle: string; digestBlurb: string; digestEnabled: string; digestHour: string;
   digestPhone: string; digestOptInText: string; digestFeatureOff: string; saved: string;

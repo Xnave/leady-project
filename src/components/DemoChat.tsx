@@ -89,7 +89,8 @@ export function DemoChat({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ leadId, from: from || undefined, text: trimmed }),
       });
-      const data = (await res.json()) as { error?: string; leadId?: string };
+      // A crashed route can answer with an empty or HTML body; don't let parsing mask the real error.
+      const data = (await res.json().catch(() => ({}))) as { error?: string; leadId?: string };
       if (!res.ok) throw new Error(data.error ?? composerLabels.sendFailed);
       if (data.leadId && data.leadId !== leadId) {
         router.push(`/demo?leadId=${data.leadId}`);

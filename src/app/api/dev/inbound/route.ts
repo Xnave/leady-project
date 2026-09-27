@@ -1,5 +1,5 @@
 import { persistInboundIfNew } from "@/lib/conversations";
-import { dispatchNudgeEvent, enqueueAgentTurn, runTurnNow } from "@/lib/flow/run-turn";
+import { runTurnNow, tryDispatchNudgeEvent, tryEnqueueAgentTurn } from "@/lib/flow/run-turn";
 import { adminBypass } from "@/lib/admin";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
@@ -28,27 +28,29 @@ export async function POST(req: Request) {
     text,
   });
   if (inserted) {
-    await enqueueAgentTurn({
+    const enqueued = await tryEnqueueAgentTurn({
       tenantId,
       conversationId: inserted.conversationId,
       triggerMessageId: inserted.messageId,
     });
     // Fallback when Inngest worker is not running (local DX).
-    await new Promise((r) => setTimeout(r, 800));
-    const agentMsg = await prisma.message.findFirst({
-      where: {
-        conversationId: inserted.conversationId,
-        role: "agent",
-        createdAt: { gt: new Date(Date.now() - 60_000) },
-      },
-    });
+    if (enqueued) await new Promise((r) => setTimeout(r, 800));
+    const agentMsg = enqueued
+      ? await prisma.message.findFirst({
+          where: {
+            conversationId: inserted.conversationId,
+            role: "agent",
+            createdAt: { gt: new Date(Date.now() - 60_000) },
+          },
+        })
+      : null;
     if (!agentMsg) {
       const turn = await runTurnNow({
         tenantId,
         conversationId: inserted.conversationId,
         triggerMessageId: inserted.messageId,
       });
-      await dispatchNudgeEvent(turn.nudgeEvent);
+      await tryDispatchNudgeEvent(turn.nudgeEvent);
     }
   }
   return NextResponse.redirect(redirectPath(req, "/leads"), 303);

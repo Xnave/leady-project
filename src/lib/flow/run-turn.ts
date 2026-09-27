@@ -157,6 +157,34 @@ export async function enqueueAgentTurn(opts: {
   });
 }
 
+/**
+ * Local-dev routes (demo chat, dev inbound) run the turn themselves when Inngest is not
+ * reachable. These wrappers report "not delivered" instead of throwing, so the route can
+ * fall back to `runTurnNow()` rather than answer 500 with an empty body.
+ */
+export async function tryEnqueueAgentTurn(
+  opts: Parameters<typeof enqueueAgentTurn>[0],
+): Promise<boolean> {
+  try {
+    await enqueueAgentTurn(opts);
+    return true;
+  } catch (err) {
+    console.warn(JSON.stringify({ msg: "inngest.unreachable", op: "enqueue_turn", error: String(err) }));
+    return false;
+  }
+}
+
+export async function tryDispatchNudgeEvent(
+  nudgeEvent: NudgeRequestedEvent | null | undefined,
+): Promise<boolean> {
+  try {
+    return await dispatchNudgeEvent(nudgeEvent);
+  } catch (err) {
+    console.warn(JSON.stringify({ msg: "inngest.unreachable", op: "nudge", error: String(err) }));
+    return false;
+  }
+}
+
 export async function runTurnNow(opts: {
   tenantId: string;
   conversationId: string;

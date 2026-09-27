@@ -48,6 +48,19 @@ const PATHS = {
       <path d="M15 20v-5h5" />
     </>
   ),
+  mail: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3 7 9 6 9-6" />
+    </>
+  ),
+  mailOpen: (
+    <>
+      <path d="M3 10v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9" />
+      <path d="m3 10 9-7 9 7" />
+      <path d="m3 10 9 6 9-6" />
+    </>
+  ),
   inbox: (
     <>
       <path d="M22 12h-6l-2 3h-4l-2-3H2" />

@@ -208,15 +208,16 @@ export function useLeadRows(o: {
     [refresh, failed, toast, ui],
   );
 
-  const markRead = useCallback(
-    (ids: string[]) => {
-      const saved = snapshot(ids).filter((s) => s.row.unread);
+  /** Mark rows read (`unread=false`) or unread. Only rows whose state actually changes are sent. */
+  const setUnread = useCallback(
+    (ids: string[], unread: boolean) => {
+      const saved = snapshot(ids).filter((s) => s.row.unread !== unread);
       if (!saved.length) return;
-      const tokens = edit(saved, (r) => ({ ...r, unread: false }));
+      const tokens = edit(saved, (r) => ({ ...r, unread }));
       const call =
         saved.length === 1
-          ? crmApi.markRead(saved[0].row.id)
-          : crmApi.bulk({ ids: saved.map((s) => s.row.id), op: "read" });
+          ? crmApi.setUnread(saved[0].row.id, unread)
+          : crmApi.bulk({ ids: saved.map((s) => s.row.id), op: unread ? "unread" : "read" });
       call.then(
         () => {
           settle(tokens, true);
@@ -233,8 +234,10 @@ export function useLeadRows(o: {
     [refresh, failed],
   );
 
+  const markRead = useCallback((ids: string[]) => setUnread(ids, false), [setUnread]);
+
   /** Reports from the peek panel, per action (see `useLeadAbsorb`). */
   const absorb = useLeadAbsorb({ pending, snapshot, edit, apply, settle, refresh });
 
-  return { rows, leaving, setStage, snooze, setNextStep, markRead, absorb };
+  return { rows, leaving, setStage, snooze, setNextStep, markRead, setUnread, absorb };
 }

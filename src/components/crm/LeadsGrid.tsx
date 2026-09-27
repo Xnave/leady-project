@@ -23,6 +23,7 @@ export function LeadsGrid({
   onOpen,
   onCheck,
   onMenu,
+  onToggleRead,
 }: {
   rows: LeadRowDTO[];
   tab: CrmTab;
@@ -39,6 +40,7 @@ export function LeadsGrid({
   onOpen: (id: string) => void;
   onCheck: (id: string, on: boolean) => void;
   onMenu: (kind: RowMenu, id: string, anchor: HTMLElement) => void;
+  onToggleRead: (id: string, unread: boolean) => void;
 }) {
   const c = ui.crm.cols;
   return (
@@ -75,6 +77,7 @@ export function LeadsGrid({
             onOpen={onOpen}
             onCheck={onCheck}
             onMenu={onMenu}
+            onToggleRead={onToggleRead}
           />
         ))
       ) : (
