@@ -84,6 +84,12 @@ That file re-reads `.env` from disk on every `env()` call by design: Next inline
 
 Do not mix them; adding customer-facing wording means touching both `copy/en.ts` and `copy/he.ts`.
 
+## UI
+
+Before any UI/CSS change, follow the design rules:
+
+@DESIGN.md
+
 ## Conventions
 
 - Import via the `@/` alias (`@/lib/...`), aliased in `tsconfig.json` and again in `vitest.config.ts`.

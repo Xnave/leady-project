@@ -4,6 +4,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { isClerkConfigured } from "@/lib/clerk";
 import { getUiLang, getUiTheme } from "@/lib/cookies";
 import "./globals.css";
+import "@/styles/zapidly-tokens.css";
 
 export const metadata = { title: "Leady" };
 

@@ -109,7 +109,7 @@ export function SidebarNav({
       </button>
       <aside className={`sidebar${open ? " open" : ""}`}>
         <Link href="/" className="sidebar-brand" onClick={() => setOpen(false)}>
-          <span className="sidebar-brand-mark">L</span>
+          <img className="sidebar-brand-mark" src="/brand/zapidly-mark.svg" alt="" />
           {ui.product}
         </Link>
         {showAccount ? (

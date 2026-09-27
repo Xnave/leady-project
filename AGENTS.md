@@ -21,6 +21,8 @@ Transactional verticals (visits, stays, fittings, rentals) share one primitive: 
 3. [src/lib/flow/architecture.test.ts](src/lib/flow/architecture.test.ts) — executable architecture contract (“kernel purity”, one Request, instances).
 4. [prisma/schema.prisma](prisma/schema.prisma) — `CapabilityInstance`, `Request`, `Agent.flow`.
 
+For any UI / CSS work, also read [DESIGN.md](DESIGN.md) — brand tokens, colour rules, components.
+
 Then the file you are changing.
 
 ---
