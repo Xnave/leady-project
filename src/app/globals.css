@@ -3014,6 +3014,8 @@ td .muted { font-size: var(--fs-xs); }
 }
 .crm-av-ch.wa { background: var(--wa-green); }
 .crm-av-ch.ig { background: var(--text-soft); }
+/* Gone cold (follow-up reason "cold" is due): the dot turns blue whatever the channel. */
+.crm-av-ch.cold { background: var(--info); }
 .crm-name {
   font-weight: 400;
   white-space: nowrap;

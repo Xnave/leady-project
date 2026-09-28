@@ -3,6 +3,7 @@ import type { LeadRowDTO } from "@/lib/crm/view";
 import {
   absorbStep,
   diffRow,
+  avatarDotClass,
   isSnoozable,
   matchesView,
   mergePending,
@@ -126,7 +127,8 @@ describe("mergePending", () => {
 
   it("confirms a date-only next-step edit by its date, not by an empty field set", () => {
     const b = row({ id: "b", nextStepText: "call", nextStepAt: "2026-09-26T06:00:00.000Z", followUpReason: "reminder", due: false });
-    const moved = withNextStep(b, "call", "2026-09-28T06:00:00.000Z");
+    // Fixed clock: the new date stays in the future, so `due` is not part of the patch.
+    const moved = withNextStep(b, "call", "2026-09-28T06:00:00.000Z", new Date("2026-09-25T09:00:00Z"));
     const p = edit(b, moved, { settled: true });
     expect(Object.keys(p.patch).sort()).toEqual(["followUpAt", "nextStepAt", "stand"]);
     const stale = mergePending([b], new Map([["b", p]]), { tab: "all" });
@@ -198,5 +200,17 @@ describe("absorbStep (peek reports, per action)", () => {
     const current = withStage(done, "qualified");
     const rolled = { ...current, ...undo };
     expect([rolled.stage, rolled.nextStepText]).toEqual(["qualified", "call"]);
+  });
+});
+
+describe("avatarDotClass", () => {
+  it("turns blue only when the lead has gone cold and it is due", () => {
+    expect(avatarDotClass({ channel: "whatsapp", followUpReason: "cold", due: true })).toBe("cold");
+    expect(avatarDotClass({ channel: "instagram", followUpReason: "cold", due: true })).toBe("cold");
+  });
+  it("keeps the channel colour otherwise", () => {
+    expect(avatarDotClass({ channel: "whatsapp", followUpReason: "cold", due: false })).toBe("wa");
+    expect(avatarDotClass({ channel: "whatsapp", followUpReason: "handoff", due: true })).toBe("wa");
+    expect(avatarDotClass({ channel: "instagram", followUpReason: null, due: false })).toBe("ig");
   });
 });

@@ -6,7 +6,7 @@ import { isActiveStage } from "@/lib/crm/types";
 import { fillUi, type UiCopy } from "@/lib/ui";
 import { absTime, initials, relTime, untilTime, type Clock } from "./format";
 import { Icon, type IconName } from "./Icon";
-import { isSnoozable } from "./rows";
+import { avatarDotClass, isSnoozable } from "./rows";
 import { stageLabel } from "./StageMenu";
 
 export type RowMenu = "stage" | "next" | "snooze";
@@ -114,7 +114,7 @@ export const LeadRow = memo(function LeadRow({ row: r, kb, checked, leaving, ui,
       <span className="crm-who" role="gridcell">
         <span className="crm-av" aria-hidden="true">
           {initials(r.name)}
-          <span className={`crm-av-ch ${r.channel === "whatsapp" ? "wa" : "ig"}`} />
+          <span className={`crm-av-ch ${avatarDotClass(r)}`} />
         </span>
         <span className="crm-who-t">
           <span className="crm-name">

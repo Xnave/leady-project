@@ -9,6 +9,17 @@ export function isSnoozable(r: LeadRowDTO): boolean {
   return r.due && (r.followUpReason === "cold" || r.followUpReason === "reminder");
 }
 
+/** Gone cold and due now (our last message went unanswered for COLD_AFTER_HOURS). */
+export function isColdNow(r: Pick<LeadRowDTO, "due" | "followUpReason">): boolean {
+  return r.due && r.followUpReason === "cold";
+}
+
+/** Avatar dot: blue once the lead has gone cold, otherwise the channel colour. */
+export function avatarDotClass(r: Pick<LeadRowDTO, "due" | "followUpReason" | "channel">): string {
+  if (isColdNow(r)) return "cold";
+  return r.channel === "whatsapp" ? "wa" : "ig";
+}
+
 /** Whether a row still belongs in the current view after a local change (mirrors `tabWhere`). */
 export function matchesView(r: LeadRowDTO, v: ViewFilter): boolean {
   if (v.stage && r.stage !== v.stage) return false;

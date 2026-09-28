@@ -13,7 +13,7 @@ import { LeadTimeline } from "./LeadTimeline";
 import { NextStepEditor } from "./NextStepEditor";
 import { StageStepper } from "./StageStepper";
 import { useClock } from "./useClock";
-import type { PeekReport } from "./rows";
+import { avatarDotClass, type PeekReport } from "./rows";
 import { useLeadView } from "./useLeadView";
 
 type Props = {
@@ -60,7 +60,7 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
       <div className="crm-lv-id">
         <span className="crm-av lg" aria-hidden="true">
           {initials(d.name)}
-          <span className={`crm-av-ch ${d.channel === "whatsapp" ? "wa" : "ig"}`} />
+          <span className={`crm-av-ch ${avatarDotClass(d)}`} />
         </span>
         <div className="crm-lv-who">
           <h2 id={headingId}>
