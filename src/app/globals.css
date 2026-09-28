@@ -3080,6 +3080,42 @@ td .muted { font-size: var(--fs-xs); }
 }
 .crm-ibtn:active { transform: scale(0.94); }
 
+/* Styled tooltip for icon buttons: `data-tip="Label · key"`. Shown on hover (pointer
+   devices only, see the hover block) and on keyboard focus, after a short delay so it
+   doesn't flash while the pointer passes over the row. aria-label stays the accessible name. */
+.crm-ibtn[data-tip] { position: relative; }
+.crm-ibtn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  inset-block-end: calc(100% + 6px);
+  /* Anchored to the button's inline-end so it grows back into the row, never past
+     the list's clipped edge. */
+  inset-inline-end: 0;
+  z-index: 5;
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--inverse);
+  color: var(--on-inverse);
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+.crm-ibtn[data-tip]:focus-visible::after {
+  opacity: 1;
+  transform: none;
+  transition-delay: 350ms;
+}
+
+/* "More" opens the labelled actions menu; only used where hover isn't available. */
+.crm-row-more { display: none; }
+.crm-pop-item-ic { display: flex; align-items: center; gap: var(--space-2); }
+.crm-pop-item-ic .crm-i { color: var(--muted); }
+
 /* Stage chip */
 .crm-stage {
   display: inline-flex;
@@ -3759,6 +3795,7 @@ button.crm-stage { cursor: pointer; }
   .crm-row:hover { background: var(--card-hover); }
   .crm-row:hover .crm-row-actions { opacity: 1; pointer-events: auto; }
   .crm-ibtn:hover { background: var(--bg-sunken); color: var(--text); }
+  .crm-ibtn[data-tip]:hover::after { opacity: 1; transform: none; transition-delay: 350ms; }
   button.crm-stage:hover { border-color: var(--line-control); }
   .crm-bulk button:hover { background: color-mix(in srgb, var(--on-inverse) 20%, transparent); }
   .crm-btn-quiet:hover { border-color: var(--line-control); color: var(--text); }
@@ -3766,9 +3803,20 @@ button.crm-stage { cursor: pointer; }
   .crm-toast button:hover { background: var(--inverse-hover); }
   .crm-crumb a:hover { color: var(--text); }
 }
-/* Touch: no hover reveal, so the floating row actions go away entirely. */
+/* Touch: no hover (so no tooltips). The row shows a single, always-visible "more"
+   button whose menu carries text labels; the icon cluster is hidden. */
 @media (hover: none) {
-  .crm-row-actions { display: none; }
+  .crm-row-actions {
+    opacity: 1;
+    pointer-events: auto;
+    padding: 0;
+    background: none;
+    border: 0;
+    box-shadow: none;
+  }
+  .crm-row-actions > .crm-ibtn:not(.crm-row-more) { display: none; }
+  .crm-row-more { display: grid; }
+  .crm-ibtn[data-tip]::after { display: none; }
   .crm-note-pin { opacity: 1; }
   .crm-keys { display: none; }
 }
@@ -3793,8 +3841,8 @@ button.crm-stage { cursor: pointer; }
 @container crm-list (max-width: 600px) {
   .crm-lhead { display: none; }
   .crm-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "who stage" "stand stand" "fu last";
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "who stage more" "stand stand stand" "fu last last";
     gap: var(--space-2);
     padding: var(--space-3) var(--space-4);
   }
@@ -3804,7 +3852,18 @@ button.crm-stage { cursor: pointer; }
   .crm-row > .crm-stand { grid-area: stand; white-space: normal; }
   .crm-row > .crm-col-fu { grid-area: fu; }
   .crm-row > .crm-last { grid-area: last; display: flex; text-align: end; }
-  .crm-row-actions { display: none; }
+  /* Cards: the "more" button sits top-end; the icon cluster is hidden. */
+  .crm-row > .crm-row-actions {
+    grid-area: more;
+    opacity: 1;
+    pointer-events: auto;
+    padding: 0;
+    background: none;
+    border: 0;
+    box-shadow: none;
+  }
+  .crm-row-actions > .crm-ibtn:not(.crm-row-more) { display: none; }
+  .crm-row-more { display: grid; }
 }
 
 /* Viewport breakpoints */

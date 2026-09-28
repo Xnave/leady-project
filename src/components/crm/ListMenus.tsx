@@ -6,6 +6,7 @@ import type { UiCopy } from "@/lib/ui";
 import type { SnoozeDays } from "./crm-client";
 import type { RowMenu } from "./LeadRow";
 import { NextStepMenu } from "./NextStepMenu";
+import { RowActionsMenu, type RowSubmenu } from "./RowActionsMenu";
 import { SnoozeMenu } from "./SnoozeMenu";
 import { StageMenu } from "./StageMenu";
 
@@ -21,6 +22,9 @@ export function ListMenus({
   onStage,
   onSnooze,
   onNext,
+  onToggleRead,
+  onOpen,
+  onSubmenu,
 }: {
   menu: OpenMenu | null;
   rows: LeadRowDTO[];
@@ -30,6 +34,10 @@ export function ListMenus({
   onStage: (ids: string[], stage: PipelineStage, reason: string) => void;
   onSnooze: (ids: string[], days: SnoozeDays) => void;
   onNext: (id: string, days: SnoozeDays, text: string) => void;
+  onToggleRead: (id: string, unread: boolean) => void;
+  onOpen: (id: string) => void;
+  /** From the mobile actions menu: reopen the same anchor with a choice menu. */
+  onSubmenu: (kind: RowSubmenu, menu: OpenMenu) => void;
 }) {
   if (!menu || !menu.ids.length) return null;
   const single = menu.ids.length === 1 ? rows.find((r) => r.id === menu.ids[0]) : undefined;
@@ -41,6 +49,16 @@ export function ListMenus({
       );
     case "snooze":
       return <SnoozeMenu {...common} onPick={(d) => onSnooze(menu.ids, d)} />;
+    case "actions":
+      return single ? (
+        <RowActionsMenu
+          {...common}
+          row={single}
+          onToggleRead={onToggleRead}
+          onOpen={onOpen}
+          onSubmenu={(kind) => onSubmenu(kind, menu)}
+        />
+      ) : null;
     case "next":
       return single ? (
         <NextStepMenu {...common} initialText={single.nextStepText ?? ""} onPick={(d, text) => onNext(single.id, d, text)} />

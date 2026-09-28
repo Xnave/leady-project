@@ -172,11 +172,11 @@ export function LeadPeek({
             ) : null}
           </span>
           {leadId ? (
-            <a className="crm-ibtn" href={`/leads/${leadId}`} aria-label={ui.crm.openFull} title={ui.crm.openFull}>
+            <a className="crm-ibtn" href={`/leads/${leadId}`} aria-label={ui.crm.openFull} data-tip={ui.crm.openFull}>
               <Icon name="expand" />
             </a>
           ) : null}
-          <button type="button" className="crm-ibtn" onClick={onClose} aria-label={ui.crm.close} title={`${ui.crm.close} (Esc)`}>
+          <button type="button" className="crm-ibtn" onClick={onClose} aria-label={ui.crm.close} data-tip={`${ui.crm.close} · Esc`}>
             <Icon name="x" />
           </button>
         </div>

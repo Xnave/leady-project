@@ -9,7 +9,12 @@ import { Icon, type IconName } from "./Icon";
 import { avatarDotClass, isSnoozable } from "./rows";
 import { stageLabel } from "./StageMenu";
 
-export type RowMenu = "stage" | "next" | "snooze";
+/** Tooltip text: the action, then its keyboard shortcut. */
+function tip(label: string, key: string): string {
+  return `${label} · ${key}`;
+}
+
+export type RowMenu = "stage" | "next" | "snooze" | "actions";
 type Lang = "he" | "en";
 
 export const FU_ICON: Record<NonNullable<LeadRowDTO["followUpReason"]>, IconName> = {
@@ -99,6 +104,7 @@ export const LeadRow = memo(function LeadRow({ row: r, kb, checked, leaving, ui,
     onOpen(r.id);
   };
   const menu = (kind: RowMenu) => (e: MouseEvent<HTMLButtonElement>) => onMenu(kind, r.id, e.currentTarget);
+  const readLabel = r.unread ? ui.inbox.markRead : ui.inbox.markUnread;
 
   return (
     <div className={cls} role="row" aria-selected={checked} data-row={r.id} tabIndex={-1} onClick={onRowClick}>
@@ -143,7 +149,7 @@ export const LeadRow = memo(function LeadRow({ row: r, kb, checked, leaving, ui,
       <span className="crm-stand" role="gridcell">
         {r.nextStepText ? (
           <span className="crm-stand-next">
-            <Icon name="flag" small />
+            <Icon name="calPlus" small />
             <bdi>{r.nextStepText}</bdi>
           </span>
         ) : (
@@ -155,40 +161,57 @@ export const LeadRow = memo(function LeadRow({ row: r, kb, checked, leaving, ui,
       </span>
       <LastContact r={r} ui={ui} lang={lang} clock={clock} />
       <span className="crm-row-actions" role="gridcell">
+        {/* Pointer devices: icon buttons with a styled tooltip (label · shortcut).
+            Touch / narrow lists: only the "more" button shows; its menu carries text labels. */}
         <button
           type="button"
           className="crm-ibtn"
-          aria-label={r.unread ? ui.inbox.markRead : ui.inbox.markUnread}
-          title={`${r.unread ? ui.inbox.markRead : ui.inbox.markUnread} (u)`}
+          aria-label={readLabel}
+          data-tip={tip(readLabel, "u")}
           onClick={() => onToggleRead(r.id, !r.unread)}
         >
           <Icon name={r.unread ? "mailOpen" : "mail"} />
         </button>
-        <button type="button" className="crm-ibtn" aria-label={ui.crm.message} title={ui.crm.message} onClick={() => onOpen(r.id)}>
+        <button
+          type="button"
+          className="crm-ibtn"
+          aria-label={ui.crm.openLead}
+          data-tip={tip(ui.crm.openLead, "Enter")}
+          onClick={() => onOpen(r.id)}
+        >
           <Icon name="msg" />
         </button>
         <button
           type="button"
           className="crm-ibtn"
           aria-label={ui.crm.nextStep}
-          title={`${ui.crm.nextStep} (n)`}
+          data-tip={tip(ui.crm.nextStep, "n")}
           aria-haspopup="menu"
           onClick={menu("next")}
         >
-          <Icon name="flag" />
+          <Icon name="calPlus" />
         </button>
         {isSnoozable(r) ? (
           <button
             type="button"
             className="crm-ibtn"
             aria-label={ui.crm.snooze}
-            title={`${ui.crm.snooze} (z)`}
+            data-tip={tip(ui.crm.snooze, "z")}
             aria-haspopup="menu"
             onClick={menu("snooze")}
           >
             <Icon name="clock" />
           </button>
         ) : null}
+        <button
+          type="button"
+          className="crm-ibtn crm-row-more"
+          aria-label={ui.crm.moreActions}
+          aria-haspopup="menu"
+          onClick={menu("actions")}
+        >
+          <Icon name="more" />
+        </button>
       </span>
     </div>
   );

@@ -30,7 +30,7 @@ export type CrmCopy = {
   timelineFilters: { all: string; notes: string; stages: string; requests: string };
   timeline: Record<string, string>;
   lostReasons: string[]; notRelevantReasons: string[]; reasonPrompt: string;
-  stageSet: string; undo: string; openFull: string; close: string; message: string; channelFilter: string;
+  stageSet: string; undo: string; openFull: string; close: string; message: string; openLead: string; changeStage: string; moreActions: string; channelFilter: string;
   needsEmptyTitle: string; needsEmpty: string; emptyTitle: string; empty: string; loadFailed: string; retry: string;
   selected: string; bulkStage: string; bulkSnooze: string; bulkRead: string; bulkUnread: string; clearSelection: string;
   keysHint: string; search: string;

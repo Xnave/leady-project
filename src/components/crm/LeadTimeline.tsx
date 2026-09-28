@@ -41,7 +41,7 @@ function describe(it: Item, ui: UiCopy, lang: Lang, wonLabel: string, clock: Clo
     case "next_step":
       return d.action === "next_step_done"
         ? { icon: "check", title: fillUi(t.nextDone, { actor }) }
-        : { icon: "bell", title: fillUi(t.nextSet, { actor }), sub: str(d.text) };
+        : { icon: "calPlus", title: fillUi(t.nextSet, { actor }), sub: str(d.text) };
     case "snooze":
       // Timezone-dependent: only once the client clock is mounted.
       return { icon: "clock", title: fillUi(t.snooze, { actor, when: clock && d.until ? absTime(str(d.until), lang) : "" }) };

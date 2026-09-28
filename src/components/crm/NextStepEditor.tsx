@@ -60,7 +60,7 @@ export function NextStepEditor({
   return (
     <section className="crm-sec" aria-label={ui.crm.nextStep}>
       <div className="crm-sec-h">
-        <Icon name="flag" small />
+        <Icon name="calPlus" small />
         {ui.crm.nextStep}
       </div>
       {inputOpen ? (

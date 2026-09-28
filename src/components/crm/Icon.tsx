@@ -48,6 +48,20 @@ const PATHS = {
       <path d="M15 20v-5h5" />
     </>
   ),
+  /** Next step: a scheduled follow-up (calendar + plus). */
+  calPlus: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M16 3v4M8 3v4M3 10h18M12 13v5M9.5 15.5h5" />
+    </>
+  ),
+  more: (
+    <>
+      <circle cx="5" cy="12" r="1.2" />
+      <circle cx="12" cy="12" r="1.2" />
+      <circle cx="19" cy="12" r="1.2" />
+    </>
+  ),
   mail: (
     <>
       <rect x="3" y="5" width="18" height="14" rx="2" />

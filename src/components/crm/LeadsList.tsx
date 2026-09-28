@@ -249,6 +249,9 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
           if (ids.length > 1) setSel(new Set());
         }}
         onNext={setNextStep}
+        onToggleRead={(id, unread) => setUnread([id], unread)}
+        onOpen={openLead}
+        onSubmenu={(kind, m) => setMenu({ ...m, kind })}
       />
       <LeadPeek leadId={peekId} onClose={closePeek} onChanged={absorb} ui={ui} lang={lang} wonLabel={wonLabel} />
     </div>
