@@ -7,7 +7,6 @@ import type { SnoozeDays } from "./crm-client";
 import type { RowMenu } from "./LeadRow";
 import { NextStepMenu } from "./NextStepMenu";
 import { RowActionsMenu, type RowSubmenu } from "./RowActionsMenu";
-import { SnoozeMenu } from "./SnoozeMenu";
 import { StageMenu } from "./StageMenu";
 
 export type OpenMenu = { kind: RowMenu; ids: string[]; anchor: HTMLElement; returnFocus?: HTMLElement | null };
@@ -20,7 +19,6 @@ export function ListMenus({
   wonLabel,
   onClose,
   onStage,
-  onSnooze,
   onNext,
   onToggleRead,
   onOpen,
@@ -32,7 +30,6 @@ export function ListMenus({
   wonLabel: string;
   onClose: () => void;
   onStage: (ids: string[], stage: PipelineStage, reason: string) => void;
-  onSnooze: (ids: string[], days: SnoozeDays) => void;
   onNext: (id: string, days: SnoozeDays, text: string) => void;
   onToggleRead: (id: string, unread: boolean) => void;
   onOpen: (id: string) => void;
@@ -47,8 +44,6 @@ export function ListMenus({
       return (
         <StageMenu {...common} current={single?.stage} wonLabel={wonLabel} onPick={(s, reason) => onStage(menu.ids, s, reason)} />
       );
-    case "snooze":
-      return <SnoozeMenu {...common} onPick={(d) => onSnooze(menu.ids, d)} />;
     case "actions":
       return single ? (
         <RowActionsMenu

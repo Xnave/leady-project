@@ -12,11 +12,9 @@ import {
   mergePending,
   restoreRows,
   withNextStep,
-  withSnooze,
   withStage,
   type ViewFilter,
 } from "./rows";
-import { snoozeLabel } from "./SnoozeMenu";
 import { stageLabel } from "./StageMenu";
 import { useToasts } from "./Toasts";
 import { useLeadAbsorb } from "./useLeadAbsorb";
@@ -148,42 +146,6 @@ export function useLeadRows(o: {
     [refresh, failed, toast, ui, wonLabel],
   );
 
-  const snooze = useCallback(
-    (ids: string[], days: SnoozeDays) => {
-      const saved = snapshot(ids);
-      if (!saved.length) return;
-      const until = presetAt(days);
-      const tokens = edit(saved, (r) => withSnooze(r, until));
-      const label = snoozeLabel(ui, days);
-      toast({
-        msg: fillUi(ui.crm.snoozed, { when: lang === "en" ? label.toLowerCase() : label }),
-        undo: () => {
-          settle(tokens, false);
-          restore(saved);
-        },
-        onExpire: () => {
-          const call =
-            saved.length === 1
-              ? crmApi.snooze(saved[0].row.id, days)
-              : crmApi.bulk({ ids: saved.map((s) => s.row.id), op: "snooze", days });
-          call.then(
-            () => {
-              settle(tokens, true);
-              refresh();
-            },
-            () => {
-              settle(tokens, false);
-              restore(saved);
-              failed();
-            },
-          );
-        },
-      });
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- helpers read refs only
-    [refresh, failed, toast, ui, lang],
-  );
-
   const setNextStep = useCallback(
     (id: string, days: SnoozeDays, text: string) => {
       const saved = snapshot([id]);
@@ -239,5 +201,5 @@ export function useLeadRows(o: {
   /** Reports from the peek panel, per action (see `useLeadAbsorb`). */
   const absorb = useLeadAbsorb({ pending, snapshot, edit, apply, settle, refresh });
 
-  return { rows, leaving, setStage, snooze, setNextStep, markRead, setUnread, absorb };
+  return { rows, leaving, setStage, setNextStep, markRead, setUnread, absorb };
 }

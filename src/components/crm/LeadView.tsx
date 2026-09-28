@@ -88,7 +88,6 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
       lang={lang}
       clock={clock}
       onDone={() => void lv.markDone()}
-      onSnooze={lv.snooze}
       onChat={() => {
         setTab("chat");
         setFocusComposer((n) => n + 1);

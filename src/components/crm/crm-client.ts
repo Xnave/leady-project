@@ -25,8 +25,6 @@ export const crmApi = {
   setStage: (id: string, stage: string, reason = "") => send(`/api/leads/${id}/stage`, "PATCH", { stage, reason }),
   setNextStep: (id: string, body: { text: string | null; at: string } | { done: true }) =>
     send(`/api/leads/${id}/next-step`, "PUT", body),
-  /** `keepalive` so a snooze committed while the page unloads still reaches the server. */
-  snooze: (id: string, days: SnoozeDays) => send(`/api/leads/${id}/snooze`, "POST", { days }, true),
   addNote: (id: string, body: string) => send(`/api/leads/${id}/notes`, "POST", { body }),
   pinNote: (id: string, noteId: string, pinned: boolean) =>
     send(`/api/leads/${id}/notes/${noteId}`, "PATCH", { pinned }),

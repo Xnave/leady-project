@@ -4,22 +4,18 @@ import type { MouseEvent } from "react";
 import { fillUi, type UiCopy } from "@/lib/ui";
 import { Icon } from "./Icon";
 
-/** Floating bar for the checked rows. Snooze is disabled when none of them can be snoozed. */
+/** Floating bar for the checked rows. */
 export function BulkBar({
   count,
-  canSnooze,
   ui,
   onStage,
-  onSnooze,
   onRead,
   onUnread,
   onClear,
 }: {
   count: number;
-  canSnooze: boolean;
   ui: UiCopy;
   onStage: (anchor: HTMLElement) => void;
-  onSnooze: (anchor: HTMLElement) => void;
   onRead: () => void;
   onUnread: () => void;
   onClear: () => void;
@@ -30,9 +26,6 @@ export function BulkBar({
       <span aria-live="polite">{fillUi(ui.crm.selected, { n: count })}</span>
       <button type="button" aria-haspopup="menu" onClick={at(onStage)}>
         {ui.crm.bulkStage}
-      </button>
-      <button type="button" aria-haspopup="menu" onClick={at(onSnooze)} disabled={!canSnooze}>
-        {ui.crm.bulkSnooze}
       </button>
       <button type="button" onClick={onRead}>
         {ui.crm.bulkRead}

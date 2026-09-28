@@ -7,8 +7,7 @@ import { fillUi, type UiCopy } from "@/lib/ui";
 import { crmApi, type SnoozeDays } from "./crm-client";
 import { presetAt } from "./format";
 import { rowPatchFromView } from "./lead-view";
-import { undoPatch, withNextStep, withSnooze, withStage, type PeekReport } from "./rows";
-import { snoozeLabel } from "./SnoozeMenu";
+import { undoPatch, withNextStep, withStage, type PeekReport } from "./rows";
 import { stageLabel } from "./StageMenu";
 import { useToastsOptional, type ToastInput } from "./Toasts";
 
@@ -164,35 +163,6 @@ export function useLeadView(o: {
     );
   };
 
-  /** Deferred like the list's snooze: it reaches the server when the undo toast runs out. */
-  const snooze = (days: SnoozeDays) => {
-    const action = nextAction++;
-    const before = dRef.current;
-    const after = { ...before, ...withSnooze(before, presetAt(days)) };
-    setD(after);
-    report(after, "optimistic", action);
-    const label = snoozeLabel(ui, days);
-    const undo = () => rollback(before, after, action);
-    toast({
-      msg: fillUi(ui.crm.snoozed, { when: lang === "en" ? label.toLowerCase() : label }),
-      undo,
-      onExpire: () => {
-        inflight.current += 1;
-        crmApi.snooze(before.id, days).then(
-          () => {
-            inflight.current -= 1;
-            void reload(action);
-          },
-          () => {
-            inflight.current -= 1;
-            undo();
-            toast({ msg: ui.crm.loadFailed });
-          },
-        );
-      },
-    });
-  };
-
   const addNote = (body: string) => {
     const id = dRef.current.id;
     const temp: Note = { id: `tmp-${Date.now()}`, body, authorLabel: "", pinned: false, createdAt: new Date().toISOString() };
@@ -207,5 +177,5 @@ export function useLeadView(o: {
     );
   };
 
-  return { d, reload, setStage, setNext, markDone, snooze, addNote, pinNote };
+  return { d, reload, setStage, setNext, markDone, addNote, pinNote };
 }

@@ -4,9 +4,8 @@ import type { LeadRowDTO } from "@/lib/crm/view";
 import type { UiCopy } from "@/lib/ui";
 import { Icon, type IconName } from "./Icon";
 import { Popover } from "./Popover";
-import { isSnoozable } from "./rows";
 
-export type RowSubmenu = "stage" | "next" | "snooze";
+export type RowSubmenu = "stage" | "next";
 
 /**
  * Touch and narrow screens have no hover, so the row's icon buttons (and their tooltips)
@@ -41,9 +40,6 @@ export function RowActionsMenu({
       run: () => onToggleRead(row.id, !row.unread),
     },
     { key: "next", icon: "calPlus", label: ui.crm.nextStep, run: () => onSubmenu("next") },
-    ...(isSnoozable(row)
-      ? [{ key: "snooze", icon: "clock" as IconName, label: ui.crm.snooze, run: () => onSubmenu("snooze") }]
-      : []),
     { key: "stage", icon: "flag", label: ui.crm.changeStage, run: () => onSubmenu("stage") },
   ];
   return (

@@ -14,7 +14,7 @@ import type { Clock } from "./format";
 import { ListBar } from "./ListBar";
 import { ListMenus, type OpenMenu } from "./ListMenus";
 import { PipelineStrip } from "./PipelineStrip";
-import { isSnoozable, type ViewFilter } from "./rows";
+import type { ViewFilter } from "./rows";
 import { ToastProvider } from "./Toasts";
 import { useLeadRows } from "./useLeadRows";
 import { useLeadPeek } from "./useLeadPeek";
@@ -66,7 +66,7 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
     if (typeof document === "undefined" || document.activeElement !== searchRef.current) setQInput(q);
   }
 
-  const { rows, leaving, setStage, snooze, setNextStep, markRead, setUnread, absorb } = useLeadRows({ initialRows, view, ui, lang, wonLabel });
+  const { rows, leaving, setStage, setNextStep, markRead, setUnread, absorb } = useLeadRows({ initialRows, view, ui, lang, wonLabel });
   const [kb, setKb] = useState(0);
   const [kbNav, setKbNav] = useState(false);
   const [sel, setSel] = useState<ReadonlySet<string>>(new Set());
@@ -156,7 +156,6 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
       const anchor = el?.querySelector<HTMLElement>("[data-stage-btn]");
       if (el && anchor) setMenu({ kind, ids: [rows[i].id], anchor, returnFocus: el });
     },
-    canSnooze: (i) => Boolean(rows[i] && isSnoozable(rows[i])),
     toggleRead: (i) => rows[i] && setUnread([rows[i].id], !rows[i].unread),
     escape: () => {
       if (sel.size) setSel(new Set());
@@ -219,10 +218,8 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
       {selected.length ? (
         <BulkBar
           count={selected.length}
-          canSnooze={selected.some(isSnoozable)}
           ui={ui}
           onStage={(anchor) => setMenu({ kind: "stage", ids: selected.map((r) => r.id), anchor })}
-          onSnooze={(anchor) => setMenu({ kind: "snooze", ids: selected.filter(isSnoozable).map((r) => r.id), anchor })}
           onRead={() => {
             markRead(selected.map((r) => r.id));
             setSel(new Set());
@@ -242,10 +239,6 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
         onClose={() => setMenu(null)}
         onStage={(ids, s, reason) => {
           setStage(ids, s, reason);
-          if (ids.length > 1) setSel(new Set());
-        }}
-        onSnooze={(ids, days) => {
-          snooze(ids, days);
           if (ids.length > 1) setSel(new Set());
         }}
         onNext={setNextStep}

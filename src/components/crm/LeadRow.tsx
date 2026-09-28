@@ -6,7 +6,7 @@ import { isActiveStage } from "@/lib/crm/types";
 import { fillUi, type UiCopy } from "@/lib/ui";
 import { absTime, initials, relTime, untilTime, type Clock } from "./format";
 import { Icon, type IconName } from "./Icon";
-import { avatarDotClass, isSnoozable } from "./rows";
+import { avatarDotClass } from "./rows";
 import { stageLabel } from "./StageMenu";
 
 /** Tooltip text: the action, then its keyboard shortcut. */
@@ -14,7 +14,7 @@ function tip(label: string, key: string): string {
   return `${label} · ${key}`;
 }
 
-export type RowMenu = "stage" | "next" | "snooze" | "actions";
+export type RowMenu = "stage" | "next" | "actions";
 type Lang = "he" | "en";
 
 export const FU_ICON: Record<NonNullable<LeadRowDTO["followUpReason"]>, IconName> = {
@@ -191,18 +191,6 @@ export const LeadRow = memo(function LeadRow({ row: r, kb, checked, leaving, ui,
         >
           <Icon name="calPlus" />
         </button>
-        {isSnoozable(r) ? (
-          <button
-            type="button"
-            className="crm-ibtn"
-            aria-label={ui.crm.snooze}
-            data-tip={tip(ui.crm.snooze, "z")}
-            aria-haspopup="menu"
-            onClick={menu("snooze")}
-          >
-            <Icon name="clock" />
-          </button>
-        ) : null}
         <button
           type="button"
           className="crm-ibtn crm-row-more"

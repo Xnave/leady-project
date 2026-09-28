@@ -633,7 +633,7 @@ export const en: UiCopy = {
     bulkRead: "Mark read",
     bulkUnread: "Mark unread",
     clearSelection: "Clear selection",
-    keysHint: "Keys: j/k move · Enter open · Esc close · s stage · n next step · z snooze · u read/unread · / search",
+    keysHint: "Keys: j/k move · Enter open · Esc close · s stage · n next step · u read/unread · / search",
     search: "Search name, phone, note",
     digestTitle: "Daily digest",
     digestBlurb: "A WhatsApp summary each morning of the leads that need you.",

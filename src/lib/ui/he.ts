@@ -633,7 +633,7 @@ export const he: UiCopy = {
     bulkRead: "סמן כנקרא",
     bulkUnread: "סמן כלא נקרא",
     clearSelection: "נקה בחירה",
-    keysHint: "מקשים: j/k ניווט · Enter פתיחה · Esc סגירה · s שלב · n צעד הבא · z דחייה · u נקרא/לא נקרא · / חיפוש",
+    keysHint: "מקשים: j/k ניווט · Enter פתיחה · Esc סגירה · s שלב · n צעד הבא · u נקרא/לא נקרא · / חיפוש",
     search: "חיפוש שם, טלפון, הערה",
     digestTitle: "תקציר יומי",
     digestBlurb: "סיכום בוואטסאפ כל בוקר על הפניות שצריכות אותך.",
