@@ -2803,7 +2803,7 @@ td .muted { font-size: var(--fs-xs); }
    26. CRM (leads v2)
    Ported from docs/superpowers/specs/assets/crm-phase1-mockup.html, every
    class prefixed `crm-`. State modifiers stay short and compound
-   (`.crm-row.kb`, `.crm-peek.on`). Regular buttons use .btn / .btn-secondary /
+   (`.crm-row.kb`, `.crm-row.unread`, `.crm-peek.on`). Regular buttons use .btn / .btn-secondary /
    .btn-ghost; .crm-btn-quiet is only for small preset / done buttons.
    Letter-spaced labels are tracked in LTR only (never letter-space Hebrew).
    -------------------------------------------------------------------------- */
@@ -2973,13 +2973,19 @@ td .muted { font-size: var(--fs-xs); }
 }
 .crm-row:last-child { border-block-end: 0; }
 /* Keyboard cursor: a 2px accent rule on the inline-start edge. */
-.crm-row.kb { background: var(--card-hover); }
-.crm-row.kb::before {
+/* Keyboard cursor ("the row I'm on"): stronger background + a thin outline around
+   the whole row. The edge bar is reserved for unread (below), as in the legacy list. */
+.crm-row.kb {
+  background: var(--card-hover);
+  box-shadow: inset 0 0 0 1px var(--line-control);
+}
+/* Unread: accent bar on the inline-start edge, plus bold text. */
+.crm-row.unread::before {
   content: "";
   position: absolute;
   inset-block: 0;
   inset-inline-start: 0;
-  width: 2px;
+  width: 3px;
   background: var(--accent-bright);
 }
 .crm-row.active,
