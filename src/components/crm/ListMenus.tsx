@@ -55,7 +55,7 @@ export function ListMenus({
       ) : null;
     case "next":
       return single ? (
-        <NextStepMenu {...common} initialText={single.nextStepText ?? ""} onPick={(at, text) => onNext(single.id, at, text)} />
+        <NextStepMenu {...common} initialText={single.nextStepText ?? ""} initialAt={single.nextStepAt} onPick={(at, text) => onNext(single.id, at, text)} />
       ) : null;
   }
 }

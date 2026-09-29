@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { UiCopy } from "@/lib/ui";
-import { absTime, DEFAULT_TIME, dateTimeAt, isoToTimeInput, presetAt, untilTime, type Clock } from "./format";
+import { absTime, DEFAULT_TIME, dateTimeAt, isoToTimeInput, presetAt, presetOf, untilTime, type Clock } from "./format";
 import { Icon } from "./Icon";
 import { isoToDateInput } from "./lead-view";
 
@@ -48,6 +48,10 @@ export function NextStepEditor({
     setTimeFor(at);
     setTime(isoToTimeInput(at));
   }
+
+  // What is set now: the matching preset day, or a custom date (client clock only).
+  const selected = clock && at ? presetOf(at, clock.now) : null;
+  const customDay = Boolean(clock && at && selected === null);
 
   const save = (when: string | null) => {
     const t = (inputOpen ? draft : (text ?? "")).trim() || null;
@@ -103,7 +107,7 @@ export function NextStepEditor({
               {clock && at ? untilTime(at, lang, clock.now) : null}
             </span>
           </button>
-          <button type="button" className="crm-btn-quiet" onClick={onDone}>
+          <button type="button" className="btn-secondary crm-next-done" onClick={onDone} data-tip={ui.crm.markDoneHint} aria-description={ui.crm.markDoneHint}>
             <Icon name="check" small />
             {ui.crm.markDone}
           </button>
@@ -111,13 +115,20 @@ export function NextStepEditor({
       )}
       <div className="crm-presets">
         {PRESETS.map((d, i) => (
-          <button key={d} type="button" className="crm-btn-quiet" onMouseDown={(e) => e.preventDefault()} onClick={() => save(presetAt(d, new Date(), time))}>
+          <button
+            key={d}
+            type="button"
+            className="crm-btn-quiet crm-choice"
+            aria-pressed={selected === d}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => save(presetAt(d, new Date(), time))}
+          >
             {ui.crm.nextPresets[i]}
           </button>
         ))}
         <input
           type="date"
-          className="crm-next-date"
+          className={customDay ? "crm-next-date crm-choice-on" : "crm-next-date"}
           aria-label={ui.crm.nextStep}
           value={isoToDateInput(clock ? at : null)}
           onChange={(e) => {
@@ -127,7 +138,7 @@ export function NextStepEditor({
         />
         <input
           type="time"
-          className="crm-next-date"
+          className={at ? "crm-next-date crm-choice-on" : "crm-next-date"}
           aria-label={ui.crm.nextTime}
           title={ui.crm.nextTime}
           step={900}

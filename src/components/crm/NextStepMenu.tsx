@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { UiCopy } from "@/lib/ui";
-import { DEFAULT_TIME, dateTimeAt, presetAt } from "./format";
+import { DEFAULT_TIME, dateTimeAt, isoToTimeInput, presetAt, presetOf } from "./format";
+import { isoToDateInput } from "./lead-view";
 import { Icon } from "./Icon";
 import { Popover } from "./Popover";
 
@@ -17,6 +18,7 @@ export function NextStepMenu({
   anchor,
   returnFocus,
   initialText,
+  initialAt,
   ui,
   onPick,
   onClose,
@@ -24,14 +26,17 @@ export function NextStepMenu({
   anchor: HTMLElement;
   returnFocus?: HTMLElement | null;
   initialText: string;
+  /** The current next step's moment, if any: preselects its hour and marks its day. */
+  initialAt: string | null;
   ui: UiCopy;
   onPick: (at: string, text: string) => void;
   onClose: () => void;
 }) {
   const [text, setText] = useState(initialText);
-  const [time, setTime] = useState(DEFAULT_TIME);
-  const [pickDate, setPickDate] = useState(false);
-  const [date, setDate] = useState("");
+  const current = presetOf(initialAt);
+  const [time, setTime] = useState(initialAt ? isoToTimeInput(initialAt) : DEFAULT_TIME);
+  const [pickDate, setPickDate] = useState(Boolean(initialAt) && current === null);
+  const [date, setDate] = useState(initialAt && current === null ? isoToDateInput(initialAt) : "");
   const commit = (at: string | null) => {
     if (!at) return;
     onClose();
@@ -61,9 +66,17 @@ export function NextStepMenu({
         </label>
       </div>
       {DAYS.map((d, i) => (
-        <button key={d} type="button" role="menuitem" className="crm-pop-item crm-pop-item-ic" onClick={() => commit(presetAt(d, new Date(), time))}>
+        <button
+          key={d}
+          type="button"
+          role="menuitemradio"
+          aria-checked={current === d}
+          className="crm-pop-item crm-pop-item-ic"
+          onClick={() => commit(presetAt(d, new Date(), time))}
+        >
           <Icon name="cal" small />
           {ui.crm.nextPresets[i]}
+          {current === d ? <Icon name="check" small /> : null}
         </button>
       ))}
       {pickDate ? (

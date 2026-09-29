@@ -63,6 +63,17 @@ export function dateTimeAt(date: string, time = DEFAULT_TIME): string | null {
   return new Date(+d[1], +d[2] - 1, +d[3], h, m, 0, 0).toISOString();
 }
 
+/** The preset (1 / 3 / 7 days from today) whose calendar day matches `iso`, else null. */
+export function presetOf(iso: string | null, now = new Date()): 1 | 3 | 7 | null {
+  if (!iso) return null;
+  const at = new Date(iso);
+  for (const d of [1, 3, 7] as const) {
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d);
+    if (at.getFullYear() === day.getFullYear() && at.getMonth() === day.getMonth() && at.getDate() === day.getDate()) return d;
+  }
+  return null;
+}
+
 /** "HH:MM" of an ISO moment in the browser zone, for `<input type="time">`. */
 export function isoToTimeInput(iso: string | null): string {
   if (!iso) return DEFAULT_TIME;

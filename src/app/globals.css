@@ -3489,7 +3489,36 @@ button.crm-stage { cursor: pointer; }
 .crm-next-text { flex: 1; display: grid; gap: 2px; min-width: 0; }
 .crm-next-text b { font-weight: 500; }
 .crm-next-text span { font-size: var(--fs-xs); color: var(--muted); }
-.crm-presets { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.crm-presets { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+/* The day / date / hour that is set now reads as selected (accent tint + border). */
+.crm-choice[aria-pressed="true"],
+.crm-next-date.crm-choice-on {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
+  font-weight: 600;
+}
+.crm-next-done { flex: none; min-height: 32px; gap: var(--space-1); }
+.crm-next-done[data-tip] { position: relative; }
+.crm-next-done[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  inset-block-end: calc(100% + 6px);
+  inset-inline-end: 0;
+  z-index: 5;
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--inverse);
+  color: var(--on-inverse);
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+.crm-next-done[data-tip]:focus-visible::after { opacity: 1; transition-delay: 350ms; }
+.crm-pop-item-ic > .crm-i:last-child:not(:first-child) { margin-inline-start: auto; color: var(--accent); }
 .crm-note {
   display: grid;
   gap: 2px;
@@ -3817,6 +3846,7 @@ button.crm-stage { cursor: pointer; }
   .crm-row:hover .crm-row-actions { opacity: 1; pointer-events: auto; }
   .crm-ibtn:hover { background: var(--bg-sunken); color: var(--text); }
   .crm-ibtn[data-tip]:hover::after { opacity: 1; transform: none; transition-delay: 350ms; }
+  .crm-next-done[data-tip]:hover::after { opacity: 1; transition-delay: 350ms; }
   button.crm-stage:hover { border-color: var(--line-control); }
   .crm-bulk button:hover { background: color-mix(in srgb, var(--on-inverse) 20%, transparent); }
   .crm-btn-quiet:hover { border-color: var(--line-control); color: var(--text); }

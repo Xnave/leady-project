@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dateTimeAt, initials, isoToTimeInput, presetAt, relTime, untilTime } from "./format";
+import { dateTimeAt, initials, isoToTimeInput, presetAt, presetOf, relTime, untilTime } from "./format";
 
 const now = new Date(2026, 8, 25, 14, 30);
 const ago = (min: number) => new Date(now.getTime() - min * 60_000).toISOString();
@@ -42,6 +42,18 @@ describe("presetAt", () => {
   });
   it("falls back to 09:00 for a bad time", () => {
     expect(new Date(presetAt(1, now, "later")).getHours()).toBe(9);
+  });
+});
+
+describe("presetOf", () => {
+  it("finds the preset whose day matches, at any hour", () => {
+    expect(presetOf(presetAt(1, now, "17:30"), now)).toBe(1);
+    expect(presetOf(presetAt(3, now), now)).toBe(3);
+    expect(presetOf(presetAt(7, now, "08:00"), now)).toBe(7);
+  });
+  it("is null for other days or no date", () => {
+    expect(presetOf(dateTimeAt("2026-10-20", "09:00"), now)).toBeNull();
+    expect(presetOf(null, now)).toBeNull();
   });
 });
 
