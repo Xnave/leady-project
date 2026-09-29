@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   autoReasonKey,
-  dateInputToIso,
   dayKey,
   dayLabel,
   isoToDateInput,
@@ -63,12 +62,8 @@ describe("day helpers", () => {
     expect(dayLabel("2026-09-24", now, "en", labels)).toBe("Yesterday");
     expect(dayLabel("2026-09-20", now, "en", labels)).toMatch(/20 Sept?/);
   });
-  it("round-trips a date input at 09:00 local", () => {
-    const iso = dateInputToIso("2026-10-01");
-    expect(iso).not.toBeNull();
-    expect(new Date(iso!).getHours()).toBe(9);
-    expect(isoToDateInput(iso)).toBe("2026-10-01");
-    expect(dateInputToIso("oops")).toBeNull();
+  it("round-trips a date input", () => {
+    expect(isoToDateInput(new Date(2026, 9, 1, 9, 0).toISOString())).toBe("2026-10-01");
     expect(dayKey(now)).toBe("2026-09-25");
   });
 });

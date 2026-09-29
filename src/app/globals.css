@@ -3280,6 +3280,21 @@ button.crm-stage { cursor: pointer; }
 .crm-pop-hint { margin-inline-start: auto; color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
 .crm-pop hr { border: 0; border-block-start: 1px solid var(--line); margin: var(--space-1) 0; }
 .crm-pop-form { padding: var(--space-2); display: grid; gap: var(--space-2); }
+.crm-pop-time { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); font-size: var(--fs-xs); color: var(--muted); }
+.crm-pop-date { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.crm-pop input[type="time"],
+.crm-pop input[type="date"] {
+  min-height: 34px;
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-xs);
+  background: var(--bg-elevated);
+  color: var(--text);
+  padding: 0 var(--space-2);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.crm-pop input[type="time"]:focus,
+.crm-pop input[type="date"]:focus { outline: none; border-color: var(--accent-bright); box-shadow: var(--ring); }
 .crm-pop input[type="text"] {
   min-height: 34px;
   border: 1px solid var(--line-control);
@@ -3419,6 +3434,12 @@ button.crm-stage { cursor: pointer; }
   box-shadow: 0 0 0 4px var(--accent-glow);
 }
 .crm-steps.closed .crm-st-pt { border-style: dashed; }
+/* Gone cold: the current point turns blue, matching the avatar dot. */
+.crm-steps.cold .crm-st.cur .crm-st-pt {
+  background: var(--info);
+  border-color: var(--info);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--info) 25%, transparent);
+}
 .crm-step-labels { display: flex; justify-content: space-between; font-size: var(--fs-2xs); color: var(--muted); }
 .crm-step-labels .cur { color: var(--text); font-weight: 600; }
 

@@ -105,12 +105,6 @@ export function dayLabel(day: string, now: Date, lang: Lang, labels: { today: st
   });
 }
 
-/** 09:00 browser-local on a picked `YYYY-MM-DD`, as an ISO string (matches the presets). */
-export function dateInputToIso(value: string): string | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!m) return null;
-  return new Date(+m[1], +m[2] - 1, +m[3], 9, 0, 0, 0).toISOString();
-}
 
 /** A `YYYY-MM-DD` value for `<input type="date">` from an ISO moment (browser zone). */
 export function isoToDateInput(iso: string | null): string {

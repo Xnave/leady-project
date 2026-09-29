@@ -24,7 +24,7 @@ export type CrmCopy = {
   them: string; us: string; windowLeft: string; windowClosed: string; windowClosedNote: string; conversationClosed: string;
   auto: string; manual: string; autoReasons: Record<string, string>; revived: string;
   snooze: string; snooze1: string; snooze3: string; snooze7: string; snoozed: string;
-  nextStep: string; noNextStep: string; nextPresets: [string, string, string]; nextPlaceholder: string; markDone: string; nextSaved: string; markedDone: string;
+  nextStep: string; noNextStep: string; nextPresets: [string, string, string]; nextPickDate: string; nextTime: string; nextSave: string; nextPlaceholder: string; markDone: string; nextSaved: string; markedDone: string;
   notes: string; notesHint: string; addNote: string; saveNote: string; saveHint: string; pin: string; unpin: string; deleteNote: string;
   tabsLead: { chat: string; activity: string; details: string };
   timelineFilters: { all: string; notes: string; stages: string; requests: string };

@@ -3,7 +3,6 @@
 import type { LeadRowDTO } from "@/lib/crm/view";
 import type { PipelineStage } from "@/lib/crm/types";
 import type { UiCopy } from "@/lib/ui";
-import type { SnoozeDays } from "./crm-client";
 import type { RowMenu } from "./LeadRow";
 import { NextStepMenu } from "./NextStepMenu";
 import { RowActionsMenu, type RowSubmenu } from "./RowActionsMenu";
@@ -30,7 +29,7 @@ export function ListMenus({
   wonLabel: string;
   onClose: () => void;
   onStage: (ids: string[], stage: PipelineStage, reason: string) => void;
-  onNext: (id: string, days: SnoozeDays, text: string) => void;
+  onNext: (id: string, at: string, text: string) => void;
   onToggleRead: (id: string, unread: boolean) => void;
   onOpen: (id: string) => void;
   /** From the mobile actions menu: reopen the same anchor with a choice menu. */
@@ -56,7 +55,7 @@ export function ListMenus({
       ) : null;
     case "next":
       return single ? (
-        <NextStepMenu {...common} initialText={single.nextStepText ?? ""} onPick={(d, text) => onNext(single.id, d, text)} />
+        <NextStepMenu {...common} initialText={single.nextStepText ?? ""} onPick={(at, text) => onNext(single.id, at, text)} />
       ) : null;
   }
 }

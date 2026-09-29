@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initials, presetAt, relTime, untilTime } from "./format";
+import { dateTimeAt, initials, isoToTimeInput, presetAt, relTime, untilTime } from "./format";
 
 const now = new Date(2026, 8, 25, 14, 30);
 const ago = (min: number) => new Date(now.getTime() - min * 60_000).toISOString();
@@ -35,6 +35,27 @@ describe("presetAt", () => {
   it("crosses month ends", () => {
     const d = new Date(presetAt(7, now));
     expect([d.getMonth(), d.getDate()]).toEqual([9, 2]);
+  });
+  it("uses the chosen time", () => {
+    const d = new Date(presetAt(1, now, "17:30"));
+    expect([d.getDate(), d.getHours(), d.getMinutes()]).toEqual([26, 17, 30]);
+  });
+  it("falls back to 09:00 for a bad time", () => {
+    expect(new Date(presetAt(1, now, "later")).getHours()).toBe(9);
+  });
+});
+
+describe("dateTimeAt / isoToTimeInput", () => {
+  it("combines a picked date and time in local time", () => {
+    const d = new Date(dateTimeAt("2026-10-04", "14:15")!);
+    expect([d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()]).toEqual([2026, 9, 4, 14, 15]);
+  });
+  it("rejects a bad date", () => {
+    expect(dateTimeAt("04/10/2026", "09:00")).toBeNull();
+  });
+  it("round-trips the time of an ISO moment", () => {
+    expect(isoToTimeInput(dateTimeAt("2026-10-04", "08:05"))).toBe("08:05");
+    expect(isoToTimeInput(null)).toBe("09:00");
   });
 });
 

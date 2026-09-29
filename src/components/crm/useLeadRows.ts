@@ -5,8 +5,7 @@ import { useCallback, useLayoutEffect, useRef, useState, useTransition } from "r
 import type { LeadRowDTO } from "@/lib/crm/view";
 import type { PipelineStage } from "@/lib/crm/types";
 import { fillUi, type UiCopy } from "@/lib/ui";
-import { crmApi, type SnoozeDays } from "./crm-client";
-import { presetAt } from "./format";
+import { crmApi } from "./crm-client";
 import {
   matchesView,
   mergePending,
@@ -147,10 +146,9 @@ export function useLeadRows(o: {
   );
 
   const setNextStep = useCallback(
-    (id: string, days: SnoozeDays, text: string) => {
+    (id: string, at: string, text: string) => {
       const saved = snapshot([id]);
       if (!saved.length) return;
-      const at = presetAt(days);
       const t = text || saved[0].row.nextStepText || null;
       const tokens = edit(saved, (r) => withNextStep(r, t, at));
       crmApi.setNextStep(id, { text: t, at }).then(

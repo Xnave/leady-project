@@ -41,9 +41,33 @@ export function absTime(iso: string, lang: Lang): string {
 }
 
 /** Next-step presets: 09:00 browser-local time, `days` calendar days after `now`. */
-export function presetAt(days: 1 | 3 | 7, now = new Date()): string {
-  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, 9, 0, 0, 0);
-  return d.toISOString();
+/** Default hour for a next step. */
+export const DEFAULT_TIME = "09:00";
+
+function hm(time: string): [number, number] {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(time);
+  return m ? [Math.min(23, +m[1]), Math.min(59, +m[2])] : [9, 0];
+}
+
+/** `days` from today at `time` ("HH:MM", browser zone). */
+export function presetAt(days: 1 | 3 | 7, now = new Date(), time = DEFAULT_TIME): string {
+  const [h, m] = hm(time);
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, h, m, 0, 0).toISOString();
+}
+
+/** A `YYYY-MM-DD` date at `time` ("HH:MM", browser zone); null for an invalid date. */
+export function dateTimeAt(date: string, time = DEFAULT_TIME): string | null {
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!d) return null;
+  const [h, m] = hm(time);
+  return new Date(+d[1], +d[2] - 1, +d[3], h, m, 0, 0).toISOString();
+}
+
+/** "HH:MM" of an ISO moment in the browser zone, for `<input type="time">`. */
+export function isoToTimeInput(iso: string | null): string {
+  if (!iso) return DEFAULT_TIME;
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 /** Up to two initials from the letters in a name; phone-number names fall back to "#". */

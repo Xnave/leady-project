@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import type { UiCopy } from "@/lib/ui";
-import { absTime, presetAt, untilTime, type Clock } from "./format";
+import { absTime, DEFAULT_TIME, dateTimeAt, isoToTimeInput, presetAt, untilTime, type Clock } from "./format";
 import { Icon } from "./Icon";
-import { dateInputToIso, isoToDateInput } from "./lead-view";
+import { isoToDateInput } from "./lead-view";
 
 const PRESETS = [1, 3, 7] as const;
 
@@ -41,10 +41,17 @@ export function NextStepEditor({
     setEditing(false);
   }
   const inputOpen = editing || !has;
+  // Hour for the next save: the current next step's hour, else 09:00 (client clock only).
+  const [time, setTime] = useState(DEFAULT_TIME);
+  const [timeFor, setTimeFor] = useState<string | null>(null);
+  if (clock && at !== timeFor) {
+    setTimeFor(at);
+    setTime(isoToTimeInput(at));
+  }
 
   const save = (when: string | null) => {
     const t = (inputOpen ? draft : (text ?? "")).trim() || null;
-    const iso = when ?? at ?? presetAt(1);
+    const iso = when ?? at ?? presetAt(1, new Date(), time);
     setEditing(false);
     onSave(t, iso);
   };
@@ -104,7 +111,7 @@ export function NextStepEditor({
       )}
       <div className="crm-presets">
         {PRESETS.map((d, i) => (
-          <button key={d} type="button" className="crm-btn-quiet" onMouseDown={(e) => e.preventDefault()} onClick={() => save(presetAt(d))}>
+          <button key={d} type="button" className="crm-btn-quiet" onMouseDown={(e) => e.preventDefault()} onClick={() => save(presetAt(d, new Date(), time))}>
             {ui.crm.nextPresets[i]}
           </button>
         ))}
@@ -114,8 +121,25 @@ export function NextStepEditor({
           aria-label={ui.crm.nextStep}
           value={isoToDateInput(clock ? at : null)}
           onChange={(e) => {
-            const iso = dateInputToIso(e.target.value);
+            const iso = dateTimeAt(e.target.value, time);
             if (iso) save(iso);
+          }}
+        />
+        <input
+          type="time"
+          className="crm-next-date"
+          aria-label={ui.crm.nextTime}
+          title={ui.crm.nextTime}
+          step={900}
+          value={time}
+          onChange={(e) => {
+            const t = e.target.value || DEFAULT_TIME;
+            setTime(t);
+            // With a next step already set, a new hour moves it on the same day.
+            if (at) {
+              const iso = dateTimeAt(isoToDateInput(at), t);
+              if (iso) save(iso);
+            }
           }}
         />
       </div>

@@ -6,6 +6,7 @@ import { isClosedStage, RANKED_STAGES, stageRank, type PipelineStage } from "@/l
 import type { UiCopy } from "@/lib/ui";
 import { Icon } from "./Icon";
 import { autoReasonKey, manualStageActor } from "./lead-view";
+import { isColdNow } from "./rows";
 import { StageMenu, stageLabel } from "./StageMenu";
 
 /** "Auto · bot is talking" or "Manual · Snir · Price". */
@@ -41,7 +42,7 @@ export function StageStepper({
 
   return (
     <div className="crm-stepper">
-      <div className={closed ? "crm-steps closed" : "crm-steps"} aria-hidden="true">
+      <div className={["crm-steps", closed && "closed", isColdNow(dto) && "cold"].filter(Boolean).join(" ")} aria-hidden="true">
         {RANKED_STAGES.map((s, i) => {
           const cls = closed ? "" : i < cur ? " done" : i === cur ? " cur" : "";
           return (
