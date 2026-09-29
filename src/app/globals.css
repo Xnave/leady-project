@@ -2822,9 +2822,10 @@ td .muted { font-size: var(--fs-xs); }
 .crm-tab {
   border: 0;
   background: none;
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 var(--space-3);
   color: var(--muted);
+  font-size: var(--fs-lg);
   font-weight: 500;
   display: flex;
   align-items: center;
@@ -2834,7 +2835,7 @@ td .muted { font-size: var(--fs-xs); }
   cursor: pointer;
   transition: color var(--transition-fast);
 }
-.crm-tab[aria-selected="true"] { color: var(--text); }
+.crm-tab[aria-selected="true"] { color: var(--text); font-weight: 600; }
 .crm-tab[aria-selected="true"]::after {
   content: "";
   position: absolute;
@@ -2845,7 +2846,7 @@ td .muted { font-size: var(--fs-xs); }
   background: var(--text);
 }
 .crm-tab-count {
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   font-weight: 600;
   padding: 1px 7px;
   border-radius: var(--radius-pill);
@@ -3826,7 +3827,7 @@ button.crm-stage { cursor: pointer; }
   .crm-toast button,
   .crm-pop-item { min-height: var(--hit); }
   .crm-ibtn { width: var(--hit); height: var(--hit); }
-  .crm-tab { min-height: 44px; }
+  .crm-tab { min-height: 48px; }
 }
 
 /* List width breakpoints */
