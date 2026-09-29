@@ -16,7 +16,6 @@ export type CrmCopy = {
   stages: Record<"new" | "talking" | "qualified" | "pending" | "won" | "lost" | "not_relevant", string>;
   wonByCapability: Record<string, string>;
   tabs: Record<"needs" | "active" | "won" | "closed" | "all", string>;
-  wonWindow: string;
   cols: { lead: string; stage: string; stand: string; followUp: string; last: string };
   reasons: Record<"handoff" | "approval" | "reminder" | "cold", string>;
   reasonsLong: Record<"handoff" | "approval" | "reminder" | "cold", string>;

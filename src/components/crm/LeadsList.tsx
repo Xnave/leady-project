@@ -4,7 +4,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Pagination } from "@/components/Pagination";
 import type { CrmCounts, CrmTab, LeadRowDTO } from "@/lib/crm/view";
-import type { PipelineStage } from "@/lib/crm/types";
+import type { FollowUpReason, PipelineStage } from "@/lib/crm/types";
 import type { UiCopy } from "@/lib/ui";
 import { BulkBar } from "./BulkBar";
 import { LeadsGrid } from "./LeadsGrid";
@@ -13,12 +13,12 @@ import { LeadPeek } from "./LeadPeek";
 import type { Clock } from "./format";
 import { ListBar } from "./ListBar";
 import { ListMenus, type OpenMenu } from "./ListMenus";
-import { PipelineStrip } from "./PipelineStrip";
 import type { ViewFilter } from "./rows";
 import { ToastProvider } from "./Toasts";
 import { useLeadRows } from "./useLeadRows";
 import { useLeadPeek } from "./useLeadPeek";
 import { useListKeyboard } from "./useListKeyboard";
+import { SubFilter } from "./SubFilter";
 import type { RowMenu } from "./LeadRow";
 
 type Props = {
@@ -27,6 +27,7 @@ type Props = {
   total: number;
   tab: CrmTab;
   stage?: PipelineStage;
+  reason?: FollowUpReason;
   channel?: string;
   q: string;
   page: number;
@@ -48,20 +49,20 @@ export function LeadsList(props: Props) {
   );
 }
 
-function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, page, pageSize, wonLabel, ui, lang, nowIso }: Props) {
+function LeadsListInner({ initialRows, counts, total, tab, stage, reason, channel, q, page, pageSize, wonLabel, ui, lang, nowIso }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [navPending, startNav] = useTransition();
 
   // View state mirrors the URL, but updates at once on click so the tabs never lag.
-  const propView: ViewFilter = { tab, stage, channel };
+  const propView: ViewFilter = { tab, stage, reason, channel };
   const [view, setView] = useState<ViewFilter>(propView);
   const [qInput, setQInput] = useState(q);
   const searchRef = useRef<HTMLInputElement>(null);
-  const [seen, setSeen] = useState({ tab, stage, channel, q });
-  if (seen.tab !== tab || seen.stage !== stage || seen.channel !== channel || seen.q !== q) {
-    setSeen({ tab, stage, channel, q });
+  const [seen, setSeen] = useState({ tab, stage, reason, channel, q });
+  if (seen.tab !== tab || seen.stage !== stage || seen.reason !== reason || seen.channel !== channel || seen.q !== q) {
+    setSeen({ tab, stage, reason, channel, q });
     setView(propView);
     if (typeof document === "undefined" || document.activeElement !== searchRef.current) setQInput(q);
   }
@@ -103,10 +104,11 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
       const set = (k: string, v?: string) => (v ? params.set(k, v) : params.delete(k));
       set("tab", next.tab);
       set("stage", next.stage);
+      set("reason", next.reason);
       set("ch", next.channel);
       set("q", next.q.trim());
       params.delete("page");
-      viewRef.current = { tab: next.tab, stage: next.stage, channel: next.channel };
+      viewRef.current = { tab: next.tab, stage: next.stage, reason: next.reason, channel: next.channel };
       setView(viewRef.current);
       setKb(0);
       setSel(new Set());
@@ -169,6 +171,7 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
     [
       ["tab", view.tab],
       ["stage", view.stage],
+      ["reason", view.reason],
       ["ch", view.channel],
       ["q", q],
       ["demo", searchParams.get("demo") ?? undefined],
@@ -178,13 +181,6 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
   return (
     <div className="crm-page">
       <LeadsHeader ui={ui} q={qInput} onQ={onQ} searchRef={searchRef} />
-      <PipelineStrip
-        counts={counts.byStage}
-        active={view.stage}
-        ui={ui}
-        wonLabel={wonLabel}
-        onToggle={(s) => navigate({ tab: "all", stage: view.stage === s ? undefined : s, channel: view.channel, q: qInput })}
-      />
       <ListBar
         tab={view.tab}
         channel={view.channel}
@@ -192,6 +188,16 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, channel, q, pa
         ui={ui}
         onTab={(t) => navigate({ tab: t, channel: view.channel, q: qInput })}
         onChannel={(c) => navigate({ ...view, channel: c, q: qInput })}
+      />
+      <SubFilter
+        tab={view.tab}
+        stage={view.stage}
+        reason={view.reason}
+        counts={counts}
+        ui={ui}
+        wonLabel={wonLabel}
+        onStage={(st) => navigate({ ...view, stage: st, reason: undefined, q: qInput })}
+        onReason={(r) => navigate({ ...view, reason: r, stage: undefined, q: qInput })}
       />
       <LeadsGrid
         rows={rows}

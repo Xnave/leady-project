@@ -38,7 +38,10 @@ export type CrmCounts = {
   won: number;
   closed: number;
   all: number;
-  byStage: Record<"new" | "talking" | "qualified" | "pending" | "won30", number>;
+  /** Every stage, for the sub-filter under Active / Lost & not relevant / All. */
+  byStage: Record<PipelineStage, number>;
+  /** Needs-you leads by follow-up reason, for the sub-filter under Needs you. */
+  byReason: Record<FollowUpReason, number>;
 };
 
 export type LeadRowDTO = {

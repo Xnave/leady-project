@@ -2,7 +2,7 @@ import { LeadsList } from "@/components/crm/LeadsList";
 import { getUiLang } from "@/lib/cookies";
 import { crmV2Enabled } from "@/lib/crm/flags";
 import { loadLeadRows, type CrmTab } from "@/lib/crm/view";
-import { isPipelineStage } from "@/lib/crm/types";
+import { isFollowUpReason, isPipelineStage } from "@/lib/crm/types";
 import { loadWonLabel } from "@/lib/crm/won-label";
 import { prisma } from "@/lib/db";
 import { requireTenantIdForPage } from "@/lib/tenant";
@@ -30,6 +30,7 @@ export default async function LeadsPage({
   const pageSize = [10, 20, 50].includes(Number(sp.size)) ? Number(sp.size) : 50;
   const page = Math.max(1, Number(sp.page) || 1);
   const stage = isPipelineStage(sp.stage) ? sp.stage : undefined;
+  const reason = isFollowUpReason(sp.reason) ? sp.reason : undefined;
   const channel = sp.ch === "whatsapp" || sp.ch === "instagram" ? sp.ch : undefined;
   const q = sp.q?.trim() ?? "";
   const showDemo = sp.demo === "1";
@@ -40,6 +41,7 @@ export default async function LeadsPage({
       tenantId,
       tab: t,
       stage,
+      reason: t === "needs" ? reason : undefined,
       channel,
       q,
       showDemo,
@@ -64,6 +66,7 @@ export default async function LeadsPage({
       total={data.total}
       tab={tab ?? "needs"}
       stage={stage}
+      reason={reason}
       channel={channel}
       q={q}
       page={page}

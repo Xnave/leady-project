@@ -14,7 +14,7 @@ import {
   type LeadRowInput,
 } from "./view";
 import { needsWhere } from "./needs";
-import { ACTIVE_STAGES, CLOSED_STAGES, FOLLOW_UP_PRIORITY, type FollowUpReason, type PipelineStage } from "./types";
+import { ACTIVE_STAGES, CLOSED_STAGES, FOLLOW_UP_PRIORITY, PIPELINE_STAGES, type FollowUpReason, type PipelineStage } from "./types";
 
 function demoWhere(showDemo: boolean): Prisma.LeadWhereInput {
   return showDemo ? {} : { NOT: { externalUserId: { startsWith: "demo-" } } };
@@ -47,11 +47,12 @@ function searchWhere(q: string): Prisma.LeadWhereInput {
 }
 
 function buildRowsWhere(
-  o: { tenantId: string; tab: CrmTab; stage?: PipelineStage; channel?: string; q?: string; showDemo: boolean },
+  o: { tenantId: string; tab: CrmTab; stage?: PipelineStage; reason?: FollowUpReason; channel?: string; q?: string; showDemo: boolean },
   now: Date,
 ): Prisma.LeadWhereInput {
   const where: Prisma.LeadWhereInput = { tenantId: o.tenantId, ...demoWhere(o.showDemo), ...tabWhere(o.tab, now) };
   if (o.stage) where.stage = o.stage;
+  if (o.reason) where.followUpReason = o.reason;
   if (o.channel) where.channel = { provider: o.channel };
   const q = o.q?.trim();
   if (q) where.AND = [searchWhere(q)];
@@ -60,33 +61,25 @@ function buildRowsWhere(
 
 async function computeCounts(tenantId: string, showDemo: boolean, now: Date): Promise<CrmCounts> {
   const base: Prisma.LeadWhereInput = { tenantId, ...demoWhere(showDemo) };
-  const won30Since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const [needs, active, won, closed, all, stageNew, stageTalking, stageQualified, stagePending, stageWon30] =
-    await Promise.all([
-      prisma.lead.count({ where: { ...base, ...needsWhere(now) } }),
-      prisma.lead.count({ where: { ...base, stage: { in: [...ACTIVE_STAGES] } } }),
-      prisma.lead.count({ where: { ...base, stage: "won" } }),
-      prisma.lead.count({ where: { ...base, stage: { in: [...CLOSED_STAGES] } } }),
-      prisma.lead.count({ where: base }),
-      prisma.lead.count({ where: { ...base, stage: "new" } }),
-      prisma.lead.count({ where: { ...base, stage: "talking" } }),
-      prisma.lead.count({ where: { ...base, stage: "qualified" } }),
-      prisma.lead.count({ where: { ...base, stage: "pending" } }),
-      prisma.lead.count({ where: { ...base, stage: "won", stageChangedAt: { gte: won30Since } } }),
-    ]);
+  const needs = { ...base, ...needsWhere(now) };
+  const count = (where: Prisma.LeadWhereInput) => prisma.lead.count({ where });
+  const [nNeeds, nActive, nWon, nClosed, nAll, stages, reasons] = await Promise.all([
+    count(needs),
+    count({ ...base, stage: { in: [...ACTIVE_STAGES] } }),
+    count({ ...base, stage: "won" }),
+    count({ ...base, stage: { in: [...CLOSED_STAGES] } }),
+    count(base),
+    Promise.all(PIPELINE_STAGES.map((st) => count({ ...base, stage: st }))),
+    Promise.all(FOLLOW_UP_PRIORITY.map((r) => count({ ...needs, followUpReason: r }))),
+  ]);
   return {
-    needs,
-    active,
-    won,
-    closed,
-    all,
-    byStage: {
-      new: stageNew,
-      talking: stageTalking,
-      qualified: stageQualified,
-      pending: stagePending,
-      won30: stageWon30,
-    },
+    needs: nNeeds,
+    active: nActive,
+    won: nWon,
+    closed: nClosed,
+    all: nAll,
+    byStage: Object.fromEntries(PIPELINE_STAGES.map((st, i) => [st, stages[i]])) as CrmCounts["byStage"],
+    byReason: Object.fromEntries(FOLLOW_UP_PRIORITY.map((r, i) => [r, reasons[i]])) as CrmCounts["byReason"],
   };
 }
 
@@ -136,6 +129,7 @@ export async function loadLeadRows(o: {
   tenantId: string;
   tab: CrmTab;
   stage?: PipelineStage;
+  reason?: FollowUpReason;
   channel?: string;
   q?: string;
   showDemo: boolean;

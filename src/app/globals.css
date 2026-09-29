@@ -2808,70 +2808,6 @@ td .muted { font-size: var(--fs-xs); }
    Letter-spaced labels are tracked in LTR only (never letter-space Hebrew).
    -------------------------------------------------------------------------- */
 
-/* Pipeline strip */
-.crm-pipe {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 1px;
-  background: var(--line);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  overflow: hidden;
-  margin-block-end: var(--space-5);
-}
-.crm-pipe-cell {
-  background: var(--card);
-  border: 0;
-  padding: var(--space-3) var(--space-4);
-  text-align: start;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  position: relative;
-  color: inherit;
-  cursor: pointer;
-  transition: background-color var(--transition-fast);
-}
-.crm-pipe-cell[aria-pressed="true"] { background: var(--accent-soft); }
-.crm-pipe-cell[aria-pressed="true"]::after {
-  content: "";
-  position: absolute;
-  inset-inline: 0;
-  inset-block-end: 0;
-  height: 2px;
-  background: var(--accent-bright);
-}
-.crm-pipe-label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--fs-xs);
-  color: var(--muted);
-  font-weight: 500;
-}
-.crm-pipe-n {
-  font-size: var(--fs-xl);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-}
-.crm-pipe-sub {
-  font-weight: 400;
-  color: var(--muted);
-}
-.crm-pipe-sub::before {
-  content: "·";
-  margin-inline-end: var(--space-1);
-}
-.crm-pipe-bar {
-  height: 3px;
-  border-radius: 2px;
-  background: var(--bg-sunken);
-  overflow: hidden;
-  margin-block-start: var(--space-1);
-}
-.crm-pipe-bar span { display: block; height: 100%; background: var(--line-control); border-radius: 2px; }
-.crm-pipe-cell[data-stage="won"] .crm-pipe-bar span { background: var(--accent-bright); }
 
 /* Tabs + filter bar */
 .crm-bar {
@@ -2934,6 +2870,20 @@ td .muted { font-size: var(--fs-xs); }
   transition: border-color var(--transition-fast), background-color var(--transition-fast);
 }
 .crm-fchip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+/* Second filter level: narrows the selected tab (reason under Needs you, stage elsewhere). */
+.crm-subbar { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-block: 0 var(--space-3); }
+.crm-fchip-n {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-sunken);
+  color: var(--text-soft);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.crm-fchip[aria-pressed="true"] .crm-fchip-n { background: var(--card); color: var(--accent); }
 
 /* List. Column breakpoints follow the list's own width (container query), so
    they hold with or without the sidebar. */
@@ -3716,7 +3666,6 @@ button.crm-stage { cursor: pointer; }
 .crm-skel.w60 { width: 60%; }
 .crm-skel.w80 { width: 80%; }
 .crm-row.skel { cursor: default; }
-.crm-pipe-cell.skel { cursor: default; gap: var(--space-2); }
 @keyframes crm-skel-pulse {
   from { opacity: 1; }
   to { opacity: 0.45; }
@@ -3838,8 +3787,6 @@ button.crm-stage { cursor: pointer; }
     box-shadow: none;
   }
   .crm-note:hover .crm-note-pin { opacity: 1; }
-  .crm-pipe-cell:hover { background: var(--card-hover); }
-  .crm-pipe-cell[aria-pressed="true"]:hover { background: var(--accent-soft); }
   .crm-tab:hover { color: var(--text); }
   .crm-fchip:hover { border-color: var(--line-control); }
   .crm-row:hover { background: var(--card-hover); }
@@ -3923,7 +3870,6 @@ button.crm-stage { cursor: pointer; }
   .crm-full-main { border-inline-end: 0; border-block-end: 1px solid var(--line); }
 }
 @media (max-width: 640px) {
-  .crm-pipe { grid-template-columns: repeat(5, minmax(96px, 1fr)); overflow-x: auto; }
   .crm-filters { margin-inline-start: 0; }
   .crm-toasts { inset-inline: var(--space-4); }
   .crm-lv-head { padding: var(--space-4); }

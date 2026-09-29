@@ -1,8 +1,8 @@
 /** Pure row logic for the leads list: what the optimistic updates change, and what a view shows. */
 import type { CrmTab, LeadRowDTO } from "@/lib/crm/view";
-import { isActiveStage, type PipelineStage } from "@/lib/crm/types";
+import { isActiveStage, type FollowUpReason, type PipelineStage } from "@/lib/crm/types";
 
-export type ViewFilter = { tab: CrmTab; stage?: PipelineStage; channel?: string };
+export type ViewFilter = { tab: CrmTab; stage?: PipelineStage; reason?: FollowUpReason; channel?: string };
 
 /** Only cold and reminder follow-ups can be snoozed (the API answers 409 otherwise). */
 export function isSnoozable(r: LeadRowDTO): boolean {
@@ -23,6 +23,7 @@ export function avatarDotClass(r: Pick<LeadRowDTO, "due" | "followUpReason" | "c
 /** Whether a row still belongs in the current view after a local change (mirrors `tabWhere`). */
 export function matchesView(r: LeadRowDTO, v: ViewFilter): boolean {
   if (v.stage && r.stage !== v.stage) return false;
+  if (v.reason && r.followUpReason !== v.reason) return false;
   if (v.channel && r.channel !== v.channel) return false;
   switch (v.tab) {
     case "needs":

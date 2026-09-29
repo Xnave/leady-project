@@ -1,17 +1,9 @@
-/** Skeleton for /leads: header, pipeline strip and eight rows, in the list's own classes. */
+/** Skeleton for /leads: header and eight rows, in the list's own classes. */
 export default function LeadsLoading() {
   return (
     <div className="crm-page" aria-busy="true">
       <div className="page-header">
         <span className="crm-skel" style={{ inlineSize: "140px", blockSize: "28px" }} />
-      </div>
-      <div className="crm-pipe" aria-hidden="true">
-        {Array.from({ length: 5 }, (_, i) => (
-          <div key={i} className="crm-pipe-cell skel">
-            <span className="crm-skel w60" />
-            <span className="crm-skel w40" style={{ blockSize: "22px" }} />
-          </div>
-        ))}
       </div>
       <div className="crm-list" aria-hidden="true">
         {Array.from({ length: 8 }, (_, i) => (
