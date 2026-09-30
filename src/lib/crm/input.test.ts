@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseBulkBody,
+  parseDigestSettingsBody,
   parseNextStepBody,
   parseNoteBody,
   parseSnoozeBody,
@@ -51,5 +53,31 @@ describe("crm input parsing", () => {
     expect(parseNoteBody({ body: "  hi  " })).toEqual({ body: "hi", pinned: false });
     expect(parseNoteBody({ body: "", pinned: true })).toEqual({ error: "empty" });
     expect(parseNoteBody({ body: "x".repeat(5001) })).toEqual({ error: "too_long" });
+  });
+});
+
+describe("bulk and digest settings bodies", () => {
+  it("parses each bulk op and rejects bad ids / ops", () => {
+    expect(parseBulkBody({ ids: ["a", 1, "b"], op: "stage", stage: "won" })).toEqual({
+      ids: ["a", "b"],
+      op: "stage",
+      stage: "won",
+      reason: "",
+    });
+    expect(parseBulkBody({ ids: ["a"], op: "snooze", days: 3 })).toEqual({ ids: ["a"], op: "snooze", days: 3 });
+    expect(parseBulkBody({ ids: ["a"], op: "unread" })).toEqual({ ids: ["a"], op: "unread" });
+    expect(parseBulkBody({ ids: [], op: "read" })).toEqual({ error: "bad_ids" });
+    expect(parseBulkBody({ ids: ["a"], op: "delete" })).toEqual({ error: "bad_op" });
+    expect(parseBulkBody({ ids: ["a"], op: "stage", stage: "open" })).toEqual({ error: "bad_stage" });
+    expect(parseBulkBody({ ids: ["a"], op: "snooze", days: 2 })).toEqual({ error: "bad_days" });
+    expect(parseBulkBody(null)).toEqual({ error: "bad_ids" });
+  });
+
+  it("validates the digest hour and requires a phone to opt in", () => {
+    expect(parseDigestSettingsBody({ digestEnabled: true, digestHour: 8 })).toEqual({ digestEnabled: true, digestHour: 8 });
+    expect(parseDigestSettingsBody({ digestHour: 24 })).toEqual({ error: "digestHour must be 0-23" });
+    expect(parseDigestSettingsBody({ digestHour: 7.5 })).toEqual({ error: "digestHour must be 0-23" });
+    expect(parseDigestSettingsBody({ optIn: true })).toEqual({ error: "Phone number required to opt in" });
+    expect(parseDigestSettingsBody({ optIn: true, phone: " 0501234567 " })).toEqual({ optIn: true, phone: "0501234567" });
   });
 });

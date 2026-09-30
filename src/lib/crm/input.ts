@@ -1,32 +1,49 @@
-import { isPipelineStage, type PipelineStage } from "./types";
+import { z } from "zod";
+import { PIPELINE_STAGES, type PipelineStage } from "./types";
 
+/**
+ * Request bodies for the CRM routes. Each schema reports a short error code as the
+ * issue message; `parse` returns the parsed value or `{ error: code }` for a 400.
+ */
 type Err = { error: string };
-const obj = (b: unknown): Record<string, unknown> =>
-  b && typeof b === "object" ? (b as Record<string, unknown>) : {};
+
+function parse<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, body: unknown, fallback: string): T | Err {
+  const r = schema.safeParse(body ?? {});
+  return r.success ? r.data : { error: r.error.issues[0]?.message ?? fallback };
+}
+
+const isoDate = (code: string) =>
+  z
+    .string({ message: code })
+    .transform((v) => new Date(v))
+    .refine((d) => !Number.isNaN(d.getTime()), { message: code });
+
+const trimmed = (max: number) =>
+  z
+    .string()
+    .optional()
+    .transform((v) => (v ?? "").trim().slice(0, max));
+
+const stageBody = z.object(
+  { stage: z.enum(PIPELINE_STAGES, { message: "bad_stage" }), reason: trimmed(200) },
+  { message: "bad_stage" },
+);
 
 export function parseStageBody(b: unknown): { stage: PipelineStage; reason: string } | Err {
-  const o = obj(b);
-  if (!isPipelineStage(o.stage)) return { error: "bad_stage" };
-  const reason = typeof o.reason === "string" ? o.reason.trim().slice(0, 200) : "";
-  return { stage: o.stage, reason };
+  return parse(stageBody, b, "bad_stage");
 }
 
-function parseDate(v: unknown): Date | null {
-  if (typeof v !== "string") return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
+const nextStepBody = z.union([
+  z.object({ done: z.literal(true) }).transform(() => ({ text: null, at: null })),
+  z
+    .object({ at: isoDate("bad_date"), text: trimmed(300) })
+    .transform(({ at, text }) => ({ text: text || null, at })),
+]);
 
-export function parseNextStepBody(
-  b: unknown,
-  _now: Date,
-): { text: string | null; at: Date | null } | Err {
-  const o = obj(b);
-  if (o.done === true) return { text: null, at: null };
-  const at = parseDate(o.at);
-  if (!at) return { error: "bad_date" };
-  const text = typeof o.text === "string" && o.text.trim() ? o.text.trim().slice(0, 300) : null;
-  return { text, at };
+export function parseNextStepBody(b: unknown, _now: Date): { text: string | null; at: Date | null } | Err {
+  const r = nextStepBody.safeParse(b ?? {});
+  // A union reports every branch; the date is the only thing a caller can get wrong.
+  return r.success ? r.data : { error: "bad_date" };
 }
 
 /** 09:00 local time `days` days after `now`, in the given IANA timezone. */
@@ -62,25 +79,75 @@ function tzOffsetMinutes(at: Date, tz: string): number {
   return Math.round((asUtc - at.getTime()) / 60_000);
 }
 
+const snoozeDays = z.union([z.literal(1), z.literal(3), z.literal(7)], { errorMap: () => ({ message: "bad_days" }) });
+
+/** A preset (`days`: tomorrow / 3 days / a week, 09:00 local) or an explicit future `until`. */
 export function parseSnoozeBody(
   b: unknown,
   now: Date,
   tz = "Asia/Jerusalem",
 ): { until: Date } | Err {
-  const o = obj(b);
-  if (o.days !== undefined) {
-    if (o.days !== 1 && o.days !== 3 && o.days !== 7) return { error: "bad_days" };
-    return { until: snoozePresetUntil(o.days, now, tz) };
+  if ((b as { days?: unknown } | null)?.days !== undefined) {
+    const preset = z.object({ days: snoozeDays }).transform(({ days }) => ({ until: snoozePresetUntil(days, now, tz) }));
+    return parse(preset, b, "bad_days");
   }
-  const until = parseDate(o.until);
-  if (!until || until.getTime() <= now.getTime()) return { error: "bad_date" };
-  return { until };
+  const until = isoDate("bad_date").refine((d) => d.getTime() > now.getTime(), { message: "bad_date" });
+  return parse(z.object({ until }, { message: "bad_date" }), b, "bad_date");
 }
 
+const noteBody = z.object({
+  body: z
+    .string({ message: "empty" })
+    .trim()
+    .min(1, { message: "empty" })
+    .max(5000, { message: "too_long" }),
+  pinned: z.boolean().optional().default(false),
+});
+
 export function parseNoteBody(b: unknown): { body: string; pinned: boolean } | Err {
-  const o = obj(b);
-  const body = typeof o.body === "string" ? o.body.trim() : "";
-  if (!body) return { error: "empty" };
-  if (body.length > 5000) return { error: "too_long" };
-  return { body, pinned: o.pinned === true };
+  return parse(noteBody, b, "empty");
+}
+
+const bulkBody = z.discriminatedUnion(
+  "op",
+  [
+    z.object({ op: z.literal("stage"), stage: z.enum(PIPELINE_STAGES, { message: "bad_stage" }), reason: trimmed(200) }),
+    z.object({ op: z.literal("snooze"), days: snoozeDays }),
+    z.object({ op: z.literal("read") }),
+    z.object({ op: z.literal("unread") }),
+  ],
+  { errorMap: () => ({ message: "bad_op" }) },
+);
+const bulkIds = z
+  .array(z.unknown(), { message: "bad_ids" })
+  .transform((ids) => ids.filter((v): v is string => typeof v === "string").slice(0, 100))
+  .refine((ids) => ids.length > 0, { message: "bad_ids" });
+
+export type BulkInput = z.infer<typeof bulkBody> & { ids: string[] };
+
+export function parseBulkBody(b: unknown): BulkInput | Err {
+  const ids = parse(z.object({ ids: bulkIds }), b, "bad_ids");
+  if ("error" in ids) return ids;
+  const op = parse(bulkBody, b, "bad_op");
+  return "error" in op ? op : { ...op, ids: ids.ids };
+}
+
+const digestSettingsBody = z
+  .object({
+    digestEnabled: z.boolean().optional(),
+    digestHour: z
+      .number()
+      .int({ message: "digestHour must be 0-23" })
+      .min(0, { message: "digestHour must be 0-23" })
+      .max(23, { message: "digestHour must be 0-23" })
+      .optional(),
+    phone: z.string().trim().optional(),
+    optIn: z.boolean().optional(),
+  })
+  .refine((o) => !o.optIn || Boolean(o.phone), { message: "Phone number required to opt in" });
+
+export type DigestSettingsInput = z.infer<typeof digestSettingsBody>;
+
+export function parseDigestSettingsBody(b: unknown): DigestSettingsInput | Err {
+  return parse(digestSettingsBody, b, "bad_body");
 }
