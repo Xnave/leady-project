@@ -177,5 +177,26 @@ export function useLeadView(o: {
     );
   };
 
-  return { d, reload, setStage, setNext, markDone, addNote, pinNote };
+  /**
+   * Act on the open task (decide a request / answer a handoff). Nothing optimistic: the
+   * server messages the customer, so the view waits for it, then reloads and confirms to
+   * the list. Resolves to an error code, or null on success.
+   */
+  const runTask = async (call: () => Promise<{ ok: true } | { ok: false; error: string }>): Promise<string | null> => {
+    const action = nextAction++;
+    inflight.current += 1;
+    let res: { ok: true } | { ok: false; error: string };
+    try {
+      res = await call();
+    } catch {
+      res = { ok: false, error: "network" };
+    }
+    inflight.current -= 1;
+    if (!res.ok) return res.error;
+    toast({ msg: ui.crm.task.sent });
+    void reload(action);
+    return null;
+  };
+
+  return { d, reload, setStage, setNext, markDone, addNote, pinNote, runTask };
 }

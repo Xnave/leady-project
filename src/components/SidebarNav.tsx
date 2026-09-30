@@ -94,7 +94,10 @@ export function SidebarNav({
     return pathname.startsWith(href);
   }
 
-  const ownerItems = OWNER_ITEMS.filter((item) => item.key !== "team" || showTeam);
+  // CRM tenants act on handoffs / approvals in Leads → Needs you, so the Inbox item goes.
+  const ownerItems = OWNER_ITEMS.filter(
+    (item) => (item.key !== "team" || showTeam) && !(item.key === "inbox" && counts?.crmV2),
+  );
   const staffItems = STAFF_ITEMS.filter((item) => !item.adminOnly || admin);
 
   return (

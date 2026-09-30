@@ -12,9 +12,11 @@ import { LeadTabs, type LeadTab } from "./LeadTabs";
 import { LeadTimeline } from "./LeadTimeline";
 import { NextStepEditor } from "./NextStepEditor";
 import { StageStepper } from "./StageStepper";
+import { TaskCard } from "./TaskCard";
 import { useClock } from "./useClock";
 import { avatarDotClass, type PeekReport } from "./rows";
 import { useLeadView } from "./useLeadView";
+import { crmApi } from "./crm-client";
 
 type Props = {
   dto: LeadViewDTO;
@@ -95,6 +97,19 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
     />
   );
 
+  // The open handoff / approval, acted on here. It replaces the follow-up bar's CTA for those reasons.
+  const task = d.openTask ? (
+    <TaskCard
+      key={d.openTask.id}
+      task={d.openTask}
+      ui={ui}
+      lang={lang}
+      clock={clock}
+      onDecide={(requestId, form) => lv.runTask(() => crmApi.decideRequest(requestId, form))}
+      onComplete={(taskId, form) => lv.runTask(() => crmApi.completeTask(taskId, form))}
+    />
+  ) : null;
+
   const next = (
     <NextStepEditor
       text={d.nextStepText}
@@ -128,6 +143,7 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
       <div ref={rootRef} className="crm-full">
         <div className="crm-full-main">
           {head}
+          {task}
           {fubar}
           {tabs}
         </div>
@@ -143,6 +159,7 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
   return (
     <div ref={rootRef} className="crm-lv">
       {head}
+      {task}
       {fubar}
       {next}
       {notes}

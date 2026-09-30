@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import type { FlowDefinition } from "@/lib/flow/types";
 import { REQUEST_APPROVAL_TASK } from "@/lib/requests";
+import { approvalWaitingSince } from "./followup";
 import { planLeadState, type LeadStatePlan, type LeadStateSnapshot } from "./plan";
 import { isFollowUpReason, isPipelineStage } from "./types";
 
@@ -17,7 +18,7 @@ export async function loadLeadStateSnapshot(
         take: 1,
         select: { flowState: true, agent: { select: { flow: true } } },
       },
-      requests: { select: { status: true, kind: true, createdAt: true, updatedAt: true } },
+      requests: { select: { id: true, status: true, kind: true, createdAt: true, updatedAt: true } },
       hitlTasks: {
         where: { status: "open", type: { not: REQUEST_APPROVAL_TASK } },
         orderBy: { createdAt: "asc" },
@@ -45,9 +46,17 @@ export async function loadLeadStateSnapshot(
     }),
   ]);
 
-  const pending = lead.requests
-    .filter((r) => r.status === "pending")
-    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0];
+  // A reschedule offer keeps the request pending but hands the move to the customer.
+  const approvalTasks = await prisma.hitlTask.findMany({
+    where: { tenantId, leadId, status: "open", type: REQUEST_APPROVAL_TASK },
+    select: { payload: true },
+  });
+  const awaitingCustomer = new Set(
+    approvalTasks
+      .map((t) => (t.payload ?? {}) as { requestId?: string; awaitingCustomerConfirm?: boolean })
+      .filter((p) => p.awaitingCustomerConfirm && p.requestId)
+      .map((p) => p.requestId as string),
+  );
   const lastRequestChangeAt = lead.requests.reduce<Date | null>(
     (max, r) => (!max || r.updatedAt > max ? r.updatedAt : max),
     null,
@@ -75,7 +84,7 @@ export async function loadLeadStateSnapshot(
       requests: lead.requests.map((r) => ({ status: r.status, kind: r.kind })),
     },
     openHandoffSince: lead.hitlTasks[0]?.createdAt ?? null,
-    pendingApprovalSince: pending?.createdAt ?? null,
+    pendingApprovalSince: approvalWaitingSince(lead.requests, awaitingCustomer),
     lastLeadMessageAt: lastLead?.createdAt ?? null,
     lastOutboundAt: lastOut?.createdAt ?? null,
     lastRequestChangeAt,

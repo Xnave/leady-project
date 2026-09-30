@@ -30,6 +30,9 @@ export async function summarizeConversation(conversationId: string): Promise<str
       ? "Write the summary in Hebrew."
       : "Write the summary in English.";
 
+  // Without an LLM key the app runs on heuristics; a handoff then carries no summary.
+  if (!llmConfigured()) return "";
+
   const { text } = await generateText({
     model: chatModel(),
     system: [

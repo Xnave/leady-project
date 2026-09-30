@@ -12,6 +12,14 @@ async function send<T = { ok: boolean }>(url: string, method: string, body?: unk
   return res.json() as Promise<T>;
 }
 
+/** Form posts to the task routes (shared with the legacy Inbox form); JSON back, error code on failure. */
+async function postForm(url: string, form: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch(url, { method: "POST", body: form, headers: { accept: "application/json" } });
+  if (res.ok) return { ok: true };
+  const body = (await res.json().catch(() => ({}))) as { error?: string };
+  return { ok: false, error: body.error ?? String(res.status) };
+}
+
 export type SnoozeDays = 1 | 3 | 7;
 export type BulkBody = {
   ids: string[];
@@ -33,4 +41,8 @@ export const crmApi = {
   markRead: (id: string) => send(`/api/leads/${id}/read`, "POST", { unread: false }),
   setUnread: (id: string, unread: boolean) => send(`/api/leads/${id}/read`, "POST", { unread }),
   view: (id: string) => send<LeadViewDTO>(`/api/leads/${id}/view`, "GET"),
+  /** Approve / decline / offer another time on a request (the approval task). */
+  decideRequest: (requestId: string, form: FormData) => postForm(`/api/requests/${requestId}/decide`, form),
+  /** Reply to a handoff and hand the chat back to the bot. */
+  completeTask: (taskId: string, form: FormData) => postForm(`/api/hitl/${taskId}/complete`, form),
 };

@@ -14,6 +14,11 @@ import { requireTenantId } from "@/lib/tenant";
 import { redirectPath } from "@/lib/request-url";
 import { prisma } from "@/lib/db";
 
+/** The CRM lead view posts with `Accept: application/json`; the legacy Inbox form wants a redirect. */
+function wantsJson(req: Request): boolean {
+  return (req.headers.get("accept") ?? "").includes("application/json");
+}
+
 function parseDecision(form: FormData): RequestDecision {
   const raw = String(form.get("decision") ?? "").trim();
   if (raw === "decline" || raw === "reschedule" || raw === "approve") return raw;
@@ -51,6 +56,7 @@ export async function POST(
     decision === "reschedule" &&
     (!alternativeStart || (isSpan && !alternativeEnd))
   ) {
+    if (wantsJson(req)) return NextResponse.json({ error: "missing_alternative" }, { status: 400 });
     return NextResponse.redirect(redirectPath(req, redirectTo), 303);
   }
 
@@ -102,5 +108,6 @@ export async function POST(
       reason: "approve",
     });
   }
+  if (wantsJson(req)) return NextResponse.json({ ok: true, decision });
   return NextResponse.redirect(redirectPath(req, redirectTo), 303);
 }

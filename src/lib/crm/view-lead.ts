@@ -10,11 +10,12 @@ import {
   whatsappChatUrl,
 } from "@/lib/leads";
 import { REQUEST_APPROVAL_TASK } from "@/lib/requests";
-import { requestHeadline } from "@/lib/request-view";
+import { RESERVATION_LINK_SENT_TASK } from "@/lib/reservations";
+import { requestHeadline, requestSummaryLines, requestTimeShape } from "@/lib/request-view";
 import type { UiCopy, UiLang } from "@/lib/ui";
-import { intentLabel, leadFieldLabel, requestKindLabel } from "@/lib/ui/labels";
+import { hitlReasonLabel, intentLabel, leadFieldLabel, requestKindLabel } from "@/lib/ui/labels";
 import { buildLeadTimeline, groupTimelineByDay } from "./timeline";
-import { buildLeadRowDTO, requestFieldLabels, summarizeRequest, toRequestRow, type LeadViewDTO } from "./view";
+import { buildLeadRowDTO, requestFieldLabels, summarizeRequest, toRequestRow, type LeadViewDTO, type OpenTaskDTO } from "./view";
 
 const HIDDEN_DETAIL_KEYS = new Set([
   "instagramUsername",
@@ -54,7 +55,7 @@ const viewInclude = {
   notes: { orderBy: [{ pinned: "desc" }, { createdAt: "desc" }] },
   adminDecisionLogs: { orderBy: { createdAt: "desc" } },
   requests: { orderBy: { createdAt: "desc" } },
-  hitlTasks: { where: { type: { not: REQUEST_APPROVAL_TASK } }, orderBy: { createdAt: "desc" } },
+  hitlTasks: { orderBy: { createdAt: "desc" } },
   conversations: { orderBy: { createdAt: "desc" } },
 } satisfies Prisma.LeadInclude;
 
@@ -156,13 +157,16 @@ export async function loadLeadView(
         timeText: r.timeText,
         createdAt: r.createdAt,
       })),
-      handoffs: lead.hitlTasks.map((h) => ({
-        id: h.id,
-        reason: h.reason,
-        status: h.status,
-        createdAt: h.createdAt,
-        completedAt: h.completedAt,
-      })),
+      handoffs: lead.hitlTasks
+        .filter((h) => h.type !== REQUEST_APPROVAL_TASK)
+        .map((h) => ({
+          id: h.id,
+          reason: h.reason,
+          status: h.status,
+          createdAt: h.createdAt,
+          completedAt: h.completedAt,
+          info: h.type === RESERVATION_LINK_SENT_TASK,
+        })),
       conversations: lead.conversations.map((c) => ({
         id: c.id,
         status: c.status,
@@ -174,8 +178,45 @@ export async function loadLeadView(
     tenant.timezone,
   ).map((g) => ({ day: g.day, items: g.items.map((it) => ({ ...it, at: it.at.toISOString() })) }));
 
+  // The task the owner acts on here: an open handoff first (the chat is paused), else an approval.
+  const open = lead.hitlTasks.filter((t) => t.status === "open" && t.type !== RESERVATION_LINK_SENT_TASK);
+  const task = open.find((t) => t.type !== REQUEST_APPROVAL_TASK) ?? open.find((t) => t.type === REQUEST_APPROVAL_TASK) ?? null;
+  let openTask: OpenTaskDTO | null = null;
+  if (task) {
+    const payload = (task.payload ?? {}) as { requestId?: string; summary?: string; awaitingCustomerConfirm?: boolean };
+    const req = task.type === REQUEST_APPROVAL_TASK ? requestRows.find((r) => r.id === payload.requestId) ?? null : null;
+    openTask = {
+      id: task.id,
+      kind: task.type === REQUEST_APPROVAL_TASK ? "approval" : "handoff",
+      reason: task.type === REQUEST_APPROVAL_TASK ? "" : hitlReasonLabel(ui, task.reason),
+      summary: typeof payload.summary === "string" ? payload.summary : "",
+      createdAt: task.createdAt.toISOString(),
+      awaitingCustomer: Boolean(payload.awaitingCustomerConfirm),
+      request: req
+        ? {
+            id: req.id,
+            timeShape: requestTimeShape(req),
+            headline: requestHeadline(req) ?? requestKindLabel(ui, req.kind),
+            timeText: req.timeText.trim(),
+            lines: requestSummaryLines({
+              request: req,
+              lang,
+              labels,
+              // The CRM record wins when the lead updated their details later.
+              overrides: {
+                name: typeof fields.name === "string" ? fields.name : undefined,
+                phone: typeof fields.phone === "string" ? fields.phone : undefined,
+                email: typeof fields.email === "string" ? fields.email : undefined,
+              },
+            }),
+          }
+        : null,
+    };
+  }
+
   return {
     ...row,
+    openTask,
     phone: formatPhoneDisplay(phone),
     email: typeof fields.email === "string" ? fields.email : "",
     waUrl: lead.channel.provider === "whatsapp" ? whatsappChatUrl(phone) : "",

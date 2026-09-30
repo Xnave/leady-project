@@ -10,7 +10,8 @@ export type TimelineSources = {
   notes: { id: string; body: string; authorLabel: string; pinned: boolean; createdAt: Date }[];
   decisions: { id: string; category: string; action: string; actorUserId?: string | null; actorLabel: string; details: unknown; createdAt: Date }[];
   requests: { id: string; kind: string; status: string; timeText: string; createdAt: Date }[];
-  handoffs: { id: string; reason: string; status: string; createdAt: Date; completedAt: Date | null }[];
+  /** `info`: something the bot did on its own (e.g. sent a link), logged as one item, not a handoff. */
+  handoffs: { id: string; reason: string; status: string; createdAt: Date; completedAt: Date | null; info?: boolean }[];
   conversations: { id: string; status: string; lifecycleReason: string; createdAt: Date; updatedAt: Date }[];
 };
 
@@ -39,6 +40,10 @@ export function buildLeadTimeline(src: TimelineSources): TimelineItem[] {
     items.push({ id: `req-${r.id}`, at: r.createdAt, kind: "request", data: { event: "created", kind: r.kind, timeText: r.timeText } });
   }
   for (const h of src.handoffs) {
+    if (h.info) {
+      items.push({ id: `hitl-${h.id}`, at: h.createdAt, kind: "handoff", data: { event: "link_sent" } });
+      continue;
+    }
     items.push({ id: `hitl-${h.id}`, at: h.createdAt, kind: "handoff", data: { event: "opened", reason: h.reason } });
     if (h.completedAt) items.push({ id: `hitl-done-${h.id}`, at: h.completedAt, kind: "handoff", data: { event: "resolved" } });
   }

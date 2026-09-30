@@ -52,6 +52,7 @@ function describe(it: Item, ui: UiCopy, lang: Lang, wonLabel: string, clock: Clo
       return { icon: "cal", title: fillUi(t[key], { actor }) };
     }
     case "handoff":
+      if (d.event === "link_sent") return { icon: "msg", title: t.linkSent };
       return d.event === "resolved"
         ? { icon: "check", title: t.handoffResolved }
         : { icon: "hand", title: t.handoffOpened, sub: d.reason ? hitlReasonLabel(ui, str(d.reason)) : undefined };

@@ -34,12 +34,16 @@ export default async function HomePage() {
     { href: "/channels", label: ui.home.stepChannels, done: hasChannel },
     { href: "/demo", label: ui.home.stepChat, done: !needsSetup },
     { href: "/leads", label: ui.home.stepLeads, done: totalLeads > 0, count: counts.leads },
-    { href: "/inbox", label: ui.home.stepInbox, done: counts.inbox === 0, count: counts.inbox },
+    ...(counts.crmV2
+      ? []
+      : [{ href: "/inbox", label: ui.home.stepInbox, done: counts.inbox === 0, count: counts.inbox }]),
   ];
 
   const cta =
     counts.inbox > 0
-      ? { href: "/inbox", label: ui.home.ctaInbox }
+      ? counts.crmV2
+        ? { href: "/leads?tab=needs", label: ui.crm.tabs.needs }
+        : { href: "/inbox", label: ui.home.ctaInbox }
       : !hasChannel
         ? { href: "/channels", label: ui.home.ctaConnect }
         : needsSetup
@@ -50,14 +54,16 @@ export default async function HomePage() {
     <div>
       <PageHeader title={ui.page.homeTitle} blurb={needsSetup ? ui.page.homeSetup : ui.page.homeBlurb} />
       <div className="work-strip">
-        <Link href="/leads" className="card stat-card">
+        <Link href={counts.crmV2 ? "/leads?tab=needs" : "/leads"} className="card stat-card">
           <span className="stat-value">{counts.leads}</span>
           <span className="stat-label">{counts.crmV2 ? ui.crm.tabs.needs : ui.home.quickLeads}</span>
         </Link>
-        <Link href="/inbox" className="card stat-card">
-          <span className="stat-value">{counts.inbox}</span>
-          <span className="stat-label">{ui.home.quickInbox}</span>
-        </Link>
+        {counts.crmV2 ? null : (
+          <Link href="/inbox" className="card stat-card">
+            <span className="stat-value">{counts.inbox}</span>
+            <span className="stat-label">{ui.home.quickInbox}</span>
+          </Link>
+        )}
         <Link href="/channels" className="card stat-card">
           <span className="stat-value">{hasChannel ? "●" : "○"}</span>
           <span className="stat-label">{hasChannel ? ui.home.whatsappOk : ui.home.whatsappOff}</span>

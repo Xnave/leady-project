@@ -48,6 +48,16 @@ describe("buildLeadTimeline", () => {
   });
 });
 
+describe("informational bot actions", () => {
+  it("logs one link-sent item instead of an opened/resolved handoff pair", () => {
+    const items = buildLeadTimeline({
+      ...empty,
+      handoffs: [{ id: "h1", reason: "x", status: "done", createdAt: d("2026-09-25T10:00:00Z"), completedAt: d("2026-09-25T10:00:00Z"), info: true }],
+    });
+    expect(items.map((i) => i.data.event)).toEqual(["link_sent"]);
+  });
+});
+
 describe("groupTimelineByDay", () => {
   it("groups by local day in the tenant timezone", () => {
     const items = buildLeadTimeline({

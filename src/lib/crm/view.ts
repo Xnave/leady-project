@@ -82,6 +82,29 @@ export type LeadViewDTO = LeadRowDTO & {
   messages: { id: string; role: string; text: string; createdAt: string }[];
   details: { label: string; value: string }[];
   requests: { id: string; headline: string; status: string }[];
+  /** The open task the owner acts on in the lead view (was the Inbox), or null. */
+  openTask: OpenTaskDTO | null;
+};
+
+/**
+ * An open handoff or approval task. Handoff: reply to the customer and hand the chat
+ * back to the bot. Approval: approve / decline / offer another time on `request`.
+ * `awaitingCustomer`: another time was offered and the customer has not answered yet.
+ */
+export type OpenTaskDTO = {
+  id: string;
+  kind: "handoff" | "approval";
+  reason: string;
+  summary: string;
+  createdAt: string;
+  awaitingCustomer: boolean;
+  request: {
+    id: string;
+    timeShape: "point" | "span";
+    headline: string;
+    timeText: string;
+    lines: { label: string; value: string; ltr?: boolean }[];
+  } | null;
 };
 
 /** Same field-label map `leads/[id]/page.tsx` passes to `requestSummaryLines`. */

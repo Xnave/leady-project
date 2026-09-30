@@ -17,6 +17,8 @@ import {
   whatsappChatUrl,
 } from "@/lib/leads";
 import { requireTenantIdForPage } from "@/lib/tenant";
+import { crmV2Enabled } from "@/lib/crm/flags";
+import { redirect } from "next/navigation";
 import { loadInstanceFieldLabels } from "@/lib/capability-instances";
 import { REQUEST_APPROVAL_TASK, type RequestRow } from "@/lib/requests";
 import { RESERVATION_LINK_SENT_TASK } from "@/lib/reservations";
@@ -141,6 +143,9 @@ export default async function InboxPage({
 }) {
   const { task: taskParam } = await searchParams;
   const tenantId = await requireTenantIdForPage();
+  // CRM tenants act on handoffs and approvals in the lead view: Leads → Needs you.
+  const flags = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { crmV2: true } });
+  if (flags && crmV2Enabled(flags)) redirect("/leads?tab=needs");
   const lang = await getUiLang();
   const ui = uiCopy(lang);
   const [tasks, instanceLabels] = await Promise.all([

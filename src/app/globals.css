@@ -3410,6 +3410,48 @@ button.crm-stage { cursor: pointer; }
 .crm-fubar-text { flex: 1; min-width: 180px; display: grid; gap: 2px; }
 .crm-fubar-text b { font-weight: 600; font-size: var(--fs-sm); display: flex; align-items: center; gap: var(--space-2); }
 .crm-fubar-text span { font-size: var(--fs-xs); color: var(--muted); }
+
+/* Open task (handoff / approval), acted on in the lead view. Same frame as the follow-up bar. */
+.crm-task {
+  margin: 0 var(--space-5) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  border: 1px solid var(--accent-line);
+  background: var(--bg-elevated);
+  display: grid;
+  gap: var(--space-3);
+}
+.crm-task-wait { border-color: var(--line); }
+.crm-task-h { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-sm); }
+.crm-task-h b { font-weight: 600; }
+.crm-task-h .crm-i { color: var(--accent-bright); }
+.crm-task-wait .crm-task-h .crm-i { color: var(--muted); }
+.crm-task-muted { font-size: var(--fs-xs); color: var(--muted); margin: 0; }
+.crm-task-what { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+.crm-task-lines { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px var(--space-3); font-size: var(--fs-xs); }
+.crm-task-lines > div { display: contents; }
+.crm-task-lines dt { color: var(--muted); }
+.crm-task-lines dd { margin: 0; }
+.crm-task-summary { display: grid; gap: 2px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--bg-sunken); }
+.crm-task-summary span { font-size: var(--fs-2xs); color: var(--muted); font-weight: 600; }
+.crm-task-summary p { margin: 0; font-size: var(--fs-sm); white-space: pre-wrap; }
+.crm-task-field { display: grid; gap: var(--space-1); font-size: var(--fs-xs); color: var(--muted); }
+.crm-task-field input,
+.crm-task-field textarea {
+  min-height: var(--hit);
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--text);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-sm);
+  resize: vertical;
+}
+.crm-task-field input:focus,
+.crm-task-field textarea:focus { outline: none; border-color: var(--accent-bright); box-shadow: var(--ring); }
+.crm-task-two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+.crm-task-error { margin: 0; font-size: var(--fs-xs); color: var(--danger); }
+.crm-task-foot { display: flex; justify-content: flex-end; }
 .crm-fubar.crm-fu-handoff b svg { color: var(--accent-bright); }
 .crm-fubar.crm-fu-approval b svg { color: var(--warning); }
 .crm-fubar.crm-fu-reminder b svg { color: var(--info); }

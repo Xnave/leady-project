@@ -8,7 +8,7 @@ import { FU_ICON } from "./LeadRow";
 
 /**
  * Why the lead needs the owner now, and the view's single primary action (`.btn`):
- * handoff / approval → Inbox, reminder → mark done, cold → the chat composer, or the
+ * reminder → mark done, cold → the chat composer, or the
  * phone when the WhatsApp window is closed.
  * Renders nothing when no follow-up is due, so the view then has no primary button.
  */
@@ -40,15 +40,11 @@ export function FollowUpBar({
   }
   if (reason === "cold" && dto.windowClosed) sub = [sub, ui.crm.windowClosed].filter(Boolean).join(" · ");
 
+  // Handoff and approval are acted on in the task card above (see TaskCard).
+  if (reason === "handoff" || reason === "approval") return null;
+
   let cta;
-  if (reason === "handoff" || reason === "approval") {
-    cta = (
-      <a className="btn" href="/inbox">
-        <Icon name="inbox" small />
-        {ui.crm.cta[reason]}
-      </a>
-    );
-  } else if (reason === "reminder") {
+  if (reason === "reminder") {
     cta = (
       <button type="button" className="btn" onClick={onDone}>
         <Icon name="check" small />
