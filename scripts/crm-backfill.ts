@@ -19,7 +19,7 @@ async function main() {
   const legacy = await prisma.lead.findMany({
     where: {
       status: { in: ["won", "lost", "closed"] },
-      stageSource: "auto",
+      pipelineStageSource: "auto",
       stageEvents: { none: { source: "manual" } },
     },
     select: { id: true, tenantId: true, status: true, updatedAt: true },
@@ -31,7 +31,7 @@ async function main() {
     await prisma.$transaction([
       prisma.lead.update({
         where: { id: l.id },
-        data: { stage: to, stageSource: "manual", stageReason: "migrated", stageChangedAt: at },
+        data: { pipelineStage: to, pipelineStageSource: "manual", pipelineStageReason: "migrated", pipelineStageChangedAt: at },
       }),
       prisma.leadStageEvent.create({
         data: {

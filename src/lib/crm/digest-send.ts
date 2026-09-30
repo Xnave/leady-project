@@ -37,19 +37,19 @@ export async function loadDueDigestItems(tenantId: string, now: Date): Promise<D
       displayName: true,
       externalUserId: true,
       fields: true,
-      followUpReason: true,
-      followUpAt: true,
+      attentionReason: true,
+      attentionAt: true,
       nextStepText: true,
       conversations: { orderBy: { createdAt: "desc" }, take: 1, select: { summary: true } },
     },
     take: 200,
   });
   return leads
-    .filter((l) => isFollowUpReason(l.followUpReason) && l.followUpAt)
+    .filter((l) => isFollowUpReason(l.attentionReason) && l.attentionAt)
     .map((l) => ({
       leadId: l.id,
       name: leadDisplayName(l),
-      reason: l.followUpReason as DigestItem["reason"],
+      reason: l.attentionReason as DigestItem["reason"],
       stand: whereItStands({
         nextStepText: l.nextStepText,
         requestLine: null,
@@ -57,7 +57,7 @@ export async function loadDueDigestItems(tenantId: string, now: Date): Promise<D
         intentLabel: null,
         lastLeadText: null,
       }),
-      at: l.followUpAt!,
+      at: l.attentionAt!,
     }));
 }
 

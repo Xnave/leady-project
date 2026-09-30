@@ -65,12 +65,12 @@ export async function loadLeadStateSnapshot(
 
   return {
     current: {
-      stage: isPipelineStage(lead.stage) ? lead.stage : "new",
-      stageSource: lead.stageSource === "manual" ? "manual" : "auto",
-      stageReason: lead.stageReason,
-      stageChangedAt: lead.stageChangedAt,
-      followUpReason: isFollowUpReason(lead.followUpReason) ? lead.followUpReason : null,
-      followUpAt: lead.followUpAt,
+      pipelineStage: isPipelineStage(lead.pipelineStage) ? lead.pipelineStage : "new",
+      pipelineStageSource: lead.pipelineStageSource === "manual" ? "manual" : "auto",
+      pipelineStageReason: lead.pipelineStageReason,
+      pipelineStageChangedAt: lead.pipelineStageChangedAt,
+      attentionReason: isFollowUpReason(lead.attentionReason) ? lead.attentionReason : null,
+      attentionAt: lead.attentionAt,
       snoozedUntil: lead.snoozedUntil,
       nextStepAt: lead.nextStepAt,
       lastLeadMessageAt: lead.lastLeadMessageAt,

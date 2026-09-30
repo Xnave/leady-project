@@ -25,11 +25,11 @@ function tabWhere(tab: CrmTab, now: Date): Prisma.LeadWhereInput {
     case "needs":
       return needsWhere(now);
     case "active":
-      return { stage: { in: [...ACTIVE_STAGES] } };
+      return { pipelineStage: { in: [...ACTIVE_STAGES] } };
     case "won":
-      return { stage: "won" };
+      return { pipelineStage: "won" };
     case "closed":
-      return { stage: { in: [...CLOSED_STAGES] } };
+      return { pipelineStage: { in: [...CLOSED_STAGES] } };
     case "all":
       return {};
   }
@@ -51,8 +51,8 @@ function buildRowsWhere(
   now: Date,
 ): Prisma.LeadWhereInput {
   const where: Prisma.LeadWhereInput = { tenantId: o.tenantId, ...demoWhere(o.showDemo), ...tabWhere(o.tab, now) };
-  if (o.stage) where.stage = o.stage;
-  if (o.reason) where.followUpReason = o.reason;
+  if (o.stage) where.pipelineStage = o.stage;
+  if (o.reason) where.attentionReason = o.reason;
   if (o.channel) where.channel = { provider: o.channel };
   const q = o.q?.trim();
   if (q) where.AND = [searchWhere(q)];
@@ -65,12 +65,12 @@ async function computeCounts(tenantId: string, showDemo: boolean, now: Date): Pr
   const count = (where: Prisma.LeadWhereInput) => prisma.lead.count({ where });
   const [nNeeds, nActive, nWon, nClosed, nAll, stages, reasons] = await Promise.all([
     count(needs),
-    count({ ...base, stage: { in: [...ACTIVE_STAGES] } }),
-    count({ ...base, stage: "won" }),
-    count({ ...base, stage: { in: [...CLOSED_STAGES] } }),
+    count({ ...base, pipelineStage: { in: [...ACTIVE_STAGES] } }),
+    count({ ...base, pipelineStage: "won" }),
+    count({ ...base, pipelineStage: { in: [...CLOSED_STAGES] } }),
     count(base),
-    Promise.all(PIPELINE_STAGES.map((st) => count({ ...base, stage: st }))),
-    Promise.all(FOLLOW_UP_PRIORITY.map((r) => count({ ...needs, followUpReason: r }))),
+    Promise.all(PIPELINE_STAGES.map((st) => count({ ...base, pipelineStage: st }))),
+    Promise.all(FOLLOW_UP_PRIORITY.map((r) => count({ ...needs, attentionReason: r }))),
   ]);
   return {
     needs: nNeeds,
@@ -106,10 +106,10 @@ function rowInput(lead: RowLead, lang: UiLang, labels: Record<string, string>): 
     displayName: lead.displayName,
     externalUserId: lead.externalUserId,
     fields: lead.fields,
-    stage: lead.stage,
-    stageSource: lead.stageSource,
-    followUpReason: lead.followUpReason,
-    followUpAt: lead.followUpAt,
+    stage: lead.pipelineStage,
+    stageSource: lead.pipelineStageSource,
+    followUpReason: lead.attentionReason,
+    followUpAt: lead.attentionAt,
     snoozedUntil: lead.snoozedUntil,
     nextStepText: lead.nextStepText,
     nextStepAt: lead.nextStepAt,
@@ -160,11 +160,11 @@ export async function loadLeadRows(o: {
   let pageLeads = leads;
   if (o.tab === "needs") {
     const sorted = [...leads].sort((a, b) => {
-      const pa = FOLLOW_UP_PRIORITY.indexOf((a.followUpReason ?? "") as FollowUpReason);
-      const pb = FOLLOW_UP_PRIORITY.indexOf((b.followUpReason ?? "") as FollowUpReason);
+      const pa = FOLLOW_UP_PRIORITY.indexOf((a.attentionReason ?? "") as FollowUpReason);
+      const pb = FOLLOW_UP_PRIORITY.indexOf((b.attentionReason ?? "") as FollowUpReason);
       if (pa !== pb) return pa - pb;
-      const ta = a.followUpAt?.getTime() ?? 0;
-      const tb = b.followUpAt?.getTime() ?? 0;
+      const ta = a.attentionAt?.getTime() ?? 0;
+      const tb = b.attentionAt?.getTime() ?? 0;
       return ta - tb;
     });
     const start = (o.page - 1) * o.pageSize;

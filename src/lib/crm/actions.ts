@@ -6,7 +6,7 @@ import type { PipelineStage } from "./types";
 export type Actor = { actorUserId: string; actorLabel: string };
 
 async function assertLead(tenantId: string, leadId: string) {
-  const lead = await prisma.lead.findFirst({ where: { id: leadId, tenantId }, select: { id: true, stage: true } });
+  const lead = await prisma.lead.findFirst({ where: { id: leadId, tenantId }, select: { id: true, pipelineStage: true } });
   if (!lead) throw new CrmNotFound();
   return lead;
 }
@@ -25,13 +25,13 @@ export async function setManualStage(o: {
   await prisma.$transaction([
     prisma.lead.update({
       where: { id: lead.id },
-      data: { stage: o.stage, stageSource: "manual", stageReason: o.reason, stageChangedAt: now },
+      data: { pipelineStage: o.stage, pipelineStageSource: "manual", pipelineStageReason: o.reason, pipelineStageChangedAt: now },
     }),
     prisma.leadStageEvent.create({
       data: {
         tenantId: o.tenantId,
         leadId: lead.id,
-        from: lead.stage,
+        from: lead.pipelineStage,
         to: o.stage,
         source: "manual",
         reason: o.reason,
@@ -45,7 +45,7 @@ export async function setManualStage(o: {
       action: "stage",
       actorUserId: o.actor.actorUserId,
       actorLabel: o.actor.actorLabel,
-      details: { from: lead.stage, to: o.stage, reason: o.reason },
+      details: { from: lead.pipelineStage, to: o.stage, reason: o.reason },
     }),
   ]);
   // The write is committed; a refresh failure must not turn it into a 500.
@@ -82,10 +82,10 @@ export async function setNextStep(o: {
 export async function snoozeLead(o: { tenantId: string; leadId: string; until: Date; actor: Actor }) {
   const lead = await prisma.lead.findFirst({
     where: { id: o.leadId, tenantId: o.tenantId },
-    select: { id: true, followUpReason: true },
+    select: { id: true, attentionReason: true },
   });
   if (!lead) throw new CrmNotFound();
-  if (lead.followUpReason !== "cold" && lead.followUpReason !== "reminder") return false;
+  if (lead.attentionReason !== "cold" && lead.attentionReason !== "reminder") return false;
   await prisma.$transaction([
     prisma.lead.update({ where: { id: lead.id }, data: { snoozedUntil: o.until } }),
     appendAdminDecision({
@@ -95,7 +95,7 @@ export async function snoozeLead(o: { tenantId: string; leadId: string; until: D
       action: "snooze",
       actorUserId: o.actor.actorUserId,
       actorLabel: o.actor.actorLabel,
-      details: { until: o.until.toISOString(), reason: lead.followUpReason },
+      details: { until: o.until.toISOString(), reason: lead.attentionReason },
     }),
   ]);
   return true;

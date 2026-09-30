@@ -162,15 +162,15 @@ model Lead {
   /** Admin has not opened / marked this lead as read. */
   adminUnread    Boolean  @default(true)
   fields         Json     @default("{}")
-  /** CRM pipeline stage — written only by src/lib/crm/refresh.ts and crm/actions.ts. */
-  stage             String    @default("new")
+  /** Sales pipeline position (new → talking → … → won). Not the bot's `Conversation.flowState`. */
+  pipelineStage          String    @default("new")
   /** auto | manual */
-  stageSource       String    @default("auto")
-  stageReason       String    @default("")
-  stageChangedAt    DateTime  @default(now())
-  /** handoff | approval | reminder | cold — the highest-priority applicable reason. */
-  followUpReason    String?
-  followUpAt        DateTime?
+  pipelineStageSource    String    @default("auto")
+  pipelineStageReason    String    @default("")
+  pipelineStageChangedAt DateTime  @default(now())
+  /** Why the owner should act now: handoff | approval | reminder | cold. Not the bot's auto-nudge. */
+  attentionReason        String?
+  attentionAt            DateTime?
   snoozedUntil      DateTime?
   nextStepText      String?
   nextStepAt        DateTime?
@@ -189,8 +189,8 @@ model Lead {
 
   @@unique([tenantId, channelId, externalUserId])
   @@index([tenantId])
-  @@index([tenantId, followUpReason, followUpAt])
-  @@index([tenantId, stage, updatedAt])
+  @@index([tenantId, attentionReason, attentionAt])
+  @@index([tenantId, pipelineStage, updatedAt])
 }
 
 model Conversation {

@@ -7,12 +7,12 @@ const t0 = new Date("2026-09-20T09:00:00Z");
 function snapshot(over: Partial<LeadStateSnapshot> = {}): LeadStateSnapshot {
   return {
     current: {
-      stage: "new",
-      stageSource: "auto",
-      stageReason: "first_message",
-      stageChangedAt: t0,
-      followUpReason: null,
-      followUpAt: null,
+      pipelineStage: "new",
+      pipelineStageSource: "auto",
+      pipelineStageReason: "first_message",
+      pipelineStageChangedAt: t0,
+      attentionReason: null,
+      attentionAt: null,
       snoozedUntil: null,
       nextStepAt: null,
       lastLeadMessageAt: null,
@@ -38,8 +38,8 @@ describe("planLeadState", () => {
       snapshot({ signals: { flow: null, currentFlowStage: null, fields: {}, hasAgentReply: true, requests: [] } }),
       now,
     );
-    expect(plan.patch.stage).toBe("talking");
-    expect(plan.patch.stageChangedAt).toEqual(now);
+    expect(plan.patch.pipelineStage).toBe("talking");
+    expect(plan.patch.pipelineStageChangedAt).toEqual(now);
     expect(plan.stageEvent).toEqual({ from: "new", to: "talking", source: "auto", reason: "engaged" });
   });
 
@@ -54,8 +54,8 @@ describe("planLeadState", () => {
       now,
     );
     expect(plan.patch.lastOutboundAt).toEqual(lastOut);
-    expect(plan.patch.followUpReason).toBe("cold");
-    expect(plan.patch.followUpAt).toEqual(new Date("2026-09-25T05:00:00Z"));
+    expect(plan.patch.attentionReason).toBe("cold");
+    expect(plan.patch.attentionAt).toEqual(new Date("2026-09-25T05:00:00Z"));
   });
 
   it("clears a snooze when the episode changes", () => {
@@ -63,9 +63,9 @@ describe("planLeadState", () => {
       snapshot({
         current: {
           ...snapshot().current,
-          stage: "talking",
-          followUpReason: "cold",
-          followUpAt: new Date("2026-09-24T05:00:00Z"),
+          pipelineStage: "talking",
+          attentionReason: "cold",
+          attentionAt: new Date("2026-09-24T05:00:00Z"),
           snoozedUntil: new Date("2026-09-27T06:00:00Z"),
         },
         signals: { flow: null, currentFlowStage: null, fields: {}, hasAgentReply: true, requests: [] },
@@ -74,19 +74,19 @@ describe("planLeadState", () => {
       }),
       now,
     );
-    expect(plan.patch.followUpReason).toBeNull();
+    expect(plan.patch.attentionReason).toBeNull();
     expect(plan.patch.snoozedUntil).toBeNull();
   });
 
   it("updates only the reason when source and stage are unchanged", () => {
     const plan = planLeadState(
       snapshot({
-        current: { ...snapshot().current, stage: "talking", stageReason: "old" },
+        current: { ...snapshot().current, pipelineStage: "talking", pipelineStageReason: "old" },
         signals: { flow: null, currentFlowStage: null, fields: {}, hasAgentReply: true, requests: [] },
       }),
       now,
     );
-    expect(plan.patch).toEqual({ stageReason: "engaged" });
+    expect(plan.patch).toEqual({ pipelineStageReason: "engaged" });
     expect(plan.stageEvent).toBeNull();
   });
 });

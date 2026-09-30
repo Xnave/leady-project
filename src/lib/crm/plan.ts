@@ -4,12 +4,12 @@ import { deriveLeadStage } from "./stage";
 import type { FollowUpReason, PipelineStage, StageSource } from "./types";
 
 export type LeadCrmColumns = {
-  stage: PipelineStage;
-  stageSource: StageSource;
-  stageReason: string;
-  stageChangedAt: Date;
-  followUpReason: FollowUpReason | null;
-  followUpAt: Date | null;
+  pipelineStage: PipelineStage;
+  pipelineStageSource: StageSource;
+  pipelineStageReason: string;
+  pipelineStageChangedAt: Date;
+  attentionReason: FollowUpReason | null;
+  attentionAt: Date | null;
   snoozedUntil: Date | null;
   nextStepAt: Date | null;
   lastLeadMessageAt: Date | null;
@@ -38,7 +38,7 @@ const same = (a: Date | null, b: Date | null) =>
 export function planLeadState(s: LeadStateSnapshot, now: Date): LeadStatePlan {
   const c = s.current;
   const decision = deriveLeadStage({
-    current: { stage: c.stage, source: c.stageSource, reason: c.stageReason, changedAt: c.stageChangedAt },
+    current: { stage: c.pipelineStage, source: c.pipelineStageSource, reason: c.pipelineStageReason, changedAt: c.pipelineStageChangedAt },
     signals: collectSignals(s.signals),
     lastLeadMessageAt: s.lastLeadMessageAt,
     lastRequestChangeAt: s.lastRequestChangeAt,
@@ -52,21 +52,21 @@ export function planLeadState(s: LeadStateSnapshot, now: Date): LeadStatePlan {
     lastOutboundAt: s.lastOutboundAt,
   });
   const snoozedUntil = carrySnooze(
-    { reason: c.followUpReason, at: c.followUpAt, snoozedUntil: c.snoozedUntil },
+    { reason: c.attentionReason, at: c.attentionAt, snoozedUntil: c.snoozedUntil },
     fu,
   );
 
   const patch: Partial<LeadCrmColumns> = {};
   let stageEvent: LeadStatePlan["stageEvent"] = null;
-  if (decision.stage !== c.stage) {
-    patch.stage = decision.stage;
-    patch.stageChangedAt = now;
-    stageEvent = { from: c.stage, to: decision.stage, source: decision.source, reason: decision.reason };
+  if (decision.stage !== c.pipelineStage) {
+    patch.pipelineStage = decision.stage;
+    patch.pipelineStageChangedAt = now;
+    stageEvent = { from: c.pipelineStage, to: decision.stage, source: decision.source, reason: decision.reason };
   }
-  if (decision.source !== c.stageSource) patch.stageSource = decision.source;
-  if (decision.reason !== c.stageReason) patch.stageReason = decision.reason;
-  if ((fu?.reason ?? null) !== c.followUpReason) patch.followUpReason = fu?.reason ?? null;
-  if (!same(fu?.at ?? null, c.followUpAt)) patch.followUpAt = fu?.at ?? null;
+  if (decision.source !== c.pipelineStageSource) patch.pipelineStageSource = decision.source;
+  if (decision.reason !== c.pipelineStageReason) patch.pipelineStageReason = decision.reason;
+  if ((fu?.reason ?? null) !== c.attentionReason) patch.attentionReason = fu?.reason ?? null;
+  if (!same(fu?.at ?? null, c.attentionAt)) patch.attentionAt = fu?.at ?? null;
   if (!same(snoozedUntil, c.snoozedUntil)) patch.snoozedUntil = snoozedUntil;
   if (!same(s.lastLeadMessageAt, c.lastLeadMessageAt)) patch.lastLeadMessageAt = s.lastLeadMessageAt;
   if (!same(s.lastOutboundAt, c.lastOutboundAt)) patch.lastOutboundAt = s.lastOutboundAt;
