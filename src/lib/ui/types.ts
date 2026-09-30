@@ -20,7 +20,7 @@ export type CrmCopy = {
   reasons: Record<"handoff" | "approval" | "reminder" | "cold", string>;
   reasonsLong: Record<"handoff" | "approval" | "reminder" | "cold", string>;
   /** Acting on an open handoff / approval task in the lead view (was the Inbox). */
-  task: Record<"approve" | "decline" | "reschedule" | "note" | "notePlaceholder" | "reply" | "replyPlaceholder" | "resume" | "needInfo" | "send" | "botSummary" | "awaitingCustomer" | "awaitingHint" | "altSlot" | "altSlotPlaceholder" | "altStart" | "altEnd" | "sent" | "failed", string>;
+  task: Record<"approve" | "decline" | "reschedule" | "note" | "notePlaceholder" | "send" | "modeBot" | "modeDirect" | "guide" | "guidePlaceholder" | "guideHint" | "sendToBot" | "direct" | "directPlaceholder" | "directHint" | "sendToCustomer" | "botSummary" | "awaitingCustomer" | "awaitingHint" | "altSlot" | "altSlotPlaceholder" | "altStart" | "altEnd" | "sent" | "failed", string>;
   cta: { handoff: string; approval: string; reminder: string; cold: string; coldPhone: string };
   them: string; us: string; windowLeft: string; windowClosed: string; windowClosedNote: string; conversationClosed: string;
   auto: string; manual: string; autoReasons: Record<string, string>; revived: string;

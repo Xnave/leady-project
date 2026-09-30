@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveStaffActor } from "@/lib/admin-decisions";
-import { completeHitlTask, loadTurnContext } from "@/lib/conversations";
+import { completeHitlTask, completeHitlTaskWithDirectReply, loadTurnContext } from "@/lib/conversations";
+import { sendStaffReply } from "@/lib/staff-reply";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
 import { decideRegisteredRequest } from "@/lib/flow/registry";
 import { closeConversationAsDone } from "@/lib/flow/rotate-conversation";
@@ -78,6 +79,15 @@ export async function POST(
       });
     }
     if (wantsJson(req)) return NextResponse.json({ ok: true });
+    return NextResponse.redirect(redirectPath(req, "/inbox"), 303);
+  }
+
+  // Answer the customer directly: send the text, close the task, no bot turn.
+  if (String(form.get("mode") ?? "") === "direct") {
+    const actor = await resolveStaffActor();
+    await sendStaffReply({ tenantId, conversationId: task.conversationId, text: note.trim(), source: "hitl_direct" });
+    await completeHitlTaskWithDirectReply({ tenantId, taskId: id, actorUserId: actor.actorUserId, reply: note.trim() });
+    if (wantsJson(req)) return NextResponse.json({ ok: true, direct: true });
     return NextResponse.redirect(redirectPath(req, "/inbox"), 303);
   }
 

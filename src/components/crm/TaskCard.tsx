@@ -12,7 +12,8 @@ type Result = Promise<string | null>;
 /**
  * The open task, acted on in place (this replaced the Inbox for CRM tenants).
  * Approval: pick approve / offer another time / decline, optionally add a note, send.
- * Handoff: write the reply, choose "hand back to the bot" or "need more details", send.
+ * Handoff: guide the bot (it writes the reply) or reply to the customer yourself (sent
+ * as written; the bot waits for the customer's next message).
  * Waiting on the customer: status only. The send button is the view's one primary action.
  */
 export function TaskCard({
@@ -32,7 +33,8 @@ export function TaskCard({
 }) {
   const t = ui.crm.task;
   const [mode, setMode] = useState<Decision>("approve");
-  const [resume, setResume] = useState(true);
+  // Handoff: guide the bot (it writes the reply) or answer the customer yourself.
+  const [direct, setDirect] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const age = clock ? relTime(task.createdAt, lang, clock.now) : "";
@@ -140,7 +142,8 @@ export function TaskCard({
       action={`/api/hitl/${task.id}/complete`}
       method="post"
     >
-      <input type="hidden" name="approved" value={resume ? "yes" : "no"} />
+      <input type="hidden" name="approved" value="yes" />
+      <input type="hidden" name="mode" value={direct ? "direct" : "bot"} />
       <div className="crm-task-h">
         <Icon name="hand" small />
         <b>{ui.crm.reasonsLong.handoff}</b>
@@ -153,22 +156,23 @@ export function TaskCard({
           <p>{task.summary}</p>
         </div>
       ) : null}
-      <label className="crm-task-field">
-        <span>{t.reply}</span>
-        <textarea name="note" rows={3} required placeholder={t.replyPlaceholder} />
-      </label>
       <div className="crm-presets" role="group">
-        <button type="button" className="crm-btn-quiet crm-choice" aria-pressed={resume} onClick={() => setResume(true)}>
-          {t.resume}
+        <button type="button" className="crm-btn-quiet crm-choice" aria-pressed={!direct} onClick={() => setDirect(false)}>
+          {t.modeBot}
         </button>
-        <button type="button" className="crm-btn-quiet crm-choice" aria-pressed={!resume} onClick={() => setResume(false)}>
-          {t.needInfo}
+        <button type="button" className="crm-btn-quiet crm-choice" aria-pressed={direct} onClick={() => setDirect(true)}>
+          {t.modeDirect}
         </button>
       </div>
+      <label className="crm-task-field">
+        <span>{direct ? t.direct : t.guide}</span>
+        <textarea name="note" rows={3} required placeholder={direct ? t.directPlaceholder : t.guidePlaceholder} />
+      </label>
+      <p className="crm-task-muted">{direct ? t.directHint : t.guideHint}</p>
       {error ? <p className="crm-task-error" role="alert">{error}</p> : null}
       <div className="crm-task-foot">
         <button type="submit" className="btn" disabled={busy} aria-busy={busy}>
-          {t.send}
+          {direct ? t.sendToCustomer : t.sendToBot}
         </button>
       </div>
     </form>
