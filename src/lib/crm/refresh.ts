@@ -1,7 +1,8 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { prisma } from "@/lib/db";
 import type { FlowDefinition } from "@/lib/flow/types";
 import { REQUEST_APPROVAL_TASK } from "@/lib/requests";
-import { approvalWaitingSince } from "./followup";
+import { OPEN_APPROVAL_TASK, OPEN_HANDOFF_TASK } from "./needs";
 import { planLeadState, type LeadStatePlan, type LeadStateSnapshot } from "./plan";
 import { isFollowUpReason, isPipelineStage } from "./types";
 
@@ -10,58 +11,51 @@ export async function loadLeadStateSnapshot(
   tenantId: string,
   leadId: string,
 ): Promise<LeadStateSnapshot | null> {
+  const convoSelect = { flowState: true, agent: { select: { flow: true } } } as const;
   const lead = await prisma.lead.findFirst({
     where: { id: leadId, tenantId },
     include: {
+      // The conversation the bot is on now: the newest one still open.
       conversations: {
+        where: { status: { not: "closed" } },
         orderBy: { createdAt: "desc" },
         take: 1,
-        select: { flowState: true, agent: { select: { flow: true } } },
+        select: convoSelect,
       },
-      requests: { select: { id: true, status: true, kind: true, createdAt: true, updatedAt: true } },
+      requests: { select: { status: true, kind: true, updatedAt: true } },
+      // Same predicate as the "needs you" list, so the stored reason can't disagree with it.
       hitlTasks: {
-        where: { status: "open", type: { not: REQUEST_APPROVAL_TASK } },
-        orderBy: { createdAt: "asc" },
-        take: 1,
-        select: { createdAt: true },
+        where: { OR: [OPEN_HANDOFF_TASK, OPEN_APPROVAL_TASK] },
+        select: { type: true, createdAt: true },
       },
     },
   });
   if (!lead) return null;
 
-  const [lastLead, lastOut, agentReply] = await Promise.all([
-    prisma.message.findFirst({
-      where: { tenantId, role: "lead", conversation: { leadId } },
-      orderBy: { createdAt: "desc" },
-      select: { createdAt: true },
-    }),
-    prisma.message.findFirst({
-      where: { tenantId, role: { in: ["agent", "human"] }, conversation: { leadId } },
-      orderBy: { createdAt: "desc" },
-      select: { createdAt: true },
-    }),
-    prisma.message.findFirst({
-      where: { tenantId, role: "agent", conversation: { leadId } },
-      select: { id: true },
+  const [convo, lastByRole] = await Promise.all([
+    // Every conversation closed: the stage still reads the last one's flow position.
+    lead.conversations[0] ??
+      prisma.conversation.findFirst({
+        where: { tenantId, leadId },
+        orderBy: { createdAt: "desc" },
+        select: convoSelect,
+      }),
+    prisma.message.groupBy({
+      by: ["role"],
+      where: { tenantId, conversation: { leadId } },
+      _max: { createdAt: true },
     }),
   ]);
+  const lastAt = (role: string) => lastByRole.find((g) => g.role === role)?._max.createdAt ?? null;
+  const latest = (...ds: (Date | null)[]) =>
+    ds.reduce<Date | null>((max, d) => (d && (!max || d > max) ? d : max), null);
 
-  // A reschedule offer keeps the request pending but hands the move to the customer.
-  const approvalTasks = await prisma.hitlTask.findMany({
-    where: { tenantId, leadId, status: "open", type: REQUEST_APPROVAL_TASK },
-    select: { payload: true },
-  });
-  const awaitingCustomer = new Set(
-    approvalTasks
-      .map((t) => (t.payload ?? {}) as { requestId?: string; awaitingCustomerConfirm?: boolean })
-      .filter((p) => p.awaitingCustomerConfirm && p.requestId)
-      .map((p) => p.requestId as string),
-  );
-  const lastRequestChangeAt = lead.requests.reduce<Date | null>(
-    (max, r) => (!max || r.updatedAt > max ? r.updatedAt : max),
-    null,
-  );
-  const convo = lead.conversations[0];
+  // The oldest open task sets "waiting since": the owner has been needed from then on.
+  const oldest = (approval: boolean) =>
+    earliest(
+      lead.hitlTasks.filter((t) => (t.type === REQUEST_APPROVAL_TASK) === approval).map((t) => t.createdAt),
+    );
+  const lastRequestChangeAt = latest(...lead.requests.map((r) => r.updatedAt));
 
   return {
     current: {
@@ -80,15 +74,19 @@ export async function loadLeadStateSnapshot(
       flow: (convo?.agent.flow as FlowDefinition | undefined) ?? null,
       currentFlowStage: convo?.flowState ?? null,
       fields: (lead.fields as Record<string, unknown>) ?? {},
-      hasAgentReply: Boolean(agentReply),
+      hasAgentReply: lastAt("agent") != null,
       requests: lead.requests.map((r) => ({ status: r.status, kind: r.kind })),
     },
-    openHandoffSince: lead.hitlTasks[0]?.createdAt ?? null,
-    pendingApprovalSince: approvalWaitingSince(lead.requests, awaitingCustomer),
-    lastLeadMessageAt: lastLead?.createdAt ?? null,
-    lastOutboundAt: lastOut?.createdAt ?? null,
+    openHandoffSince: oldest(false),
+    pendingApprovalSince: oldest(true),
+    lastLeadMessageAt: lastAt("lead"),
+    lastOutboundAt: latest(lastAt("agent"), lastAt("human")),
     lastRequestChangeAt,
   };
+}
+
+function earliest(ds: Date[]): Date | null {
+  return ds.reduce<Date | null>((min, d) => (!min || d < min ? d : min), null);
 }
 
 /** The only writer of the CRM columns (besides explicit owner actions in crm/actions.ts). */
@@ -114,15 +112,44 @@ export async function refreshLeadState(
   return plan;
 }
 
+type RefreshOpts = { now?: Date; actorUserId?: string };
+
+/** A refresh slower than this is logged, so hot paths can be watched in prod. */
+const SLOW_REFRESH_MS = 250;
+
 /** For turn / webhook paths: CRM bookkeeping must never fail the caller. */
-export async function safeRefreshLeadState(
-  tenantId: string,
-  leadId: string,
-  opts?: { now?: Date; actorUserId?: string },
-): Promise<void> {
+export async function safeRefreshLeadState(tenantId: string, leadId: string, opts?: RefreshOpts): Promise<void> {
+  const pending = batch.getStore();
+  if (pending) {
+    pending.set(`${tenantId}:${leadId}`, { tenantId, leadId, opts });
+    return;
+  }
+  const started = Date.now();
   try {
     await refreshLeadState(tenantId, leadId, opts);
   } catch (err) {
     console.error(JSON.stringify({ msg: "crm.refresh_failed", tenantId, leadId, error: String(err) }));
+  }
+  const ms = Date.now() - started;
+  if (ms > SLOW_REFRESH_MS) console.warn(JSON.stringify({ msg: "crm.refresh_slow", tenantId, leadId, ms }));
+}
+
+const batch = new AsyncLocalStorage<Map<string, { tenantId: string; leadId: string; opts?: RefreshOpts }>>();
+
+/**
+ * Runs `fn` with lead refreshes deferred: however many times the code inside asks
+ * (one per saved message, per closed thread, …), each lead is refreshed once, after
+ * `fn` settles — even when it throws, since what it wrote before failing still counts.
+ * Nested calls join the outer batch.
+ */
+export async function batchLeadRefreshes<T>(fn: () => Promise<T>): Promise<T> {
+  if (batch.getStore()) return fn();
+  const pending = new Map<string, { tenantId: string; leadId: string; opts?: RefreshOpts }>();
+  try {
+    return await batch.run(pending, fn);
+  } finally {
+    for (const p of pending.values()) {
+      await safeRefreshLeadState(p.tenantId, p.leadId, { ...p.opts, now: undefined });
+    }
   }
 }

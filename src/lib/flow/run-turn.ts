@@ -30,7 +30,7 @@ import type { Stage, TurnContext } from "@/lib/flow/types";
 import { rewritePhonesInText } from "@/lib/leads";
 import { inngest } from "@/inngest/client";
 import { prisma } from "@/lib/db";
-import { safeRefreshLeadState } from "@/lib/crm/refresh";
+import { batchLeadRefreshes, safeRefreshLeadState } from "@/lib/crm/refresh";
 
 function logTurn(phase: "enter" | "exit", extra: Record<string, unknown>) {
   console.log(JSON.stringify({ msg: "runAgentTurn", phase, ...extra }));
@@ -73,8 +73,7 @@ export async function sendAndSave(
         ? ctx.lead.fields.zernioConversationId
         : undefined,
   });
-  // Callers outside a turn (request decision, HITL completion, nudges) send
-  // after their own refresh ran, so recompute lastOutboundAt/cold here.
+  // Recompute lastOutboundAt / cold. Inside a turn this joins the turn's single refresh.
   await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
 }
 
@@ -185,12 +184,19 @@ export async function tryDispatchNudgeEvent(
   }
 }
 
-export async function runTurnNow(opts: {
+type RunTurnOpts = {
   tenantId: string;
   conversationId: string;
   resume?: boolean;
   triggerMessageId?: string;
-}) {
+};
+
+/** One turn. Every CRM refresh the turn triggers collapses into one, after it ends. */
+export function runTurnNow(opts: RunTurnOpts) {
+  return batchLeadRefreshes(() => runTurn(opts));
+}
+
+async function runTurn(opts: RunTurnOpts) {
   ensureFlowRegistry();
   const started = Date.now();
   const ctx = await loadTurnContext(opts.tenantId, opts.conversationId);

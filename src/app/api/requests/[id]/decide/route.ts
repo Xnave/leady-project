@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { batchLeadRefreshes } from "@/lib/crm/refresh";
 import { resolveStaffActor } from "@/lib/admin-decisions";
 import { loadTurnContext } from "@/lib/conversations";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
@@ -24,7 +25,12 @@ function parseDecision(form: FormData): RequestDecision {
  * reschedule is read off the shape of the request's time spine: a point takes one
  * value, a span takes two. Wording and persistence belong to the owning capability.
  */
-export async function POST(
+/** Every CRM refresh the decision triggers (task, messages, closed thread) runs once, at the end. */
+export function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  return batchLeadRefreshes(() => handle(req, ctx));
+}
+
+async function handle(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {

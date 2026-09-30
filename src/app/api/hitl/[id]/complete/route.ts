@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { batchLeadRefreshes } from "@/lib/crm/refresh";
 import { resolveStaffActor } from "@/lib/admin-decisions";
 import { completeHitlTask, completeHitlTaskWithDirectReply, loadTurnContext } from "@/lib/conversations";
 import { sendStaffReply } from "@/lib/staff-reply";
@@ -10,7 +11,12 @@ import { getRequest, REQUEST_APPROVAL_TASK } from "@/lib/requests";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
 
-export async function POST(
+/** Every CRM refresh the decision triggers (task, messages, closed thread) runs once, at the end. */
+export function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  return batchLeadRefreshes(() => handle(req, ctx));
+}
+
+async function handle(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {

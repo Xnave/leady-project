@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approvalWaitingSince, carrySnooze, deriveFollowUp, isFollowUpDue, waWindow } from "./followup";
+import { carrySnooze, deriveFollowUp, isFollowUpDue, waWindow } from "./followup";
 
 const at = (iso: string) => new Date(iso);
 const none = {
@@ -128,19 +128,5 @@ describe("waWindow", () => {
   });
   it("has no window without a lead message", () => {
     expect(waWindow(null, now)).toEqual({ closesAt: null, hoursLeft: null, closed: true });
-  });
-});
-
-describe("approvalWaitingSince", () => {
-  const r = (id: string, status: string, iso: string) => ({ id, status, createdAt: at(iso) });
-  it("is the oldest pending request", () => {
-    expect(
-      approvalWaitingSince([r("a", "pending", "2026-09-25T08:00:00Z"), r("b", "pending", "2026-09-24T08:00:00Z")], new Set()),
-    ).toEqual(at("2026-09-24T08:00:00Z"));
-  });
-  it("skips requests waiting on the customer and decided ones", () => {
-    expect(
-      approvalWaitingSince([r("a", "pending", "2026-09-24T08:00:00Z"), r("b", "approved", "2026-09-23T08:00:00Z")], new Set(["a"])),
-    ).toBeNull();
   });
 });

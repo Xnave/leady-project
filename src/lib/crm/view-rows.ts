@@ -13,7 +13,7 @@ import {
   type LeadRowDTO,
   type LeadRowInput,
 } from "./view";
-import { needsWhere } from "./needs";
+import { needsWhere, reasonWhere } from "./needs";
 import { ACTIVE_STAGES, CLOSED_STAGES, FOLLOW_UP_PRIORITY, PIPELINE_STAGES, type FollowUpReason, type PipelineStage } from "./types";
 
 function demoWhere(showDemo: boolean): Prisma.LeadWhereInput {
@@ -52,10 +52,12 @@ function buildRowsWhere(
 ): Prisma.LeadWhereInput {
   const where: Prisma.LeadWhereInput = { tenantId: o.tenantId, ...demoWhere(o.showDemo), ...tabWhere(o.tab, now) };
   if (o.stage) where.pipelineStage = o.stage;
-  if (o.reason) where.attentionReason = o.reason;
   if (o.channel) where.channel = { provider: o.channel };
+  const and: Prisma.LeadWhereInput[] = [];
+  if (o.reason) and.push(reasonWhere(o.reason, now));
   const q = o.q?.trim();
-  if (q) where.AND = [searchWhere(q)];
+  if (q) and.push(searchWhere(q));
+  if (and.length) where.AND = and;
   return where;
 }
 
@@ -70,7 +72,7 @@ async function computeCounts(tenantId: string, showDemo: boolean, now: Date): Pr
     count({ ...base, pipelineStage: { in: [...CLOSED_STAGES] } }),
     count(base),
     Promise.all(PIPELINE_STAGES.map((st) => count({ ...base, pipelineStage: st }))),
-    Promise.all(FOLLOW_UP_PRIORITY.map((r) => count({ ...needs, attentionReason: r }))),
+    Promise.all(FOLLOW_UP_PRIORITY.map((r) => count({ ...base, ...reasonWhere(r, now) }))),
   ]);
   return {
     needs: nNeeds,

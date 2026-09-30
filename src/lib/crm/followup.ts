@@ -62,20 +62,3 @@ export function waWindow(
   if (left <= 0) return { closesAt, hoursLeft: 0, closed: true };
   return { closesAt, hoursLeft: Math.floor(left / HOUR), closed: false };
 }
-
-/**
- * When the oldest request still waiting on the owner came in, or null. A pending
- * request whose approval task awaits the customer (staff offered another time) is
- * the customer's move, so it does not count.
- */
-export function approvalWaitingSince(
-  requests: { id: string; status: string; createdAt: Date }[],
-  awaitingCustomer: ReadonlySet<string>,
-): Date | null {
-  let first: Date | null = null;
-  for (const r of requests) {
-    if (r.status !== "pending" || awaitingCustomer.has(r.id)) continue;
-    if (!first || r.createdAt < first) first = r.createdAt;
-  }
-  return first;
-}
