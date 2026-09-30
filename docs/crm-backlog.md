@@ -90,3 +90,11 @@ Each item gives the problem, what the market does, and what we already have to b
 - **Decision history across leads.** The old Inbox listed every resolved task by date and by who decided. Each lead's timeline covers it, but there's no cross-lead view. Add a "Decisions" view or filter if owners ask for it.
 - **Custom reply on approval.** The legacy Inbox form had a "custom reply" field that replaces the template message. The lead-view approval card offers only a note added to the template. Bring it back if owners want to write the whole message.
 - **Bot re-escalates after a handoff reply without an LLM key.** With no LLM configured, the resumed turn can hand off again straight away (seen in dev). With an LLM it answers normally. Worth a check in the heuristic path.
+
+## From the PR #5 review
+
+- **Smarter digest replies.** A reply to the digest always returns the same full list. Ideas: filter by reason ("only handoffs"), act on an item from WhatsApp, or answer questions with the LLM.
+- **Inngest health in production.** Alert when Inngest can't be reached or a function keeps failing (turns, nudges, digest cron). Today it only shows up as `inngest.unreachable` logs.
+- **Prisma migrations and auto-migrate on merge.** Move from `db push` to `prisma migrate` and apply migrations from the GitHub/Vercel pipeline on merge to `main`, instead of running `db:push:production` by hand.
+- **Start a new conversation from the lead view.** The old lead workspace had it; `api/leads/[id]/new-conversation` is still there but nothing in the CRM calls it.
+- **`Lead.status` is legacy.** Only the demo panel's field form still writes it and nothing reads it. Drop the column and that select once the demo panel moves to the pipeline stage.
