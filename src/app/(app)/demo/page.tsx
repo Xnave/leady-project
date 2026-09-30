@@ -197,7 +197,7 @@ export default async function DemoPage({
               />
               {convo.status === "waiting_human" ? (
                 <p className="muted">
-                  {ui.chat.pausedForHuman} <Link href="/inbox">{ui.nav.inbox}</Link>
+                  {ui.chat.pausedForHuman} <Link href="/leads?tab=needs">{ui.crm.tabs.needs}</Link>
                 </p>
               ) : null}
             </>

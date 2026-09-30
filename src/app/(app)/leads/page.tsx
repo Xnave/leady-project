@@ -1,13 +1,10 @@
 import { LeadsList } from "@/components/crm/LeadsList";
 import { getUiLang } from "@/lib/cookies";
-import { crmV2Enabled } from "@/lib/crm/flags";
 import { loadLeadRows, type CrmTab } from "@/lib/crm/view";
 import { isFollowUpReason, isPipelineStage } from "@/lib/crm/types";
 import { loadWonLabel } from "@/lib/crm/won-label";
-import { prisma } from "@/lib/db";
 import { requireTenantIdForPage } from "@/lib/tenant";
 import { uiCopy } from "@/lib/ui";
-import { LegacyLeadsList } from "./LegacyLeadsList";
 
 export const dynamic = "force-dynamic";
 const TABS: CrmTab[] = ["needs", "active", "won", "closed", "all"];
@@ -21,9 +18,6 @@ export default async function LeadsPage({
 }) {
   const sp = await searchParams;
   const tenantId = await requireTenantIdForPage();
-  const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { crmV2: true } });
-  if (!crmV2Enabled(tenant)) return <LegacyLeadsList searchParams={Promise.resolve(sp)} />;
-
   const lang = await getUiLang();
   const ui = uiCopy(lang);
   // 10 stays accepted because the shared <Pagination> offers it.

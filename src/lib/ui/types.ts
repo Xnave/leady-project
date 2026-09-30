@@ -138,7 +138,6 @@ export type UiCopy = {
     quickSetup: string;
     quickChat: string;
     quickLeads: string;
-    quickInbox: string;
     quickChannels: string;
     tenantLabel: string;
     journeyTitle: string;
@@ -147,8 +146,6 @@ export type UiCopy = {
     stepChannels: string;
     stepChat: string;
     stepLeads: string;
-    stepInbox: string;
-    ctaInbox: string;
     ctaConnect: string;
     whatsappOk: string;
     whatsappOff: string;

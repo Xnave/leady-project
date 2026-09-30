@@ -5,9 +5,15 @@
  * `FieldSpec`s and lets the field kit produce the labels and formatting. A new
  * vertical shows up in the inbox and the decisions log with no UI change.
  */
-import type { RequestSummaryLine } from "@/components/RequestDecisionForm";
 import { confirmLines, type FieldSpec } from "@/lib/flow/fields";
 import type { RequestRow } from "@/lib/requests";
+
+export type RequestSummaryLine = {
+  label: string;
+  value: string;
+  /** Isolate as LTR inside an RTL layout (phone numbers, emails, URLs). */
+  ltr?: boolean;
+};
 
 /**
  * Which `data` keys are internal to a capability (snapshots the operator already

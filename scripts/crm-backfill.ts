@@ -1,6 +1,6 @@
 /**
  * One-off: map legacy Lead.status (won / lost / closed) to a manual stage,
- * then derive every lead. Run it BEFORE enabling crmV2 / CRM_V2_ALL.
+ * then derive every lead. Run it right after the schema push, before users open /leads.
  *   npm run crm:backfill
  *
  * Re-running is safe:

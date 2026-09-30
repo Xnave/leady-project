@@ -11,13 +11,7 @@ import {
   type RequestDecision,
 } from "@/lib/requests";
 import { requireTenantId } from "@/lib/tenant";
-import { redirectPath } from "@/lib/request-url";
 import { prisma } from "@/lib/db";
-
-/** The CRM lead view posts with `Accept: application/json`; the legacy Inbox form wants a redirect. */
-function wantsJson(req: Request): boolean {
-  return (req.headers.get("accept") ?? "").includes("application/json");
-}
 
 function parseDecision(form: FormData): RequestDecision {
   const raw = String(form.get("decision") ?? "").trim();
@@ -40,7 +34,6 @@ export async function POST(
   const decision = parseDecision(form);
   const note = String(form.get("note") ?? "").trim();
   const customReply = String(form.get("customReply") ?? "").trim();
-  const redirectTo = String(form.get("redirect") ?? "").trim() || "/inbox";
 
   const request = await getRequest({ tenantId, requestId: id });
   if (!request) {
@@ -56,8 +49,7 @@ export async function POST(
     decision === "reschedule" &&
     (!alternativeStart || (isSpan && !alternativeEnd))
   ) {
-    if (wantsJson(req)) return NextResponse.json({ error: "missing_alternative" }, { status: 400 });
-    return NextResponse.redirect(redirectPath(req, redirectTo), 303);
+    return NextResponse.json({ error: "missing_alternative" }, { status: 400 });
   }
 
   // Allow deciding while an open approval task still targets this request (inbox
@@ -108,6 +100,5 @@ export async function POST(
       reason: "approve",
     });
   }
-  if (wantsJson(req)) return NextResponse.json({ ok: true, decision });
-  return NextResponse.redirect(redirectPath(req, redirectTo), 303);
+  return NextResponse.json({ ok: true, decision });
 }

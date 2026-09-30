@@ -9,12 +9,6 @@ import { runTurnNow, sendAndSave, tryDispatchNudgeEvent } from "@/lib/flow/run-t
 import { getRequest, REQUEST_APPROVAL_TASK } from "@/lib/requests";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
-import { redirectPath } from "@/lib/request-url";
-
-/** The CRM lead view posts with `Accept: application/json`; the legacy Inbox form wants a redirect. */
-function wantsJson(req: Request): boolean {
-  return (req.headers.get("accept") ?? "").includes("application/json");
-}
 
 export async function POST(
   req: Request,
@@ -78,8 +72,7 @@ export async function POST(
         reason: "approve",
       });
     }
-    if (wantsJson(req)) return NextResponse.json({ ok: true });
-    return NextResponse.redirect(redirectPath(req, "/inbox"), 303);
+    return NextResponse.json({ ok: true });
   }
 
   // Answer the customer directly: send the text, close the task, no bot turn.
@@ -87,8 +80,7 @@ export async function POST(
     const actor = await resolveStaffActor();
     await sendStaffReply({ tenantId, conversationId: task.conversationId, text: note.trim(), source: "hitl_direct" });
     await completeHitlTaskWithDirectReply({ tenantId, taskId: id, actorUserId: actor.actorUserId, reply: note.trim() });
-    if (wantsJson(req)) return NextResponse.json({ ok: true, direct: true });
-    return NextResponse.redirect(redirectPath(req, "/inbox"), 303);
+    return NextResponse.json({ ok: true, direct: true });
   }
 
   const actor = await resolveStaffActor();
@@ -111,6 +103,5 @@ export async function POST(
   } catch (err) {
     console.error(JSON.stringify({ msg: "hitl.resume_failed", conversationId, error: String(err) }));
   }
-  if (wantsJson(req)) return NextResponse.json({ ok: true });
-  return NextResponse.redirect(redirectPath(req, "/inbox"), 303);
+  return NextResponse.json({ ok: true });
 }

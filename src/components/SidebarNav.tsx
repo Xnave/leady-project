@@ -9,9 +9,8 @@ import type { UiCopy, UiLang, UiTheme } from "@/lib/ui";
 
 type NavKey = keyof UiCopy["nav"];
 
-const OWNER_ITEMS: { href: string; key: NavKey; countKey?: "inbox" | "leads" }[] = [
+const OWNER_ITEMS: { href: string; key: NavKey; countKey?: "leads" }[] = [
   { href: "/", key: "home" },
-  { href: "/inbox", key: "inbox", countKey: "inbox" },
   { href: "/leads", key: "leads", countKey: "leads" },
   { href: "/onboard", key: "setup" },
   { href: "/channels", key: "channels" },
@@ -34,7 +33,6 @@ function Icon({ d }: { d: string }) {
 
 const ICONS: Partial<Record<NavKey, ReactNode>> = {
   home: <Icon d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z" />,
-  inbox: <Icon d="M4 6h16v12H4zM4 12h4l2 3h4l2-3h4" />,
   leads: <Icon d="M8 7a4 4 0 1 0 8 0 4 4 0 0 0-8 0M5 20a7 7 0 0 1 14 0" />,
   setup: <Icon d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19.4 15a7.7 7.7 0 0 0 .1-2l2-1.5-2-3.4-2.4.5a8 8 0 0 0-1.7-1L15 5h-4l-.4 2.6a8 8 0 0 0-1.7 1L6.5 8.1l-2 3.4 2 1.5a7.7 7.7 0 0 0 .1 2l-2 1.5 2 3.4 2.4-.5a8 8 0 0 0 1.7 1L11 21h4l.4-2.6a8 8 0 0 0 1.7-1l2.4.5 2-3.4z" />,
   channels: (
@@ -94,10 +92,7 @@ export function SidebarNav({
     return pathname.startsWith(href);
   }
 
-  // CRM tenants act on handoffs / approvals in Leads → Needs you, so the Inbox item goes.
-  const ownerItems = OWNER_ITEMS.filter(
-    (item) => (item.key !== "team" || showTeam) && !(item.key === "inbox" && counts?.crmV2),
-  );
+  const ownerItems = OWNER_ITEMS.filter((item) => item.key !== "team" || showTeam);
   const staffItems = STAFF_ITEMS.filter((item) => !item.adminOnly || admin);
 
   return (
@@ -136,7 +131,7 @@ export function SidebarNav({
                   <span>{ui.nav[item.key]}</span>
                 </span>
                 {count > 0 ? (
-                  <span className="nav-badge" title={item.key === "leads" && counts?.crmV2 ? ui.crm.tabs.needs : undefined}>
+                  <span className="nav-badge" title={item.key === "leads" ? ui.crm.tabs.needs : undefined}>
                     {count > 99 ? "99+" : count}
                   </span>
                 ) : null}

@@ -155,9 +155,9 @@ A `Lead` carries a pipeline stage (`new … won / lost / not_relevant`) and a fo
 
 Read paths: `view.ts` holds `whereItStands()` and shared DTOs; `view-rows.ts` loads the `/leads` list; `view-lead.ts` loads one lead's full page. The "needs you" predicate — the one `WHERE` clause behind the follow-up queue — lives in `crm/needs.ts` so the list and the digest can't drift apart.
 
-Two independent flags gate this: `Tenant.crmV2` (or env `CRM_V2_ALL=true`) turns the new lead view on per tenant; `DIGEST_WHATSAPP_ENABLED=true` (env) plus `Tenant.digestEnabled` turns on the WhatsApp daily digest. The digest content builder (`crm/digest.ts`) is pure — given due items it returns counts and Meta-safe template params; `crm/digest-send.ts` does the Prisma/Zernio work and idempotency (`DigestLog`); the `crmDigest` Inngest cron (`src/inngest/functions.ts`) runs hourly and calls it for tenants whose local hour matches `digestHour`.
+The WhatsApp daily digest is gated by `DIGEST_WHATSAPP_ENABLED=true` (env) plus `Tenant.digestEnabled`. The digest content builder (`crm/digest.ts`) is pure — given due items it returns counts and Meta-safe template params; `crm/digest-send.ts` does the Prisma/Zernio work and idempotency (`DigestLog`); the `crmDigest` Inngest cron (`src/inngest/functions.ts`) runs hourly and calls it for tenants whose local hour matches `digestHour`.
 
-**Rollout order:** run `npm run crm:backfill` (`scripts/crm-backfill.ts`) BEFORE enabling `crmV2` or `CRM_V2_ALL` for any tenant. It maps legacy `Lead.status` won/lost/closed to a manual stage (keeping the lead's `updatedAt` as `stageChangedAt`, plus a `migrated` `LeadStageEvent`) and derives every lead's stage and follow-up. It is safe to re-run: it skips leads that already have a stage event.
+**Rollout order:** run `npm run crm:backfill` (`scripts/crm-backfill.ts`) right after the schema push, before users open `/leads`. It maps legacy `Lead.status` won/lost/closed to a manual stage (keeping the lead's `updatedAt` as `stageChangedAt`, plus a `migrated` `LeadStageEvent`) and derives every lead's stage and follow-up. It is safe to re-run: it skips leads that already have a stage event.
 
 ---
 
@@ -237,7 +237,7 @@ Checklist (see also `src/lib/flow/capabilities/README.md`):
 3. **`catalog.ts`** — add to `CapabilityId` / `isCapabilityId` if onboard should list it.
 4. **Collect** — build `FieldSpec[]` via `fields/`; config parser module if needed.
 5. **Persistence** — use `@/lib/requests` (`createRequestWithApprovalTask`, `decideRequest`). Thin wrapper in `src/lib/<vertical>.ts` for wording only. **Do not** add `Meeting`-style tables or decide routes.
-6. **UI** — inbox already uses `request_approval` + `RequestDecisionForm`; extend labels via instance/`request-view` if needed.
+6. **UI** — the CRM task card (`components/crm/TaskCard.tsx`) decides `request_approval` tasks; extend labels via instance/`request-view` if needed.
 7. **Copy** — mechanics in `copy/`; nouns in instance config.
 8. **Tests** — capability registration + `architecture.test.ts` still green (no domain leak into interpreter; no second decide form).
 

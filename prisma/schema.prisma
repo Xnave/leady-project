@@ -24,8 +24,6 @@ model Tenant {
   zernioProfileId        String?  @unique
   /** IANA timezone for the daily digest clock. */
   timezone               String   @default("Asia/Jerusalem")
-  /** CRM v2 UI (new /leads). Env CRM_V2_ALL=true turns it on for every tenant. */
-  crmV2                  Boolean  @default(false)
   digestEnabled          Boolean  @default(false)
   digestHour             Int      @default(8)
   createdAt              DateTime @default(now())

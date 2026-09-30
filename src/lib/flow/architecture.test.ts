@@ -593,14 +593,19 @@ describe("one request primitive", () => {
   });
 
   it("ships exactly one decide route and one decision form", async () => {
-    const { readdir } = await import("node:fs/promises");
+    const { readdir, readFile } = await import("node:fs/promises");
     const api = await readdir(new URL("../../app/api", import.meta.url));
     expect(api).toContain("requests");
     expect(api).not.toContain("meetings");
     expect(api).not.toContain("reservations");
-    const components = await readdir(new URL("../../components", import.meta.url));
-    const decisionForms = components.filter((f) => f.endsWith("DecisionForm.tsx"));
-    expect(decisionForms).toEqual(["RequestDecisionForm.tsx"]);
+    // The one form that posts to the decide route is the CRM task card.
+    const root = new URL("../../components/", import.meta.url);
+    const files = (await readdir(root, { recursive: true })).filter((f) => f.endsWith(".tsx"));
+    const posters: string[] = [];
+    for (const f of files) {
+      if ((await readFile(new URL(f, root), "utf8")).includes("/decide`")) posters.push(f);
+    }
+    expect(posters).toEqual(["crm/TaskCard.tsx"]);
   });
 });
 

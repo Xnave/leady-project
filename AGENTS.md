@@ -53,7 +53,7 @@ If a change would violate an `architecture.test.ts` assertion, stop and redesign
 | Stay / span behavior | `capabilities/reservations.ts`, `reservation-config.ts`, `reservations.ts` |
 | Collect field types | `flow/fields/` |
 | Persist approval | `requests.ts` only for structure |
-| Inbox / decide UI | `RequestDecisionForm.tsx`, `inbox/page.tsx`, `api/requests/.../decide` |
+| Needs you / decide UI | `components/crm/TaskCard.tsx`, `api/requests/.../decide`, `api/hitl/.../complete` |
 | Onboard / enable caps | `OnboardWizard.tsx`, `api/onboard`, `catalog.ts`, `capability-instances.ts` |
 | Channel send/receive | `conversations.ts`, `channels/`, `zernio.ts`, webhook routes |
 

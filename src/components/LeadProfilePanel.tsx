@@ -145,8 +145,8 @@ export function LeadProfilePanel({
           </Link>
         ) : null}
         {waitingHuman ? (
-          <Link href="/inbox" className="btn-secondary">
-            {ui.nav.inbox}
+          <Link href="/leads?tab=needs" className="btn-secondary">
+            {ui.crm.tabs.needs}
           </Link>
         ) : null}
       </div>
