@@ -30,6 +30,12 @@ describe("crm input parsing", () => {
       at: new Date("2026-09-26T06:00:00Z"),
     });
     expect(parseNextStepBody({ done: true }, now)).toEqual({ text: null, at: null });
+    // A date-only next step: the client sends `text: null`.
+    expect(parseNextStepBody({ text: null, at: "2026-09-26T06:00:00Z" }, now)).toEqual({
+      text: null,
+      at: new Date("2026-09-26T06:00:00Z"),
+    });
+    expect(parseStageBody({ stage: "won", reason: null })).toEqual({ stage: "won", reason: "" });
     expect(parseNextStepBody({ text: "Call" }, now)).toEqual({ error: "bad_date" });
     expect(parseNextStepBody({ text: "", at: "2026-09-26T06:00:00Z" }, now)).toEqual({
       text: null,

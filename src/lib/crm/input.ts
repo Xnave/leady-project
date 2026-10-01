@@ -18,10 +18,11 @@ const isoDate = (code: string) =>
     .transform((v) => new Date(v))
     .refine((d) => !Number.isNaN(d.getTime()), { message: code });
 
+/** An optional text field: missing or null reads as "" (the client sends `text: null`). */
 const trimmed = (max: number) =>
   z
     .string()
-    .optional()
+    .nullish()
     .transform((v) => (v ?? "").trim().slice(0, max));
 
 const stageBody = z.object(
