@@ -45,6 +45,27 @@ target="${DATABASE_URL#*@}"
 target="${target%%\?*}"
 echo "Target database: ${target} (from ${ENV_FILE})" >&2
 
+# Changes need a person at a terminal typing the host back. With no terminal (a script,
+# CI, an agent, a stray command substitution) the answer can't be given, so it aborts.
+confirm_write() {
+  local host="${target%%/*}"
+  if [[ ! -r /dev/tty ]] || ! { exec 3</dev/tty; } 2>/dev/null; then
+    echo "Refusing to $cmd: no terminal to confirm on." >&2
+    exit 1
+  fi
+  printf 'This will %s the database above. Type its host (%s) to continue: ' "$cmd" "$host" >/dev/tty
+  local answer
+  read -r answer <&3 || answer=""
+  exec 3<&-
+  if [[ "$answer" != "$host" ]]; then
+    echo "Aborted." >&2
+    exit 1
+  fi
+}
+case "$cmd" in
+  baseline | migrate | backfill) confirm_write ;;
+esac
+
 case "$cmd" in
   diff)
     npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --script
