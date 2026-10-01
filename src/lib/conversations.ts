@@ -35,6 +35,7 @@ import {
   looksLikePlatformUserId,
 } from "@/lib/leads";
 import { fetchZernioInboxContact } from "@/lib/zernio";
+import { safeRefreshLeadState } from "@/lib/crm/refresh";
 
 export {
   reopenConversation,
@@ -262,6 +263,7 @@ export async function persistInboundIfNew(opts: {
       where: { id: lead.id },
       data: { adminUnread: true },
     });
+    await safeRefreshLeadState(opts.tenantId, lead.id);
     return { conversationId: conversation.id, messageId: message.id, leadId: lead.id };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -493,6 +495,52 @@ export async function pauseForHuman(opts: {
   ]);
 }
 
+/**
+ * A handoff the teammate answered straight to the customer: the task closes and the
+ * thread reopens, but no bot note is added and no bot turn runs, so the bot does not
+ * answer again. It picks up at the customer's next message.
+ */
+export async function completeHitlTaskWithDirectReply(opts: {
+  tenantId: string;
+  taskId: string;
+  actorUserId: string;
+  reply: string;
+}) {
+  const task = await prisma.hitlTask.findFirstOrThrow({
+    where: { id: opts.taskId, tenantId: opts.tenantId, status: "open" },
+  });
+  await prisma.$transaction([
+    prisma.hitlTask.update({
+      where: { id: task.id },
+      data: {
+        status: "done",
+        resolution: { note: opts.reply, approved: true, directReply: true },
+        completedBy: opts.actorUserId,
+        completedAt: new Date(),
+      },
+    }),
+    prisma.adminDecisionLog.create({
+      data: {
+        tenantId: opts.tenantId,
+        leadId: task.leadId,
+        conversationId: task.conversationId,
+        category: "hitl",
+        action: "reply",
+        actorUserId: opts.actorUserId,
+        actorLabel: resolveActorLabel(opts.actorUserId),
+        summary: "",
+        details: { hitlTaskId: task.id, reason: task.reason, type: task.type, directReply: true } as Prisma.InputJsonValue,
+      },
+    }),
+  ]);
+  const resumed = await resumeConversationAfterHitl({
+    tenantId: opts.tenantId,
+    conversationId: task.conversationId,
+  });
+  await safeRefreshLeadState(opts.tenantId, task.leadId);
+  return { task, conversationId: resumed.conversationId };
+}
+
 export async function completeHitlTask(opts: {
   tenantId: string;
   taskId: string;
@@ -547,6 +595,7 @@ export async function completeHitlTask(opts: {
     tenantId: opts.tenantId,
     conversationId: task.conversationId,
   });
+  await safeRefreshLeadState(opts.tenantId, task.leadId);
   return { task, conversationId: resumed.conversationId };
 }
 

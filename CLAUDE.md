@@ -14,8 +14,8 @@ npm run test:watch
 npx vitest run src/lib/flow/interpreter.test.ts   # single test file
 npx vitest run -t "restart policy"                # single test by name
 
-npm run db:push          # prisma db push (schema → dev DB)
-npm run db:migrate       # prisma migrate dev
+npm run db:migrate -- --name <change>   # prisma migrate dev: write a migration for a schema change + apply to dev DB
+npm run db:push          # prisma db push (throwaway prototyping only; it writes no migration)
 npm run db:generate      # prisma generate
 npm run db:seed          # tsx prisma/seed.ts — creates the dev tenant/agent/channel
 
@@ -25,7 +25,9 @@ npm run proxy:status
 npx inngest-cli@latest dev   # only needed for delayed nudges
 ```
 
-First-time setup: `npm install && npx prisma db push && npx prisma generate && npm run db:seed`, then `/demo`.
+First-time setup: `npm install && npx prisma migrate deploy && npx prisma generate && npm run db:seed`, then `/demo`.
+
+Schema changes ship as Prisma migrations (`prisma/migrations/`). Production is migrated by hand with `npm run db:verify:production` then `npm run db:migrate:production` (`scripts/db-production.sh`, reads `.env.production`); see [`docs/setup.md`](docs/setup.md#schema-changes-and-production).
 
 `npm run dev` alone covers most work — the demo route runs turns synchronously, so Inngest is not required unless testing nudges.
 
@@ -52,6 +54,10 @@ Turn ordering is protected by `concurrency: [{ key: "event.data.conversationId",
 The interpreter names no business domain. Transactional behavior is a registered **capability** (`booking`, `reservations`) attached on the talk stage. Per-tenant configuration is a **`CapabilityInstance`** row (field schema, nouns, templates, availability) — adding a business type is an insert, not a Tenant column and not a deploy. Every approval vertical persists as one **`Request`** with a normalized `startAt`/`endAt` time spine; collect/confirm/HITL live in `src/lib/requests.ts`. Field *types* (`date`, `date_range`, `datetime_text`, `enum`, …) live in `src/lib/flow/fields/` so a new vertical is a JSON array of specs.
 
 `architecture.test.ts` ("kernel purity", "one request primitive", "config lives in capability instances") fails if a domain name creeps back into the interpreter or a second table/route/form appears.
+
+### CRM (pipeline + follow-ups)
+
+CRM state: `refreshLeadState()` in `src/lib/crm/refresh.ts` is the only writer of Lead stage/follow-up columns; call `safeRefreshLeadState` after any event that changes messages, requests or HITL tasks.
 
 ### Flow config is validated on write, versioned, and never hand-edited at runtime
 

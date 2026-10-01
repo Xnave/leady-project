@@ -15,10 +15,16 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
-    "db:push:production": "bash scripts/db-push-production.sh",
+    "db:diff:production": "bash scripts/db-production.sh diff",
+    "db:verify:production": "bash scripts/db-production.sh verify",
+    "db:status:production": "bash scripts/db-production.sh status",
+    "db:baseline:production": "bash scripts/db-production.sh baseline",
+    "db:migrate:production": "bash scripts/db-production.sh migrate",
     "db:import:production": "bash scripts/db-import-local-to-production.sh",
     "db:seed": "tsx prisma/seed.ts",
     "zernio:webhook:dev": "tsx scripts/zernio-register-dev-webhook.ts",
+    "crm:backfill": "tsx scripts/crm-backfill.ts",
+    "crm:backfill:production": "bash scripts/db-production.sh backfill",
     "typecheck": "tsc --noEmit"
   },
   "prisma": {

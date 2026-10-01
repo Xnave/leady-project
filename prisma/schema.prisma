@@ -22,6 +22,10 @@ model Tenant {
   mediaAnalysisEnabled   Boolean  @default(false)
   hookmyappWorkspaceId   String?
   zernioProfileId        String?  @unique
+  /** IANA timezone for the daily digest clock. */
+  timezone               String   @default("Asia/Jerusalem")
+  digestEnabled          Boolean  @default(false)
+  digestHour             Int      @default(8)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
@@ -37,6 +41,10 @@ model Tenant {
   mediaAssets          MediaAsset[]
   revisions            AgentConfigRevision[]
   pendingTeamInvites   TeamPendingInvite[]
+  leadStageEvents      LeadStageEvent[]
+  leadNotes            LeadNote[]
+  digestRecipients     DigestRecipient[]
+  digestLogs           DigestLog[]
 }
 
 /**
@@ -154,6 +162,20 @@ model Lead {
   /** Admin has not opened / marked this lead as read. */
   adminUnread    Boolean  @default(true)
   fields         Json     @default("{}")
+  /** Sales pipeline position (new → talking → … → won). Not the bot's `Conversation.flowState`. */
+  pipelineStage          String    @default("new")
+  /** auto | manual */
+  pipelineStageSource    String    @default("auto")
+  pipelineStageReason    String    @default("")
+  pipelineStageChangedAt DateTime  @default(now())
+  /** Why the owner should act now: handoff | approval | reminder | cold. Not the bot's auto-nudge. */
+  attentionReason        String?
+  attentionAt            DateTime?
+  snoozedUntil      DateTime?
+  nextStepText      String?
+  nextStepAt        DateTime?
+  lastLeadMessageAt DateTime?
+  lastOutboundAt    DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -162,9 +184,13 @@ model Lead {
   requests      Request[]
   adminDecisionLogs AdminDecisionLog[]
   mediaAssets   MediaAsset[]
+  stageEvents   LeadStageEvent[]
+  notes         LeadNote[]
 
   @@unique([tenantId, channelId, externalUserId])
   @@index([tenantId])
+  @@index([tenantId, attentionReason, attentionAt])
+  @@index([tenantId, pipelineStage, updatedAt])
 }
 
 model Conversation {
@@ -315,4 +341,69 @@ model MediaAsset {
   createdAt   DateTime @default(now())
 
   @@index([tenantId])
+}
+
+/** Append-only stage history. Source of the activity timeline and future reports. */
+model LeadStageEvent {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leadId      String
+  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  from        String
+  to          String
+  /** auto | manual */
+  source      String
+  reason      String   @default("")
+  actorUserId String?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, leadId, createdAt])
+  @@index([tenantId, to, createdAt])
+}
+
+/** Internal note on a lead. Never shown to the customer. */
+model LeadNote {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leadId       String
+  lead         Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  authorUserId String
+  authorLabel  String   @default("")
+  body         String
+  pinned       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([tenantId, leadId])
+}
+
+/** Staff member who opted in to the WhatsApp daily digest. */
+model DigestRecipient {
+  id          String    @id @default(cuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clerkUserId String
+  label       String    @default("")
+  phone       String
+  optedInAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([tenantId, clerkUserId])
+}
+
+/** One row per tenant per local day — the idempotency guard for the digest. */
+model DigestLog {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /** YYYY-MM-DD in the tenant timezone. */
+  date       String
+  sentAt     DateTime @default(now())
+  recipients Json     @default("[]")
+  itemCount  Int      @default(0)
+
+  @@unique([tenantId, date])
 }

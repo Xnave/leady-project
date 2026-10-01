@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
+import { batchLeadRefreshes } from "@/lib/crm/refresh";
 import { resolveStaffActor } from "@/lib/admin-decisions";
-import { completeHitlTask, loadTurnContext } from "@/lib/conversations";
+import { completeHitlTask, completeHitlTaskWithDirectReply, loadTurnContext } from "@/lib/conversations";
+import { sendStaffReply } from "@/lib/staff-reply";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
 import { decideRegisteredRequest } from "@/lib/flow/registry";
 import { closeConversationAsDone } from "@/lib/flow/rotate-conversation";
-import { dispatchNudgeEvent, runTurnNow, sendAndSave } from "@/lib/flow/run-turn";
+import { runTurnNow, sendAndSave, tryDispatchNudgeEvent } from "@/lib/flow/run-turn";
 import { getRequest, REQUEST_APPROVAL_TASK } from "@/lib/requests";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
-import { redirectPath } from "@/lib/request-url";
 
-export async function POST(
+/** Every CRM refresh the decision triggers (task, messages, closed thread) runs once, at the end. */
+export function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  return batchLeadRefreshes(() => handle(req, ctx));
+}
+
+async function handle(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -21,9 +27,16 @@ export async function POST(
   const approved = String(form.get("approved") ?? "") === "yes";
   const customReply = String(form.get("customReply") ?? "").trim();
 
-  const task = await prisma.hitlTask.findFirstOrThrow({
+  const task = await prisma.hitlTask.findFirst({
     where: { id, tenantId },
   });
+  if (!task) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (task.status !== "open" && task.type !== REQUEST_APPROVAL_TASK) {
+    return NextResponse.json({ error: "already_resolved" }, { status: 409 });
+  }
+  if (task.type !== REQUEST_APPROVAL_TASK && !note.trim()) {
+    return NextResponse.json({ error: "empty_reply" }, { status: 400 });
+  }
   const requestId =
     task.type === REQUEST_APPROVAL_TASK
       ? (task.payload as { requestId?: string }).requestId
@@ -65,7 +78,15 @@ export async function POST(
         reason: "approve",
       });
     }
-    return NextResponse.redirect(redirectPath(req, "/inbox"), 303);
+    return NextResponse.json({ ok: true });
+  }
+
+  // Answer the customer directly: send the text, close the task, no bot turn.
+  if (String(form.get("mode") ?? "") === "direct") {
+    const actor = await resolveStaffActor();
+    await sendStaffReply({ tenantId, conversationId: task.conversationId, text: note.trim(), source: "hitl_direct" });
+    await completeHitlTaskWithDirectReply({ tenantId, taskId: id, actorUserId: actor.actorUserId, reply: note.trim() });
+    return NextResponse.json({ ok: true, direct: true });
   }
 
   const actor = await resolveStaffActor();
@@ -76,11 +97,17 @@ export async function POST(
     note,
     approved,
   });
-  const turn = await runTurnNow({
-    tenantId,
-    conversationId,
-    resume: true,
-  });
-  await dispatchNudgeEvent(turn.nudgeEvent);
-  return NextResponse.redirect(redirectPath(req, "/inbox"), 303);
+  // The owner's reply is saved and sent; the bot's follow-up turn is best effort, so a
+  // failure there is logged rather than reported as a failed send.
+  try {
+    const turn = await runTurnNow({
+      tenantId,
+      conversationId,
+      resume: true,
+    });
+    await tryDispatchNudgeEvent(turn.nudgeEvent);
+  } catch (err) {
+    console.error(JSON.stringify({ msg: "hitl.resume_failed", conversationId, error: String(err) }));
+  }
+  return NextResponse.json({ ok: true });
 }

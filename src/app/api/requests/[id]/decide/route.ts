@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { batchLeadRefreshes } from "@/lib/crm/refresh";
 import { resolveStaffActor } from "@/lib/admin-decisions";
 import { loadTurnContext } from "@/lib/conversations";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
@@ -11,7 +12,6 @@ import {
   type RequestDecision,
 } from "@/lib/requests";
 import { requireTenantId } from "@/lib/tenant";
-import { redirectPath } from "@/lib/request-url";
 import { prisma } from "@/lib/db";
 
 function parseDecision(form: FormData): RequestDecision {
@@ -25,7 +25,12 @@ function parseDecision(form: FormData): RequestDecision {
  * reschedule is read off the shape of the request's time spine: a point takes one
  * value, a span takes two. Wording and persistence belong to the owning capability.
  */
-export async function POST(
+/** Every CRM refresh the decision triggers (task, messages, closed thread) runs once, at the end. */
+export function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  return batchLeadRefreshes(() => handle(req, ctx));
+}
+
+async function handle(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -35,7 +40,6 @@ export async function POST(
   const decision = parseDecision(form);
   const note = String(form.get("note") ?? "").trim();
   const customReply = String(form.get("customReply") ?? "").trim();
-  const redirectTo = String(form.get("redirect") ?? "").trim() || "/inbox";
 
   const request = await getRequest({ tenantId, requestId: id });
   if (!request) {
@@ -51,7 +55,7 @@ export async function POST(
     decision === "reschedule" &&
     (!alternativeStart || (isSpan && !alternativeEnd))
   ) {
-    return NextResponse.redirect(redirectPath(req, redirectTo), 303);
+    return NextResponse.json({ error: "missing_alternative" }, { status: 400 });
   }
 
   // Allow deciding while an open approval task still targets this request (inbox
@@ -102,5 +106,5 @@ export async function POST(
       reason: "approve",
     });
   }
-  return NextResponse.redirect(redirectPath(req, redirectTo), 303);
+  return NextResponse.json({ ok: true, decision });
 }

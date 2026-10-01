@@ -47,6 +47,11 @@ export async function POST(req: Request) {
     }
   }
 
+  const { handleDigestReply } = await import("@/lib/crm/digest-send");
+  if (await handleDigestReply({ accountId: inbound.accountId, conversationId: inbound.conversationId, from: inbound.from })) {
+    return NextResponse.json({ ok: true, digest: true });
+  }
+
   if (!inbound.accountId) {
     return new Response("unknown channel", { status: 404 });
   }

@@ -1,6 +1,7 @@
 import { flowForCatalog } from "./catalog";
 import type { FlowDefinition, HitlPolicy, LeadSchema, Stage } from "./types";
 import { FlowConfigError } from "./types";
+import { isPipelineStage } from "@/lib/crm/types";
 
 export function stageTargets(stage: Stage): string[] {
   switch (stage.type) {
@@ -79,6 +80,16 @@ export function validateFlow(
     if (stage.type === "action" && stage.action === "request_human") {
       if (!hitl.allowRequestHuman || !hitl.allowedFromStages.includes(id)) {
         errors.push(`${id} request_human not allowed by hitl_policy`);
+      }
+    }
+    if (stage.pipeline !== undefined && !isPipelineStage(stage.pipeline)) {
+      errors.push(`${id} pipeline ${stage.pipeline} is not a pipeline stage`);
+    }
+    if (stage.type === "classify") {
+      for (const [intent, target] of Object.entries(stage.pipelineByIntent ?? {})) {
+        if (!isPipelineStage(target)) {
+          errors.push(`${id} pipelineByIntent.${intent} ${target} is not a pipeline stage`);
+        }
       }
     }
   }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copy all public schema data from local Postgres (.env) to target (.env.production).
-# Schema must already match (run scripts/db-push-production.sh first).
+# Schema must already match (run `npm run db:migrate:production` first).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

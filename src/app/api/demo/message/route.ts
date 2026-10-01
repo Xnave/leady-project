@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { persistInboundIfNew } from "@/lib/conversations";
-import { dispatchNudgeEvent, enqueueAgentTurn, runTurnNow } from "@/lib/flow/run-turn";
+import { runTurnNow, tryDispatchNudgeEvent, tryEnqueueAgentTurn } from "@/lib/flow/run-turn";
 import { prisma } from "@/lib/db";
 import { ensureLocalDemoChannel } from "@/lib/provision-tenant";
 import { requireTenantId } from "@/lib/tenant";
@@ -76,17 +76,20 @@ export async function POST(req: Request) {
   }
 
   const enqueuedAt = new Date();
-  await enqueueAgentTurn({
+  const enqueued = await tryEnqueueAgentTurn({
     tenantId,
     conversationId: inserted.conversationId,
     triggerMessageId: inserted.messageId,
   });
 
-  const answered = await waitForAgentReply({
-    conversationId: inserted.conversationId,
-    after: enqueuedAt,
-    timeoutMs: 18_000,
-  });
+  // No Inngest server: skip the wait and answer in-process right away.
+  const answered = enqueued
+    ? await waitForAgentReply({
+        conversationId: inserted.conversationId,
+        after: enqueuedAt,
+        timeoutMs: 18_000,
+      })
+    : false;
 
   // Local DX: if Inngest worker is not running, fall back once so demo still works.
   if (!answered) {
@@ -94,7 +97,7 @@ export async function POST(req: Request) {
       JSON.stringify({
         msg: "demo.turn.fallback_sync",
         conversationId: inserted.conversationId,
-        reason: "inngest_timeout",
+        reason: enqueued ? "inngest_timeout" : "inngest_unreachable",
       }),
     );
     const turn = await runTurnNow({
@@ -102,7 +105,7 @@ export async function POST(req: Request) {
       conversationId: inserted.conversationId,
       triggerMessageId: inserted.messageId,
     });
-    await dispatchNudgeEvent(turn.nudgeEvent);
+    await tryDispatchNudgeEvent(turn.nudgeEvent);
   }
 
   const lead = await prisma.lead.findFirstOrThrow({

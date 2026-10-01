@@ -129,6 +129,13 @@ export async function closeConversationAsDone(opts: {
     leadId: conversation.leadId,
     keepConversationId: conversation.id,
   });
+  await refreshCrm(opts.tenantId, conversation.leadId);
+}
+
+/** A closed thread no longer holds open tasks, so the lead's "needs you" reason may change. */
+async function refreshCrm(tenantId: string, leadId: string): Promise<void> {
+  const { safeRefreshLeadState } = await import("@/lib/crm/refresh");
+  await safeRefreshLeadState(tenantId, leadId);
 }
 
 /**
@@ -316,5 +323,6 @@ export async function rotateConversation(opts: {
     });
   }
 
+  await refreshCrm(opts.tenantId, lead.id);
   return { previousId: current?.id ?? null, conversationId: created.id };
 }

@@ -30,6 +30,7 @@ import type { Stage, TurnContext } from "@/lib/flow/types";
 import { rewritePhonesInText } from "@/lib/leads";
 import { inngest } from "@/inngest/client";
 import { prisma } from "@/lib/db";
+import { batchLeadRefreshes, safeRefreshLeadState } from "@/lib/crm/refresh";
 
 function logTurn(phase: "enter" | "exit", extra: Record<string, unknown>) {
   console.log(JSON.stringify({ msg: "runAgentTurn", phase, ...extra }));
@@ -72,6 +73,8 @@ export async function sendAndSave(
         ? ctx.lead.fields.zernioConversationId
         : undefined,
   });
+  // Recompute lastOutboundAt / cold. Inside a turn this joins the turn's single refresh.
+  await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
 }
 
 export type NudgeRequestedEvent = {
@@ -153,12 +156,47 @@ export async function enqueueAgentTurn(opts: {
   });
 }
 
-export async function runTurnNow(opts: {
+/**
+ * Local-dev routes (demo chat, dev inbound) run the turn themselves when Inngest is not
+ * reachable. These wrappers report "not delivered" instead of throwing, so the route can
+ * fall back to `runTurnNow()` rather than answer 500 with an empty body.
+ */
+export async function tryEnqueueAgentTurn(
+  opts: Parameters<typeof enqueueAgentTurn>[0],
+): Promise<boolean> {
+  try {
+    await enqueueAgentTurn(opts);
+    return true;
+  } catch (err) {
+    console.warn(JSON.stringify({ msg: "inngest.unreachable", op: "enqueue_turn", error: String(err) }));
+    return false;
+  }
+}
+
+export async function tryDispatchNudgeEvent(
+  nudgeEvent: NudgeRequestedEvent | null | undefined,
+): Promise<boolean> {
+  try {
+    return await dispatchNudgeEvent(nudgeEvent);
+  } catch (err) {
+    console.warn(JSON.stringify({ msg: "inngest.unreachable", op: "nudge", error: String(err) }));
+    return false;
+  }
+}
+
+type RunTurnOpts = {
   tenantId: string;
   conversationId: string;
   resume?: boolean;
   triggerMessageId?: string;
-}) {
+};
+
+/** One turn. Every CRM refresh the turn triggers collapses into one, after it ends. */
+export function runTurnNow(opts: RunTurnOpts) {
+  return batchLeadRefreshes(() => runTurn(opts));
+}
+
+async function runTurn(opts: RunTurnOpts) {
   ensureFlowRegistry();
   const started = Date.now();
   const ctx = await loadTurnContext(opts.tenantId, opts.conversationId);
@@ -230,6 +268,7 @@ export async function runTurnNow(opts: {
       ms: Date.now() - started,
       triggerMessageId: opts.triggerMessageId,
     });
+    await safeRefreshLeadState(opts.tenantId, ctx.lead.id);
     return { ...result, stage: ctx.agent.flow.start, nudgeEvent };
   }
 
@@ -251,5 +290,6 @@ export async function runTurnNow(opts: {
     triggerMessageId: opts.triggerMessageId,
   });
 
+  await safeRefreshLeadState(opts.tenantId, ctx.lead.id);
   return { ...result, nudgeEvent };
 }

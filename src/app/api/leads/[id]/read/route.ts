@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
 
@@ -8,8 +9,9 @@ export async function POST(
 ) {
   const { id } = await params;
   const tenantId = await requireTenantId();
-  const body = (await req.json()) as { unread?: boolean };
-  const unread = Boolean(body.unread);
+  const body = z.object({ unread: z.boolean().optional() }).safeParse(await req.json().catch(() => null));
+  if (!body.success) return NextResponse.json({ error: "bad_body" }, { status: 400 });
+  const unread = body.data.unread === true;
   const lead = await prisma.lead.findFirst({ where: { id, tenantId } });
   if (!lead) return NextResponse.json({ error: "not found" }, { status: 404 });
   await prisma.lead.update({

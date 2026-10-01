@@ -9,14 +9,14 @@ import type { UiCopy, UiLang, UiTheme } from "@/lib/ui";
 
 type NavKey = keyof UiCopy["nav"];
 
-const OWNER_ITEMS: { href: string; key: NavKey; countKey?: keyof NavCounts }[] = [
+const OWNER_ITEMS: { href: string; key: NavKey; countKey?: "leads" }[] = [
   { href: "/", key: "home" },
-  { href: "/inbox", key: "inbox", countKey: "inbox" },
   { href: "/leads", key: "leads", countKey: "leads" },
   { href: "/onboard", key: "setup" },
   { href: "/channels", key: "channels" },
   { href: "/demo", key: "chat" },
   { href: "/settings/team", key: "team" },
+  { href: "/settings/digest", key: "digest" },
 ];
 
 const STAFF_ITEMS: { href: string; key: NavKey; adminOnly?: boolean }[] = [
@@ -33,7 +33,6 @@ function Icon({ d }: { d: string }) {
 
 const ICONS: Partial<Record<NavKey, ReactNode>> = {
   home: <Icon d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z" />,
-  inbox: <Icon d="M4 6h16v12H4zM4 12h4l2 3h4l2-3h4" />,
   leads: <Icon d="M8 7a4 4 0 1 0 8 0 4 4 0 0 0-8 0M5 20a7 7 0 0 1 14 0" />,
   setup: <Icon d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19.4 15a7.7 7.7 0 0 0 .1-2l2-1.5-2-3.4-2.4.5a8 8 0 0 0-1.7-1L15 5h-4l-.4 2.6a8 8 0 0 0-1.7 1L6.5 8.1l-2 3.4 2 1.5a7.7 7.7 0 0 0 .1 2l-2 1.5 2 3.4 2.4-.5a8 8 0 0 0 1.7 1L11 21h4l.4-2.6a8 8 0 0 0 1.7-1l2.4.5 2-3.4z" />,
   channels: (
@@ -43,6 +42,7 @@ const ICONS: Partial<Record<NavKey, ReactNode>> = {
   ops: <Icon d="M4 6h16M4 12h10M4 18h7" />,
   admin: <Icon d="M12 3 4 7v5c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V7z" />,
   team: <Icon d="M16 11a3 3 0 1 0-2-5.2M8 11a3 3 0 1 0-2-5.2M4 20a6 6 0 0 1 8 0M12 20a6 6 0 0 1 8 0" />,
+  digest: <Icon d="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5" />,
 };
 
 const THEME_OPTIONS: { id: UiTheme; key: "system" | "light" | "dark"; icon: ReactNode }[] = [
@@ -130,7 +130,11 @@ export function SidebarNav({
                   {ICONS[item.key]}
                   <span>{ui.nav[item.key]}</span>
                 </span>
-                {count > 0 ? <span className="nav-badge">{count > 99 ? "99+" : count}</span> : null}
+                {count > 0 ? (
+                  <span className="nav-badge" title={item.key === "leads" ? ui.crm.tabs.needs : undefined}>
+                    {count > 99 ? "99+" : count}
+                  </span>
+                ) : null}
               </Link>
             );
           })}

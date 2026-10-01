@@ -77,11 +77,14 @@ export function StaffChatComposer({
   conversationId,
   disabled,
   labels,
+  onSent,
 }: {
   leadId: string;
   conversationId?: string;
   disabled?: boolean;
   labels: Labels;
+  /** Runs after a successful send, e.g. to reload a client-fetched thread. */
+  onSent?: () => void;
 }) {
   const router = useRouter();
   const [text, setText] = useState("");
@@ -102,6 +105,7 @@ export function StaffChatComposer({
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? labels.sendFailed);
       setText("");
+      onSent?.();
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : labels.sendFailed);

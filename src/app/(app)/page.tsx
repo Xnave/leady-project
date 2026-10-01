@@ -13,7 +13,7 @@ export default async function HomePage() {
   const tenantId = await requireTenantIdForPage();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
-  const [tenant, counts, liveChannel] = await Promise.all([
+  const [tenant, counts, liveChannel, totalLeads] = await Promise.all([
     prisma.tenant.findFirst({ where: { id: tenantId } }),
     getNavCounts(tenantId),
     prisma.channelConnection.findFirst({
@@ -23,6 +23,7 @@ export default async function HomePage() {
         NOT: { providerAccountId: { startsWith: "demo-" } },
       },
     }),
+    prisma.lead.count({ where: { tenantId, NOT: { externalUserId: { startsWith: "demo-" } } } }),
   ]);
   const needsSetup = !(tenant?.intro ?? "").trim();
   const hasChannel = Boolean(liveChannel);
@@ -32,13 +33,12 @@ export default async function HomePage() {
     { href: "/onboard", label: ui.home.stepSetup, done: !needsSetup },
     { href: "/channels", label: ui.home.stepChannels, done: hasChannel },
     { href: "/demo", label: ui.home.stepChat, done: !needsSetup },
-    { href: "/leads", label: ui.home.stepLeads, done: counts.leads > 0, count: counts.leads },
-    { href: "/inbox", label: ui.home.stepInbox, done: counts.inbox === 0, count: counts.inbox },
+    { href: "/leads", label: ui.home.stepLeads, done: totalLeads > 0, count: counts.leads },
   ];
 
   const cta =
-    counts.inbox > 0
-      ? { href: "/inbox", label: ui.home.ctaInbox }
+    counts.leads > 0
+      ? { href: "/leads?tab=needs", label: ui.crm.tabs.needs }
       : !hasChannel
         ? { href: "/channels", label: ui.home.ctaConnect }
         : needsSetup
@@ -49,13 +49,9 @@ export default async function HomePage() {
     <div>
       <PageHeader title={ui.page.homeTitle} blurb={needsSetup ? ui.page.homeSetup : ui.page.homeBlurb} />
       <div className="work-strip">
-        <Link href="/leads" className="card stat-card">
+        <Link href="/leads?tab=needs" className="card stat-card">
           <span className="stat-value">{counts.leads}</span>
-          <span className="stat-label">{ui.home.quickLeads}</span>
-        </Link>
-        <Link href="/inbox" className="card stat-card">
-          <span className="stat-value">{counts.inbox}</span>
-          <span className="stat-label">{ui.home.quickInbox}</span>
+          <span className="stat-label">{ui.crm.tabs.needs}</span>
         </Link>
         <Link href="/channels" className="card stat-card">
           <span className="stat-value">{hasChannel ? "●" : "○"}</span>

@@ -593,14 +593,19 @@ describe("one request primitive", () => {
   });
 
   it("ships exactly one decide route and one decision form", async () => {
-    const { readdir } = await import("node:fs/promises");
+    const { readdir, readFile } = await import("node:fs/promises");
     const api = await readdir(new URL("../../app/api", import.meta.url));
     expect(api).toContain("requests");
     expect(api).not.toContain("meetings");
     expect(api).not.toContain("reservations");
-    const components = await readdir(new URL("../../components", import.meta.url));
-    const decisionForms = components.filter((f) => f.endsWith("DecisionForm.tsx"));
-    expect(decisionForms).toEqual(["RequestDecisionForm.tsx"]);
+    // The one form that posts to the decide route is the CRM task card.
+    const root = new URL("../../components/", import.meta.url);
+    const files = (await readdir(root, { recursive: true })).filter((f) => f.endsWith(".tsx"));
+    const posters: string[] = [];
+    for (const f of files) {
+      if ((await readFile(new URL(f, root), "utf8")).includes("/decide`")) posters.push(f);
+    }
+    expect(posters).toEqual(["crm/TaskCard.tsx"]);
   });
 });
 
@@ -668,6 +673,23 @@ describe("config lives in capability instances", () => {
       collect: ["dress", "size"],
     });
     expect(instanceKind(ctx, "reservations", "stay")).toBe("rental");
+  });
+});
+
+describe("crm purity", () => {
+  const PURE = ["types", "stage", "followup", "signals", "plan", "timeline", "digest"];
+  const DOMAIN = /\b(booking|reservation|meeting|visit|stay)s?\b/i;
+
+  it("pure CRM modules import no Prisma and name no business domain", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const path = await import("node:path");
+    for (const name of PURE) {
+      const file = path.resolve(__dirname, `../crm/${name}.ts`);
+      const src = await readFile(file, "utf8");
+      expect(src, `${name}.ts imports prisma`).not.toMatch(/@\/lib\/db|@prisma\/client/);
+      const code = src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      expect(code, `${name}.ts names a domain`).not.toMatch(DOMAIN);
+    }
   });
 });
 

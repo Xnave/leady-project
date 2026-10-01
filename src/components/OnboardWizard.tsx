@@ -722,8 +722,8 @@ export function OnboardWizard(props: Props) {
               </dd>
             </dl>
             <div className="wizard-footer">
-              <button type="button" className="btn-secondary" onClick={() => router.push("/inbox")}>
-                {ui.nav.inbox}
+              <button type="button" className="btn-secondary" onClick={() => router.push("/leads?tab=needs")}>
+                {ui.crm.tabs.needs}
               </button>
               <button type="button" className="btn" onClick={() => router.push("/demo")}>
                 {ui.page.homeChat}

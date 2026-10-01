@@ -10,6 +10,35 @@ export type CapabilityUiId = "booking" | "reservations";
 
 export type BookingStanceUiId = "passive" | "proactive";
 
+/** Operator copy for the CRM (leads v2). Placeholders like `{n}`, `{h}`, `{stage}`,
+ * `{when}`, `{actor}` and `{time}` are filled with `fillUi`. */
+export type CrmCopy = {
+  stages: Record<"new" | "talking" | "qualified" | "pending" | "won" | "lost" | "not_relevant", string>;
+  wonByCapability: Record<string, string>;
+  tabs: Record<"needs" | "cold" | "active" | "won" | "closed" | "all", string>;
+  cols: { lead: string; stage: string; stand: string; followUp: string; last: string };
+  reasons: Record<"handoff" | "approval" | "reminder" | "cold", string>;
+  reasonsLong: Record<"handoff" | "approval" | "reminder" | "cold", string>;
+  /** Acting on an open handoff / approval task in the lead view (was the Inbox). */
+  task: Record<"approve" | "decline" | "reschedule" | "note" | "notePlaceholder" | "send" | "modeBot" | "modeDirect" | "guide" | "guidePlaceholder" | "guideHint" | "sendToBot" | "direct" | "directPlaceholder" | "directHint" | "sendToCustomer" | "botSummary" | "awaitingCustomer" | "awaitingHint" | "altSlot" | "altSlotPlaceholder" | "altStart" | "altEnd" | "sent" | "failed", string>;
+  cta: { handoff: string; approval: string; reminder: string; cold: string; coldPhone: string };
+  them: string; us: string; windowLeft: string; windowClosed: string; windowClosedNote: string; conversationClosed: string;
+  auto: string; manual: string; autoReasons: Record<string, string>; revived: string;
+  snooze: string; snooze1: string; snooze3: string; snooze7: string; snoozed: string;
+  nextStep: string; noNextStep: string; nextPresets: [string, string, string]; nextPickDate: string; nextTime: string; nextSave: string; nextPlaceholder: string; markDone: string; markDoneHint: string; nextSaved: string; markedDone: string;
+  notes: string; notesHint: string; addNote: string; saveNote: string; saveHint: string; pin: string; unpin: string; deleteNote: string;
+  tabsLead: { chat: string; activity: string; details: string };
+  timelineFilters: { all: string; notes: string; stages: string; requests: string };
+  timeline: Record<string, string>;
+  lostReasons: string[]; notRelevantReasons: string[]; reasonPrompt: string;
+  stageSet: string; undo: string; openFull: string; close: string; message: string; openLead: string; changeStage: string; moreActions: string; channelFilter: string;
+  needsEmptyTitle: string; needsEmpty: string; coldEmptyTitle: string; coldEmpty: string; emptyTitle: string; empty: string; loadFailed: string; retry: string;
+  selected: string; bulkStage: string; bulkSnooze: string; bulkRead: string; bulkUnread: string; clearSelection: string;
+  keysHint: string; search: string;
+  digestTitle: string; digestBlurb: string; digestEnabled: string; digestHour: string;
+  digestPhone: string; digestOptInText: string; digestFeatureOff: string; saved: string;
+};
+
 export type UiCopy = {
   product: string;
   nav: {
@@ -22,6 +51,7 @@ export type UiCopy = {
     ops: string;
     admin: string;
     team: string;
+    digest: string;
   };
   langToggle: { he: string; en: string; uiLanguage: string };
   themeToggle: { appearance: string; system: string; light: string; dark: string };
@@ -108,7 +138,6 @@ export type UiCopy = {
     quickSetup: string;
     quickChat: string;
     quickLeads: string;
-    quickInbox: string;
     quickChannels: string;
     tenantLabel: string;
     journeyTitle: string;
@@ -117,8 +146,6 @@ export type UiCopy = {
     stepChannels: string;
     stepChat: string;
     stepLeads: string;
-    stepInbox: string;
-    ctaInbox: string;
     ctaConnect: string;
     whatsappOk: string;
     whatsappOff: string;
@@ -406,4 +433,5 @@ export type UiCopy = {
     empty: string;
     inviteClaimOnSignIn: string;
   };
+  crm: CrmCopy;
 };

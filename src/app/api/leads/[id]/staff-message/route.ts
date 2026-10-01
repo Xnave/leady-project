@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { loadTurnContext } from "@/lib/conversations";
 import { prisma } from "@/lib/db";
+import { sendStaffReply } from "@/lib/staff-reply";
 import { requireTenantId } from "@/lib/tenant";
+import { safeRefreshLeadState } from "@/lib/crm/refresh";
 
 /** Staff reply on a lead conversation (role=human), never as the customer. */
 export async function POST(
@@ -35,38 +36,13 @@ export async function POST(
     return NextResponse.json({ error: "conversation_closed" }, { status: 400 });
   }
 
-  await prisma.message.create({
-    data: {
-      tenantId,
-      conversationId: conversation.id,
-      role: "human",
-      text,
-      providerMessageId: `staff-${crypto.randomUUID()}`,
-      metadata: { source: "lead_workspace" },
-    },
-  });
-
-  // Reuse channel send path without duplicating DB insert as agent.
-  const ctx = await loadTurnContext(tenantId, conversation.id);
-  const { sendOnChannel } = await import("@/lib/channels/meta");
-  await sendOnChannel({
-    apiBase: ctx.connection.apiBase,
-    accessToken: ctx.connection.accessToken,
-    provider: ctx.connection.provider,
-    providerAccountId: ctx.connection.providerAccountId,
-    to: ctx.lead.externalUserId,
-    text,
-    zernioAccountId: ctx.connection.zernioAccountId,
-    zernioConversationId:
-      typeof ctx.lead.fields.zernioConversationId === "string"
-        ? ctx.lead.fields.zernioConversationId
-        : undefined,
-  });
+  await sendStaffReply({ tenantId, conversationId: conversation.id, text, source: "lead_workspace" });
 
   await prisma.lead.update({
     where: { id: leadId },
     data: { adminUnread: false },
   });
+  await safeRefreshLeadState(tenantId, leadId);
 
   return NextResponse.json({ ok: true, conversationId: conversation.id });
 }
