@@ -53,7 +53,7 @@ async function main() {
 
   const secret = zernioWebhookSecret();
   const webhook = await createZernioWebhookSettings({
-    name: `Leady local dev ${new Date().toISOString().slice(0, 10)}`,
+    name: `Zapidly local dev ${new Date().toISOString().slice(0, 10)}`,
     url: webhookUrl,
     events: ["message.received"],
     ...(secret ? { secret } : {}),

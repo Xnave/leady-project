@@ -1,4 +1,4 @@
-# Leady Architecture
+# Zapidly Architecture
 
 Multi-tenant agent CRM: WhatsApp / Instagram / demo chat → Postgres → flow interpreter → reply. There is no graph framework; the “graph” is JSON on `Agent.flow`, walked each turn by a pure state machine.
 

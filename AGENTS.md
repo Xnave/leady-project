@@ -8,7 +8,7 @@ Human-oriented architecture: [docs/architecture.md](docs/architecture.md). Comma
 
 ## What this product is
 
-Leady is a **multi-tenant messaging CRM**. A lead messages on WhatsApp/Instagram (or `/demo`); an agent replies by walking **JSON flow** on `Agent.flow`. Postgres is the source of truth. There is **no** LangGraph / Temporal graph runtime for turns.
+Zapidly is a **multi-tenant messaging CRM**. A lead messages on WhatsApp/Instagram (or `/demo`); an agent replies by walking **JSON flow** on `Agent.flow`. Postgres is the source of truth. There is **no** LangGraph / Temporal graph runtime for turns.
 
 Transactional verticals (visits, stays, fittings, rentals) share one primitive: **`Request`** + HITL `request_approval`. Per-tenant behavior is **`CapabilityInstance.config`**, not new schema columns.
 

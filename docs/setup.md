@@ -1,6 +1,6 @@
 # Local setup
 
-How to run Leady on a Mac: Postgres, Next.js, Inngest, and the ngrok proxy.
+How to run Zapidly on a Mac: Postgres, Next.js, Inngest, and the ngrok proxy.
 
 For product architecture see [architecture.md](./architecture.md). Nudge timing details: [nudges.md](./nudges.md).
 
@@ -13,7 +13,7 @@ For product architecture see [architecture.md](./architecture.md). Nudge timing 
 - Optional: OpenAI / Gemini / Anthropic API key (without a key, classify/extract use heuristics)
 
 ```bash
-cd leady-project
+cd leady-project   # repo directory (GitHub repo not renamed yet)
 cp .env.example .env   # if you do not already have .env
 pnpm install           # or: npm install
 ```
@@ -22,10 +22,10 @@ pnpm install           # or: npm install
 
 ## 1. Postgres on Mac
 
-Leady expects a PostgreSQL database. The default URL in `.env.example` is:
+Zapidly expects a PostgreSQL database. The default URL in `.env.example` is:
 
 ```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/leady"
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/zapidly"
 ```
 
 ### Install and start Postgres (Homebrew)
@@ -45,9 +45,9 @@ createuser -s postgres 2>/dev/null || true
 psql postgres -c "ALTER USER postgres WITH PASSWORD 'postgres';" 2>/dev/null || true
 
 # Create the database
-createdb -U postgres leady
+createdb -U postgres zapidly
 # or:
-# psql postgres -c "CREATE DATABASE leady OWNER postgres;"
+# psql postgres -c "CREATE DATABASE zapidly OWNER postgres;"
 ```
 
 ### Apply schema + seed
@@ -146,7 +146,7 @@ pnpm proxy
 
 `scripts/proxy.sh`:
 
-1. Checks `http://127.0.0.1:3000` is up (override port with `LEADY_DEV_PORT`)
+1. Checks `http://127.0.0.1:3000` is up (override port with `ZAPIDLY_DEV_PORT`)
 2. Reads `NGROK_AUTHTOKEN` / `NGROK_DOMAIN` from `.env`
 3. Starts `ngrok http 3000` (optionally `--domain=…`)
 4. Polls the local ngrok API at `http://127.0.0.1:4040/api/tunnels` for the public `https://…` URL
@@ -262,7 +262,7 @@ If `verify` says MISMATCH, the database drifted from the migrations. Stop and co
 
 ## Quick checklist
 
-- [ ] Postgres running; `DATABASE_URL` points at `leady`
+- [ ] Postgres running; `DATABASE_URL` points at `zapidly`
 - [ ] `pnpm prisma migrate deploy && pnpm db:generate && pnpm db:seed`
 - [ ] `.env` has `DEV_AUTH_BYPASS`, LLM key (optional), `INNGEST_DEV=1`
 - [ ] `pnpm dev` → `/demo` works

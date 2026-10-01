@@ -42,7 +42,7 @@ export async function syncHookMyAppChannels(tenantId: string) {
         hmac = "pending";
       }
     }
-    const verifyToken = parsed.verifyToken || `leady-${tenantId.slice(0, 8)}`;
+    const verifyToken = parsed.verifyToken || `zapidly-${tenantId.slice(0, 8)}`;
     if (!parsed.providerAccountId || !accessToken) continue;
     try {
       await setWebhookUrl(tenant.hookmyappWorkspaceId, channelId, webhookUrl, verifyToken);

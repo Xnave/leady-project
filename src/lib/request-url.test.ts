@@ -55,9 +55,9 @@ describe("appOrigin", () => {
 
   it("uses Vercel production URL over a stale NEXT_PUBLIC_APP_URL", () => {
     vi.stubEnv("VERCEL", "1");
-    vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "leady-project.vercel.app");
+    vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "zapidly.vercel.app");
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://stale.ngrok-free.app");
-    expect(appOrigin()).toBe("https://leady-project.vercel.app");
+    expect(appOrigin()).toBe("https://zapidly.vercel.app");
   });
 
   it("falls back to NEXT_PUBLIC_APP_URL locally", () => {

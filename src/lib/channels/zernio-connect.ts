@@ -60,7 +60,7 @@ export async function bindZernioChannel(opts: {
     apiBase: "https://zernio.com/api/v1",
     accessTokenEnc: token,
     hmacSecretEnc: hmac,
-    verifyToken: `leady-${opts.tenantId.slice(0, 12)}`,
+    verifyToken: `zapidly-${opts.tenantId.slice(0, 12)}`,
     enabled: true,
   };
 

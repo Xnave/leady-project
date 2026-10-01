@@ -1,5 +1,6 @@
 import { SignIn } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
+import { BrandMark } from "@/components/BrandMark";
 import { SwitchAccountActions } from "@/components/SwitchAccountActions";
 import { isClerkConfigured } from "@/lib/clerk";
 import { getUiLang } from "@/lib/cookies";
@@ -25,7 +26,7 @@ export default async function SignInPage() {
   return (
     <div className="auth-page">
       <div className="auth-brand">
-        <span className="auth-brand-mark">L</span>
+        <BrandMark id="auth" size={36} />
         <span>{ui.product}</span>
       </div>
       <p className="auth-tagline">{ui.page.signInBlurb}</p>

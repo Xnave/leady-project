@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { AccountMenu } from "@/components/AccountMenu";
+import { BrandMark } from "@/components/BrandMark";
 import type { NavCounts } from "@/lib/nav-counts";
 import type { UiCopy, UiLang, UiTheme } from "@/lib/ui";
 
@@ -109,7 +110,7 @@ export function SidebarNav({
       </button>
       <aside className={`sidebar${open ? " open" : ""}`}>
         <Link href="/" className="sidebar-brand" onClick={() => setOpen(false)}>
-          <span className="sidebar-brand-mark">L</span>
+          <BrandMark id="sidebar" size={28} />
           {ui.product}
         </Link>
         {showAccount ? (

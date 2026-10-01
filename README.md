@@ -1,4 +1,4 @@
-# Leady
+# Zapidly
 
 Multi-tenant agent CRM. Chat preview, leads with form fields, HITL inbox, JSON flows interpreted in-process (nudges via Inngest). WhatsApp via Zernio.
 
@@ -69,4 +69,4 @@ pnpm proxy:stop
 pnpm proxy:status
 ```
 
-Production on a VPS with your own domain: see `nginx/leady-ssl.example.conf`.
+Production on a VPS with your own domain: see `nginx/zapidly-ssl.example.conf`.

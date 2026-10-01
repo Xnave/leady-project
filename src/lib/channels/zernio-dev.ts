@@ -38,7 +38,7 @@ export async function ensureDevZernioChannel(tenantId: string): Promise<string |
     apiBase: "https://zernio.com/api/v1",
     accessTokenEnc: token,
     hmacSecretEnc: hmac,
-    verifyToken: `leady-${tenantId.slice(0, 12)}`,
+    verifyToken: `zapidly-${tenantId.slice(0, 12)}`,
     enabled: true,
   };
 

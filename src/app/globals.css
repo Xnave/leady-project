@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Leady — WhatsApp-native CRM design system
+   Zapidly — WhatsApp-native CRM design system
    Light (WhatsApp Web) is the default. Dark (WhatsApp dark x Linear) follows
    the OS, and can be forced with [data-theme="dark"] / [data-theme="light"].
 
@@ -52,6 +52,10 @@
   --on-wa-green: #072b1c;
   --wa-header: #008069;
   --on-wa-header: #ffffff;
+  /* Zapidly logo (BrandMark). Graphic only; the same in both themes. */
+  --brand-mark-from: #ffb36b;
+  --brand-mark-to: #ff6a3d;
+  --brand-mark-bolt: #1a0d06;
 
   /* Inverse surface — toasts and the CRM bulk-action bar. A dark chip on the
      light canvas; --inverse-hover tints its buttons, --inverse-link is the
@@ -430,18 +434,6 @@ samp {
   text-decoration: none;
   filter: brightness(1.06);
 }
-.sidebar-brand-mark {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  background: var(--on-wa-header);
-  color: var(--wa-header);
-  display: grid;
-  place-items: center;
-  font-size: var(--fs-md);
-  font-weight: 700;
-  flex-shrink: 0;
-}
 
 .sidebar-tenant {
   padding: 10px 14px 8px;
@@ -606,15 +598,9 @@ samp {
   font-weight: 700;
   color: var(--ink);
 }
-.auth-brand-mark {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  background: var(--wa-header);
-  color: var(--on-wa-header);
-  font-weight: 800;
+.brand-mark {
+  display: block;
+  flex-shrink: 0;
 }
 .auth-tagline {
   margin: 0 0 8px;
