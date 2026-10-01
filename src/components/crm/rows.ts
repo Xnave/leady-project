@@ -27,7 +27,9 @@ export function matchesView(r: LeadRowDTO, v: ViewFilter): boolean {
   if (v.channel && r.channel !== v.channel) return false;
   switch (v.tab) {
     case "needs":
-      return r.due;
+      return r.due && r.followUpReason !== "cold";
+    case "cold":
+      return isColdNow(r);
     case "active":
       return isActiveStage(r.stage);
     case "won":

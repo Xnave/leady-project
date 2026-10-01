@@ -18,7 +18,7 @@ import {
   type DigestItem,
 } from "./digest";
 import { digestFeatureOn } from "./flags";
-import { needsWhere } from "./needs";
+import { attentionWhere } from "./needs";
 import { isFollowUpReason } from "./types";
 import { whereItStands } from "./view";
 
@@ -30,7 +30,7 @@ export async function loadDueDigestItems(tenantId: string, now: Date): Promise<D
     where: {
       tenantId,
       NOT: { externalUserId: { startsWith: "demo-" } },
-      ...needsWhere(now),
+      ...attentionWhere(now),
     },
     select: {
       id: true,

@@ -3,7 +3,7 @@
 import type { CrmCounts, CrmTab } from "@/lib/crm/view";
 import type { UiCopy } from "@/lib/ui";
 
-const TABS: CrmTab[] = ["needs", "active", "won", "closed", "all"];
+const TABS: CrmTab[] = ["needs", "cold", "active", "won", "closed", "all"];
 const CHANNELS = [
   { id: "whatsapp", label: "WhatsApp" },
   { id: "instagram", label: "Instagram" },
@@ -33,7 +33,7 @@ export function ListBar({
             key={t}
             type="button"
             role="tab"
-            className={t === "needs" ? "crm-tab needs" : "crm-tab"}
+            className={t === "needs" || t === "cold" ? `crm-tab ${t}` : "crm-tab"}
             aria-selected={tab === t}
             aria-controls="crm-leads-grid"
             onClick={() => onTab(t)}

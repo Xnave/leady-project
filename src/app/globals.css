@@ -2855,6 +2855,7 @@ td .muted { font-size: var(--fs-xs); }
   font-variant-numeric: tabular-nums;
 }
 .crm-tab.needs .crm-tab-count { background: var(--wa-green); color: var(--on-wa-green); font-weight: 700; }
+.crm-tab.cold .crm-tab-count { color: var(--info); font-weight: 700; }
 .crm-filters { margin-inline-start: auto; display: flex; gap: var(--space-2); padding-block-end: var(--space-2); }
 .crm-fchip {
   min-height: 32px;

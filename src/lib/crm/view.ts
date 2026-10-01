@@ -12,7 +12,7 @@ import type { UiCopy, UiLang } from "@/lib/ui";
 import { intentLabel } from "@/lib/ui/labels";
 import type { TimelineItem } from "./timeline";
 import { isFollowUpDue, waWindow } from "./followup";
-import { isFollowUpReason, isPipelineStage, type FollowUpReason, type PipelineStage } from "./types";
+import { isFollowUpReason, isPipelineStage, type CrmTab, type FollowUpReason, type PipelineStage } from "./types";
 
 /** Where a lead stands, in one line: the strongest available signal wins. Pure. */
 export function whereItStands(i: {
@@ -30,10 +30,11 @@ export function whereItStands(i: {
   return [i.intentLabel, cut].filter(Boolean).join(" · ");
 }
 
-export type CrmTab = "needs" | "active" | "won" | "closed" | "all";
+export { isQueueTab, type CrmTab } from "./types";
 
 export type CrmCounts = {
   needs: number;
+  cold: number;
   active: number;
   won: number;
   closed: number;

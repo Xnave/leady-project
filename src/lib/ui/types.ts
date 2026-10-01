@@ -15,7 +15,7 @@ export type BookingStanceUiId = "passive" | "proactive";
 export type CrmCopy = {
   stages: Record<"new" | "talking" | "qualified" | "pending" | "won" | "lost" | "not_relevant", string>;
   wonByCapability: Record<string, string>;
-  tabs: Record<"needs" | "active" | "won" | "closed" | "all", string>;
+  tabs: Record<"needs" | "cold" | "active" | "won" | "closed" | "all", string>;
   cols: { lead: string; stage: string; stand: string; followUp: string; last: string };
   reasons: Record<"handoff" | "approval" | "reminder" | "cold", string>;
   reasonsLong: Record<"handoff" | "approval" | "reminder" | "cold", string>;
@@ -32,7 +32,7 @@ export type CrmCopy = {
   timeline: Record<string, string>;
   lostReasons: string[]; notRelevantReasons: string[]; reasonPrompt: string;
   stageSet: string; undo: string; openFull: string; close: string; message: string; openLead: string; changeStage: string; moreActions: string; channelFilter: string;
-  needsEmptyTitle: string; needsEmpty: string; emptyTitle: string; empty: string; loadFailed: string; retry: string;
+  needsEmptyTitle: string; needsEmpty: string; coldEmptyTitle: string; coldEmpty: string; emptyTitle: string; empty: string; loadFailed: string; retry: string;
   selected: string; bulkStage: string; bulkSnooze: string; bulkRead: string; bulkUnread: string; clearSelection: string;
   keysHint: string; search: string;
   digestTitle: string; digestBlurb: string; digestEnabled: string; digestHour: string;

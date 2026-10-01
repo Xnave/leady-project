@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { REQUEST_APPROVAL_TASK } from "@/lib/requests";
-import { FOLLOW_UP_PRIORITY, type FollowUpReason } from "./types";
+import { FOLLOW_UP_PRIORITY, NEEDS_REASONS, type FollowUpReason } from "./types";
 
 /** A task the owner must act on: still open, on a conversation that is not closed. */
 const OPEN_TASK: Prisma.HitlTaskWhereInput = { status: "open", conversation: { status: { not: "closed" } } };
@@ -44,7 +44,17 @@ export function reasonWhere(reason: FollowUpReason, now: Date): Prisma.LeadWhere
   }
 }
 
-/** The single "needs you" predicate, shared by the list, the counts, the badge and the digest. */
+/** The single "needs you" predicate (owner tasks), shared by the list, the counts and the badge. */
 export function needsWhere(now: Date): Prisma.LeadWhereInput {
+  return { OR: NEEDS_REASONS.map((r) => reasonWhere(r, now)) };
+}
+
+/** Leads that went quiet after our last message (the "Gone cold" tab). */
+export function coldWhere(now: Date): Prisma.LeadWhereInput {
+  return reasonWhere("cold", now);
+}
+
+/** Any reason at all: owner tasks plus gone cold. The daily digest reports both. */
+export function attentionWhere(now: Date): Prisma.LeadWhereInput {
   return { OR: FOLLOW_UP_PRIORITY.map((r) => reasonWhere(r, now)) };
 }

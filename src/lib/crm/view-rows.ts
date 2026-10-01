@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import type { UiCopy, UiLang } from "@/lib/ui";
 import {
   buildLeadRowDTO,
+  isQueueTab,
   requestFieldLabels,
   summarizeRequest,
   toRequestRow,
@@ -13,7 +14,7 @@ import {
   type LeadRowDTO,
   type LeadRowInput,
 } from "./view";
-import { needsWhere, reasonWhere } from "./needs";
+import { coldWhere, needsWhere, reasonWhere } from "./needs";
 import { ACTIVE_STAGES, CLOSED_STAGES, FOLLOW_UP_PRIORITY, PIPELINE_STAGES, type FollowUpReason, type PipelineStage } from "./types";
 
 function demoWhere(showDemo: boolean): Prisma.LeadWhereInput {
@@ -24,6 +25,8 @@ function tabWhere(tab: CrmTab, now: Date): Prisma.LeadWhereInput {
   switch (tab) {
     case "needs":
       return needsWhere(now);
+    case "cold":
+      return coldWhere(now);
     case "active":
       return { pipelineStage: { in: [...ACTIVE_STAGES] } };
     case "won":
@@ -65,8 +68,9 @@ async function computeCounts(tenantId: string, showDemo: boolean, now: Date): Pr
   const base: Prisma.LeadWhereInput = { tenantId, ...demoWhere(showDemo) };
   const needs = { ...base, ...needsWhere(now) };
   const count = (where: Prisma.LeadWhereInput) => prisma.lead.count({ where });
-  const [nNeeds, nActive, nWon, nClosed, nAll, stages, reasons] = await Promise.all([
+  const [nNeeds, nCold, nActive, nWon, nClosed, nAll, stages, reasons] = await Promise.all([
     count(needs),
+    count({ ...base, ...coldWhere(now) }),
     count({ ...base, pipelineStage: { in: [...ACTIVE_STAGES] } }),
     count({ ...base, pipelineStage: "won" }),
     count({ ...base, pipelineStage: { in: [...CLOSED_STAGES] } }),
@@ -76,6 +80,7 @@ async function computeCounts(tenantId: string, showDemo: boolean, now: Date): Pr
   ]);
   return {
     needs: nNeeds,
+    cold: nCold,
     active: nActive,
     won: nWon,
     closed: nClosed,
@@ -126,7 +131,7 @@ function rowInput(lead: RowLead, lang: UiLang, labels: Record<string, string>): 
   };
 }
 
-/** List rows for the CRM inbox: the "needs" tab is capped at 200 and sorted in JS. */
+/** List rows for the CRM inbox: the queue tabs (needs, cold) are capped at 200 and sorted in JS. */
 export async function loadLeadRows(o: {
   tenantId: string;
   tab: CrmTab;
@@ -148,7 +153,7 @@ export async function loadLeadRows(o: {
   const [counts, total, leads] = await Promise.all([
     computeCounts(o.tenantId, o.showDemo, now),
     prisma.lead.count({ where }),
-    o.tab === "needs"
+    isQueueTab(o.tab)
       ? prisma.lead.findMany({ where, take: 200, include: rowInclude })
       : prisma.lead.findMany({
           where,
@@ -160,7 +165,9 @@ export async function loadLeadRows(o: {
   ]);
 
   let pageLeads = leads;
-  if (o.tab === "needs") {
+  // Most urgent first: by reason priority, then the longest-waiting (for cold, the
+  // WhatsApp window closes soonest).
+  if (isQueueTab(o.tab)) {
     const sorted = [...leads].sort((a, b) => {
       const pa = FOLLOW_UP_PRIORITY.indexOf((a.attentionReason ?? "") as FollowUpReason);
       const pb = FOLLOW_UP_PRIORITY.indexOf((b.attentionReason ?? "") as FollowUpReason);

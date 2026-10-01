@@ -91,6 +91,11 @@ export function LeadsGrid({
                 <strong>{ui.crm.needsEmptyTitle}</strong>
                 <span>{ui.crm.needsEmpty}</span>
               </>
+            ) : tab === "cold" ? (
+              <>
+                <strong>{ui.crm.coldEmptyTitle}</strong>
+                <span>{ui.crm.coldEmpty}</span>
+              </>
             ) : (
               <>
                 <strong>{ui.crm.emptyTitle}</strong>

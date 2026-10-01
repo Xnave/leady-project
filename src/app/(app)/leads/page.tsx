@@ -1,15 +1,15 @@
 import { LeadsList } from "@/components/crm/LeadsList";
 import { getUiLang } from "@/lib/cookies";
-import { loadLeadRows, type CrmTab } from "@/lib/crm/view";
+import { isQueueTab, loadLeadRows, type CrmTab } from "@/lib/crm/view";
 import { isFollowUpReason, isPipelineStage } from "@/lib/crm/types";
 import { loadWonLabel } from "@/lib/crm/won-label";
 import { requireTenantIdForPage } from "@/lib/tenant";
 import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
-const TABS: CrmTab[] = ["needs", "active", "won", "closed", "all"];
-/** R6: the needs tab is one un-paginated list of up to 200 rows (the loader's cap). */
-const NEEDS_CAP = 200;
+const TABS: CrmTab[] = ["needs", "cold", "active", "won", "closed", "all"];
+/** R6: the queue tabs (needs, cold) are one un-paginated list of up to 200 rows (the loader's cap). */
+const QUEUE_CAP = 200;
 
 export default async function LeadsPage({
   searchParams,
@@ -39,17 +39,17 @@ export default async function LeadsPage({
       channel,
       q,
       showDemo,
-      page: t === "needs" ? 1 : page,
-      pageSize: t === "needs" ? NEEDS_CAP : pageSize,
+      page: isQueueTab(t) ? 1 : page,
+      pageSize: isQueueTab(t) ? QUEUE_CAP : pageSize,
       ui,
       lang,
     });
 
-  // Default to "needs" when anything needs the owner, else "active".
+  // Default to the first non-empty of: Needs you, Gone cold, Active.
   let tab = TABS.includes(sp.tab as CrmTab) ? (sp.tab as CrmTab) : undefined;
   let data = await load(tab ?? "needs");
   if (!tab && data.counts.needs === 0) {
-    tab = "active";
+    tab = data.counts.cold > 0 ? "cold" : "active";
     data = await load(tab);
   }
 

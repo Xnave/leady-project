@@ -15,6 +15,18 @@ describe("deriveFollowUp", () => {
     expect(deriveFollowUp({ stage: "new", ...none })).toBeNull();
   });
 
+  it("goes cold only after the bot's nudge: the nudge is our last message and restarts the clock", () => {
+    // Lead writes at 08:00, the bot replies at 08:01, the silence nudge goes out at 09:00.
+    const fu = deriveFollowUp({
+      stage: "talking",
+      ...none,
+      lastLeadMessageAt: at("2026-09-24T08:00:00Z"),
+      lastOutboundAt: at("2026-09-24T09:00:00Z"),
+    });
+    // 20h after the nudge (21h after the lead), with ~3h of the 24h WhatsApp window left.
+    expect(fu).toEqual({ reason: "cold", at: at("2026-09-25T05:00:00Z") });
+  });
+
   it("orders reasons handoff > approval > reminder > cold", () => {
     const all = {
       stage: "talking" as const,

@@ -4,7 +4,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Pagination } from "@/components/Pagination";
 import type { CrmCounts, CrmTab, LeadRowDTO } from "@/lib/crm/view";
-import type { FollowUpReason, PipelineStage } from "@/lib/crm/types";
+import { isQueueTab, type FollowUpReason, type PipelineStage } from "@/lib/crm/types";
 import type { UiCopy } from "@/lib/ui";
 import { BulkBar } from "./BulkBar";
 import { LeadsGrid } from "./LeadsGrid";
@@ -218,7 +218,7 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, reason, channe
         onToggleRead={(id, unread) => setUnread([id], unread)}
       />
       <p className="crm-keys">{ui.crm.keysHint}</p>
-      {view.tab !== "needs" && total > 0 ? (
+      {!isQueueTab(view.tab) && total > 0 ? (
         <Pagination page={page} pageSize={pageSize} total={total} basePath="/leads" ui={ui} extraParams={extraParams} />
       ) : null}
       {selected.length ? (

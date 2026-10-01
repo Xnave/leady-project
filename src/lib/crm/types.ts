@@ -31,6 +31,20 @@ export const FOLLOW_UP_PRIORITY: readonly FollowUpReason[] = [
   "cold",
 ];
 
+/** The leads list tabs. */
+export type CrmTab = "needs" | "cold" | "active" | "won" | "closed" | "all";
+
+/** Queue tabs: one un-paginated list (capped), most urgent first. */
+export function isQueueTab(tab: CrmTab): boolean {
+  return tab === "needs" || tab === "cold";
+}
+
+/**
+ * Reasons that put a lead in "Needs you": a task the owner has to act on. Cold is a
+ * time signal, not a task, so it has its own tab ("Gone cold").
+ */
+export const NEEDS_REASONS: readonly FollowUpReason[] = ["handoff", "approval", "reminder"];
+
 /** Our last message + this many hours without a reply = cold (leaves ~4h of the WhatsApp window). */
 export const COLD_AFTER_HOURS = 20;
 

@@ -529,7 +529,7 @@ export const en: UiCopy = {
       not_relevant: "Not relevant",
     },
     wonByCapability: { booking: "Booked", reservations: "Reserved" },
-    tabs: { needs: "Needs you", active: "Active", won: "Won", closed: "Lost / not relevant", all: "All" },
+    tabs: { needs: "Needs you", cold: "Gone cold", active: "Active", won: "Won", closed: "Lost / not relevant", all: "All" },
     cols: { lead: "Lead", stage: "Stage", stand: "Where it stands", followUp: "Follow-up", last: "Last contact" },
     reasons: { handoff: "Handed to you", approval: "Needs approval", reminder: "Reminder", cold: "Gone cold" },
     reasonsLong: {
@@ -651,6 +651,8 @@ export const en: UiCopy = {
     channelFilter: "Channel",
     needsEmptyTitle: "All caught up",
     needsEmpty: "No leads are waiting on you. We'll message you on WhatsApp when one is.",
+    coldEmptyTitle: "No one has gone quiet",
+    coldEmpty: "Leads land here 20 hours after our last message goes unanswered, while there's still time to reply on WhatsApp.",
     emptyTitle: "No leads here",
     empty: "Try a different filter.",
     loadFailed: "Something went wrong. Try again.",

@@ -43,11 +43,30 @@ describe("withStage", () => {
   it("drops a cold follow-up when the lead closes", () => {
     const r = withStage(row(), "lost");
     expect([r.stage, r.stageSource, r.followUpReason, r.due]).toEqual(["lost", "manual", null, false]);
-    expect(matchesView(r, { tab: "needs" })).toBe(false);
+    expect(matchesView(r, { tab: "cold" })).toBe(false);
   });
   it("keeps a handoff after a close", () => {
     const r = withStage(row({ followUpReason: "handoff" }), "won");
     expect(r.due).toBe(true);
+  });
+});
+
+describe("matchesView: Needs you vs Gone cold", () => {
+  it("puts a due cold lead in Gone cold, not Needs you", () => {
+    expect(matchesView(row(), { tab: "cold" })).toBe(true);
+    expect(matchesView(row(), { tab: "needs" })).toBe(false);
+  });
+  it("puts owner tasks in Needs you, not Gone cold", () => {
+    for (const reason of ["handoff", "approval", "reminder"] as const) {
+      const r = row({ followUpReason: reason });
+      expect(matchesView(r, { tab: "needs" })).toBe(true);
+      expect(matchesView(r, { tab: "cold" })).toBe(false);
+    }
+  });
+  it("keeps a cold lead that is not due yet out of both", () => {
+    const r = row({ due: false });
+    expect(matchesView(r, { tab: "cold" })).toBe(false);
+    expect(matchesView(r, { tab: "needs" })).toBe(false);
   });
 });
 
@@ -144,11 +163,11 @@ describe("mergePending", () => {
     expect([out.drop, out.missed]).toEqual([[], ["b"]]);
   });
 
-  it("keeps a pending snooze out of needs you", () => {
+  it("keeps a pending snooze out of the cold queue", () => {
     const a = row({ id: "a" });
     const b = row({ id: "b" });
     const pending = new Map([["a", edit(a, withSnooze(a, "2026-09-26T06:00:00.000Z"))]]);
-    expect(mergePending([a, b], pending, { tab: "needs" }).rows.map((r) => r.id)).toEqual(["b"]);
+    expect(mergePending([a, b], pending, { tab: "cold" }).rows.map((r) => r.id)).toEqual(["b"]);
   });
 
   it("keeps an unsettled (optimistic peek) edit across any number of stale refreshes", () => {
@@ -168,7 +187,7 @@ describe("mergePending", () => {
     const a = row({ id: "a" });
     const b = row({ id: "b" });
     const pending = new Map([["b", edit(withStage(b, "lost"), b, { index: 0 })]]);
-    expect(mergePending([a], pending, { tab: "needs" }).rows.map((r) => r.id)).toEqual(["b", "a"]);
+    expect(mergePending([a], pending, { tab: "cold" }).rows.map((r) => r.id)).toEqual(["b", "a"]);
   });
 });
 

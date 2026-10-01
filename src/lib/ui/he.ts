@@ -529,7 +529,7 @@ export const he: UiCopy = {
       not_relevant: "לא רלוונטי",
     },
     wonByCapability: { booking: "נקבע", reservations: "הוזמן" },
-    tabs: { needs: "צריך אותך", active: "פעילים", won: "נסגרו", closed: "אבוד / לא רלוונטי", all: "הכל" },
+    tabs: { needs: "צריך אותך", cold: "התקררו", active: "פעילים", won: "נסגרו", closed: "אבוד / לא רלוונטי", all: "הכל" },
     cols: { lead: "ליד", stage: "שלב", stand: "איפה זה עומד", followUp: "מעקב", last: "קשר אחרון" },
     reasons: { handoff: "הועבר אליך", approval: "ממתין לאישורך", reminder: "תזכורת", cold: "התקרר" },
     reasonsLong: {
@@ -651,6 +651,8 @@ export const he: UiCopy = {
     channelFilter: "ערוץ",
     needsEmptyTitle: "הכל מטופל",
     needsEmpty: "אין פניות שמחכות לך כרגע. נעדכן בוואטסאפ כשמשהו יגיע.",
+    coldEmptyTitle: "אף אחד לא התקרר",
+    coldEmpty: "פנייה מגיעה לכאן 20 שעות אחרי שההודעה האחרונה שלנו לא נענתה, כשעוד אפשר לענות בוואטסאפ.",
     emptyTitle: "אין פניות כאן",
     empty: "נסו לשנות את הסינון.",
     loadFailed: "משהו השתבש. נסו שוב.",

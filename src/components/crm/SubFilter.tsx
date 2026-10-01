@@ -1,7 +1,7 @@
 "use client";
 
 import type { CrmCounts, CrmTab } from "@/lib/crm/view";
-import { ACTIVE_STAGES, CLOSED_STAGES, FOLLOW_UP_PRIORITY, PIPELINE_STAGES, type FollowUpReason, type PipelineStage } from "@/lib/crm/types";
+import { ACTIVE_STAGES, CLOSED_STAGES, NEEDS_REASONS, PIPELINE_STAGES, type FollowUpReason, type PipelineStage } from "@/lib/crm/types";
 import type { UiCopy } from "@/lib/ui";
 import { Icon } from "./Icon";
 import { FU_ICON } from "./LeadRow";
@@ -11,6 +11,7 @@ type Option = { key: string; label: string; n: number; pressed: boolean; mark: "
 
 /**
  * The second filter level: it narrows the selected tab. Needs you → why (reason);
+ * Gone cold has one reason, so no row;
  * Active → pipeline stage (with counts, the pipeline at a glance); Lost / not
  * relevant → which of the two; All → any stage. Won has a single stage, so no row.
  */
@@ -37,7 +38,7 @@ export function SubFilter({
     tab === "active" ? ACTIVE_STAGES : tab === "closed" ? CLOSED_STAGES : tab === "all" ? PIPELINE_STAGES : null;
   const options: Option[] =
     tab === "needs"
-      ? FOLLOW_UP_PRIORITY.map((r) => ({
+      ? NEEDS_REASONS.map((r) => ({
           key: r,
           label: ui.crm.reasons[r],
           n: counts.byReason[r],
