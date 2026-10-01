@@ -90,7 +90,7 @@ npm test                              # all unit tests
 npx vitest run src/lib/flow/architecture.test.ts
 npx vitest run src/lib/flow/interpreter.test.ts
 npm run typecheck
-npx prisma db push && npx prisma generate   # after schema changes
+npm run db:migrate -- --name <change>       # after schema changes (writes a migration)
 ```
 
 Dev: `npm run dev` (demo turn is sync; Inngest only for nudges).

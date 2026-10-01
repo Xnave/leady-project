@@ -53,7 +53,7 @@ createdb -U postgres leady
 ### Apply schema + seed
 
 ```bash
-pnpm db:push      # prisma db push — schema → local DB
+pnpm prisma migrate deploy  # apply every migration in prisma/migrations to the local DB
 pnpm db:generate  # prisma generate
 pnpm db:seed      # demo tenant / agent / channel
 ```
@@ -230,10 +230,38 @@ Minimal local chat: **terminal 1 only**.
 
 ---
 
+## Schema changes and production
+
+The schema ships as Prisma migrations in `prisma/migrations/`. `0_init` is the schema production had before migrations were adopted; every later folder is one change.
+
+**Changing the schema:** edit `prisma/schema.prisma`, then `npm run db:migrate -- --name <change>`. That writes `prisma/migrations/<timestamp>_<change>/migration.sql` and applies it to your dev DB. Commit the folder with the code.
+
+**A dev DB created with `db push` before migrations existed:** mark what it already has as applied, once:
+
+```bash
+npx prisma migrate resolve --applied 0_init
+npx prisma migrate resolve --applied 1_crm_phase1   # only if it already has the CRM columns
+```
+
+**Production** (by hand, from the branch being merged, with `.env.production` in the repo root). Every command prints the target database first:
+
+```bash
+npm run db:status:production     # read-only: applied vs pending migrations
+npm run db:verify:production     # read-only: the DB differs from the schema by exactly the pending migrations
+npm run db:migrate:production    # apply the pending migrations (prisma migrate deploy)
+npm run db:verify:production     # again: "Pending migrations: none ... OK"
+```
+
+If `verify` says MISMATCH, the database drifted from the migrations. Stop and compare the printed SQL before migrating.
+
+**One time only, when adopting migrations:** production was built with `db push`, so it has no migration history yet. Before the first `db:migrate:production`, run `npm run db:baseline:production`. It records `0_init` as applied without running it.
+
+---
+
 ## Quick checklist
 
 - [ ] Postgres running; `DATABASE_URL` points at `leady`
-- [ ] `pnpm db:push && pnpm db:generate && pnpm db:seed`
+- [ ] `pnpm prisma migrate deploy && pnpm db:generate && pnpm db:seed`
 - [ ] `.env` has `DEV_AUTH_BYPASS`, LLM key (optional), `INNGEST_DEV=1`
 - [ ] `pnpm dev` → `/demo` works
 - [ ] (Optional) Inngest CLI on `:8288`

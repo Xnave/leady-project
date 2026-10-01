@@ -10,7 +10,7 @@ Full walkthrough (Postgres on Mac, Inngest, ngrok / `NEXT_PUBLIC_APP_URL`): **[d
 
 ```bash
 npm install
-npx prisma db push && npx prisma generate && npm run db:seed
+npx prisma migrate deploy && npx prisma generate && npm run db:seed
 npm run dev
 ```
 
