@@ -189,7 +189,7 @@ export const en: UiCopy = {
     fieldAddress: "Address (shown after a visit is requested)",
     fieldAddressPlaceholder: "Street, city",
     fieldHours: "Opening hours (included when asking for a time)",
-    fieldHoursPlaceholder: "Sun–Thu 09:00–19:00",
+    fieldHoursPlaceholder: "Sun, Tue, Thu 09:00–19:00 | Mon, Wed 09:00–15:00 | Fri 09:00–13:00",
     fieldBookingRequest: "Tentative booking message",
     fieldBookingApproved: "Approved booking message",
     fieldBookingRejected: "Declined booking message",

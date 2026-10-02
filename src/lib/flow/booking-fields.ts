@@ -7,9 +7,19 @@
  */
 import { copyFor } from "@/lib/copy";
 import { callbackPhone } from "./booking-collect";
-import { venueHoursFromCtx } from "./booking-config";
+import {
+  venueHoursFromCtx,
+  venueScheduleFromCtx,
+  venueTimezoneFromCtx,
+} from "./booking-config";
 import type { FieldContext, FieldSpec } from "./fields";
 import type { LeadFields, TurnContext } from "./types";
+import type { VenueScheduleSegment } from "./venue-hours";
+
+export {
+  evaluateTimePreference,
+  timePreferenceNormalizeError,
+} from "./time-preference-gate";
 
 /** Contact fields are always asked last, after the visit details. */
 const CONTACT_IDS = ["phone", "email"] as const;
@@ -84,12 +94,16 @@ const BOOKING_LABEL_FALLBACK: Record<"en" | "he", Record<string, string>> = {
 export function bookingFieldContext(opts: {
   lang: "en" | "he";
   hours?: string;
+  schedule?: VenueScheduleSegment[];
+  timezone?: string;
   deducedPhone?: string;
   now?: Date;
 }): FieldContext {
   return {
     lang: opts.lang,
     businessHours: opts.hours,
+    venueSchedule: opts.schedule,
+    venueTimezone: opts.timezone,
     deducedPhone: opts.deducedPhone,
     now: opts.now,
     askFallback: bookingAskFallback,
@@ -106,6 +120,8 @@ export function bookingFieldContextFromCtx(
   return bookingFieldContext({
     lang,
     hours: venueHoursFromCtx(ctx),
+    schedule: venueScheduleFromCtx(ctx),
+    timezone: venueTimezoneFromCtx(ctx),
     // Only offer the deduced number when the phone itself is being asked.
     deducedPhone: opts?.forKey === "phone" ? callbackPhone(ctx) : undefined,
   });

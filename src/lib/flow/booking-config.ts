@@ -3,6 +3,7 @@
  * `booking*Template` columns on Tenant, now the `config` JSON of a
  * `CapabilityInstance` with `capabilityId: "booking"`.
  */
+import { DEFAULT_TZ } from "./clock";
 import { instanceConfig } from "./instances";
 import {
   nounFor,
@@ -11,6 +12,11 @@ import {
   type InstanceNounsByLang,
 } from "./nouns";
 import type { CapabilityInstanceSnapshot, TurnContext } from "./types";
+import {
+  normalizeVenueSchedule,
+  parseVenueSchedule,
+  type VenueScheduleSegment,
+} from "./venue-hours";
 
 export type BookingMessageTemplates = {
   request?: string;
@@ -20,7 +26,15 @@ export type BookingMessageTemplates = {
 
 export type BookingConfig = {
   venueAddress: string;
+  /** Human-readable hours for prompts / UI (source of truth for operators). */
   venueHours: string;
+  /**
+   * Normalized bookable windows derived from `venueHours` on save.
+   * Gate checks this; free-text parse is only a fallback for legacy rows.
+   */
+  venueSchedule: VenueScheduleSegment[];
+  /** IANA timezone for weekday / "today" math. Defaults to Asia/Jerusalem. */
+  timezone: string;
   messageTemplates: BookingMessageTemplates;
   /** What this business calls the request ("visit", "fitting", "appointment"). */
   nouns?: InstanceNounsByLang;
@@ -36,6 +50,8 @@ const DEFAULT_BOOKING_NOUN: Record<"en" | "he", InstanceNoun> = {
 export const emptyBookingConfig = (): BookingConfig => ({
   venueAddress: "",
   venueHours: "",
+  venueSchedule: [],
+  timezone: DEFAULT_TZ,
   messageTemplates: {},
 });
 
@@ -47,6 +63,11 @@ function optionalStr(raw: unknown): string | undefined {
   return typeof raw === "string" && raw.trim() ? raw : undefined;
 }
 
+function timezoneOrDefault(raw: unknown): string {
+  const t = str(raw);
+  return t || DEFAULT_TZ;
+}
+
 export function parseBookingConfig(raw: unknown): BookingConfig {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return emptyBookingConfig();
   const o = raw as Record<string, unknown>;
@@ -54,15 +75,39 @@ export function parseBookingConfig(raw: unknown): BookingConfig {
     o.messageTemplates && typeof o.messageTemplates === "object"
       ? (o.messageTemplates as Record<string, unknown>)
       : {};
+  const venueHours = str(o.venueHours);
+  const stored = parseVenueSchedule(o.venueSchedule);
   return {
     venueAddress: str(o.venueAddress),
-    venueHours: str(o.venueHours),
+    venueHours,
+    // Prefer persisted schedule; rebuild from the label when missing (legacy rows).
+    venueSchedule: stored.length ? stored : normalizeVenueSchedule(venueHours),
+    timezone: timezoneOrDefault(o.timezone),
     messageTemplates: {
       request: optionalStr(templates.request),
       approved: optionalStr(templates.approved),
       rejected: optionalStr(templates.rejected),
     },
     nouns: parseInstanceNouns(o.nouns),
+  };
+}
+
+/** Build booking config from operator fields, always refreshing the schedule. */
+export function bookingConfigFromFields(fields: {
+  venueAddress?: string;
+  venueHours?: string;
+  timezone?: string;
+  messageTemplates?: BookingMessageTemplates;
+  nouns?: InstanceNounsByLang;
+}): BookingConfig {
+  const venueHours = str(fields.venueHours);
+  return {
+    venueAddress: str(fields.venueAddress),
+    venueHours,
+    venueSchedule: normalizeVenueSchedule(venueHours),
+    timezone: timezoneOrDefault(fields.timezone),
+    messageTemplates: fields.messageTemplates ?? {},
+    nouns: fields.nouns,
   };
 }
 
@@ -81,16 +126,31 @@ export function bookingNoun(
 export function bookingInstance(
   config: Partial<BookingConfig>,
 ): CapabilityInstanceSnapshot {
+  const merged = { ...emptyBookingConfig(), ...config };
+  if (!merged.timezone) merged.timezone = DEFAULT_TZ;
+  if (!config.venueSchedule && merged.venueHours) {
+    merged.venueSchedule = normalizeVenueSchedule(merged.venueHours);
+  }
   return {
     id: "booking-instance",
     capabilityId: BOOKING_CAPABILITY_ID,
     kind: "visit",
     enabled: true,
-    config: { ...emptyBookingConfig(), ...config },
+    config: merged,
   };
 }
 
-/** Opening hours the agent must keep visits inside, when configured. */
+/** Opening hours phrase the agent must keep visits inside, when configured. */
 export function venueHoursFromCtx(ctx: TurnContext): string {
   return bookingConfigFromCtx(ctx).venueHours;
+}
+
+/** Structured schedule for the deterministic hours gate. */
+export function venueScheduleFromCtx(ctx: TurnContext): VenueScheduleSegment[] {
+  return bookingConfigFromCtx(ctx).venueSchedule;
+}
+
+/** Venue IANA timezone for slot weekday math. */
+export function venueTimezoneFromCtx(ctx: TurnContext): string {
+  return bookingConfigFromCtx(ctx).timezone || DEFAULT_TZ;
 }

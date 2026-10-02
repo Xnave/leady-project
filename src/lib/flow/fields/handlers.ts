@@ -3,7 +3,10 @@ import { copyFor } from "@/lib/copy";
 import { formatPhoneDisplay, isCustomerNameSatisfied } from "@/lib/leads";
 import { zonedToday } from "../clock";
 import { resolveCalendarDate } from "../slot";
-import { isSlotWithinVenueHours } from "../venue-hours";
+import {
+  evaluateTimePreference,
+  timePreferenceNormalizeError,
+} from "../time-preference-gate";
 import type { LeadFields } from "../types";
 import type {
   DateFieldSpec,
@@ -182,15 +185,18 @@ const dateTimeTextHandler: FieldHandler<DateTimeTextFieldSpec> = {
   normalize: (raw, _key, spec, fctx) => {
     const value = raw.trim();
     const hours = fctx.businessHours?.trim() ?? "";
-    if (!spec.withinBusinessHours || !hours) return { ok: true, value };
-    if (isSlotWithinVenueHours(value, hours, { lang: fctx.lang }) === false) {
-      return {
-        ok: false,
-        error: "outside_hours",
-        reask: copyFor(fctx.lang).chat.askTimeOutsideHours(hours),
-        hint: "Ask only for another day/time inside opening hours. Do not ask for other fields until this is saved.",
-      };
+    if (!spec.withinBusinessHours || (!hours && !(fctx.venueSchedule?.length))) {
+      return { ok: true, value };
     }
+    const result = evaluateTimePreference(value, {
+      lang: fctx.lang,
+      hoursLabel: hours,
+      schedule: fctx.venueSchedule,
+      timeZone: fctx.venueTimezone,
+      now: fctx.now,
+    });
+    const failure = timePreferenceNormalizeError(result, fctx.lang, hours);
+    if (failure) return failure;
     return { ok: true, value };
   },
   renderConfirm: singleKeyConfirm,

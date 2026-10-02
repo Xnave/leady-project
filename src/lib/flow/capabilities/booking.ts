@@ -27,8 +27,17 @@ import {
 } from "@/lib/meetings";
 import { looksLikeShortAffirmation } from "../affirm";
 import { proposesDifferentSlot } from "../slot";
-import { bookingNoun, bookingConfigFromCtx, venueHoursFromCtx } from "../booking-config";
-import { isSlotWithinVenueHours } from "../venue-hours";
+import {
+  bookingNoun,
+  bookingConfigFromCtx,
+  venueHoursFromCtx,
+  venueScheduleFromCtx,
+  venueTimezoneFromCtx,
+} from "../booking-config";
+import {
+  evaluateTimePreference,
+  timePreferenceNormalizeError,
+} from "../time-preference-gate";
 import {
   formatPhoneDisplay,
   isCustomerNameSatisfied,
@@ -305,6 +314,8 @@ export function registerBookingCapability(): void {
     tools: ({ ctx, stage, collected }) => {
       const lang = replyLang(ctx, lastLeadText(ctx));
       const hours = venueHoursFromCtx(ctx);
+      const schedule = venueScheduleFromCtx(ctx);
+      const timeZone = venueTimezoneFromCtx(ctx);
       const required = effectiveBookingRequired(ctx);
       const fieldsForTurn = { ...ctx.lead.fields, ...collected.fields };
       const offered = getStaffSlotOffer(fieldsForTurn);
@@ -448,17 +459,23 @@ export function registerBookingCapability(): void {
               ) {
                 return `invalid phone: ${value}`;
               }
-              if (key === "time_preference" && hours) {
-                const within = isSlotWithinVenueHours(value, hours, { lang });
-                if (within === false) {
+              if (key === "time_preference" && (hours || schedule.length)) {
+                const result = evaluateTimePreference(value, {
+                  lang,
+                  hoursLabel: hours,
+                  schedule,
+                  timeZone,
+                });
+                const failure = timePreferenceNormalizeError(result, lang, hours);
+                if (failure) {
                   collected.askFieldUsed = true;
                   collected.replyLocked = true;
                   collected.timeRejected = true;
-                  collected.reply = copyFor(lang).chat.askTimeOutsideHours(hours);
+                  collected.reply = failure.reask ?? copyFor(lang).chat.askTime(hours);
                   return JSON.stringify({
                     ok: false,
-                    error: "outside_hours",
-                    hint: "Ask only for another day/time inside opening hours. Do not ask for name/need/phone until time_preference is saved.",
+                    error: failure.error,
+                    hint: failure.hint,
                   });
                 }
               }

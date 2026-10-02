@@ -189,7 +189,7 @@ export const he: UiCopy = {
     fieldAddress: "כתובת (מוצגת אחרי בקשת ביקור)",
     fieldAddressPlaceholder: "רחוב, עיר",
     fieldHours: "שעות פתיחה (בשאלה על מועד)",
-    fieldHoursPlaceholder: "א׳–ה׳ 09:00–19:00",
+    fieldHoursPlaceholder: "א', ג', ה' 09:00-19:00 | ב', ד' 09:00-15:00 | שישי 09:00-13:00",
     fieldBookingRequest: "הודעת בקשת ביקור (טנטטיבית)",
     fieldBookingApproved: "הודעת ביקור מאושר",
     fieldBookingRejected: "הודעת ביקור נדחה",
