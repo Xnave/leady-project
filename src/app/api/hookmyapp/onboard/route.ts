@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     });
   }
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
-  const verifyToken = `leady-${tenantId.slice(0, 12)}`;
+  const verifyToken = `zapidly-${tenantId.slice(0, 12)}`;
   const link = await createOnboardingLink({
     channelType,
     label: `${tenant.name} ${channelType}`,

@@ -5,7 +5,7 @@ import { isClerkConfigured } from "@/lib/clerk";
 import { getUiLang, getUiTheme } from "@/lib/cookies";
 import "./globals.css";
 
-export const metadata = { title: "Leady" };
+export const metadata = { title: "Zapidly" };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const [lang, theme] = await Promise.all([getUiLang(), getUiTheme()]);

@@ -78,7 +78,7 @@ export async function requireTeamActor(): Promise<TeamActor> {
   const { orgId, userId, orgRole } = await auth();
   if (!userId || !orgId) throw new Error("Select a Clerk organization");
   const tenant = await prisma.tenant.findUnique({ where: { clerkOrgId: orgId } });
-  if (!tenant) throw new Error("No Leady tenant for this organization");
+  if (!tenant) throw new Error("No Zapidly tenant for this organization");
   const user = await currentUser();
   const email = await primaryEmailFromClerkUser(user);
   const role = await resolveTenantRole(tenant, userId, email, orgRole);

@@ -101,7 +101,7 @@ export async function probeAvailabilityLink(opts: {
       signal: controller.signal,
       headers: {
         Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
-        "User-Agent": "LeadyAvailabilityProbe/1.0",
+        "User-Agent": "ZapidlyAvailabilityProbe/1.0",
       },
     });
     const body = await res.text();

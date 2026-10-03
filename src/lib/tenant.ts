@@ -56,13 +56,13 @@ export async function requireTenantId(): Promise<string> {
   }
   const tenant = await prisma.tenant.findUnique({ where: { clerkOrgId: orgId } });
   if (!tenant) {
-    // Active Clerk org is not a Leady tenant (e.g. personal org). Switch via /activating.
+    // Active Clerk org is not a Zapidly tenant (e.g. personal org). Switch via /activating.
     const user = await currentUser();
     const email = await primaryEmailFromClerkUser(user);
     const { resolveAccessibleOrgIds } = await import("@/lib/resolve-orgs");
-    const leadyOrgs = await resolveAccessibleOrgIds(userId, email);
-    if (leadyOrgs.length > 0) throw new Error("Activating organization");
-    throw new Error("No Leady tenant for this organization");
+    const zapidlyOrgs = await resolveAccessibleOrgIds(userId, email);
+    if (zapidlyOrgs.length > 0) throw new Error("Activating organization");
+    throw new Error("No Zapidly tenant for this organization");
   }
   return tenant.id;
 }
@@ -77,7 +77,7 @@ export async function requireTenantIdForPage(): Promise<string> {
     if (msg.includes("Select a tenant from Admin")) redirect("/admin");
     if (msg.includes("Activating organization")) redirect("/activating");
     if (msg.includes("No organization membership")) redirect("/no-access");
-    if (msg.includes("No Leady tenant")) redirect("/no-access");
+    if (msg.includes("No Zapidly tenant")) redirect("/no-access");
     if (msg.includes("No tenant")) redirect("/admin");
     throw e;
   }

@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-const STORAGE_KEY = "leady.showDemoLeads";
+const STORAGE_KEY = "zapidly.showDemoLeads";
 
 function readStored(): boolean {
   try {
