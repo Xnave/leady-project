@@ -11,6 +11,7 @@ import { buildNudgeSystemPrompt, buildTalkSystemPrompt, talkTransitionTargets } 
 import { canCallStartNewConversation } from "./affirm";
 import { hasAgentReplied, cannedIntroText } from "./intro";
 import { chatModel, llmConfigured } from "./model";
+import { addTurnPerf } from "@/lib/perf";
 import type {
   CollectStage,
   FaqStage,
@@ -328,19 +329,29 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
   }
 
   try {
+    const system = buildTalkSystemPrompt(ctx, stage, fieldsForTurn);
+    const prompt = ctx.messages
+      .slice(-12)
+      .map((m) => `${m.role}: ${m.text}`)
+      .join("\n");
+    addTurnPerf({ talk_prompt_chars: system.length + prompt.length });
     const result = await generateText({
       model: chatModel(),
-      system: buildTalkSystemPrompt(ctx, stage, fieldsForTurn),
-      prompt: ctx.messages
-        .slice(-12)
-        .map((m) => `${m.role}: ${m.text}`)
-        .join("\n"),
+      system,
+      prompt,
       tools: { ...baseTools, ...resetTools, ...capabilityTools } as Parameters<
         typeof generateText
       >[0]["tools"],
       stopWhen: stepCountIs(8),
       maxRetries: 2,
     });
+    const toolsUsed: string[] = [];
+    for (const step of result.steps ?? []) {
+      for (const call of step.toolCalls ?? []) {
+        if (call.toolName) toolsUsed.push(call.toolName);
+      }
+    }
+    addTurnPerf({ talk_steps: result.steps?.length ?? 1, tools_used: toolsUsed });
 
     if (!collected.reply && result.text?.trim()) {
       collected.reply = result.text.trim();

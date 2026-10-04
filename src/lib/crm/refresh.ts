@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { prisma } from "@/lib/db";
 import type { FlowDefinition } from "@/lib/flow/types";
 import { REQUEST_APPROVAL_TASK } from "@/lib/requests";
+import { addTurnPerf } from "@/lib/perf";
 import { OPEN_APPROVAL_TASK, OPEN_HANDOFF_TASK } from "./needs";
 import { planLeadState, type LeadStatePlan, type LeadStateSnapshot } from "./plan";
 import { isFollowUpReason, isPipelineStage } from "./types";
@@ -131,6 +132,7 @@ export async function safeRefreshLeadState(tenantId: string, leadId: string, opt
     console.error(JSON.stringify({ msg: "crm.refresh_failed", tenantId, leadId, error: String(err) }));
   }
   const ms = Date.now() - started;
+  addTurnPerf({ refresh_ms: ms });
   if (ms > SLOW_REFRESH_MS) console.warn(JSON.stringify({ msg: "crm.refresh_slow", tenantId, leadId, ms }));
 }
 

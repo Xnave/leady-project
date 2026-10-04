@@ -3,6 +3,7 @@ import { getUiLang } from "@/lib/cookies";
 import { isQueueTab, loadLeadRows, type CrmTab } from "@/lib/crm/view";
 import { isFollowUpReason, isPipelineStage } from "@/lib/crm/types";
 import { loadWonLabel } from "@/lib/crm/won-label";
+import { logCrmPerf } from "@/lib/perf";
 import { requireTenantIdForPage } from "@/lib/tenant";
 import { uiCopy } from "@/lib/ui";
 
@@ -16,6 +17,7 @@ export default async function LeadsPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
+  const started = Date.now();
   const sp = await searchParams;
   const tenantId = await requireTenantIdForPage();
   const lang = await getUiLang();
@@ -52,6 +54,13 @@ export default async function LeadsPage({
     tab = data.counts.cold > 0 ? "cold" : "active";
     data = await load(tab);
   }
+
+  logCrmPerf("crm.leads_page", {
+    tenantId,
+    tab: tab ?? "needs",
+    row_count: data.rows.length,
+    ms: Date.now() - started,
+  });
 
   return (
     <LeadsList

@@ -14,6 +14,7 @@ import {
   type LeadRowDTO,
   type LeadRowInput,
 } from "./view";
+import { logCrmPerf } from "@/lib/perf";
 import { coldWhere, needsWhere, reasonWhere } from "./needs";
 import { ACTIVE_STAGES, CLOSED_STAGES, FOLLOW_UP_PRIORITY, PIPELINE_STAGES, type FollowUpReason, type PipelineStage } from "./types";
 
@@ -145,6 +146,7 @@ export async function loadLeadRows(o: {
   ui: UiCopy;
   lang: UiLang;
 }): Promise<{ rows: LeadRowDTO[]; total: number; counts: CrmCounts }> {
+  const started = Date.now();
   const now = new Date();
   const instanceLabels = await loadInstanceFieldLabels(o.tenantId);
   const labels = requestFieldLabels(o.ui, instanceLabels);
@@ -181,5 +183,12 @@ export async function loadLeadRows(o: {
   }
 
   const rows = pageLeads.map((lead) => buildLeadRowDTO(rowInput(lead, o.lang, labels), o.ui, now));
+  logCrmPerf("crm.load_lead_rows", {
+    tenantId: o.tenantId,
+    tab: o.tab,
+    row_count: rows.length,
+    total,
+    ms: Date.now() - started,
+  });
   return { rows, total, counts };
 }

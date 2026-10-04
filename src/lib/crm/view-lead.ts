@@ -9,6 +9,7 @@ import {
   leadInstagramUsername,
   whatsappChatUrl,
 } from "@/lib/leads";
+import { logCrmPerf } from "@/lib/perf";
 import { REQUEST_APPROVAL_TASK } from "@/lib/requests";
 import { RESERVATION_LINK_SENT_TASK } from "@/lib/reservations";
 import { requestHeadline, requestSummaryLines, requestTimeShape } from "@/lib/request-view";
@@ -66,6 +67,7 @@ export async function loadLeadView(
   ui: UiCopy,
   lang: UiLang,
 ): Promise<LeadViewDTO | null> {
+  const started = Date.now();
   const now = new Date();
   const instanceLabels = await loadInstanceFieldLabels(tenantId);
   const labels = requestFieldLabels(ui, instanceLabels);
@@ -74,7 +76,15 @@ export async function loadLeadView(
     prisma.lead.findFirst({ where: { id: leadId, tenantId }, include: viewInclude }),
     prisma.tenant.findUnique({ where: { id: tenantId }, select: { timezone: true } }),
   ]);
-  if (!lead || !tenant) return null;
+  if (!lead || !tenant) {
+    logCrmPerf("crm.load_lead_view", {
+      tenantId,
+      leadId,
+      found: false,
+      ms: Date.now() - started,
+    });
+    return null;
+  }
 
   const latestConversation = lead.conversations[0] ?? null;
   const rawMessages = latestConversation
@@ -214,7 +224,7 @@ export async function loadLeadView(
     };
   }
 
-  return {
+  const dto = {
     ...row,
     openTask,
     phone: formatPhoneDisplay(phone),
@@ -241,4 +251,11 @@ export async function loadLeadView(
       status: r.status,
     })),
   };
+  logCrmPerf("crm.load_lead_view", {
+    tenantId,
+    leadId,
+    found: true,
+    ms: Date.now() - started,
+  });
+  return dto;
 }

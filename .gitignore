@@ -15,3 +15,5 @@ nginx/run/
 nginx/certs/
 .agent/
 marketing-materials/
+.vercel
+.env*

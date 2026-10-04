@@ -3,6 +3,7 @@ import { persistInboundIfNew } from "@/lib/conversations";
 import { verifyZernioSignature } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { enqueueAgentTurn } from "@/lib/flow/run-turn";
+import { timeAsync } from "@/lib/perf";
 import {
   contactDisplayName,
   instagramIdentityFields,
@@ -82,32 +83,58 @@ export async function POST(req: Request) {
     }
   }
 
-  const inserted = await persistInboundIfNew({
-    tenantId: channel.tenantId,
-    channelId: channel.id,
-    agentId: channel.agentId,
-    providerMessageId: inbound.platformMessageId,
-    from: inbound.from,
-    text: inbound.text,
-    displayName: contactDisplayName({
-      name: senderName,
-      username: channel.provider === "instagram" ? senderUsername : undefined,
-      fallback: inbound.from,
+  const started = Date.now();
+  const { result: inserted, ms: persist_ms } = await timeAsync(() =>
+    persistInboundIfNew({
+      tenantId: channel.tenantId,
+      channelId: channel.id,
+      agentId: channel.agentId,
+      providerMessageId: inbound.platformMessageId,
+      from: inbound.from,
+      text: inbound.text,
+      displayName: contactDisplayName({
+        name: senderName,
+        username: channel.provider === "instagram" ? senderUsername : undefined,
+        fallback: inbound.from,
+      }),
+      extraFields: {
+        zernioConversationId: inbound.conversationId,
+        // Instagram identity only — never store WA phone as instagramUsername / profile name as booking name.
+        ...(channel.provider === "instagram" || inbound.platform === "instagram"
+          ? instagramIdentityFields(senderName, senderUsername)
+          : {}),
+      },
     }),
-    extraFields: {
-      zernioConversationId: inbound.conversationId,
-      // Instagram identity only — never store WA phone as instagramUsername / profile name as booking name.
-      ...(channel.provider === "instagram" || inbound.platform === "instagram"
-        ? instagramIdentityFields(senderName, senderUsername)
-        : {}),
-    },
-  });
-  if (!inserted) return new Response("ok", { status: 200 });
+  );
+  if (!inserted) {
+    console.log(
+      JSON.stringify({
+        msg: "zernio.inbound",
+        tenantId: channel.tenantId,
+        duplicate: true,
+        persist_ms,
+        ms: Date.now() - started,
+      }),
+    );
+    return new Response("ok", { status: 200 });
+  }
 
-  await enqueueAgentTurn({
-    tenantId: channel.tenantId,
-    conversationId: inserted.conversationId,
-    triggerMessageId: inserted.messageId,
-  });
+  const { ms: enqueue_ms } = await timeAsync(() =>
+    enqueueAgentTurn({
+      tenantId: channel.tenantId,
+      conversationId: inserted.conversationId,
+      triggerMessageId: inserted.messageId,
+    }),
+  );
+  console.log(
+    JSON.stringify({
+      msg: "zernio.inbound",
+      tenantId: channel.tenantId,
+      conversationId: inserted.conversationId,
+      persist_ms,
+      enqueue_ms,
+      ms: Date.now() - started,
+    }),
+  );
   return NextResponse.json({ ok: true });
 }
