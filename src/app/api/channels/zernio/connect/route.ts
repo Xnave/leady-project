@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireTenantId } from "@/lib/tenant";
+import { tenantRoleOr403 } from "@/lib/tenant-role";
 import { ensureZernioProfile } from "@/lib/channels/zernio-connect";
 import { zernioConfigured, zernioConnectUrl } from "@/lib/zernio";
 import { appOrigin } from "@/lib/request-url";
@@ -11,7 +11,9 @@ function parsePlatform(value: unknown): Platform {
 }
 
 export async function POST(req: Request) {
-  const tenantId = await requireTenantId();
+  const access = await tenantRoleOr403("manager");
+  if (access instanceof Response) return access;
+  const { tenantId } = access;
   if (!zernioConfigured()) {
     return NextResponse.json({ error: "Zernio is not configured" }, { status: 400 });
   }

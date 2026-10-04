@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireTenantId } from "@/lib/tenant";
+import { tenantRoleOr403 } from "@/lib/tenant-role";
 import { flowForCatalog, normalizeCatalogId, type CatalogId } from "@/lib/flow/catalog";
 import { validateFlow } from "@/lib/flow/validate";
 import { bookingCollectFromFlow } from "@/lib/flow/booking-collect";
@@ -9,7 +9,9 @@ import { FlowConfigError } from "@/lib/flow/types";
 import { redirectPath } from "@/lib/request-url";
 
 export async function POST(req: Request) {
-  const tenantId = await requireTenantId();
+  const access = await tenantRoleOr403("platform");
+  if (access instanceof Response) return access;
+  const { tenantId } = access;
   const form = await req.formData();
   const agentId = String(form.get("agentId"));
   const agent = await prisma.agent.findFirstOrThrow({

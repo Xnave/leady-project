@@ -4,6 +4,7 @@ import { getUiLang, getUiTheme } from "@/lib/cookies";
 import { prisma } from "@/lib/db";
 import { getNavCounts } from "@/lib/nav-counts";
 import { requireTenantId } from "@/lib/tenant";
+import { canManageTenant } from "@/lib/tenant-role";
 import { actingAsLabel, uiCopy } from "@/lib/ui";
 import { SidebarNav } from "@/components/SidebarNav";
 import { EnsureActiveOrg } from "@/components/EnsureActiveOrg";
@@ -22,13 +23,16 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   let counts = null;
   let tenantName: string | null = null;
   let showTeam = false;
+  let showSettings = false;
   try {
     const tenantId = await requireTenantId();
-    const [nav, tenant] = await Promise.all([
+    const [nav, tenant, manager] = await Promise.all([
       getNavCounts(tenantId),
       prisma.tenant.findFirst({ where: { id: tenantId }, select: { name: true } }),
+      canManageTenant(),
     ]);
     counts = nav;
+    showSettings = manager;
     tenantName = tenant?.name ?? null;
 
     if (adminBypass() || !actingId) {
@@ -55,6 +59,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
         lang={lang}
         theme={theme}
         showTeam={showTeam}
+        showSettings={showSettings}
         showAccount={clerkOn}
       />
       <div className="app-main">

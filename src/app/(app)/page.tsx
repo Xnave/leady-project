@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { getNavCounts } from "@/lib/nav-counts";
 import { getUiLang } from "@/lib/cookies";
 import { requireTenantIdForPage } from "@/lib/tenant";
+import { canManageTenant } from "@/lib/tenant-role";
 import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +14,7 @@ export default async function HomePage() {
   const tenantId = await requireTenantIdForPage();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
-  const [tenant, counts, liveChannel, totalLeads] = await Promise.all([
+  const [tenant, counts, liveChannel, totalLeads, manager] = await Promise.all([
     prisma.tenant.findFirst({ where: { id: tenantId } }),
     getNavCounts(tenantId),
     prisma.channelConnection.findFirst({
@@ -24,6 +25,7 @@ export default async function HomePage() {
       },
     }),
     prisma.lead.count({ where: { tenantId, NOT: { externalUserId: { startsWith: "demo-" } } } }),
+    canManageTenant(),
   ]);
   const needsSetup = !(tenant?.intro ?? "").trim();
   const hasChannel = Boolean(liveChannel);
@@ -39,9 +41,9 @@ export default async function HomePage() {
   const cta =
     counts.leads > 0
       ? { href: "/leads?tab=needs", label: ui.crm.tabs.needs }
-      : !hasChannel
+      : manager && !hasChannel
         ? { href: "/channels", label: ui.home.ctaConnect }
-        : needsSetup
+        : manager && needsSetup
           ? { href: "/onboard", label: ui.nav.setup }
           : { href: "/leads", label: ui.home.quickLeads };
 
@@ -53,15 +55,22 @@ export default async function HomePage() {
           <span className="stat-value">{counts.leads}</span>
           <span className="stat-label">{ui.crm.tabs.needs}</span>
         </Link>
-        <Link href="/channels" className="card stat-card">
-          <span className="stat-value">{hasChannel ? "●" : "○"}</span>
-          <span className="stat-label">{hasChannel ? ui.home.whatsappOk : ui.home.whatsappOff}</span>
-        </Link>
+        {manager ? (
+          <Link href="/channels" className="card stat-card">
+            <span className="stat-value">{hasChannel ? "●" : "○"}</span>
+            <span className="stat-label">{hasChannel ? ui.home.whatsappOk : ui.home.whatsappOff}</span>
+          </Link>
+        ) : (
+          <div className="card stat-card">
+            <span className="stat-value">{hasChannel ? "●" : "○"}</span>
+            <span className="stat-label">{hasChannel ? ui.home.whatsappOk : ui.home.whatsappOff}</span>
+          </div>
+        )}
         <Link href={cta.href} className="btn">
           {cta.label}
         </Link>
       </div>
-      {setupIncomplete ? <SetupJourney ui={ui} steps={journey} /> : null}
+      {manager && setupIncomplete ? <SetupJourney ui={ui} steps={journey} /> : null}
     </div>
   );
 }

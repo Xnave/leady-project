@@ -6,14 +6,14 @@ import { prisma } from "@/lib/db";
 import { loadInstanceConfig } from "@/lib/capability-instances";
 import { parseBookingConfig } from "@/lib/flow/booking-config";
 import { getUiLang } from "@/lib/cookies";
-import { requireTenantIdForPage } from "@/lib/tenant";
+import { requireTenantRoleForPage } from "@/lib/tenant-role";
 import type { FlowDefinition, TalkStage } from "@/lib/flow/types";
 import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
 
 export default async function OnboardPage() {
-  const tenantId = await requireTenantIdForPage();
+  const { tenantId } = await requireTenantRoleForPage("manager");
   const lang = await getUiLang();
   const ui = uiCopy(lang);
   const tenant = await prisma.tenant.findFirst({ where: { id: tenantId } });

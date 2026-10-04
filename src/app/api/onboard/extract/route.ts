@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { extractOnboardDetails } from "@/lib/flow/onboard-extract";
 import { llmConfigured } from "@/lib/flow/model";
-import { requireTenantId } from "@/lib/tenant";
+import { tenantRoleOr403 } from "@/lib/tenant-role";
 
 export async function POST(req: Request) {
-  await requireTenantId();
+  const access = await tenantRoleOr403("manager");
+  if (access instanceof Response) return access;
   const body = (await req.json().catch(() => ({}))) as { text?: string };
   const text = String(body.text ?? "").trim();
   if (!text) {
