@@ -1,7 +1,7 @@
 import type { UiCopy } from "./types";
 
 export const he: UiCopy = {
-  product: "לידי",
+  product: "Zapidly",
   nav: {
     home: "בית",
     setup: "הגדרה",

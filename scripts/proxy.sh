@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$ROOT/.env"
-PORT="${LEADY_DEV_PORT:-3000}"
+PORT="${ZAPIDLY_DEV_PORT:-3000}"
 CMD="${1:-start}"
 
 load_env() {

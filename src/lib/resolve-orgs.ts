@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { normalizeEmail } from "@/lib/org-roles";
 
 /**
- * Clerk org ids this user can use in Leady (membership + a Tenant row).
+ * Clerk org ids this user can use in Zapidly (membership + a Tenant row).
  * Ignores personal/other Clerk orgs that are not provisioned tenants.
  */
 export async function resolveAccessibleOrgIds(

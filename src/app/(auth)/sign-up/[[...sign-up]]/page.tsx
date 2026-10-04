@@ -1,4 +1,5 @@
 import { SignUp } from "@clerk/nextjs";
+import { BrandMark } from "@/components/BrandMark";
 import { isClerkConfigured } from "@/lib/clerk";
 import { getUiLang } from "@/lib/cookies";
 import { uiCopy } from "@/lib/ui";
@@ -21,7 +22,7 @@ export default async function SignUpPage() {
   return (
     <div className="auth-page">
       <div className="auth-brand">
-        <span className="auth-brand-mark">L</span>
+        <BrandMark id="auth" size={36} />
         <span>{ui.product}</span>
       </div>
       <SignUp

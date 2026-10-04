@@ -14,7 +14,8 @@ export async function GET(req: Request) {
     const channel = await prisma.channelConnection.findFirst({
       where: { verifyToken: token },
     });
-    if (challenge && (channel || token.startsWith("leady-"))) {
+    // "leady-" = tokens issued before the rename to Zapidly.
+    if (challenge && (channel || token.startsWith("zapidly-") || token.startsWith("leady-"))) {
       return new Response(challenge, { status: 200 });
     }
   }

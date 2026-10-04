@@ -27,7 +27,7 @@ export async function ensureLocalDemoChannel(tenantId: string): Promise<string> 
       apiBase: "https://zernio.com/api/v1",
       accessTokenEnc: encryptSecret("demo"),
       hmacSecretEnc: encryptSecret("demo"),
-      verifyToken: `leady-${tenantId.slice(0, 12)}`,
+      verifyToken: `zapidly-${tenantId.slice(0, 12)}`,
       enabled: true,
     },
   });

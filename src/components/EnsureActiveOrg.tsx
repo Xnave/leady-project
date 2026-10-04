@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 /**
- * Activates the Leady tenant org when the server provides `organizationId`.
+ * Activates the Zapidly tenant org when the server provides `organizationId`.
  * Platform admins with no org stay on /admin — never bounce them to /activating.
  */
 export function EnsureActiveOrg({
@@ -28,7 +28,7 @@ export function EnsureActiveOrg({
     // Platform admin console does not require an active org.
     if (pathname === "/admin" || pathname.startsWith("/admin/")) return;
 
-    // Server-chosen Leady org wins over whatever is currently active.
+    // Server-chosen Zapidly org wins over whatever is currently active.
     if (organizationId && orgId !== organizationId) {
       if (activatingRef.current) return;
       activatingRef.current = true;
@@ -53,7 +53,7 @@ export function EnsureActiveOrg({
       return;
     }
 
-    // Already in some org — leave it; pages that need a Leady tenant redirect themselves.
+    // Already in some org — leave it; pages that need a Zapidly tenant redirect themselves.
     if (orgId) return;
 
     if (

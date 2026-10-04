@@ -1,6 +1,6 @@
 # Agent runtime: async messaging, multi-tenancy, HITL
 
-This document describes how Leady should run agents. It is the implementation guide for the v1 architecture: **one tool-calling loop**, **Postgres as the source of truth**, **Inngest for async turns**, **ops-configured agents per tenant**.
+This document describes how Zapidly should run agents. It is the implementation guide for the v1 architecture: **one tool-calling loop**, **Postgres as the source of truth**, **Inngest for async turns**, **ops-configured agents per tenant**.
 
 It also explains why this is preferred over LangGraph, Temporal, CrewAI, and similar stacks for *this* product.
 
@@ -8,14 +8,14 @@ It also explains why this is preferred over LangGraph, Temporal, CrewAI, and sim
 
 ## What we are actually building
 
-Leady is not a chat app with a streaming sidebar. It is **async, multi-channel, multi-tenant messaging**:
+Zapidly is not a chat app with a streaming sidebar. It is **async, multi-channel, multi-tenant messaging**:
 
 - A lead sends a WhatsApp or Instagram message (later: a phone call).
 - Meta/HookMyApp delivers a webhook. We must ACK quickly.
 - Minutes or hours may pass between turns. There is no live WebSocket to the lead.
 - The same conversation may pause for a human (approve a quote, read a photo, fill a missing field).
 - Each business owner (tenant) has their own channels, leads, and one or more agents. Data must never leak across tenants.
-- Most agents are simple: collect info, answer from FAQs, book a meeting. Complexity is **JSON flow data** on the agent (`agents.flow` + `conversations.flow_state`), interpreted by one Inngest function — not LangGraph. See [agent-flow-as-data.md](./agent-flow-as-data.md). Optional n8n is a side-effect after the flow, not the messenger. Leady ops edits JSON; owners do not get a workflow builder.
+- Most agents are simple: collect info, answer from FAQs, book a meeting. Complexity is **JSON flow data** on the agent (`agents.flow` + `conversations.flow_state`), interpreted by one Inngest function — not LangGraph. See [agent-flow-as-data.md](./agent-flow-as-data.md). Optional n8n is a side-effect after the flow, not the messenger. Zapidly ops edits JSON; owners do not get a workflow builder.
 
 That last point drives the stack. We need a **durable conversation plus a small JSON state machine**, not a compiled graph framework.
 
@@ -68,7 +68,7 @@ LangGraph is a **state machine for LLM apps**: nodes, edges, reducers, checkpoin
 - You need first-class interrupts inside a multi-node pipeline.
 - A team is already standardized on LangChain.
 
-For Leady it is the wrong default:
+For Zapidly it is the wrong default:
 
 - **WhatsApp/IG turns are already the graph.** Each inbound message is a new job. Edges are “the lead replied” or “the owner approved,” which are *external events*, not LangGraph edges. Modeling that as a graph duplicates the conversation table.
 - **HITL is a CRM queue, not a graph interrupt.** LangGraph `interrupt()` pauses a thread in the checkpointer. Our pause must be visible in the owner dashboard, assignable, and resumable days later from a different process. That is a `hitl_tasks` row + `waiting_human`, not a pickled graph state.
@@ -82,7 +82,7 @@ Do not adopt LangGraph as the platform. If a tenant needs more stages, add them 
 ### Other options, briefly
 
 
-| Approach                                          | What it is good at                                              | Why not as Leady’s core                                                                                                                                                                      |
+| Approach                                          | What it is good at                                              | Why not as Zapidly’s core                                                                                                                                                                      |
 | ------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Raw LangChain agents**                          | Batteries for tools/RAG                                         | Heavy abstraction; still no CRM/tenancy; Python-centric                                                                                                                                      |
 | **CrewAI / AutoGen / multi-agent**                | Role-playing swarms                                             | We need *one* customer-facing agent per channel, not a debate club. Extra agents = extra cost and racey sends                                                                                |
@@ -214,7 +214,7 @@ Load the last ~30 messages plus a compact snapshot of `leads.fields` in the syst
 
 ### Isolation model
 
-- Clerk **organization** = Leady **tenant**.
+- Clerk **organization** = Zapidly **tenant**.
 - Every table has `tenant_id`. Postgres **RLS** using the org id from the session (or a worker role that sets `SET LOCAL app.tenant_id`).
 - HookMyApp: **one customer workspace per tenant**. Owners connect WhatsApp/IG via an onboarding link. Store channel id, phone/IG ids, encrypted gateway token, HMAC secret on `channel_connections`.
 - One public webhook URL. Tenant is resolved from the channel identifiers in the payload, then HMAC is verified with **that row’s** secret — never a global secret.
