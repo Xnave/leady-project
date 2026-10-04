@@ -4,6 +4,8 @@ import { runTurnNow, tryDispatchNudgeEvent, tryEnqueueAgentTurn } from "@/lib/fl
 import { prisma } from "@/lib/db";
 import { ensureLocalDemoChannel } from "@/lib/provision-tenant";
 import { requireTenantId } from "@/lib/tenant";
+import { getUiLang } from "@/lib/cookies";
+import { fillUi, uiCopy } from "@/lib/ui";
 
 async function sleep(ms: number) {
   await new Promise((r) => setTimeout(r, ms));
@@ -60,7 +62,14 @@ export async function POST(req: Request) {
     if (!lead) return NextResponse.json({ error: "Unknown lead" }, { status: 404 });
     from = lead.externalUserId;
   }
-  if (!from) from = `demo-${crypto.randomUUID().slice(0, 8)}`;
+  let displayName: string | undefined;
+  if (!from) {
+    from = `demo-${crypto.randomUUID().slice(0, 8)}`;
+    const demoLeads = await prisma.lead.count({
+      where: { tenantId, externalUserId: { startsWith: "demo-" } },
+    });
+    displayName = fillUi(uiCopy(await getUiLang()).demo.testCustomerName, { n: demoLeads + 1 });
+  }
 
   const providerMessageId = `demo-${crypto.randomUUID()}`;
   const inserted = await persistInboundIfNew({
@@ -70,6 +79,7 @@ export async function POST(req: Request) {
     providerMessageId,
     from,
     text,
+    displayName,
   });
   if (!inserted) {
     return NextResponse.json({ error: "Duplicate message" }, { status: 409 });

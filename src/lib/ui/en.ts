@@ -482,6 +482,7 @@ export const en: UiCopy = {
     actions: "Actions",
   },
   demo: {
+    testCustomerName: "Test customer #{n}",
     leadProfile: "Customer profile",
     simulateAs: "Simulate as customer",
     agentContext: "Agent context",

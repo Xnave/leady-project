@@ -482,6 +482,7 @@ export const he: UiCopy = {
     actions: "פעולות",
   },
   demo: {
+    testCustomerName: "לקוח לדוגמה #{n}",
     leadProfile: "פרטי לקוח",
     simulateAs: "סימולציה כלקוח",
     agentContext: "הקשר הסוכן",

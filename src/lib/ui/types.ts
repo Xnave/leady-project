@@ -125,6 +125,7 @@ export type UiCopy = {
     actions: string;
   };
   demo: {
+    testCustomerName: string;
     leadProfile: string;
     simulateAs: string;
     agentContext: string;
