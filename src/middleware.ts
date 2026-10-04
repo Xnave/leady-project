@@ -41,7 +41,7 @@ const withClerk = clerkMiddleware(
   {
     // Required for *.vercel.app: Clerk cannot use DNS CNAMEs there, so FAPI is
     // proxied through this app at /__clerk (Dashboard → Domains → Verify).
-    frontendApiProxy: { enabled: true },
+    frontendApiProxy: { enabled: !!process.env.NEXT_PUBLIC_CLERK_PROXY_URL },
   },
 );
 
