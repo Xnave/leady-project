@@ -122,6 +122,19 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
     />
   );
 
+  // The list's "Where it stands" cell is one truncated line; here it is shown in full.
+  // Skipped when it is just the next step, which the editor below already shows.
+  const standText = d.stand.trim();
+  const stand =
+    standText && standText !== d.nextStepText?.trim() ? (
+      <section className="crm-sec" aria-label={ui.crm.cols.stand}>
+        <div className="crm-sec-h">{ui.crm.cols.stand}</div>
+        <p className="crm-stand-full">
+          <bdi>{standText}</bdi>
+        </p>
+      </section>
+    ) : null;
+
   const notes = <LeadNotes notes={d.notes} ui={ui} lang={lang} clock={clock} onAdd={lv.addNote} onPin={lv.pinNote} />;
 
   const tabs = (
@@ -148,6 +161,7 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
           {tabs}
         </div>
         <aside className="crm-full-side">
+          {stand}
           {next}
           {notes}
           <LeadDetails dto={d} ui={ui} />
@@ -161,6 +175,7 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
       {head}
       {task}
       {fubar}
+      {stand}
       {next}
       {notes}
       <div className="crm-lv-tabwrap">{tabs}</div>

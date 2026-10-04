@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LeadViewDTO } from "@/lib/crm/view";
-import { isClosedStage, RANKED_STAGES, stageRank, type PipelineStage } from "@/lib/crm/types";
+import { isClosedStage, RANKED_STAGES, type PipelineStage } from "@/lib/crm/types";
 import type { UiCopy } from "@/lib/ui";
 import { Icon } from "./Icon";
 import { autoReasonKey, manualStageActor } from "./lead-view";
@@ -20,7 +20,7 @@ export function stageWhy(dto: Pick<LeadViewDTO, "stage" | "stageSource" | "stage
 }
 
 /**
- * Five points for the open pipeline. A closed lead (lost / not relevant) shows every
+ * Points for the open pipeline (`link_sent` only while the lead is on it). A closed lead (lost / not relevant) shows every
  * point dashed and none current; its stage is on the chip below. The chip opens the
  * same `StageMenu` as the list.
  */
@@ -37,24 +37,25 @@ export function StageStepper({
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const closed = isClosedStage(dto.stage);
-  const cur = stageRank(dto.stage);
+  const steps = RANKED_STAGES.filter((s) => s !== "link_sent" || dto.stage === "link_sent");
+  const cur = (steps as readonly PipelineStage[]).indexOf(dto.stage);
   const label = stageLabel(ui, wonLabel, dto.stage);
 
   return (
     <div className="crm-stepper">
       <div className={["crm-steps", closed && "closed", isColdNow(dto) && "cold"].filter(Boolean).join(" ")} aria-hidden="true">
-        {RANKED_STAGES.map((s, i) => {
+        {steps.map((s, i) => {
           const cls = closed ? "" : i < cur ? " done" : i === cur ? " cur" : "";
           return (
             <span key={s} className={`crm-st${cls}`}>
               <span className="crm-st-pt" />
-              {i < RANKED_STAGES.length - 1 ? <span className="crm-st-ln" /> : null}
+              {i < steps.length - 1 ? <span className="crm-st-ln" /> : null}
             </span>
           );
         })}
       </div>
       <div className="crm-step-labels" aria-hidden="true">
-        {RANKED_STAGES.map((s) => (
+        {steps.map((s) => (
           <span key={s} className={s === dto.stage ? "cur" : undefined}>
             {stageLabel(ui, wonLabel, s)}
           </span>
