@@ -1,6 +1,7 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import { TENANT_COOKIE } from "@/lib/cookies";
+import { devAuthBypassEnabled } from "@/lib/dev-auth-bypass";
 import { normalizeEmail } from "@/lib/org-roles";
 
 const DEFAULT_PLATFORM_ADMIN_EMAILS = [
@@ -9,7 +10,7 @@ const DEFAULT_PLATFORM_ADMIN_EMAILS = [
 ];
 
 export function adminBypass(): boolean {
-  return process.env.DEV_AUTH_BYPASS === "true";
+  return devAuthBypassEnabled();
 }
 
 export function platformAdminEmails(): Set<string> {

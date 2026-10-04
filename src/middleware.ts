@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
+import { devAuthBypassEnabled } from "@/lib/dev-auth-bypass";
 
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
@@ -12,12 +13,6 @@ const isPublicRoute = createRouteMatcher([
   "/api/hookmyapp/sync(.*)",
   "/api/dev/inbound(.*)",
 ]);
-
-/** Local-only. Never bypass on Vercel even if DEV_AUTH_BYPASS is set in project env. */
-function authBypass(): boolean {
-  if (process.env.VERCEL) return false;
-  return process.env.DEV_AUTH_BYPASS === "true";
-}
 
 /** Both keys required — clerkMiddleware throws if the secret is missing. */
 function clerkKeysReady(): boolean {
@@ -46,7 +41,7 @@ const withClerk = clerkMiddleware(
 );
 
 export default function middleware(req: NextRequest, event: NextFetchEvent) {
-  if (authBypass() || !clerkKeysReady()) {
+  if (devAuthBypassEnabled() || !clerkKeysReady()) {
     return NextResponse.next();
   }
   return withClerk(req, event);
