@@ -331,6 +331,7 @@ export async function loadTurnContext(
               providerAccountId: true,
               apiBase: true,
               providerExternalId: true,
+              agentRepliesEnabled: true,
             },
           },
           tenant: {
@@ -340,6 +341,7 @@ export async function loadTurnContext(
               intro: true,
               chatLanguage: true,
               idleResetDays: true,
+              agentRepliesEnabled: true,
             },
           },
           messages: {
@@ -427,6 +429,7 @@ export async function loadTurnContext(
         ? conversation.tenant.chatLanguage
         : "multi",
       idleResetDays: conversation.tenant.idleResetDays ?? 5,
+      agentRepliesEnabled: conversation.tenant.agentRepliesEnabled !== false,
       capabilityInstances,
     },
     agent,
@@ -452,6 +455,7 @@ export async function loadTurnContext(
     channel: {
       provider: conversation.channel.provider,
       customerPhone: leadPhone,
+      agentRepliesEnabled: conversation.channel.agentRepliesEnabled !== false,
     },
     capabilityState,
     connection: {

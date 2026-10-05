@@ -139,6 +139,8 @@ export type TenantSnapshot = {
   intro: string;
   chatLanguage: ChatLanguage;
   idleResetDays?: number;
+  /** When false, agent never replies (inbound still persists). Default true. */
+  agentRepliesEnabled?: boolean;
   /**
    * Everything a tenant configures per capability. The snapshot never grows a
    * field when a capability is added — the capability parses its own instance.
@@ -179,6 +181,8 @@ export type TalkOutcome = {
 export type ChannelSnapshot = {
   provider: string;
   customerPhone?: string;
+  /** When false, agent never replies on this channel. Default true. */
+  agentRepliesEnabled?: boolean;
 };
 
 export type TurnContext = {

@@ -15,8 +15,6 @@ const isPublicRoute = createRouteMatcher([
   "/api/dev/inbound(.*)",
 ]);
 
-const proxyUrl = clerkClientProxyUrl();
-
 const withClerk = clerkMiddleware(
   async (auth, req) => {
     if (isPublicRoute(req)) {
@@ -28,13 +26,16 @@ const withClerk = clerkMiddleware(
     signIn.searchParams.set("redirect_url", req.url);
     await auth.protect({ unauthenticatedUrl: signIn.toString() });
   },
-  {
-    // Required for *.vercel.app: Clerk cannot use DNS CNAMEs there, so FAPI is
-    // proxied through this app at /__clerk (Dashboard → Domains → Verify).
-    // Use a relative proxyUrl so preview/staging hosts handshake on their own
-    // origin instead of a production URL baked into NEXT_PUBLIC_CLERK_PROXY_URL.
-    ...(proxyUrl ? { proxyUrl } : {}),
-    frontendApiProxy: { enabled: Boolean(proxyUrl) },
+  (req) => {
+    // Proxy only on *.vercel.app. Custom domains (app.zapidly.com) use Clerk DNS —
+    // enabling /__clerk there causes host_invalid on handshake.
+    const proxyUrl = clerkClientProxyUrl(req.nextUrl.hostname);
+    return {
+      ...(proxyUrl ? { proxyUrl } : {}),
+      frontendApiProxy: {
+        enabled: (url) => Boolean(clerkClientProxyUrl(url.hostname)),
+      },
+    };
   },
 );
 

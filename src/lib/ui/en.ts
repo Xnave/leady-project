@@ -480,6 +480,14 @@ export const en: UiCopy = {
     notConnectedHint: "Connect your business number to receive WhatsApp leads.",
     identity: "Account",
     actions: "Actions",
+    agentRepliesTitle: "Agent replies",
+    agentRepliesHint:
+      "When off, messages still arrive in the CRM but the agent does not reply. You can also mute a single channel below.",
+    agentRepliesOn: "Replying",
+    agentRepliesOff: "Stopped",
+    channelAgentReplies: "Agent replies on this channel",
+    agentRepliesCol: "Agent replies",
+    agentRepliesSaveFailed: "Could not update agent replies",
   },
   demo: {
     testCustomerName: "Test customer #{n}",

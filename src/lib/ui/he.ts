@@ -480,6 +480,14 @@ export const he: UiCopy = {
     notConnectedHint: "חברו את מספר העסק כדי לקבל לידים מוואטסאפ.",
     identity: "חשבון",
     actions: "פעולות",
+    agentRepliesTitle: "תשובות הסוכן",
+    agentRepliesHint:
+      "כשכבוי, הודעות עדיין מגיעות ל-CRM אבל הסוכן לא עונה. אפשר גם להשתיק ערוץ בודד למטה.",
+    agentRepliesOn: "עונה",
+    agentRepliesOff: "מושהה",
+    channelAgentReplies: "תשובות סוכן בערוץ זה",
+    agentRepliesCol: "תשובות סוכן",
+    agentRepliesSaveFailed: "לא הצלחנו לעדכן את תשובות הסוכן",
   },
   demo: {
     testCustomerName: "לקוח לדוגמה #{n}",

@@ -17,25 +17,23 @@ function hostnameWithoutPort(hostname: string | undefined): string {
 }
 
 /**
- * Relative FAPI proxy path so each host (production + Vercel preview/staging)
- * proxies through itself. An absolute NEXT_PUBLIC_CLERK_PROXY_URL pinned to
- * production breaks handshake on any other *.vercel.app URL.
+ * Relative FAPI proxy path for hosts that cannot CNAME Clerk (*.vercel.app).
+ * Custom domains (e.g. app.zapidly.com) must NOT proxy — they use clerk.<domain>
+ * DNS. Never infer proxy from `VERCEL` alone: middleware on a custom domain
+ * still runs on Vercel and would break handshake with host_invalid.
  */
 export function clerkClientProxyUrl(hostname?: string): string | undefined {
   const host = hostnameWithoutPort(hostname);
-  if (host.endsWith(".vercel.app") || (!host && process.env.VERCEL)) return "/__clerk";
+  if (host.endsWith(".vercel.app")) return "/__clerk";
+  // Known non-vercel host → DNS / CNAME only.
+  if (host) return undefined;
+  // No hostname (tests / rare call sites): allow an explicit relative path only.
   const raw = process.env.NEXT_PUBLIC_CLERK_PROXY_URL?.trim();
-  if (!raw) return undefined;
-  if (raw.startsWith("/")) return raw;
-  try {
-    return new URL(raw).pathname || undefined;
-  } catch {
-    return undefined;
-  }
+  if (raw?.startsWith("/")) return raw;
+  return undefined;
 }
 
 /** *.vercel.app cannot CNAME Clerk FAPI, so those hosts must proxy. */
 export function shouldProxyClerkFrontendApi(hostname: string): boolean {
-  if (hostnameWithoutPort(hostname).endsWith(".vercel.app")) return true;
   return Boolean(clerkClientProxyUrl(hostname));
 }

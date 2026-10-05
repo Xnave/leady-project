@@ -123,6 +123,13 @@ export type UiCopy = {
     notConnectedHint: string;
     identity: string;
     actions: string;
+    agentRepliesTitle: string;
+    agentRepliesHint: string;
+    agentRepliesOn: string;
+    agentRepliesOff: string;
+    channelAgentReplies: string;
+    agentRepliesCol: string;
+    agentRepliesSaveFailed: string;
   };
   demo: {
     testCustomerName: string;

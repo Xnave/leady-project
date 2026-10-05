@@ -26,6 +26,8 @@ model Tenant {
   timezone               String   @default("Asia/Jerusalem")
   digestEnabled          Boolean  @default(false)
   digestHour             Int      @default(8)
+  /** When false, agent never replies (inbound still persists). */
+  agentRepliesEnabled    Boolean  @default(true)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
@@ -140,6 +142,8 @@ model ChannelConnection {
   hmacSecretEnc      String
   verifyToken        String
   enabled            Boolean  @default(true)
+  /** When false, agent never replies on this channel (inbound still persists). */
+  agentRepliesEnabled Boolean @default(true)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
