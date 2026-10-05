@@ -1,8 +1,8 @@
 import { SignIn } from "@clerk/nextjs";
-import { auth } from "@clerk/nextjs/server";
 import { BrandMark } from "@/components/BrandMark";
 import { SwitchAccountActions } from "@/components/SwitchAccountActions";
-import { isClerkConfigured } from "@/lib/clerk";
+import { isClerkReady } from "@/lib/clerk";
+import { getClerkAuth } from "@/lib/clerk-auth";
 import { getUiLang } from "@/lib/cookies";
 import { uiCopy } from "@/lib/ui";
 
@@ -10,7 +10,7 @@ export default async function SignInPage() {
   const lang = await getUiLang();
   const ui = uiCopy(lang);
 
-  if (!isClerkConfigured()) {
+  if (!isClerkReady()) {
     return (
       <div className="auth-page">
         <div className="card stack form-narrow auth-message">
@@ -21,7 +21,7 @@ export default async function SignInPage() {
     );
   }
 
-  const { userId } = await auth();
+  const { userId } = await getClerkAuth();
 
   return (
     <div className="auth-page">

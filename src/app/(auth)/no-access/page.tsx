@@ -1,21 +1,21 @@
-import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { SwitchAccountActions } from "@/components/SwitchAccountActions";
 import { primaryEmailFromClerkUser } from "@/lib/admin";
-import { isClerkConfigured } from "@/lib/clerk";
+import { isClerkReady } from "@/lib/clerk";
+import { getClerkAuth, getClerkUser } from "@/lib/clerk-auth";
 import { getUiLang } from "@/lib/cookies";
 import { resolveAccessibleOrgIds } from "@/lib/resolve-orgs";
 import { uiCopy } from "@/lib/ui";
 
 export default async function NoAccessPage() {
-  if (!isClerkConfigured()) {
+  if (!isClerkReady()) {
     redirect("/sign-in");
   }
 
-  const { userId } = await auth();
+  const { userId } = await getClerkAuth();
   if (!userId) redirect("/sign-in");
 
-  const user = await currentUser();
+  const user = await getClerkUser();
   const email = await primaryEmailFromClerkUser(user);
   // Owners who already have (or just got) membership must activate — not stay here.
   const orgIds = await resolveAccessibleOrgIds(userId, email);
