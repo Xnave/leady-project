@@ -155,6 +155,8 @@ export async function enqueueAgentTurn(opts: {
   conversationId: string;
   triggerMessageId: string;
   resume?: boolean;
+  /** Epoch ms when the inbound was ready to turn (for queue_ms). */
+  inboundAt?: number;
 }) {
   await inngest.send({
     name: "agent/turn.requested",
@@ -164,6 +166,7 @@ export async function enqueueAgentTurn(opts: {
       conversationId: opts.conversationId,
       resume: opts.resume,
       triggerMessageId: opts.triggerMessageId,
+      inboundAt: opts.inboundAt ?? Date.now(),
     },
   });
 }
@@ -201,11 +204,31 @@ type RunTurnOpts = {
   conversationId: string;
   resume?: boolean;
   triggerMessageId?: string;
+  /** Epoch ms stamped at enqueue — worker start minus this is queue_ms. */
+  inboundAt?: number;
+};
+
+export type SkippedTurnResult = {
+  skipped: "missing_conversation";
+  conversationId: string;
+  stage: string;
+  action: string;
+  nudgeEvent: null;
 };
 
 /** One turn. Every CRM refresh the turn triggers collapses into one, after it ends. */
 export async function runTurnNow(opts: RunTurnOpts) {
   const started = Date.now();
+  const queue_ms =
+    typeof opts.inboundAt === "number" && Number.isFinite(opts.inboundAt)
+      ? started - opts.inboundAt
+      : undefined;
+  logTurn("enter", {
+    tenantId: opts.tenantId,
+    conversationId: opts.conversationId,
+    triggerMessageId: opts.triggerMessageId,
+    ...(queue_ms != null ? { queue_ms } : {}),
+  });
   const { result, perf } = await runWithTurnPerf(async () =>
     batchLeadRefreshes(() => runTurn(opts)),
   );
@@ -216,9 +239,11 @@ export async function runTurnNow(opts: RunTurnOpts) {
       "previousConversationId" in result ? result.previousConversationId : undefined,
     stage: result.stage,
     action: result.action,
-    effects: result.effects,
+    effects: "effects" in result ? result.effects : undefined,
+    skipped: "skipped" in result ? result.skipped : undefined,
     ms: Date.now() - started,
     triggerMessageId: opts.triggerMessageId,
+    ...(queue_ms != null ? { queue_ms } : {}),
     ...perf,
   });
   return result;
@@ -226,7 +251,26 @@ export async function runTurnNow(opts: RunTurnOpts) {
 
 async function runTurn(opts: RunTurnOpts) {
   ensureFlowRegistry();
-  const ctx = await loadTurnContext(opts.tenantId, opts.conversationId);
+  let ctx: Awaited<ReturnType<typeof loadTurnContext>>;
+  try {
+    ctx = await loadTurnContext(opts.tenantId, opts.conversationId);
+  } catch (err) {
+    // Conversation deleted between enqueue and worker — same skip as the old load-context step.
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? String((err as { code: unknown }).code)
+        : "";
+    if (code === "P2025") {
+      return {
+        skipped: "missing_conversation",
+        conversationId: opts.conversationId,
+        stage: "",
+        action: "",
+        nudgeEvent: null,
+      } satisfies SkippedTurnResult;
+    }
+    throw err;
+  }
   const outboundKey = opts.triggerMessageId
     ? `out-${opts.conversationId}-${opts.triggerMessageId}`
     : undefined;
