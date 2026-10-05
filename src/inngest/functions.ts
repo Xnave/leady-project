@@ -14,43 +14,41 @@ export const runAgentTurn = inngest.createFunction(
   },
   { event: "agent/turn.requested" },
   async ({ event, step }) => {
-    const { tenantId, conversationId, resume, triggerMessageId } = event.data as {
+    const { tenantId, conversationId, resume, triggerMessageId, inboundAt } = event.data as {
       tenantId: string;
       conversationId: string;
       resume?: boolean;
       triggerMessageId?: string;
+      inboundAt?: number;
     };
 
-    const loaded = await step.run("load-context", async () => {
-      const convo = await prisma.conversation.findFirst({
-        where: { id: conversationId, tenantId },
-        select: {
-          id: true,
-          flowState: true,
-          status: true,
-          flowVersion: true,
-        },
-      });
-      return {
-        found: Boolean(convo),
-        flowState: convo?.flowState ?? null,
-        status: convo?.status ?? null,
-        flowVersion: convo?.flowVersion ?? null,
-      };
-    });
-
-    if (!loaded.found) {
-      return { skipped: "missing_conversation" };
-    }
-
-    const result = await step.run("interpret", () =>
-      runTurnNow({
+    // Single durable step — missing convo is skipped inside runTurnNow (no extra load-context).
+    const result = await step.run("interpret", async () => {
+      const interpretStarted = Date.now();
+      const turn = await runTurnNow({
         tenantId,
         conversationId,
         resume,
         triggerMessageId,
-      }),
-    );
+        inboundAt,
+      });
+      console.log(
+        JSON.stringify({
+          msg: "inngest.turn",
+          tenantId,
+          conversationId,
+          interpret_ms: Date.now() - interpretStarted,
+          stage: turn.stage,
+          action: turn.action,
+          skipped: "skipped" in turn ? turn.skipped : undefined,
+        }),
+      );
+      return turn;
+    });
+
+    if ("skipped" in result && result.skipped === "missing_conversation") {
+      return { skipped: "missing_conversation" };
+    }
 
     const nudgeEvent = (result as { nudgeEvent?: NudgeRequestedEvent | null }).nudgeEvent;
     if (nudgeEvent) {
@@ -59,8 +57,6 @@ export const runAgentTurn = inngest.createFunction(
 
     return {
       ...result,
-      preFlowState: loaded.flowState,
-      preStatus: loaded.status,
       nudgeScheduled: Boolean(nudgeEvent),
     };
   },

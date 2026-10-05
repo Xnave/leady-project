@@ -226,4 +226,4 @@ export function buildLeadRowDTO(i: LeadRowInput, ui: UiCopy, now: Date): LeadRow
 }
 
 export { loadLeadRows } from "./view-rows";
-export { loadLeadView } from "./view-lead";
+export { loadLeadView, type LeadViewScope } from "./view-lead";

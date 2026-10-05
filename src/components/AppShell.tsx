@@ -1,9 +1,9 @@
 import { adminBypass, impersonatedTenantId, isAdminSession } from "@/lib/admin";
 import { isClerkConfigured } from "@/lib/clerk";
 import { getUiLang, getUiTheme } from "@/lib/cookies";
-import { prisma } from "@/lib/db";
 import { getNavCounts } from "@/lib/nav-counts";
-import { requireTenantId } from "@/lib/tenant";
+import { canManageTeamNav } from "@/lib/team";
+import { getTenantShell, requireTenantId } from "@/lib/tenant";
 import { canManageTenant } from "@/lib/tenant-role";
 import { actingAsLabel, uiCopy } from "@/lib/ui";
 import { SidebarNav } from "@/components/SidebarNav";
@@ -15,9 +15,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   const ui = uiCopy(lang);
   const admin = await isAdminSession();
   const actingId = await impersonatedTenantId();
-  const acting = actingId
-    ? await prisma.tenant.findUnique({ where: { id: actingId }, select: { name: true } })
-    : null;
+  const acting = actingId ? await getTenantShell(actingId) : null;
   const clerkOn = isClerkConfigured();
 
   let counts = null;
@@ -26,24 +24,16 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   let showSettings = false;
   try {
     const tenantId = await requireTenantId();
-    const [nav, tenant, manager] = await Promise.all([
+    const [nav, shell, team, manager] = await Promise.all([
       getNavCounts(tenantId),
-      prisma.tenant.findFirst({ where: { id: tenantId }, select: { name: true } }),
+      getTenantShell(tenantId),
+      canManageTeamNav(tenantId),
       canManageTenant(),
     ]);
     counts = nav;
+    tenantName = shell?.name ?? null;
+    showTeam = team;
     showSettings = manager;
-    tenantName = tenant?.name ?? null;
-
-    if (adminBypass() || !actingId) {
-      try {
-        const { requireTeamActor } = await import("@/lib/team");
-        const actor = await requireTeamActor();
-        showTeam = actor.role === "owner" || actor.role === "admin";
-      } catch {
-        showTeam = false;
-      }
-    }
   } catch {
     counts = null;
   }

@@ -9,6 +9,7 @@ import {
   leadInstagramUsername,
   whatsappChatUrl,
 } from "@/lib/leads";
+import { logCrmPerf } from "@/lib/perf";
 import { REQUEST_APPROVAL_TASK } from "@/lib/requests";
 import { RESERVATION_LINK_SENT_TASK } from "@/lib/reservations";
 import { requestHeadline, requestSummaryLines, requestTimeShape } from "@/lib/request-view";
@@ -16,6 +17,8 @@ import type { UiCopy, UiLang } from "@/lib/ui";
 import { hitlReasonLabel, intentLabel, leadFieldLabel, requestKindLabel } from "@/lib/ui/labels";
 import { buildLeadTimeline, groupTimelineByDay } from "./timeline";
 import { buildLeadRowDTO, requestFieldLabels, summarizeRequest, toRequestRow, type LeadViewDTO, type OpenTaskDTO } from "./view";
+
+export type LeadViewScope = "lite" | "full";
 
 const HIDDEN_DETAIL_KEYS = new Set([
   "instagramUsername",
@@ -49,15 +52,138 @@ function buildDetails(fields: Record<string, unknown>, ui: UiCopy): { label: str
   return out;
 }
 
-const viewInclude = {
-  channel: true,
-  stageEvents: { orderBy: { createdAt: "desc" } },
-  notes: { orderBy: [{ pinned: "desc" }, { createdAt: "desc" }] },
-  adminDecisionLogs: { orderBy: { createdAt: "desc" } },
-  requests: { orderBy: { createdAt: "desc" } },
-  hitlTasks: { orderBy: { createdAt: "desc" } },
-  conversations: { orderBy: { createdAt: "desc" } },
-} satisfies Prisma.LeadInclude;
+const notesArgs = {
+  orderBy: [{ pinned: "desc" as const }, { createdAt: "desc" as const }],
+  take: 40,
+  select: {
+    id: true,
+    body: true,
+    authorLabel: true,
+    pinned: true,
+    createdAt: true,
+  },
+};
+
+const requestsArgs = {
+  orderBy: { createdAt: "desc" as const },
+  take: 20,
+  select: {
+    id: true,
+    tenantId: true,
+    leadId: true,
+    conversationId: true,
+    capabilityId: true,
+    kind: true,
+    status: true,
+    startAt: true,
+    endAt: true,
+    timeText: true,
+    contactName: true,
+    contactEmail: true,
+    contactPhone: true,
+    data: true,
+    quotedTotal: true,
+    decidedBy: true,
+    decidedAt: true,
+    createdAt: true,
+  },
+};
+
+const hitlArgs = {
+  orderBy: { createdAt: "desc" as const },
+  take: 40,
+  select: {
+    id: true,
+    type: true,
+    reason: true,
+    status: true,
+    payload: true,
+    createdAt: true,
+    completedAt: true,
+  },
+};
+
+function conversationsArgs(take: number) {
+  return {
+    orderBy: { createdAt: "desc" as const },
+    take,
+    select: {
+      id: true,
+      status: true,
+      lifecycleReason: true,
+      summary: true,
+      createdAt: true,
+      updatedAt: true,
+      messages: {
+        orderBy: { createdAt: "desc" as const },
+        take: 60,
+        select: { id: true, role: true, text: true, createdAt: true },
+      },
+    },
+  };
+}
+
+const leadCore = {
+  id: true,
+  displayName: true,
+  externalUserId: true,
+  fields: true,
+  pipelineStage: true,
+  pipelineStageSource: true,
+  pipelineStageReason: true,
+  pipelineStageChangedAt: true,
+  attentionReason: true,
+  attentionAt: true,
+  snoozedUntil: true,
+  nextStepText: true,
+  nextStepAt: true,
+  lastLeadMessageAt: true,
+  lastOutboundAt: true,
+  updatedAt: true,
+  adminUnread: true,
+  channel: { select: { provider: true } },
+  notes: notesArgs,
+  requests: requestsArgs,
+  hitlTasks: hitlArgs,
+};
+
+/** Chat-first peek: one thread, no timeline joins. */
+const liteSelect = {
+  ...leadCore,
+  conversations: conversationsArgs(1),
+} satisfies Prisma.LeadSelect;
+
+/** Full page / Activity tab: timeline relations + up to 8 conversations. */
+const fullSelect = {
+  ...leadCore,
+  stageEvents: {
+    orderBy: { createdAt: "desc" as const },
+    take: 40,
+    select: {
+      id: true,
+      from: true,
+      to: true,
+      source: true,
+      reason: true,
+      actorUserId: true,
+      createdAt: true,
+    },
+  },
+  adminDecisionLogs: {
+    orderBy: { createdAt: "desc" as const },
+    take: 40,
+    select: {
+      id: true,
+      category: true,
+      action: true,
+      actorUserId: true,
+      actorLabel: true,
+      details: true,
+      createdAt: true,
+    },
+  },
+  conversations: conversationsArgs(8),
+} satisfies Prisma.LeadSelect;
 
 /** Full lead detail for `GET /api/leads/[id]/view`. Null when the lead is not in this tenant. */
 export async function loadLeadView(
@@ -65,25 +191,50 @@ export async function loadLeadView(
   leadId: string,
   ui: UiCopy,
   lang: UiLang,
+  scope: LeadViewScope = "full",
 ): Promise<LeadViewDTO | null> {
+  const started = Date.now();
   const now = new Date();
-  const instanceLabels = await loadInstanceFieldLabels(tenantId);
+  const select = scope === "lite" ? liteSelect : fullSelect;
+
+  let labelsMs = 0;
+  let leadMs = 0;
+  const labelsP = (async () => {
+    const t0 = Date.now();
+    const instanceLabels = await loadInstanceFieldLabels(tenantId);
+    labelsMs = Date.now() - t0;
+    return instanceLabels;
+  })();
+  const leadP = (async () => {
+    const t0 = Date.now();
+    const row = await prisma.lead.findFirst({
+      where: { id: leadId, tenantId },
+      select,
+    });
+    leadMs = Date.now() - t0;
+    return row;
+  })();
+  const tenantP = prisma.tenant.findUnique({ where: { id: tenantId }, select: { timezone: true } });
+
+  const [instanceLabels, lead, tenant] = await Promise.all([labelsP, leadP, tenantP]);
   const labels = requestFieldLabels(ui, instanceLabels);
 
-  const [lead, tenant] = await Promise.all([
-    prisma.lead.findFirst({ where: { id: leadId, tenantId }, include: viewInclude }),
-    prisma.tenant.findUnique({ where: { id: tenantId }, select: { timezone: true } }),
-  ]);
-  if (!lead || !tenant) return null;
+  if (!lead || !tenant) {
+    logCrmPerf("crm.load_lead_view", {
+      tenantId,
+      leadId,
+      scope,
+      found: false,
+      labels_ms: labelsMs,
+      lead_ms: leadMs,
+      messages_ms: 0,
+      ms: Date.now() - started,
+    });
+    return null;
+  }
 
   const latestConversation = lead.conversations[0] ?? null;
-  const rawMessages = latestConversation
-    ? await prisma.message.findMany({
-        where: { tenantId, conversationId: latestConversation.id },
-        orderBy: { createdAt: "desc" },
-        take: 60,
-      })
-    : [];
+  const rawMessages = latestConversation?.messages ?? [];
   const messages = [...rawMessages].reverse();
   const lastLeadText = rawMessages.find((m) => m.role === "lead")?.text ?? null;
 
@@ -123,60 +274,85 @@ export async function loadLeadView(
     (lead.channel.provider === "whatsapp" ? lead.externalUserId : "");
   const igHandle = lead.channel.provider === "instagram" ? leadInstagramUsername(fields) : "";
 
-  const timeline = groupTimelineByDay(
-    buildLeadTimeline({
-      stageEvents: lead.stageEvents.map((e) => ({
-        id: e.id,
-        from: e.from,
-        to: e.to,
-        source: e.source,
-        reason: e.reason,
-        actorUserId: e.actorUserId,
-        createdAt: e.createdAt,
-      })),
-      notes: lead.notes.map((n) => ({
-        id: n.id,
-        body: n.body,
-        authorLabel: n.authorLabel,
-        pinned: n.pinned,
-        createdAt: n.createdAt,
-      })),
-      decisions: lead.adminDecisionLogs.map((d) => ({
-        id: d.id,
-        category: d.category,
-        action: d.action,
-        actorUserId: d.actorUserId,
-        actorLabel: d.actorLabel,
-        details: d.details,
-        createdAt: d.createdAt,
-      })),
-      requests: lead.requests.map((r) => ({
-        id: r.id,
-        kind: r.kind,
-        status: r.status,
-        timeText: r.timeText,
-        createdAt: r.createdAt,
-      })),
-      handoffs: lead.hitlTasks
-        .filter((h) => h.type !== REQUEST_APPROVAL_TASK)
-        .map((h) => ({
-          id: h.id,
-          reason: h.reason,
-          status: h.status,
-          createdAt: h.createdAt,
-          completedAt: h.completedAt,
-          info: h.type === RESERVATION_LINK_SENT_TASK,
-        })),
-      conversations: lead.conversations.map((c) => ({
-        id: c.id,
-        status: c.status,
-        lifecycleReason: c.lifecycleReason,
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
-      })),
-    }),
-    tenant.timezone,
-  ).map((g) => ({ day: g.day, items: g.items.map((it) => ({ ...it, at: it.at.toISOString() })) }));
+  const timeline =
+    scope === "full"
+      ? (() => {
+          const full = lead as typeof lead & {
+            stageEvents: {
+              id: string;
+              from: string;
+              to: string;
+              source: string;
+              reason: string;
+              actorUserId: string | null;
+              createdAt: Date;
+            }[];
+            adminDecisionLogs: {
+              id: string;
+              category: string;
+              action: string;
+              actorUserId: string;
+              actorLabel: string;
+              details: unknown;
+              createdAt: Date;
+            }[];
+          };
+          return groupTimelineByDay(
+            buildLeadTimeline({
+              stageEvents: full.stageEvents.map((e) => ({
+                id: e.id,
+                from: e.from,
+                to: e.to,
+                source: e.source,
+                reason: e.reason,
+                actorUserId: e.actorUserId,
+                createdAt: e.createdAt,
+              })),
+              notes: full.notes.map((n) => ({
+                id: n.id,
+                body: n.body,
+                authorLabel: n.authorLabel,
+                pinned: n.pinned,
+                createdAt: n.createdAt,
+              })),
+              decisions: full.adminDecisionLogs.map((d) => ({
+                id: d.id,
+                category: d.category,
+                action: d.action,
+                actorUserId: d.actorUserId,
+                actorLabel: d.actorLabel,
+                details: d.details,
+                createdAt: d.createdAt,
+              })),
+              requests: full.requests.map((r) => ({
+                id: r.id,
+                kind: r.kind,
+                status: r.status,
+                timeText: r.timeText,
+                createdAt: r.createdAt,
+              })),
+              handoffs: full.hitlTasks
+                .filter((h) => h.type !== REQUEST_APPROVAL_TASK)
+                .map((h) => ({
+                  id: h.id,
+                  reason: h.reason,
+                  status: h.status,
+                  createdAt: h.createdAt,
+                  completedAt: h.completedAt,
+                  info: h.type === RESERVATION_LINK_SENT_TASK,
+                })),
+              conversations: full.conversations.map((c) => ({
+                id: c.id,
+                status: c.status,
+                lifecycleReason: c.lifecycleReason,
+                createdAt: c.createdAt,
+                updatedAt: c.updatedAt,
+              })),
+            }),
+            tenant.timezone,
+          ).map((g) => ({ day: g.day, items: g.items.map((it) => ({ ...it, at: it.at.toISOString() })) }));
+        })()
+      : [];
 
   // The task the owner acts on here: an open handoff first (the chat is paused), else an approval.
   const open = lead.hitlTasks.filter((t) => t.status === "open" && t.type !== RESERVATION_LINK_SENT_TASK);
@@ -214,7 +390,7 @@ export async function loadLeadView(
     };
   }
 
-  return {
+  const dto: LeadViewDTO = {
     ...row,
     openTask,
     phone: formatPhoneDisplay(phone),
@@ -234,11 +410,25 @@ export async function loadLeadView(
     conversationId: latestConversation?.id ?? null,
     conversationStatus: latestConversation?.status ?? null,
     messages: messages.map((m) => ({ id: m.id, role: m.role, text: m.text, createdAt: m.createdAt.toISOString() })),
-    details: buildDetails(fields, ui),
-    requests: requestRows.map((r) => ({
-      id: r.id,
-      headline: [requestHeadline(r) ?? requestKindLabel(ui, r.kind), r.timeText].filter(Boolean).join(" · "),
-      status: r.status,
-    })),
+    details: scope === "full" ? buildDetails(fields, ui) : [],
+    requests:
+      scope === "full"
+        ? requestRows.map((r) => ({
+            id: r.id,
+            headline: [requestHeadline(r) ?? requestKindLabel(ui, r.kind), r.timeText].filter(Boolean).join(" · "),
+            status: r.status,
+          }))
+        : [],
   };
+  logCrmPerf("crm.load_lead_view", {
+    tenantId,
+    leadId,
+    scope,
+    found: true,
+    labels_ms: labelsMs,
+    lead_ms: leadMs,
+    messages_ms: 0,
+    ms: Date.now() - started,
+  });
+  return dto;
 }

@@ -28,7 +28,9 @@ export function useLeadPeek(o: {
       const i = rowsRef.current.findIndex((r) => r.id === id);
       if (i >= 0) setKb(i);
       setPeekId(id);
-      markRead([id]);
+      // Only POST when the row is still unread (setUnread also no-ops, but skip the call for j/k).
+      const row = i >= 0 ? rowsRef.current[i] : null;
+      if (row?.unread) markRead([id]);
     },
     [setKb, markRead],
   );

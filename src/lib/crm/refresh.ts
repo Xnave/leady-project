@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { prisma } from "@/lib/db";
 import type { FlowDefinition } from "@/lib/flow/types";
 import { REQUEST_APPROVAL_TASK } from "@/lib/requests";
+import { addTurnPerf } from "@/lib/perf";
+import { RESERVATION_LINK_SENT_TASK } from "@/lib/reservations";
 import { OPEN_APPROVAL_TASK, OPEN_HANDOFF_TASK } from "./needs";
 import { planLeadState, type LeadStatePlan, type LeadStateSnapshot } from "./plan";
 import { isFollowUpReason, isPipelineStage } from "./types";
@@ -23,14 +25,22 @@ export async function loadLeadStateSnapshot(
         select: convoSelect,
       },
       requests: { select: { status: true, kind: true, updatedAt: true } },
-      // Same predicate as the "needs you" list, so the stored reason can't disagree with it.
+      // Open needs-you tasks + any link-sent marker (avoids a second hitl findFirst).
       hitlTasks: {
-        where: { OR: [OPEN_HANDOFF_TASK, OPEN_APPROVAL_TASK] },
+        where: {
+          OR: [OPEN_HANDOFF_TASK, OPEN_APPROVAL_TASK, { type: RESERVATION_LINK_SENT_TASK }],
+        },
         select: { type: true, createdAt: true },
       },
     },
   });
   if (!lead) return null;
+
+  const latest = (...ds: (Date | null)[]) =>
+    ds.reduce<Date | null>((max, d) => (d && (!max || d > max) ? d : max), null);
+
+  // Prefer denormalized clocks per field. Scan messages only for clocks that are still null.
+  const needsMessageScan = !lead.lastLeadMessageAt || !lead.lastOutboundAt;
 
   const [convo, lastByRole] = await Promise.all([
     // Every conversation closed: the stage still reads the last one's flow position.
@@ -40,22 +50,28 @@ export async function loadLeadStateSnapshot(
         orderBy: { createdAt: "desc" },
         select: convoSelect,
       }),
-    prisma.message.groupBy({
-      by: ["role"],
-      where: { tenantId, conversation: { leadId } },
-      _max: { createdAt: true },
-    }),
+    needsMessageScan
+      ? prisma.message.groupBy({
+          by: ["role"],
+          where: { tenantId, conversation: { leadId } },
+          _max: { createdAt: true },
+        })
+      : Promise.resolve([] as { role: string; _max: { createdAt: Date | null } }[]),
   ]);
   const lastAt = (role: string) => lastByRole.find((g) => g.role === role)?._max.createdAt ?? null;
-  const latest = (...ds: (Date | null)[]) =>
-    ds.reduce<Date | null>((max, d) => (d && (!max || d > max) ? d : max), null);
 
+  const lastLeadMessageAt = lead.lastLeadMessageAt ?? lastAt("lead");
+  const lastOutboundAt =
+    lead.lastOutboundAt ?? latest(lastAt("agent"), lastAt("human"));
+
+  const openTasks = lead.hitlTasks.filter((t) => t.type !== RESERVATION_LINK_SENT_TASK);
   // The oldest open task sets "waiting since": the owner has been needed from then on.
   const oldest = (approval: boolean) =>
     earliest(
-      lead.hitlTasks.filter((t) => (t.type === REQUEST_APPROVAL_TASK) === approval).map((t) => t.createdAt),
+      openTasks.filter((t) => (t.type === REQUEST_APPROVAL_TASK) === approval).map((t) => t.createdAt),
     );
   const lastRequestChangeAt = latest(...lead.requests.map((r) => r.updatedAt));
+  const linkSent = lead.hitlTasks.some((t) => t.type === RESERVATION_LINK_SENT_TASK);
 
   return {
     current: {
@@ -74,13 +90,15 @@ export async function loadLeadStateSnapshot(
       flow: (convo?.agent.flow as FlowDefinition | undefined) ?? null,
       currentFlowStage: convo?.flowState ?? null,
       fields: (lead.fields as Record<string, unknown>) ?? {},
-      hasAgentReply: lastAt("agent") != null,
+      // lastOutboundAt covers agent + human outbound; enough for "engaged".
+      hasAgentReply: lastOutboundAt != null || lastAt("agent") != null,
       requests: lead.requests.map((r) => ({ status: r.status, kind: r.kind })),
+      linkSent,
     },
     openHandoffSince: oldest(false),
     pendingApprovalSince: oldest(true),
-    lastLeadMessageAt: lastAt("lead"),
-    lastOutboundAt: latest(lastAt("agent"), lastAt("human")),
+    lastLeadMessageAt,
+    lastOutboundAt,
     lastRequestChangeAt,
   };
 }
@@ -131,6 +149,7 @@ export async function safeRefreshLeadState(tenantId: string, leadId: string, opt
     console.error(JSON.stringify({ msg: "crm.refresh_failed", tenantId, leadId, error: String(err) }));
   }
   const ms = Date.now() - started;
+  addTurnPerf({ refresh_ms: ms });
   if (ms > SLOW_REFRESH_MS) console.warn(JSON.stringify({ msg: "crm.refresh_slow", tenantId, leadId, ms }));
 }
 

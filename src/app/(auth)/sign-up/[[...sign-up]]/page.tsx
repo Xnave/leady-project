@@ -1,6 +1,6 @@
 import { SignUp } from "@clerk/nextjs";
 import { BrandMark } from "@/components/BrandMark";
-import { isClerkConfigured } from "@/lib/clerk";
+import { isClerkReady } from "@/lib/clerk";
 import { getUiLang } from "@/lib/cookies";
 import { uiCopy } from "@/lib/ui";
 
@@ -8,7 +8,7 @@ export default async function SignUpPage() {
   const lang = await getUiLang();
   const ui = uiCopy(lang);
 
-  if (!isClerkConfigured()) {
+  if (!isClerkReady()) {
     return (
       <div className="auth-page">
         <div className="card stack form-narrow auth-message">

@@ -1,5 +1,6 @@
 import { sendOnChannel } from "@/lib/channels/meta";
 import {
+  ensureChannelAccessToken,
   insertAgentMessage,
   loadTurnContext,
   pauseForHuman,
@@ -31,6 +32,7 @@ import { rewritePhonesInText } from "@/lib/leads";
 import { inngest } from "@/inngest/client";
 import { prisma } from "@/lib/db";
 import { batchLeadRefreshes, safeRefreshLeadState } from "@/lib/crm/refresh";
+import { addTurnPerf, runWithTurnPerf, timeAsync } from "@/lib/perf";
 
 function logTurn(phase: "enter" | "exit", extra: Record<string, unknown>) {
   console.log(JSON.stringify({ msg: "runAgentTurn", phase, ...extra }));
@@ -47,6 +49,7 @@ export async function sendAndSave(
     callbackPhone(ctx),
     typeof ctx.lead.externalUserId === "string" ? ctx.lead.externalUserId : null,
   ]);
+  const sendStarted = Date.now();
   if (opts?.idempotencyKey) {
     const existing = await prisma.message.findFirst({
       where: {
@@ -57,12 +60,20 @@ export async function sendAndSave(
     });
     if (existing) return;
   }
-  await insertAgentMessage(ctx.tenantId, ctx.conversation.id, cleaned, {
-    providerMessageId: opts?.idempotencyKey,
-  });
+  const persistStarted = Date.now();
+  // Token fetch overlaps message persist so loadTurnContext can skip accessTokenEnc.
+  const [, accessToken] = await Promise.all([
+    insertAgentMessage(ctx.tenantId, ctx.conversation.id, cleaned, {
+      providerMessageId: opts?.idempotencyKey,
+      leadId: ctx.lead.id,
+    }),
+    ensureChannelAccessToken(ctx.tenantId, ctx.connection),
+  ]);
+  addTurnPerf({ send_persist_ms: Date.now() - persistStarted });
+  const httpStarted = Date.now();
   await sendOnChannel({
     apiBase: ctx.connection.apiBase,
-    accessToken: ctx.connection.accessToken,
+    accessToken,
     provider: ctx.connection.provider,
     providerAccountId: ctx.connection.providerAccountId,
     to: ctx.lead.externalUserId,
@@ -73,6 +84,7 @@ export async function sendAndSave(
         ? ctx.lead.fields.zernioConversationId
         : undefined,
   });
+  addTurnPerf({ send_http_ms: Date.now() - httpStarted, send_ms: Date.now() - sendStarted });
   // Recompute lastOutboundAt / cold. Inside a turn this joins the turn's single refresh.
   await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
 }
@@ -143,6 +155,8 @@ export async function enqueueAgentTurn(opts: {
   conversationId: string;
   triggerMessageId: string;
   resume?: boolean;
+  /** Epoch ms when the inbound was ready to turn (for queue_ms). */
+  inboundAt?: number;
 }) {
   await inngest.send({
     name: "agent/turn.requested",
@@ -152,6 +166,7 @@ export async function enqueueAgentTurn(opts: {
       conversationId: opts.conversationId,
       resume: opts.resume,
       triggerMessageId: opts.triggerMessageId,
+      inboundAt: opts.inboundAt ?? Date.now(),
     },
   });
 }
@@ -189,58 +204,152 @@ type RunTurnOpts = {
   conversationId: string;
   resume?: boolean;
   triggerMessageId?: string;
+  /** Epoch ms stamped at enqueue — worker start minus this is queue_ms. */
+  inboundAt?: number;
+};
+
+export type SkippedTurnResult = {
+  skipped: "missing_conversation";
+  conversationId: string;
+  stage: string;
+  action: string;
+  nudgeEvent: null;
 };
 
 /** One turn. Every CRM refresh the turn triggers collapses into one, after it ends. */
-export function runTurnNow(opts: RunTurnOpts) {
-  return batchLeadRefreshes(() => runTurn(opts));
+export async function runTurnNow(opts: RunTurnOpts) {
+  const started = Date.now();
+  const queue_ms =
+    typeof opts.inboundAt === "number" && Number.isFinite(opts.inboundAt)
+      ? started - opts.inboundAt
+      : undefined;
+  logTurn("enter", {
+    tenantId: opts.tenantId,
+    conversationId: opts.conversationId,
+    triggerMessageId: opts.triggerMessageId,
+    ...(queue_ms != null ? { queue_ms } : {}),
+  });
+  const { result, perf } = await runWithTurnPerf(async () =>
+    batchLeadRefreshes(() => runTurn(opts)),
+  );
+  logTurn("exit", {
+    tenantId: opts.tenantId,
+    conversationId: result.conversationId ?? opts.conversationId,
+    previousConversationId:
+      "previousConversationId" in result ? result.previousConversationId : undefined,
+    stage: result.stage,
+    action: result.action,
+    effects: "effects" in result ? result.effects : undefined,
+    skipped: "skipped" in result ? result.skipped : undefined,
+    ms: Date.now() - started,
+    triggerMessageId: opts.triggerMessageId,
+    ...(queue_ms != null ? { queue_ms } : {}),
+    ...perf,
+  });
+  return result;
 }
 
 async function runTurn(opts: RunTurnOpts) {
   ensureFlowRegistry();
-  const started = Date.now();
-  const ctx = await loadTurnContext(opts.tenantId, opts.conversationId);
+  let ctx: Awaited<ReturnType<typeof loadTurnContext>>;
+  try {
+    ctx = await loadTurnContext(opts.tenantId, opts.conversationId);
+  } catch (err) {
+    // Conversation deleted between enqueue and worker — same skip as the old load-context step.
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? String((err as { code: unknown }).code)
+        : "";
+    if (code === "P2025") {
+      return {
+        skipped: "missing_conversation",
+        conversationId: opts.conversationId,
+        stage: "",
+        action: "",
+        nudgeEvent: null,
+      } satisfies SkippedTurnResult;
+    }
+    throw err;
+  }
   const outboundKey = opts.triggerMessageId
     ? `out-${opts.conversationId}-${opts.triggerMessageId}`
     : undefined;
 
   let nudgeEvent: NudgeRequestedEvent | null = null;
 
-  const result = await interpretTurn(ctx, { resume: opts.resume }, {
-    classify: classifyIntent,
-    extract: extractFields,
-    draftQuestion,
-    answerFaq,
-    talk: talkTurn,
-    // One generic seam for every capability side effect — adding a capability
-    // registers an action instead of adding a port here.
-    runEffect: (c, effectId, stage) => runCapabilityEffect(c, effectId, stage),
-    requestHuman: async (c, reason) => {
-      const summary = await summarizeConversation(c.conversation.id);
-      await pauseForHuman({
-        tenantId: c.tenantId,
-        conversationId: c.conversation.id,
-        leadId: c.lead.id,
-        reason,
-        summary,
-      });
-    },
-    persistStage: (c, stageId) => persistStage(c.tenantId, c.conversation.id, stageId),
-    persistFields: (c, fields) =>
-      persistTurnFields(c.tenantId, c.lead.id, c.conversation.id, fields, {
-        extraSessionKeys: allCapabilitySessionFieldKeys(c),
-      }),
-    sendAndSave: (c, text) =>
-      sendAndSave(c as Awaited<ReturnType<typeof loadTurnContext>>, text, {
-        idempotencyKey: outboundKey
-          ? `${outboundKey}-${Buffer.from(text).toString("base64url").slice(0, 24)}`
-          : undefined,
-      }),
-    scheduleNudge: async (c, stageId, stage) => {
-      nudgeEvent = buildNudgeRequestedEvent(c, stageId, stage, opts.triggerMessageId);
-    },
-    log: logTurn,
-  });
+  const { result, ms: interpret_ms } = await timeAsync(() =>
+    interpretTurn(ctx, { resume: opts.resume }, {
+      classify: async (c, stage) => {
+        const { result: r, ms } = await timeAsync(() => classifyIntent(c, stage));
+        addTurnPerf({ classify_ms: ms });
+        return r;
+      },
+      extract: async (c, stage) => {
+        const { result: r, ms } = await timeAsync(() => extractFields(c, stage));
+        addTurnPerf({ extract_ms: ms });
+        return r;
+      },
+      draftQuestion: async (c, stage, missing) => {
+        const { result: r, ms } = await timeAsync(() => draftQuestion(c, stage, missing));
+        addTurnPerf({ draft_ms: ms });
+        return r;
+      },
+      answerFaq: async (c, stage) => {
+        const { result: r, ms } = await timeAsync(() => answerFaq(c, stage));
+        addTurnPerf({ faq_ms: ms });
+        return r;
+      },
+      talk: async (c, stage) => {
+        const { result: r, ms } = await timeAsync(() => talkTurn(c, stage));
+        addTurnPerf({ talk_llm_ms: ms });
+        return r;
+      },
+      runEffect: async (c, effectId, stage) => {
+        const { result: r, ms } = await timeAsync(() => runCapabilityEffect(c, effectId, stage));
+        addTurnPerf({ effect_ms: ms });
+        return r;
+      },
+      requestHuman: async (c, reason) => {
+        const { result: summary, ms: summarize_ms } = await timeAsync(() =>
+          summarizeConversation(c.conversation.id),
+        );
+        addTurnPerf({ summarize_ms });
+        const { ms: pause_ms } = await timeAsync(() =>
+          pauseForHuman({
+            tenantId: c.tenantId,
+            conversationId: c.conversation.id,
+            leadId: c.lead.id,
+            reason,
+            summary,
+          }),
+        );
+        addTurnPerf({ effect_ms: pause_ms });
+      },
+      persistStage: async (c, stageId) => {
+        const { ms } = await timeAsync(() => persistStage(c.tenantId, c.conversation.id, stageId));
+        addTurnPerf({ persist_ms: ms });
+      },
+      persistFields: async (c, fields) => {
+        const { ms } = await timeAsync(() =>
+          persistTurnFields(c.tenantId, c.lead.id, c.conversation.id, fields, {
+            extraSessionKeys: allCapabilitySessionFieldKeys(c),
+          }),
+        );
+        addTurnPerf({ persist_ms: ms });
+      },
+      sendAndSave: (c, text) =>
+        sendAndSave(c as Awaited<ReturnType<typeof loadTurnContext>>, text, {
+          idempotencyKey: outboundKey
+            ? `${outboundKey}-${Buffer.from(text).toString("base64url").slice(0, 24)}`
+            : undefined,
+        }),
+      scheduleNudge: async (c, stageId, stage) => {
+        nudgeEvent = buildNudgeRequestedEvent(c, stageId, stage, opts.triggerMessageId);
+      },
+      log: logTurn,
+    }),
+  );
+  addTurnPerf({ interpret_ms });
 
   if (result.action === "start_new_conversation") {
     const intro = (result.reply ?? "").trim();
@@ -258,18 +367,14 @@ async function runTurn(opts: RunTurnOpts) {
           : undefined,
       });
     }
-    logTurn("exit", {
-      tenantId: opts.tenantId,
+    await safeRefreshLeadState(opts.tenantId, ctx.lead.id);
+    return {
+      ...result,
+      stage: ctx.agent.flow.start,
+      nudgeEvent,
       conversationId: rotated.conversationId,
       previousConversationId: opts.conversationId,
-      stage: ctx.agent.flow.start,
-      action: result.action,
-      effects: result.effects,
-      ms: Date.now() - started,
-      triggerMessageId: opts.triggerMessageId,
-    });
-    await safeRefreshLeadState(opts.tenantId, ctx.lead.id);
-    return { ...result, stage: ctx.agent.flow.start, nudgeEvent };
+    };
   }
 
   if (result.action === "done" || result.stage === "done") {
@@ -280,16 +385,6 @@ async function runTurn(opts: RunTurnOpts) {
     });
   }
 
-  logTurn("exit", {
-    tenantId: opts.tenantId,
-    conversationId: opts.conversationId,
-    stage: result.stage,
-    action: result.action,
-    effects: result.effects,
-    ms: Date.now() - started,
-    triggerMessageId: opts.triggerMessageId,
-  });
-
   await safeRefreshLeadState(opts.tenantId, ctx.lead.id);
-  return { ...result, nudgeEvent };
+  return { ...result, nudgeEvent, conversationId: opts.conversationId };
 }

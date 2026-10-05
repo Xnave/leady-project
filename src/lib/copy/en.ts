@@ -45,6 +45,11 @@ export const chat: ChatCopy = {
     hours
       ? `That time is outside our opening hours (${hours}). What other day and time works for you?`
       : "That time is outside our opening hours. What other day and time works for you?",
+  askTimeAmbiguous:
+    "Did you mean morning or evening? Please say the time clearly (for example 6 in the evening or 18:00).",
+  askTimeUnclear: "What day and clock time works for you? Please include a specific hour.",
+  askTimeInvalidHours:
+    "I can't check our opening hours right now. What other day and time works for you?",
   bookingRequestTemplate: [
     "Got it - I've noted a visit request for {{date}} at {{time}}. A teammate from {{business}} will confirm or suggest another time.",
     "Name: {{name}}",
@@ -150,12 +155,12 @@ export const prompts: PromptCopy = {
   faqSystem: (prompt, knowledge) =>
     `${prompt}\nKnowledge:\n${knowledge}\nIf the knowledge does not answer, reply with exactly UNRESOLVED.`,
   extractOnboard: `Extract setup fields for a front-desk chat agent from this business document.
-Do not invent. Omit a field if it is not clearly in the text.
+Do not invent facts that are not grounded in the text. Omit name/phone/address/hours if they are not clearly present.
 - name: official business name
 - phone: public customer-facing phone
-- intro: 1–3 sentences the agent should say as this business (same language as the document)
+- intro: ALWAYS provide 1–3 sentences the agent should say as this business on the first customer message (same language as the document). If the document already has a greeting/self-introduction, use it (lightly cleaned). If it does not, write a warm, natural greeting from the business name and what they do — do not leave intro empty when there is enough context to greet.
 - venueAddress: street address customers visit, if any
-- venueHours: opening hours as a short phrase (e.g. Sun–Thu 09:00–19:00)
+- venueHours: opening hours as a short phrase operators can edit (e.g. "Sun–Thu 09:00–19:00" or "א', ג', ה' 09:00-19:00 | ב', ד' 09:00-15:00 | שישי 09:00-13:00"). Prefer day lists + clock ranges so they can be checked precisely.
 - chatLanguage: "multi" unless the operator should lock replies to one language. Use "he" or "en" only if the document clearly says the agent must always reply in that language even when the customer writes in another.`,
   talkContext: ({
     business,
@@ -184,7 +189,7 @@ Do not invent. Omit a field if it is not clearly in the text.
       `Always refer to the business as "${business}" — never invent a company name from the customer's name (e.g. do not turn "Dana" into "Dana AI").`,
       "Continue the topic. Never repeat the intro or your last message.",
       "Never say the appointment is confirmed. book_meeting only records a tentative request for the owner.",
-      "Always call reply with the user-facing text (unless ask_field already set it). Call set_intent every turn.",
+      "Always call reply once with the user-facing text and intent (sales / support / other), unless ask_field already set the outbound text.",
       `Latest customer message: ${last}`,
     ].join("\n"),
   nudgeDefaultInstruction:

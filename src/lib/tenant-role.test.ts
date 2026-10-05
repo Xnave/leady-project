@@ -9,13 +9,13 @@ const state = vi.hoisted(() => ({
   email: "member@example.com",
 }));
 
-vi.mock("@clerk/nextjs/server", () => ({
-  auth: async () => ({ userId: state.userId, orgRole: state.orgRole }),
-  currentUser: async () => ({
+vi.mock("@clerk/nextjs/server", () => ({ clerkClient: async () => ({}) }));
+vi.mock("@/lib/clerk-auth", () => ({
+  getClerkAuth: async () => ({ userId: state.userId, orgId: "org_1", orgRole: state.orgRole }),
+  getClerkUser: async () => ({
     primaryEmailAddressId: "e1",
     emailAddresses: [{ id: "e1", emailAddress: state.email }],
   }),
-  clerkClient: async () => ({}),
 }));
 vi.mock("next/navigation", () => ({
   redirect: (to: string) => {
@@ -31,14 +31,9 @@ vi.mock("@/lib/admin", () => ({
 vi.mock("@/lib/tenant", () => ({
   requireTenantId: async () => "t1",
   requireTenantIdForPage: async () => "t1",
+  getTenantShell: async () => ({ name: "T", ownerEmail: "owner@example.com", ownerClerkUserId: "user_owner" }),
 }));
-vi.mock("@/lib/db", () => ({
-  prisma: {
-    tenant: {
-      findFirstOrThrow: async () => ({ ownerEmail: "owner@example.com", ownerClerkUserId: "user_owner" }),
-    },
-  },
-}));
+vi.mock("@/lib/db", () => ({ prisma: {} }));
 
 const {
   hasTenantAccess,

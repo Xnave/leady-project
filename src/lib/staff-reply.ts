@@ -1,4 +1,4 @@
-import { loadTurnContext } from "@/lib/conversations";
+import { ensureChannelAccessToken, loadTurnContext } from "@/lib/conversations";
 import { prisma } from "@/lib/db";
 
 /**
@@ -12,6 +12,7 @@ export async function sendStaffReply(opts: {
   text: string;
   source: string;
 }): Promise<void> {
+  const now = new Date();
   await prisma.message.create({
     data: {
       tenantId: opts.tenantId,
@@ -20,15 +21,21 @@ export async function sendStaffReply(opts: {
       text: opts.text,
       providerMessageId: `staff-${crypto.randomUUID()}`,
       metadata: { source: opts.source },
+      createdAt: now,
     },
   });
 
   // Reuse the channel send path without inserting a second (agent) message.
   const ctx = await loadTurnContext(opts.tenantId, opts.conversationId);
+  await prisma.lead.updateMany({
+    where: { id: ctx.lead.id, tenantId: opts.tenantId },
+    data: { lastOutboundAt: now },
+  });
+  const accessToken = await ensureChannelAccessToken(opts.tenantId, ctx.connection);
   const { sendOnChannel } = await import("@/lib/channels/meta");
   await sendOnChannel({
     apiBase: ctx.connection.apiBase,
-    accessToken: ctx.connection.accessToken,
+    accessToken,
     provider: ctx.connection.provider,
     providerAccountId: ctx.connection.providerAccountId,
     to: ctx.lead.externalUserId,

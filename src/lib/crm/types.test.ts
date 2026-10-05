@@ -22,7 +22,7 @@ describe("crm types", () => {
   });
 
   it("classifies stages", () => {
-    expect(ACTIVE_STAGES).toEqual(["new", "talking", "qualified", "pending"]);
+    expect(ACTIVE_STAGES).toEqual(["new", "talking", "qualified", "link_sent", "pending"]);
     expect(CLOSED_STAGES).toEqual(["lost", "not_relevant"]);
     expect(isActiveStage("pending")).toBe(true);
     expect(isActiveStage("won")).toBe(false);

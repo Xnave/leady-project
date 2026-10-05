@@ -1,11 +1,10 @@
-import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { NextResponse } from "next/server";
 import { isAdminSession, primaryEmailFromClerkUser } from "@/lib/admin";
-import { prisma } from "@/lib/db";
+import { getClerkAuth, getClerkUser } from "@/lib/clerk-auth";
 import type { TenantRole } from "@/lib/org-roles";
 import { resolveTenantRole } from "@/lib/team";
-import { requireTenantId, requireTenantIdForPage } from "@/lib/tenant";
+import { getTenantShell, requireTenantId, requireTenantIdForPage } from "@/lib/tenant";
 
 /**
  * Permission matrix (who may call what):
@@ -44,13 +43,11 @@ export async function resolveTenantAccess(): Promise<TenantAccess> {
   const tenantId = await requireTenantId();
   if (await isAdminSession()) return { tenantId, role: "owner", platformAdmin: true };
 
-  const { userId, orgRole } = await auth();
+  const { userId, orgRole } = await getClerkAuth();
   if (!userId) throw new Error("Sign in required");
-  const tenant = await prisma.tenant.findFirstOrThrow({
-    where: { id: tenantId },
-    select: { ownerEmail: true, ownerClerkUserId: true },
-  });
-  const email = await primaryEmailFromClerkUser(await currentUser());
+  const tenant = await getTenantShell(tenantId);
+  if (!tenant) throw new Error("Unknown tenant");
+  const email = await primaryEmailFromClerkUser(await getClerkUser());
   const role = await resolveTenantRole(tenant, userId, email, orgRole);
   return { tenantId, role, platformAdmin: false };
 }

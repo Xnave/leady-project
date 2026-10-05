@@ -9,6 +9,7 @@
  * Adding a vertical is then a config change: a JSON array of specs, no new code.
  */
 import type { LeadFields } from "../types";
+import type { VenueScheduleSegment } from "../venue-hours";
 
 export type FieldTypeId =
   | "text"
@@ -94,8 +95,12 @@ export type FieldSpec =
 /** Per-turn inputs the handlers need but must not import. */
 export type FieldContext = {
   lang: FieldLang;
-  /** Free-text business hours, for `datetime_text` gating. */
+  /** Free-text business hours, for `datetime_text` gating / asks. */
   businessHours?: string;
+  /** Persisted schedule preferred by the hours gate when present. */
+  venueSchedule?: VenueScheduleSegment[];
+  /** IANA timezone for weekday / today math in the hours gate. */
+  venueTimezone?: string;
   /** Phone deduced from the channel, for a confirm-style phone ask. */
   deducedPhone?: string;
   now?: Date;

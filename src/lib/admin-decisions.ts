@@ -1,6 +1,6 @@
-import { auth, currentUser } from "@clerk/nextjs/server";
 import { Prisma } from "@prisma/client";
 import { adminBypass, primaryEmailFromClerkUser } from "@/lib/admin";
+import { getClerkAuth, getClerkUser } from "@/lib/clerk-auth";
 import { prisma } from "@/lib/db";
 import {
   GLOBAL_ADMIN_ACTOR,
@@ -44,12 +44,12 @@ export async function resolveStaffActor(): Promise<{
   actorLabel: string;
 }> {
   if (adminBypass()) return { actorUserId: GLOBAL_ADMIN_ACTOR, actorLabel: GLOBAL_ADMIN_ACTOR };
-  const user = await currentUser();
+  const user = await getClerkUser();
   const email = await primaryEmailFromClerkUser(user);
   if (email) {
     return { actorUserId: email, actorLabel: email };
   }
-  const { userId } = await auth();
+  const { userId } = await getClerkAuth();
   if (userId) {
     return { actorUserId: userId, actorLabel: "admin" };
   }

@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import type { LeadViewDTO } from "@/lib/crm/view";
+import type { LeadRowDTO, LeadViewDTO, LeadViewScope } from "@/lib/crm/view";
 import type { UiCopy } from "@/lib/ui";
 import { crmApi } from "./crm-client";
+import { markCrmClient } from "./crm-perf";
 import { Icon } from "./Icon";
 import type { LeadTab } from "./LeadTabs";
 import { LeadView } from "./LeadView";
+import { shellFromRow } from "./peek-shell";
 import type { PeekReport } from "./rows";
 
 /** Matches the `.crm-peek` slide-out; content stays until the panel is out of view. */
@@ -14,40 +16,13 @@ const EXIT_MS = 260;
 const TYPING = 'input:not([type="checkbox"]):not([type="radio"]), textarea, select, [contenteditable="true"]';
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select, [tabindex]:not([tabindex="-1"])';
 
-function PeekSkeleton() {
-  return (
-    <div className="crm-lv" aria-hidden="true">
-      <div className="crm-lv-head">
-        <div className="crm-lv-id">
-          <span className="crm-skel av lg" />
-          <div className="crm-lv-who crm-skel-stack">
-            <span className="crm-skel w60" />
-            <span className="crm-skel w40" />
-          </div>
-        </div>
-        <span className="crm-skel w80" />
-        <span className="crm-skel chip" />
-      </div>
-      <div className="crm-sec crm-skel-stack">
-        <span className="crm-skel w40" />
-        <span className="crm-skel w80" />
-      </div>
-      <div className="crm-sec crm-skel-stack">
-        <span className="crm-skel w40" />
-        <span className="crm-skel w60" />
-      </div>
-    </div>
-  );
-}
-
 /**
- * The lead peek: a drawer over the list. It loads `crmApi.view` whenever `leadId`
- * changes, keeping the previous lead on screen (dimmed) while the next one loads, and
- * a skeleton on first open. Esc, the scrim and the close button close it; focus moves
- * into the panel on open (the list puts it back on the row on close).
+ * The lead peek: a drawer over the list. Opens instantly from the list row (header /
+ * stand), then loads lite view in the background. Activity/Details fetch full once.
  */
 export function LeadPeek({
   leadId,
+  peekRow,
   onClose,
   onChanged,
   ui,
@@ -55,6 +30,8 @@ export function LeadPeek({
   wonLabel,
 }: {
   leadId: string | null;
+  /** List row for instant chrome; null when the peeked row left the current view. */
+  peekRow: LeadRowDTO | null;
   onClose: () => void;
   onChanged: (report: PeekReport) => void;
   ui: UiCopy;
@@ -63,15 +40,21 @@ export function LeadPeek({
 }) {
   const open = leadId !== null;
   const [dto, setDto] = useState<LeadViewDTO | null>(null);
+  const [chatLoading, setChatLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [tab, setTab] = useState<LeadTab>("chat");
+  const [viewScope, setViewScope] = useState<LeadViewScope>("lite");
   const panelRef = useRef<HTMLElement>(null);
+  const openStarted = useRef(0);
+  const fullInflight = useRef(false);
   // A new lead starts without the previous lead's error.
   const [seenId, setSeenId] = useState(leadId);
   if (seenId !== leadId) {
     setSeenId(leadId);
     setFailed(false);
+    setViewScope("lite");
+    fullInflight.current = false;
   }
   const headingId = useId();
   const closeRef = useRef(onClose);
@@ -82,28 +65,91 @@ export function LeadPeek({
   useEffect(() => {
     if (!leadId) return;
     let live = true;
-    crmApi.view(leadId).then(
+    openStarted.current = performance.now();
+    setViewScope("lite");
+    fullInflight.current = false;
+
+    // Instant chrome from the list row (felt first paint).
+    if (peekRow && peekRow.id === leadId) {
+      setDto(shellFromRow(peekRow));
+      setChatLoading(true);
+      setFailed(false);
+      markCrmClient("crm.client.peek_shell", {
+        ms: performance.now() - openStarted.current,
+        leadId,
+        scope: "lite",
+      });
+    } else {
+      setChatLoading(true);
+    }
+
+    crmApi.view(leadId, { scope: "lite" }).then(
       (v) => {
         if (!live) return;
+        const ms = performance.now() - openStarted.current;
+        markCrmClient("crm.client.peek_open", { ms, leadId, scope: "lite" });
         setFailed(false);
+        setChatLoading(false);
         setDto(v);
+        requestAnimationFrame(() => {
+          if (!live) return;
+          markCrmClient("crm.client.peek_paint", {
+            ms: performance.now() - openStarted.current,
+            leadId,
+            scope: "lite",
+          });
+        });
       },
       () => {
-        if (live) setFailed(true);
+        if (live) {
+          setFailed(true);
+          setChatLoading(false);
+        }
       },
     );
     return () => {
       live = false;
     };
+    // peekRow intentionally omitted: shell is applied when leadId changes; stale row is ok.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open clock is leadId/attempt
   }, [leadId, attempt]);
 
-  // After the slide-out, forget the lead so the next open starts from the skeleton.
+  const ensureFull = (nextTab: LeadTab) => {
+    if (nextTab !== "activity" && nextTab !== "details") return;
+    if (!leadId || viewScope === "full" || fullInflight.current || chatLoading) return;
+    fullInflight.current = true;
+    const t0 = performance.now();
+    crmApi.view(leadId, { scope: "full" }).then(
+      (v) => {
+        markCrmClient("crm.client.peek_full", {
+          ms: performance.now() - t0,
+          leadId,
+          scope: "full",
+        });
+        setDto(v);
+        setViewScope("full");
+        fullInflight.current = false;
+      },
+      () => {
+        fullInflight.current = false;
+      },
+    );
+  };
+
+  const onTab = (t: LeadTab) => {
+    setTab(t);
+    ensureFull(t);
+  };
+
+  // After the slide-out, forget the lead so the next open starts clean.
   useEffect(() => {
     if (open) return;
     const t = setTimeout(() => {
       setDto(null);
       setFailed(false);
       setTab("chat");
+      setViewScope("lite");
+      setChatLoading(false);
     }, EXIT_MS);
     return () => clearTimeout(t);
   }, [open]);
@@ -144,6 +190,7 @@ export function LeadPeek({
   };
 
   const current = dto && dto.id === leadId;
+  // Stale previous-lead dim only when we have no shell for the new id yet.
   const loading = open && !current && !failed;
 
   return (
@@ -156,7 +203,7 @@ export function LeadPeek({
         aria-modal="true"
         aria-labelledby={dto ? headingId : undefined}
         aria-label={dto ? undefined : ui.page.leadsTitle}
-        aria-busy={loading}
+        aria-busy={loading || chatLoading}
         tabIndex={-1}
         inert={!open}
         onKeyDown={trapTab}
@@ -201,11 +248,23 @@ export function LeadPeek({
               wonLabel={wonLabel}
               onChanged={onChanged}
               tab={tab}
-              onTab={setTab}
+              onTab={onTab}
               headingId={headingId}
+              viewScope={viewScope}
+              chatLoading={chatLoading}
             />
           ) : (
-            <PeekSkeleton />
+            <div className="crm-lv" aria-hidden="true">
+              <div className="crm-lv-head">
+                <div className="crm-lv-id">
+                  <span className="crm-skel av lg" />
+                  <div className="crm-lv-who crm-skel-stack">
+                    <span className="crm-skel w60" />
+                    <span className="crm-skel w40" />
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </aside>

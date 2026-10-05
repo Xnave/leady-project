@@ -13,7 +13,7 @@ export type BookingStanceUiId = "passive" | "proactive";
 /** Operator copy for the CRM (leads v2). Placeholders like `{n}`, `{h}`, `{stage}`,
  * `{when}`, `{actor}` and `{time}` are filled with `fillUi`. */
 export type CrmCopy = {
-  stages: Record<"new" | "talking" | "qualified" | "pending" | "won" | "lost" | "not_relevant", string>;
+  stages: Record<"new" | "talking" | "qualified" | "link_sent" | "pending" | "won" | "lost" | "not_relevant", string>;
   wonByCapability: Record<string, string>;
   tabs: Record<"needs" | "cold" | "active" | "won" | "closed" | "all", string>;
   cols: { lead: string; stage: string; stand: string; followUp: string; last: string };
@@ -125,6 +125,7 @@ export type UiCopy = {
     actions: string;
   };
   demo: {
+    testCustomerName: string;
     leadProfile: string;
     simulateAs: string;
     agentContext: string;

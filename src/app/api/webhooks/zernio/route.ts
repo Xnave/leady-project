@@ -3,6 +3,8 @@ import { persistInboundIfNew } from "@/lib/conversations";
 import { verifyZernioSignature } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { enqueueAgentTurn } from "@/lib/flow/run-turn";
+import { safeRefreshLeadState } from "@/lib/crm/refresh";
+import { timeAsync } from "@/lib/perf";
 import {
   contactDisplayName,
   instagramIdentityFields,
@@ -57,6 +59,7 @@ export async function POST(req: Request) {
   }
   const channel = await prisma.channelConnection.findFirst({
     where: { providerExternalId: inbound.accountId, enabled: true },
+    include: { agent: true, tenant: true },
   });
   if (!channel) {
     console.warn("zernio webhook: unknown channel", {
@@ -82,32 +85,67 @@ export async function POST(req: Request) {
     }
   }
 
-  const inserted = await persistInboundIfNew({
-    tenantId: channel.tenantId,
-    channelId: channel.id,
-    agentId: channel.agentId,
-    providerMessageId: inbound.platformMessageId,
-    from: inbound.from,
-    text: inbound.text,
-    displayName: contactDisplayName({
-      name: senderName,
-      username: channel.provider === "instagram" ? senderUsername : undefined,
-      fallback: inbound.from,
+  const started = Date.now();
+  const { result: inserted, ms: persist_ms } = await timeAsync(() =>
+    persistInboundIfNew({
+      tenantId: channel.tenantId,
+      channelId: channel.id,
+      agentId: channel.agentId,
+      providerMessageId: inbound.platformMessageId,
+      from: inbound.from,
+      text: inbound.text,
+      displayName: contactDisplayName({
+        name: senderName,
+        username: channel.provider === "instagram" ? senderUsername : undefined,
+        fallback: inbound.from,
+      }),
+      extraFields: {
+        zernioConversationId: inbound.conversationId,
+        // Instagram identity only — never store WA phone as instagramUsername / profile name as booking name.
+        ...(channel.provider === "instagram" || inbound.platform === "instagram"
+          ? instagramIdentityFields(senderName, senderUsername)
+          : {}),
+      },
+      channel,
     }),
-    extraFields: {
-      zernioConversationId: inbound.conversationId,
-      // Instagram identity only — never store WA phone as instagramUsername / profile name as booking name.
-      ...(channel.provider === "instagram" || inbound.platform === "instagram"
-        ? instagramIdentityFields(senderName, senderUsername)
-        : {}),
-    },
-  });
-  if (!inserted) return new Response("ok", { status: 200 });
+  );
+  if (!inserted) {
+    console.log(
+      JSON.stringify({
+        msg: "zernio.inbound",
+        tenantId: channel.tenantId,
+        duplicate: true,
+        persist_ms,
+        ms: Date.now() - started,
+      }),
+    );
+    return new Response("ok", { status: 200 });
+  }
 
-  await enqueueAgentTurn({
-    tenantId: channel.tenantId,
-    conversationId: inserted.conversationId,
-    triggerMessageId: inserted.messageId,
-  });
+  let enqueue_ms = 0;
+  try {
+    const timed = await timeAsync(() =>
+      enqueueAgentTurn({
+        tenantId: channel.tenantId,
+        conversationId: inserted.conversationId,
+        triggerMessageId: inserted.messageId,
+      }),
+    );
+    enqueue_ms = timed.ms;
+  } catch (err) {
+    // Turn won't refresh CRM if enqueue never lands — keep the inbox clocks honest.
+    console.warn(JSON.stringify({ msg: "zernio.enqueue_failed", error: String(err) }));
+    await safeRefreshLeadState(channel.tenantId, inserted.leadId);
+  }
+  console.log(
+    JSON.stringify({
+      msg: "zernio.inbound",
+      tenantId: channel.tenantId,
+      conversationId: inserted.conversationId,
+      persist_ms,
+      enqueue_ms,
+      ms: Date.now() - started,
+    }),
+  );
   return NextResponse.json({ ok: true });
 }

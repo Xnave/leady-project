@@ -11,6 +11,7 @@ import { buildNudgeSystemPrompt, buildTalkSystemPrompt, talkTransitionTargets } 
 import { canCallStartNewConversation } from "./affirm";
 import { hasAgentReplied, cannedIntroText } from "./intro";
 import { chatModel, llmConfigured } from "./model";
+import { addTurnPerf } from "@/lib/perf";
 import type {
   CollectStage,
   FaqStage,
@@ -232,21 +233,22 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
   const baseTools = {
     reply: tool({
       description:
-        "WhatsApp message to the customer. Call once unless another tool already set the outbound text.",
-      inputSchema: z.object({ text: z.string() }),
-      execute: async ({ text }: { text: string }) => {
+        "WhatsApp message to the customer. Call once unless another tool already set the outbound text. Include intent in the same call (sales / support / other).",
+      inputSchema: z.object({
+        text: z.string(),
+        intent: z.enum(["sales", "support", "other"]).optional(),
+      }),
+      execute: async ({
+        text,
+        intent,
+      }: {
+        text: string;
+        intent?: "sales" | "support" | "other";
+      }) => {
         if (!collected.replyLocked) {
           collected.reply = text.trim();
         }
-        return "ok";
-      },
-    }),
-    set_intent: tool({
-      description:
-        "What they want: sales (buy/book/quote), support (warranty, complaint, no-show), or other. Call every turn.",
-      inputSchema: z.object({ intent: z.enum(["sales", "support", "other"]) }),
-      execute: async ({ intent }: { intent: "sales" | "support" | "other" }) => {
-        collected.intent = intent;
+        if (intent) collected.intent = intent;
         return "ok";
       },
     }),
@@ -328,19 +330,30 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
   }
 
   try {
+    const system = buildTalkSystemPrompt(ctx, stage, fieldsForTurn);
+    // Cap talk transcript at 8 (load may keep more for clocks/helpers).
+    const prompt = ctx.messages
+      .slice(-8)
+      .map((m) => `${m.role}: ${m.text}`)
+      .join("\n");
+    addTurnPerf({ talk_prompt_chars: system.length + prompt.length });
     const result = await generateText({
       model: chatModel(),
-      system: buildTalkSystemPrompt(ctx, stage, fieldsForTurn),
-      prompt: ctx.messages
-        .slice(-12)
-        .map((m) => `${m.role}: ${m.text}`)
-        .join("\n"),
+      system,
+      prompt,
       tools: { ...baseTools, ...resetTools, ...capabilityTools } as Parameters<
         typeof generateText
       >[0]["tools"],
       stopWhen: stepCountIs(8),
-      maxRetries: 2,
+      maxRetries: 1,
     });
+    const toolsUsed: string[] = [];
+    for (const step of result.steps ?? []) {
+      for (const call of step.toolCalls ?? []) {
+        if (call.toolName) toolsUsed.push(call.toolName);
+      }
+    }
+    addTurnPerf({ talk_steps: result.steps?.length ?? 1, tools_used: toolsUsed });
 
     if (!collected.reply && result.text?.trim()) {
       collected.reply = result.text.trim();

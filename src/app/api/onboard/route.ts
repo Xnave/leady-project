@@ -11,7 +11,7 @@ import {
 } from "@/lib/flow/catalog";
 import { sanitizeBookingCollect } from "@/lib/flow/booking-collect";
 import { parseReservationConfig } from "@/lib/flow/reservation-config";
-import type { BookingConfig } from "@/lib/flow/booking-config";
+import { bookingConfigFromFields } from "@/lib/flow/booking-config";
 import {
   DEFAULT_INSTANCE_KIND,
   disableCapabilityInstance,
@@ -94,18 +94,29 @@ export async function POST(req: Request) {
   }
 
   const systemPrompt = buildAgentSystemPrompt(name, intro, phone, chatLanguage);
+  const venueHours = String(body.venueHours ?? "").trim();
+  const bookingConfig = bookingConfigFromFields({
+    venueAddress: String(body.venueAddress ?? "").trim(),
+    venueHours,
+    messageTemplates: {
+      request: String(body.bookingRequestTemplate ?? ""),
+      approved: String(body.bookingApprovedTemplate ?? ""),
+      rejected: String(body.bookingRejectedTemplate ?? ""),
+    },
+  });
+  if (venueHours && bookingConfig.venueSchedule.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "Opening hours could not be parsed into bookable day/time windows. Use day lists and clock ranges (e.g. Sun–Thu 09:00–19:00 or א', ג', ה' 09:00-19:00 | שישי 09:00-13:00).",
+      },
+      { status: 400 },
+    );
+  }
   const instanceConfigs: { capabilityId: CapabilityId; config: unknown }[] = [
     {
       capabilityId: "booking",
-      config: {
-        venueAddress: String(body.venueAddress ?? "").trim(),
-        venueHours: String(body.venueHours ?? "").trim(),
-        messageTemplates: {
-          request: String(body.bookingRequestTemplate ?? ""),
-          approved: String(body.bookingApprovedTemplate ?? ""),
-          rejected: String(body.bookingRejectedTemplate ?? ""),
-        },
-      } satisfies BookingConfig,
+      config: bookingConfig,
     },
     ...(body.reservationConfig !== undefined
       ? [

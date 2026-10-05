@@ -15,6 +15,7 @@ import { ListBar } from "./ListBar";
 import { ListMenus, type OpenMenu } from "./ListMenus";
 import type { ViewFilter } from "./rows";
 import { ToastProvider } from "./Toasts";
+import { markCrmClient } from "./crm-perf";
 import { useLeadRows } from "./useLeadRows";
 import { useLeadPeek } from "./useLeadPeek";
 import { useListKeyboard } from "./useListKeyboard";
@@ -54,6 +55,24 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, reason, channe
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [navPending, startNav] = useTransition();
+  const navStarted = useRef<number | null>(null);
+  const navPath = useRef("");
+  const wasNavPending = useRef(false);
+
+  useEffect(() => {
+    if (navPending) wasNavPending.current = true;
+  }, [navPending]);
+
+  // Soft nav finished when the transition settles and server rows arrive.
+  useEffect(() => {
+    if (navPending || !wasNavPending.current || navStarted.current == null) return;
+    wasNavPending.current = false;
+    markCrmClient("crm.client.nav", {
+      ms: performance.now() - navStarted.current,
+      path: navPath.current || pathname,
+    });
+    navStarted.current = null;
+  }, [navPending, initialRows, pathname]);
 
   // View state mirrors the URL, but updates at once on click so the tabs never lag.
   const propView: ViewFilter = { tab, stage, reason, channel };
@@ -77,6 +96,7 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, reason, channe
   const qTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Row click, Enter and the message icon open the peek; with it open, the cursor follows its lead.
   const { peekId, cursor, gap, openLead, closePeek } = useLeadPeek({ rows, kb, setKb, markRead });
+  const peekRow = peekId ? rows.find((r) => r.id === peekId) ?? null : null;
 
   // Client clock for relative times; ticks once a minute.
   useEffect(() => {
@@ -112,7 +132,10 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, reason, channe
       setView(viewRef.current);
       setKb(0);
       setSel(new Set());
-      startNav(() => router.replace(`${pathname}?${params.toString()}`, { scroll: false }));
+      navStarted.current = performance.now();
+      const path = `${pathname}?${params.toString()}`;
+      navPath.current = path;
+      startNav(() => router.replace(path, { scroll: false }));
     },
     [pathname, router],
   );
@@ -252,7 +275,7 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, reason, channe
         onOpen={openLead}
         onSubmenu={(kind, m) => setMenu({ ...m, kind })}
       />
-      <LeadPeek leadId={peekId} onClose={closePeek} onChanged={absorb} ui={ui} lang={lang} wonLabel={wonLabel} />
+      <LeadPeek leadId={peekId} peekRow={peekRow} onClose={closePeek} onChanged={absorb} ui={ui} lang={lang} wonLabel={wonLabel} />
     </div>
   );
 }

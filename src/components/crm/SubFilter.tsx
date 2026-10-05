@@ -46,7 +46,10 @@ export function SubFilter({
           mark: "reason" as const,
           value: r,
         }))
-      : (stages ?? []).map((st) => ({
+      : (stages ?? [])
+          // `link_sent` only exists for tenants that send booking links: hide it until used.
+          .filter((st) => st !== "link_sent" || counts.byStage[st] > 0 || stage === st)
+          .map((st) => ({
           key: st,
           label: stageLabel(ui, wonLabel, st),
           n: counts.byStage[st],

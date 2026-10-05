@@ -1,19 +1,19 @@
-import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { EnsureActiveOrg } from "@/components/EnsureActiveOrg";
 import { isAdminSession, primaryEmailFromClerkUser } from "@/lib/admin";
-import { isClerkConfigured } from "@/lib/clerk";
+import { isClerkReady } from "@/lib/clerk";
+import { getClerkAuth, getClerkUser } from "@/lib/clerk-auth";
 import { getUiLang } from "@/lib/cookies";
 import { resolveAccessibleOrgIds } from "@/lib/resolve-orgs";
 import { uiCopy } from "@/lib/ui";
 
 export default async function ActivatingPage() {
-  if (!isClerkConfigured()) redirect("/sign-in");
+  if (!isClerkReady()) redirect("/sign-in");
 
-  const { userId } = await auth();
+  const { userId } = await getClerkAuth();
   if (!userId) redirect("/sign-in");
 
-  const user = await currentUser();
+  const user = await getClerkUser();
   const email = await primaryEmailFromClerkUser(user);
   const orgIds = await resolveAccessibleOrgIds(userId, email);
   const admin = await isAdminSession();

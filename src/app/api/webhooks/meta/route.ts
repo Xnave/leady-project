@@ -4,6 +4,7 @@ import { adminBypass } from "@/lib/admin";
 import { decryptSecret, verifyHookMyAppHmac } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { enqueueAgentTurn } from "@/lib/flow/run-turn";
+import { safeRefreshLeadState } from "@/lib/crm/refresh";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -66,11 +67,16 @@ export async function POST(req: Request) {
       text: msg.text,
     });
     if (!inserted) continue;
-    await enqueueAgentTurn({
-      tenantId: channel.tenantId,
-      conversationId: inserted.conversationId,
-      triggerMessageId: inserted.messageId,
-    });
+    try {
+      await enqueueAgentTurn({
+        tenantId: channel.tenantId,
+        conversationId: inserted.conversationId,
+        triggerMessageId: inserted.messageId,
+      });
+    } catch (err) {
+      console.warn(JSON.stringify({ msg: "meta.enqueue_failed", error: String(err) }));
+      await safeRefreshLeadState(channel.tenantId, inserted.leadId);
+    }
   }
 
   return new Response("ok", { status: 200 });

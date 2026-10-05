@@ -1,16 +1,19 @@
-import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
+import { clerkClient } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import {
   impersonatedTenantId,
   isAdminSession,
   adminBypass,
   primaryEmailFromClerkUser,
 } from "@/lib/admin";
+import { getClerkAuth, getClerkUser } from "@/lib/clerk-auth";
 import { claimOwnerOrganizations } from "@/lib/claim-owner";
 import { claimPendingTeamInvites } from "@/lib/claim-team";
 import { prisma } from "@/lib/db";
 
-export async function requireTenantId(): Promise<string> {
+/** One resolution per RSC request (AppShell + page share). */
+export const requireTenantId = cache(async (): Promise<string> => {
   const acting = await impersonatedTenantId();
   if (acting) {
     const tenant = await prisma.tenant.findUnique({ where: { id: acting } });
@@ -28,7 +31,7 @@ export async function requireTenantId(): Promise<string> {
     return id;
   }
 
-  const { orgId, userId } = await auth();
+  const { orgId, userId } = await getClerkAuth();
   if (!userId) throw new Error("Sign in required");
   if (!orgId) {
     if (await isAdminSession()) throw new Error("Select a tenant from Admin");
@@ -38,7 +41,7 @@ export async function requireTenantId(): Promise<string> {
       limit: 10,
     });
     if (memberships.data.length === 0) {
-      const user = await currentUser();
+      const user = await getClerkUser();
       const email = await primaryEmailFromClerkUser(user);
       const claimed = [
         ...(await claimOwnerOrganizations(userId, email)),
@@ -57,7 +60,7 @@ export async function requireTenantId(): Promise<string> {
   const tenant = await prisma.tenant.findUnique({ where: { clerkOrgId: orgId } });
   if (!tenant) {
     // Active Clerk org is not a Zapidly tenant (e.g. personal org). Switch via /activating.
-    const user = await currentUser();
+    const user = await getClerkUser();
     const email = await primaryEmailFromClerkUser(user);
     const { resolveAccessibleOrgIds } = await import("@/lib/resolve-orgs");
     const zapidlyOrgs = await resolveAccessibleOrgIds(userId, email);
@@ -65,7 +68,15 @@ export async function requireTenantId(): Promise<string> {
     throw new Error("No Zapidly tenant for this organization");
   }
   return tenant.id;
-}
+});
+
+/** Sidebar / shell fields for a tenant. One read per RSC request. */
+export const getTenantShell = cache(async (tenantId: string) => {
+  return prisma.tenant.findFirst({
+    where: { id: tenantId },
+    select: { name: true, ownerEmail: true, ownerClerkUserId: true },
+  });
+});
 
 /** Same as requireTenantId but redirects for page navigation. */
 export async function requireTenantIdForPage(): Promise<string> {

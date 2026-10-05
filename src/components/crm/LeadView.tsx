@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { LeadViewDTO } from "@/lib/crm/view";
+import type { LeadViewDTO, LeadViewScope } from "@/lib/crm/view";
 import type { UiCopy } from "@/lib/ui";
 import { FollowUpBar } from "./FollowUpBar";
 import { initials } from "./format";
@@ -31,6 +31,10 @@ type Props = {
   onTab?: (t: LeadTab) => void;
   /** Id for the name heading (the peek's `aria-labelledby`). */
   headingId?: string;
+  /** Reload scope after mutations (peek stays lite until Activity/Details loads full). */
+  viewScope?: LeadViewScope;
+  /** Instant peek: lite fetch still in flight; chat shows skeletons. */
+  chatLoading?: boolean;
 };
 
 /**
@@ -39,8 +43,8 @@ type Props = {
  * `peek` stacks everything in one column; `page` puts next step, notes and details in
  * a side column.
  */
-export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tabProp, onTab, headingId }: Props) {
-  const lv = useLeadView({ dto, ui, lang, wonLabel, onChanged });
+export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tabProp, onTab, headingId, viewScope = "full", chatLoading = false }: Props) {
+  const lv = useLeadView({ dto, ui, lang, wonLabel, onChanged, viewScope });
   const d = lv.d;
   const clock = useClock();
   const [ownTab, setOwnTab] = useState<LeadTab>("chat");
@@ -122,6 +126,19 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
     />
   );
 
+  // The list's "Where it stands" cell is one truncated line; here it is shown in full.
+  // Skipped when it is just the next step, which the editor below already shows.
+  const standText = d.stand.trim();
+  const stand =
+    standText && standText !== d.nextStepText?.trim() ? (
+      <section className="crm-sec" aria-label={ui.crm.cols.stand}>
+        <div className="crm-sec-h">{ui.crm.cols.stand}</div>
+        <p className="crm-stand-full">
+          <bdi>{standText}</bdi>
+        </p>
+      </section>
+    ) : null;
+
   const notes = <LeadNotes notes={d.notes} ui={ui} lang={lang} clock={clock} onAdd={lv.addNote} onPin={lv.pinNote} />;
 
   const tabs = (
@@ -131,7 +148,7 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
       ui={ui}
       hide={variant === "page" ? ["details"] : undefined}
       panels={{
-        chat: () => <LeadChat dto={d} ui={ui} lang={lang} onSent={() => void lv.reload()} />,
+        chat: () => <LeadChat dto={d} ui={ui} lang={lang} chatLoading={chatLoading} onSent={() => void lv.reload()} />,
         activity: () => <LeadTimeline timeline={d.timeline} ui={ui} lang={lang} clock={clock} wonLabel={wonLabel} />,
         details: () => <LeadDetails dto={d} ui={ui} />,
       }}
@@ -148,6 +165,7 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
           {tabs}
         </div>
         <aside className="crm-full-side">
+          {stand}
           {next}
           {notes}
           <LeadDetails dto={d} ui={ui} />
@@ -161,6 +179,7 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
       {head}
       {task}
       {fubar}
+      {stand}
       {next}
       {notes}
       <div className="crm-lv-tabwrap">{tabs}</div>
