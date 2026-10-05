@@ -1,3 +1,7 @@
+import {
+  ChannelAgentRepliesToggle,
+  TenantAgentRepliesToggle,
+} from "@/components/AgentRepliesControls";
 import { ConnectChannelButton } from "@/components/ConnectChannelButton";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
@@ -28,13 +32,28 @@ export default async function ChannelsPage({
   const { tenantId } = await requireTenantRoleForPage("manager");
   const lang = await getUiLang();
   const ui = uiCopy(lang);
-  const channels = await prisma.channelConnection.findMany({
-    where: { tenantId },
-    include: { agent: true },
-  });
+  const [tenant, channels] = await Promise.all([
+    prisma.tenant.findFirst({
+      where: { id: tenantId },
+      select: { agentRepliesEnabled: true },
+    }),
+    prisma.channelConnection.findMany({
+      where: { tenantId },
+      include: { agent: true },
+    }),
+  ]);
   const ready = zernioConfigured();
   const liveWa = channels.find((ch) => ch.provider === "whatsapp" && isLiveChannel(ch));
   const liveIg = channels.find((ch) => ch.provider === "instagram" && isLiveChannel(ch));
+
+  const toggleLabels = {
+    agentRepliesTitle: ui.channels.agentRepliesTitle,
+    agentRepliesHint: ui.channels.agentRepliesHint,
+    agentRepliesOn: ui.channels.agentRepliesOn,
+    agentRepliesOff: ui.channels.agentRepliesOff,
+    channelAgentReplies: ui.channels.channelAgentReplies,
+    saveFailed: ui.channels.agentRepliesSaveFailed,
+  };
 
   const rows = [
     {
@@ -62,6 +81,11 @@ export default async function ChannelsPage({
       {error ? <div className="status-banner warn">{error}</div> : null}
       {!ready ? <p className="muted">{ui.common.zernioMissing}</p> : null}
 
+      <TenantAgentRepliesToggle
+        initialEnabled={tenant?.agentRepliesEnabled !== false}
+        labels={toggleLabels}
+      />
+
       {!liveWa && ready ? (
         <div className="card">
           <h2>{ui.channels.connectStepsTitle}</h2>
@@ -81,6 +105,7 @@ export default async function ChannelsPage({
               <th>{ui.channels.identity}</th>
               <th>{ui.common.status}</th>
               <th>{ui.common.flow}</th>
+              <th>{ui.channels.agentRepliesCol}</th>
               <th>{ui.channels.actions}</th>
             </tr>
           </thead>
@@ -108,6 +133,17 @@ export default async function ChannelsPage({
                   {row.live?.agent
                     ? ui.catalog[normalizeCatalogId(row.live.agent.catalogId)].title
                     : ui.common.empty}
+                </td>
+                <td>
+                  {row.live ? (
+                    <ChannelAgentRepliesToggle
+                      channelId={row.live.id}
+                      initialEnabled={row.live.agentRepliesEnabled !== false}
+                      labels={toggleLabels}
+                    />
+                  ) : (
+                    ui.common.empty
+                  )}
                 </td>
                 <td className="table-actions">
                   {ready ? (

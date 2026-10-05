@@ -1,6 +1,7 @@
 import { inngest } from "./client";
 import { runTurnNow, sendAndSave, type NudgeRequestedEvent } from "@/lib/flow/run-turn";
 import { loadTurnContext } from "@/lib/conversations";
+import { agentRepliesAllowed } from "@/lib/flow/agent-replies";
 import { draftNudgeReply } from "@/lib/flow/llm";
 import { leadRepliedSinceAnchor } from "@/lib/flow/helpers";
 import { prisma } from "@/lib/db";
@@ -112,6 +113,7 @@ export const nudgeIfSilent = inngest.createFunction(
         return { skipped: "stale-flow" };
       }
       const ctx = await loadTurnContext(data.tenantId, data.conversationId);
+      if (!agentRepliesAllowed(ctx)) return { skipped: "agent_replies_disabled" };
       const stage = flow.stages[data.expectedStage];
       if (!stage) return { skipped: "missing-stage" };
       if (

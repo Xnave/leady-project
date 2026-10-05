@@ -21,6 +21,7 @@ import {
 import { interpretTurn } from "@/lib/flow/interpreter";
 import { answerFaq, classifyIntent, draftQuestion, extractFields, talkTurn } from "@/lib/flow/llm";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
+import { agentRepliesAllowed } from "@/lib/flow/agent-replies";
 import { callbackPhone, savedPhone } from "@/lib/flow/booking-collect";
 import {
   closeConversationAsDone,
@@ -209,7 +210,7 @@ type RunTurnOpts = {
 };
 
 export type SkippedTurnResult = {
-  skipped: "missing_conversation";
+  skipped: "missing_conversation" | "agent_replies_disabled";
   conversationId: string;
   stage: string;
   action: string;
@@ -271,6 +272,17 @@ async function runTurn(opts: RunTurnOpts) {
     }
     throw err;
   }
+
+  if (!agentRepliesAllowed(ctx)) {
+    return {
+      skipped: "agent_replies_disabled",
+      conversationId: opts.conversationId,
+      stage: ctx.conversation.flowState,
+      action: "agent_replies_disabled",
+      nudgeEvent: null,
+    } satisfies SkippedTurnResult;
+  }
+
   const outboundKey = opts.triggerMessageId
     ? `out-${opts.conversationId}-${opts.triggerMessageId}`
     : undefined;
