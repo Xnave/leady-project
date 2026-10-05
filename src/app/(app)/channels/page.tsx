@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
 import { getUiLang } from "@/lib/cookies";
 import { zernioConfigured } from "@/lib/zernio";
-import { requireTenantIdForPage } from "@/lib/tenant";
+import { requireTenantRoleForPage } from "@/lib/tenant-role";
 import { uiCopy } from "@/lib/ui";
 import { normalizeCatalogId } from "@/lib/flow/catalog";
 
@@ -25,7 +25,7 @@ export default async function ChannelsPage({
   searchParams: Promise<{ connected?: string; error?: string }>;
 }) {
   const { connected, error } = await searchParams;
-  const tenantId = await requireTenantIdForPage();
+  const { tenantId } = await requireTenantRoleForPage("manager");
   const lang = await getUiLang();
   const ui = uiCopy(lang);
   const channels = await prisma.channelConnection.findMany({

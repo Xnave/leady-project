@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireTenantId } from "@/lib/tenant";
+import { tenantRoleOr403 } from "@/lib/tenant-role";
 import { syncHookMyAppChannels } from "@/lib/hookmyapp-sync";
 import { redirectPath } from "@/lib/request-url";
 
 export async function POST(req: Request) {
-  const tenantId = await requireTenantId();
+  const access = await tenantRoleOr403("manager");
+  if (access instanceof Response) return access;
+  const { tenantId } = access;
   try {
     const synced = await syncHookMyAppChannels(tenantId);
     const url = redirectPath(req, "/channels");

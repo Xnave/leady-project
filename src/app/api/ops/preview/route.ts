@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireTenantId } from "@/lib/tenant";
+import { tenantRoleOr403 } from "@/lib/tenant-role";
 import { previewFlow } from "@/lib/flow/preview";
 import type { FlowDefinition, HitlPolicy, LeadSchema } from "@/lib/flow/types";
 
 export async function POST(req: Request) {
-  const tenantId = await requireTenantId();
+  const access = await tenantRoleOr403("platform");
+  if (access instanceof Response) return access;
+  const { tenantId } = access;
   const form = await req.formData();
   const agentId = String(form.get("agentId"));
   const transcript = String(form.get("transcript") ?? "")

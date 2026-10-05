@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireTenantId } from "@/lib/tenant";
+import { tenantRoleOr403 } from "@/lib/tenant-role";
 import { bindZernioChannel } from "@/lib/channels/zernio-connect";
 import { appOrigin } from "@/lib/request-url";
 
 export async function GET(req: Request) {
-  const tenantId = await requireTenantId();
+  const access = await tenantRoleOr403("manager");
+  if (access instanceof Response) return access;
+  const { tenantId } = access;
   const url = new URL(req.url);
   const profileId = url.searchParams.get("profileId") ?? "";
   const accountId = url.searchParams.get("accountId") ?? "";

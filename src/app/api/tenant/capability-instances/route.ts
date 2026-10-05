@@ -10,6 +10,7 @@ import { parseReservationConfig } from "@/lib/flow/reservation-config";
 import { getCapability } from "@/lib/flow/registry";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
 import { requireTenantId } from "@/lib/tenant";
+import { tenantRoleOr403 } from "@/lib/tenant-role";
 
 /**
  * Each capability sanitizes its own instance config on write, so a bad payload
@@ -29,7 +30,9 @@ export async function GET() {
 
 /** PUT one instance: create it, replace its config, or disable it. */
 export async function PUT(req: Request) {
-  const tenantId = await requireTenantId();
+  const access = await tenantRoleOr403("platform");
+  if (access instanceof Response) return access;
+  const { tenantId } = access;
   const body = (await req.json().catch(() => null)) as {
     capabilityId?: string;
     kind?: string;

@@ -21,10 +21,12 @@ import { isChatLanguage, type ChatLanguage } from "@/lib/flow/locale";
 import { defaultLeadSchema, validateFlow } from "@/lib/flow/validate";
 import { FlowConfigError } from "@/lib/flow/types";
 import { buildAgentSystemPrompt } from "@/lib/flow/catalog";
-import { requireTenantId } from "@/lib/tenant";
+import { tenantRoleOr403 } from "@/lib/tenant-role";
 
 export async function POST(req: Request) {
-  const tenantId = await requireTenantId();
+  const access = await tenantRoleOr403("manager");
+  if (access instanceof Response) return access;
+  const { tenantId } = access;
   const body = (await req.json()) as {
     name?: string;
     phone?: string;

@@ -74,6 +74,7 @@ export function SidebarNav({
   lang,
   theme,
   showTeam = false,
+  showSettings = false,
   showAccount = false,
 }: {
   ui: UiCopy;
@@ -83,6 +84,8 @@ export function SidebarNav({
   lang: UiLang;
   theme: UiTheme;
   showTeam?: boolean;
+  /** Setup + Channels: tenant owner/admin or platform admin. */
+  showSettings?: boolean;
   showAccount?: boolean;
 }) {
   const pathname = usePathname();
@@ -93,7 +96,11 @@ export function SidebarNav({
     return pathname.startsWith(href);
   }
 
-  const ownerItems = OWNER_ITEMS.filter((item) => item.key !== "team" || showTeam);
+  const ownerItems = OWNER_ITEMS.filter((item) => {
+    if (item.key === "team") return showTeam;
+    if (item.key === "setup" || item.key === "channels") return showSettings;
+    return true;
+  });
   const staffItems = STAFF_ITEMS.filter((item) => !item.adminOnly || admin);
 
   return (

@@ -17,6 +17,7 @@ import {
   whatsappChatUrl,
 } from "@/lib/leads";
 import { requireTenantIdForPage } from "@/lib/tenant";
+import { canManageTenant } from "@/lib/tenant-role";
 import { convoStatusLabel } from "@/lib/ui/labels";
 import { uiCopy } from "@/lib/ui";
 
@@ -102,6 +103,7 @@ export default async function DemoPage({
     tenant?.chatLanguage && isChatLanguage(tenant.chatLanguage) ? tenant.chatLanguage : "multi";
   const languageTitle = ui.chatLanguage[languageId]?.title ?? languageId;
   const setupIncomplete = !(tenant?.intro ?? "").trim();
+  const manager = await canManageTenant();
 
   const chatLabels = {
     placeholder: ui.chat.placeholder,
@@ -203,7 +205,7 @@ export default async function DemoPage({
             </>
           ) : (
             <>
-              {setupIncomplete ? (
+              {manager && setupIncomplete ? (
                 <p className="muted">
                   <Link href="/onboard">{ui.nav.setup}</Link>
                 </p>

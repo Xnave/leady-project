@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireTenantId } from "@/lib/tenant";
+import { tenantRoleOr403 } from "@/lib/tenant-role";
 import {
   createOnboardingLink,
   ensureCustomerWorkspace,
@@ -8,7 +8,9 @@ import {
 } from "@/lib/hookmyapp";
 
 export async function POST(req: Request) {
-  const tenantId = await requireTenantId();
+  const access = await tenantRoleOr403("manager");
+  if (access instanceof Response) return access;
+  const { tenantId } = access;
   if (!hookmyappConfigured()) {
     return new NextResponse(
       "Set HOOKMYAPP_API_KEY and HOOKMYAPP_ORG_ID in .env",
