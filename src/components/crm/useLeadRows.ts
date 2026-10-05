@@ -6,6 +6,7 @@ import type { LeadRowDTO } from "@/lib/crm/view";
 import type { PipelineStage } from "@/lib/crm/types";
 import { fillUi, type UiCopy } from "@/lib/ui";
 import { crmApi } from "./crm-client";
+import { markCrmClient } from "./crm-perf";
 import {
   matchesView,
   mergePending,
@@ -174,6 +175,7 @@ export function useLeadRows(o: {
       const saved = snapshot(ids).filter((s) => s.row.unread !== unread);
       if (!saved.length) return;
       const tokens = edit(saved, (r) => ({ ...r, unread }));
+      const t0 = performance.now();
       const call =
         saved.length === 1
           ? crmApi.setUnread(saved[0].row.id, unread)
@@ -183,6 +185,11 @@ export function useLeadRows(o: {
           // Unread is already patched locally; skip router.refresh() so peek open
           // does not re-run AppShell + the leads RSC while the view loads.
           settle(tokens, true);
+          markCrmClient("crm.client.mark_read", {
+            ms: performance.now() - t0,
+            leadId: saved[0]?.row.id,
+            extra: { unread, count: saved.length },
+          });
         },
         () => {
           settle(tokens, false);

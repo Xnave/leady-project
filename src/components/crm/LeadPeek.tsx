@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import type { LeadViewDTO } from "@/lib/crm/view";
+import type { LeadViewDTO, LeadViewScope } from "@/lib/crm/view";
 import type { UiCopy } from "@/lib/ui";
 import { crmApi } from "./crm-client";
+import { markCrmClient } from "./crm-perf";
 import { Icon } from "./Icon";
 import type { LeadTab } from "./LeadTabs";
 import { LeadView } from "./LeadView";
@@ -41,10 +42,10 @@ function PeekSkeleton() {
 }
 
 /**
- * The lead peek: a drawer over the list. It loads `crmApi.view` whenever `leadId`
+ * The lead peek: a drawer over the list. It loads a lite view whenever `leadId`
  * changes, keeping the previous lead on screen (dimmed) while the next one loads, and
- * a skeleton on first open. Esc, the scrim and the close button close it; focus moves
- * into the panel on open (the list puts it back on the row on close).
+ * a skeleton on first open. Activity/Details fetch the full view once. Esc, the scrim
+ * and the close button close it; focus moves into the panel on open.
  */
 export function LeadPeek({
   leadId,
@@ -66,12 +67,17 @@ export function LeadPeek({
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [tab, setTab] = useState<LeadTab>("chat");
+  const [viewScope, setViewScope] = useState<LeadViewScope>("lite");
   const panelRef = useRef<HTMLElement>(null);
+  const openStarted = useRef(0);
+  const fullInflight = useRef(false);
   // A new lead starts without the previous lead's error.
   const [seenId, setSeenId] = useState(leadId);
   if (seenId !== leadId) {
     setSeenId(leadId);
     setFailed(false);
+    setViewScope("lite");
+    fullInflight.current = false;
   }
   const headingId = useId();
   const closeRef = useRef(onClose);
@@ -82,11 +88,24 @@ export function LeadPeek({
   useEffect(() => {
     if (!leadId) return;
     let live = true;
-    crmApi.view(leadId).then(
+    openStarted.current = performance.now();
+    setViewScope("lite");
+    fullInflight.current = false;
+    crmApi.view(leadId, { scope: "lite" }).then(
       (v) => {
         if (!live) return;
+        const ms = performance.now() - openStarted.current;
+        markCrmClient("crm.client.peek_open", { ms, leadId, scope: "lite" });
         setFailed(false);
         setDto(v);
+        requestAnimationFrame(() => {
+          if (!live) return;
+          markCrmClient("crm.client.peek_paint", {
+            ms: performance.now() - openStarted.current,
+            leadId,
+            scope: "lite",
+          });
+        });
       },
       () => {
         if (live) setFailed(true);
@@ -97,6 +116,33 @@ export function LeadPeek({
     };
   }, [leadId, attempt]);
 
+  const ensureFull = (nextTab: LeadTab) => {
+    if (nextTab !== "activity" && nextTab !== "details") return;
+    if (!leadId || viewScope === "full" || fullInflight.current) return;
+    fullInflight.current = true;
+    const t0 = performance.now();
+    crmApi.view(leadId, { scope: "full" }).then(
+      (v) => {
+        markCrmClient("crm.client.peek_full", {
+          ms: performance.now() - t0,
+          leadId,
+          scope: "full",
+        });
+        setDto(v);
+        setViewScope("full");
+        fullInflight.current = false;
+      },
+      () => {
+        fullInflight.current = false;
+      },
+    );
+  };
+
+  const onTab = (t: LeadTab) => {
+    setTab(t);
+    ensureFull(t);
+  };
+
   // After the slide-out, forget the lead so the next open starts from the skeleton.
   useEffect(() => {
     if (open) return;
@@ -104,6 +150,7 @@ export function LeadPeek({
       setDto(null);
       setFailed(false);
       setTab("chat");
+      setViewScope("lite");
     }, EXIT_MS);
     return () => clearTimeout(t);
   }, [open]);
@@ -201,8 +248,9 @@ export function LeadPeek({
               wonLabel={wonLabel}
               onChanged={onChanged}
               tab={tab}
-              onTab={setTab}
+              onTab={onTab}
               headingId={headingId}
+              viewScope={viewScope}
             />
           ) : (
             <PeekSkeleton />

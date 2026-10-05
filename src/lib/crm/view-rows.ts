@@ -170,8 +170,6 @@ export async function loadLeadRows(o: {
 }): Promise<{ rows: LeadRowDTO[]; total: number; counts: CrmCounts }> {
   const started = Date.now();
   const now = new Date();
-  const instanceLabels = await loadInstanceFieldLabels(o.tenantId);
-  const labels = requestFieldLabels(o.ui, instanceLabels);
   const where = buildRowsWhere(o, now);
 
   const countsPromise =
@@ -179,7 +177,8 @@ export async function loadLeadRows(o: {
       ? Promise.resolve(o.counts)
       : computeCounts(o.tenantId, o.showDemo, now);
 
-  const [counts, total, leads] = await Promise.all([
+  const [instanceLabels, counts, total, leads] = await Promise.all([
+    loadInstanceFieldLabels(o.tenantId),
     countsPromise,
     prisma.lead.count({ where }),
     isQueueTab(o.tab)
@@ -192,6 +191,7 @@ export async function loadLeadRows(o: {
           include: rowInclude,
         }),
   ]);
+  const labels = requestFieldLabels(o.ui, instanceLabels);
 
   let pageLeads = leads;
   // Most urgent first: by reason priority, then the longest-waiting (for cold, the

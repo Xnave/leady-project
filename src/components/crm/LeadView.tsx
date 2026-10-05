@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { LeadViewDTO } from "@/lib/crm/view";
+import type { LeadViewDTO, LeadViewScope } from "@/lib/crm/view";
 import type { UiCopy } from "@/lib/ui";
 import { FollowUpBar } from "./FollowUpBar";
 import { initials } from "./format";
@@ -31,6 +31,8 @@ type Props = {
   onTab?: (t: LeadTab) => void;
   /** Id for the name heading (the peek's `aria-labelledby`). */
   headingId?: string;
+  /** Reload scope after mutations (peek stays lite until Activity/Details loads full). */
+  viewScope?: LeadViewScope;
 };
 
 /**
@@ -39,8 +41,8 @@ type Props = {
  * `peek` stacks everything in one column; `page` puts next step, notes and details in
  * a side column.
  */
-export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tabProp, onTab, headingId }: Props) {
-  const lv = useLeadView({ dto, ui, lang, wonLabel, onChanged });
+export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tabProp, onTab, headingId, viewScope = "full" }: Props) {
+  const lv = useLeadView({ dto, ui, lang, wonLabel, onChanged, viewScope });
   const d = lv.d;
   const clock = useClock();
   const [ownTab, setOwnTab] = useState<LeadTab>("chat");

@@ -1,4 +1,4 @@
-import type { LeadViewDTO } from "@/lib/crm/view";
+import type { LeadViewDTO, LeadViewScope } from "@/lib/crm/view";
 
 /** Fetch helpers for the CRM API routes. Every call throws on a non-2xx response. */
 async function send<T = { ok: boolean }>(url: string, method: string, body?: unknown, keepalive = false): Promise<T> {
@@ -40,7 +40,11 @@ export const crmApi = {
   /** The read route is a POST that takes `{ unread }`. */
   markRead: (id: string) => send(`/api/leads/${id}/read`, "POST", { unread: false }),
   setUnread: (id: string, unread: boolean) => send(`/api/leads/${id}/read`, "POST", { unread }),
-  view: (id: string) => send<LeadViewDTO>(`/api/leads/${id}/view`, "GET"),
+  view: (id: string, opts?: { scope?: LeadViewScope }) => {
+    const scope = opts?.scope ?? "full";
+    const q = scope === "full" ? "" : `?scope=${scope}`;
+    return send<LeadViewDTO>(`/api/leads/${id}/view${q}`, "GET");
+  },
   /** Approve / decline / offer another time on a request (the approval task). */
   decideRequest: (requestId: string, form: FormData) => postForm(`/api/requests/${requestId}/decide`, form),
   /** Reply to a handoff and hand the chat back to the bot. */
