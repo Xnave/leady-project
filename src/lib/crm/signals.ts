@@ -9,6 +9,8 @@ export type SignalSnapshot = {
   hasAgentReply: boolean;
   /** Every request on the lead (the shared request primitive). */
   requests: { status: string; kind: string }[];
+  /** The bot sent the lead a self-serve booking link (no request to approve). */
+  linkSent?: boolean;
 };
 
 export type SignalProvider = (s: SignalSnapshot) => StageSignal[];
@@ -52,6 +54,8 @@ export function collectSignals(s: SignalSnapshot): StageSignal[] {
   if (filled(s.fields.name_collected_by_agent)) {
     out.push({ stage: "qualified", reason: "contact_collected" });
   }
+
+  if (s.linkSent) out.push({ stage: "link_sent", reason: "link_sent" });
 
   for (const r of s.requests) {
     if (r.status === "pending") out.push({ stage: "pending", reason: `request:${r.kind}:pending` });

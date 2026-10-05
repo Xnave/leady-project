@@ -10,6 +10,7 @@ export type AutoReasonKey =
   | "intent"
   | "flow"
   | "collected"
+  | "linkSent"
   | "requestPending"
   | "requestApproved"
   | "revived";
@@ -17,7 +18,7 @@ export type AutoReasonKey =
 /**
  * Map a stored auto `stageReason` (from `collectSignals` / `decideStage`) to its copy key:
  * `request:*:pending`, `request:*:approved`, `flow:*`, `intent:*`, `collect:*`,
- * `contact_collected`, `engaged`, `first_message`, `revived`. Unknown reasons give null.
+ * `contact_collected`, `link_sent`, `engaged`, `first_message`, `revived`. Unknown reasons give null.
  */
 export function autoReasonKey(reason: string): AutoReasonKey | null {
   const r = reason.trim();
@@ -26,6 +27,7 @@ export function autoReasonKey(reason: string): AutoReasonKey | null {
   if (r.startsWith("flow:")) return "flow";
   if (r.startsWith("intent:")) return "intent";
   if (r.startsWith("collect:") || r === "contact_collected") return "collected";
+  if (r === "link_sent") return "linkSent";
   if (r === "engaged" || r === "first_message" || r === "revived") return r;
   return null;
 }

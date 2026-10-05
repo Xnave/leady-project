@@ -482,6 +482,7 @@ export const en: UiCopy = {
     actions: "Actions",
   },
   demo: {
+    testCustomerName: "Test customer #{n}",
     leadProfile: "Customer profile",
     simulateAs: "Simulate as customer",
     agentContext: "Agent context",
@@ -523,6 +524,7 @@ export const en: UiCopy = {
       new: "New",
       talking: "Talking",
       qualified: "Qualified",
+      link_sent: "Link sent",
       pending: "Pending approval",
       won: "Won",
       lost: "Lost",
@@ -586,6 +588,7 @@ export const en: UiCopy = {
       intent: "intent detected",
       flow: "following the flow",
       collected: "all details collected",
+      linkSent: "booking link sent",
       requestPending: "request pending",
       requestApproved: "request approved",
       revived: "lead wrote again",

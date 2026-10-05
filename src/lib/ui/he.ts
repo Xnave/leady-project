@@ -482,6 +482,7 @@ export const he: UiCopy = {
     actions: "פעולות",
   },
   demo: {
+    testCustomerName: "לקוח לדוגמה #{n}",
     leadProfile: "פרטי לקוח",
     simulateAs: "סימולציה כלקוח",
     agentContext: "הקשר הסוכן",
@@ -523,6 +524,7 @@ export const he: UiCopy = {
       new: "חדש",
       talking: "בשיחה",
       qualified: "פרטים התקבלו",
+      link_sent: "קישור נשלח",
       pending: "ממתין לאישור",
       won: "נסגר",
       lost: "אבוד",
@@ -586,6 +588,7 @@ export const he: UiCopy = {
       intent: "זוהתה כוונה",
       flow: "לפי התסריט",
       collected: "כל הפרטים נאספו",
+      linkSent: "נשלח קישור להזמנה",
       requestPending: "בקשה ממתינה",
       requestApproved: "הבקשה אושרה",
       revived: "הליד כתב שוב",

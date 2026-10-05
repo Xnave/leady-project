@@ -6,6 +6,7 @@ export const PIPELINE_STAGES = [
   "new",
   "talking",
   "qualified",
+  "link_sent",
   "pending",
   "won",
   "lost",
@@ -13,9 +14,13 @@ export const PIPELINE_STAGES = [
 ] as const;
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 
-/** Open pipeline in rank order. Closed stages sit outside the ranking. */
-export const RANKED_STAGES = ["new", "talking", "qualified", "pending", "won"] as const;
-export const ACTIVE_STAGES = ["new", "talking", "qualified", "pending"] as const;
+/**
+ * Open pipeline in rank order. Closed stages sit outside the ranking.
+ * `link_sent`: the bot sent a self-serve booking link and the customer completes it on
+ * their own; only tenants that send links ever reach it, so the UI hides it until used.
+ */
+export const RANKED_STAGES = ["new", "talking", "qualified", "link_sent", "pending", "won"] as const;
+export const ACTIVE_STAGES = ["new", "talking", "qualified", "link_sent", "pending"] as const;
 export const CLOSED_STAGES = ["lost", "not_relevant"] as const;
 
 export type StageSource = "auto" | "manual";

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import type { FlowDefinition } from "@/lib/flow/types";
 import { REQUEST_APPROVAL_TASK } from "@/lib/requests";
 import { addTurnPerf } from "@/lib/perf";
+import { RESERVATION_LINK_SENT_TASK } from "@/lib/reservations";
 import { OPEN_APPROVAL_TASK, OPEN_HANDOFF_TASK } from "./needs";
 import { planLeadState, type LeadStatePlan, type LeadStateSnapshot } from "./plan";
 import { isFollowUpReason, isPipelineStage } from "./types";
@@ -33,7 +34,7 @@ export async function loadLeadStateSnapshot(
   });
   if (!lead) return null;
 
-  const [convo, lastByRole] = await Promise.all([
+  const [convo, lastByRole, linkSentTask] = await Promise.all([
     // Every conversation closed: the stage still reads the last one's flow position.
     lead.conversations[0] ??
       prisma.conversation.findFirst({
@@ -45,6 +46,10 @@ export async function loadLeadStateSnapshot(
       by: ["role"],
       where: { tenantId, conversation: { leadId } },
       _max: { createdAt: true },
+    }),
+    prisma.hitlTask.findFirst({
+      where: { tenantId, leadId, type: RESERVATION_LINK_SENT_TASK },
+      select: { id: true },
     }),
   ]);
   const lastAt = (role: string) => lastByRole.find((g) => g.role === role)?._max.createdAt ?? null;
@@ -77,6 +82,7 @@ export async function loadLeadStateSnapshot(
       fields: (lead.fields as Record<string, unknown>) ?? {},
       hasAgentReply: lastAt("agent") != null,
       requests: lead.requests.map((r) => ({ status: r.status, kind: r.kind })),
+      linkSent: linkSentTask != null,
     },
     openHandoffSince: oldest(false),
     pendingApprovalSince: oldest(true),

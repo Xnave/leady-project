@@ -61,6 +61,10 @@ describe("collectSignals", () => {
       "qualified",
     );
   });
+  it("marks link_sent once the bot sent a booking link", () => {
+    expect(stages(collectSignals(snap({ linkSent: true })))).toContain("link_sent");
+    expect(stages(collectSignals(snap()))).not.toContain("link_sent");
+  });
   it("turns requests into pending and won", () => {
     const s = collectSignals(
       snap({ requests: [{ status: "pending", kind: "a" }, { status: "approved", kind: "b" }] }),

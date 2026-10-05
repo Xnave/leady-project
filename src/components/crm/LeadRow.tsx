@@ -146,7 +146,7 @@ export const LeadRow = memo(function LeadRow({ row: r, kb, checked, leaving, ui,
           <Icon name="down" small />
         </button>
       </span>
-      <span className="crm-stand" role="gridcell">
+      <span className="crm-stand" role="gridcell" title={r.nextStepText || r.stand}>
         {r.nextStepText ? (
           <span className="crm-stand-next">
             <Icon name="calPlus" small />
