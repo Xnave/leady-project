@@ -25,9 +25,11 @@ export async function loadLeadStateSnapshot(
         select: convoSelect,
       },
       requests: { select: { status: true, kind: true, updatedAt: true } },
-      // Same predicate as the "needs you" list, so the stored reason can't disagree with it.
+      // Open needs-you tasks + any link-sent marker (avoids a second hitl findFirst).
       hitlTasks: {
-        where: { OR: [OPEN_HANDOFF_TASK, OPEN_APPROVAL_TASK] },
+        where: {
+          OR: [OPEN_HANDOFF_TASK, OPEN_APPROVAL_TASK, { type: RESERVATION_LINK_SENT_TASK }],
+        },
         select: { type: true, createdAt: true },
       },
     },
@@ -37,11 +39,10 @@ export async function loadLeadStateSnapshot(
   const latest = (...ds: (Date | null)[]) =>
     ds.reduce<Date | null>((max, d) => (d && (!max || d > max) ? d : max), null);
 
-  // Prefer denormalized clocks on Lead (bumped on each message write). Fall back to
-  // groupBy only when both are null — cold/legacy leads that never got a bump.
-  const needsMessageScan = !lead.lastLeadMessageAt && !lead.lastOutboundAt;
+  // Prefer denormalized clocks per field. Scan messages only for clocks that are still null.
+  const needsMessageScan = !lead.lastLeadMessageAt || !lead.lastOutboundAt;
 
-  const [convo, lastByRole, linkSentTask] = await Promise.all([
+  const [convo, lastByRole] = await Promise.all([
     // Every conversation closed: the stage still reads the last one's flow position.
     lead.conversations[0] ??
       prisma.conversation.findFirst({
@@ -56,10 +57,6 @@ export async function loadLeadStateSnapshot(
           _max: { createdAt: true },
         })
       : Promise.resolve([] as { role: string; _max: { createdAt: Date | null } }[]),
-    prisma.hitlTask.findFirst({
-      where: { tenantId, leadId, type: RESERVATION_LINK_SENT_TASK },
-      select: { id: true },
-    }),
   ]);
   const lastAt = (role: string) => lastByRole.find((g) => g.role === role)?._max.createdAt ?? null;
 
@@ -67,12 +64,14 @@ export async function loadLeadStateSnapshot(
   const lastOutboundAt =
     lead.lastOutboundAt ?? latest(lastAt("agent"), lastAt("human"));
 
+  const openTasks = lead.hitlTasks.filter((t) => t.type !== RESERVATION_LINK_SENT_TASK);
   // The oldest open task sets "waiting since": the owner has been needed from then on.
   const oldest = (approval: boolean) =>
     earliest(
-      lead.hitlTasks.filter((t) => (t.type === REQUEST_APPROVAL_TASK) === approval).map((t) => t.createdAt),
+      openTasks.filter((t) => (t.type === REQUEST_APPROVAL_TASK) === approval).map((t) => t.createdAt),
     );
   const lastRequestChangeAt = latest(...lead.requests.map((r) => r.updatedAt));
+  const linkSent = lead.hitlTasks.some((t) => t.type === RESERVATION_LINK_SENT_TASK);
 
   return {
     current: {
@@ -94,7 +93,7 @@ export async function loadLeadStateSnapshot(
       // lastOutboundAt covers agent + human outbound; enough for "engaged".
       hasAgentReply: lastOutboundAt != null || lastAt("agent") != null,
       requests: lead.requests.map((r) => ({ status: r.status, kind: r.kind })),
-      linkSent: linkSentTask != null,
+      linkSent,
     },
     openHandoffSince: oldest(false),
     pendingApprovalSince: oldest(true),
