@@ -3716,6 +3716,7 @@ button.crm-stage { cursor: pointer; }
 .crm-lv-panel { min-width: 0; }
 /* The chat keeps the shared WhatsApp replica; the tab only gives it a height. */
 .crm-lv-chat { display: flex; flex-direction: column; height: min(560px, 70dvh); }
+.crm-lv-chat-loading { padding: var(--space-4); flex: 1; }
 .crm-full-main .crm-lv-chat { height: auto; flex: 1; min-height: 480px; }
 .crm-full-main .crm-lv-panel { flex: 1; display: flex; flex-direction: column; }
 .crm-composer-closed { justify-content: space-between; }

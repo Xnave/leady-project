@@ -8,6 +8,9 @@ import "./globals.css";
 
 export const metadata = { title: "Zapidly" };
 
+/** Prefer London (near Neon eu-west-2); vercel.json also pins regions. */
+export const preferredRegion = "lhr1";
+
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const [lang, theme, headerStore] = await Promise.all([getUiLang(), getUiTheme(), headers()]);
   const proxyUrl = clerkClientProxyUrl(headerStore.get("host") ?? undefined);

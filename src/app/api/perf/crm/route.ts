@@ -4,6 +4,7 @@ import { logCrmPerf } from "@/lib/perf";
 import { requireTenantId } from "@/lib/tenant";
 
 const ALLOWED = new Set([
+  "crm.client.peek_shell",
   "crm.client.peek_open",
   "crm.client.peek_paint",
   "crm.client.peek_full",

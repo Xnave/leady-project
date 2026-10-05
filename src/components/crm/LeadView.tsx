@@ -33,6 +33,8 @@ type Props = {
   headingId?: string;
   /** Reload scope after mutations (peek stays lite until Activity/Details loads full). */
   viewScope?: LeadViewScope;
+  /** Instant peek: lite fetch still in flight; chat shows skeletons. */
+  chatLoading?: boolean;
 };
 
 /**
@@ -41,7 +43,7 @@ type Props = {
  * `peek` stacks everything in one column; `page` puts next step, notes and details in
  * a side column.
  */
-export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tabProp, onTab, headingId, viewScope = "full" }: Props) {
+export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tabProp, onTab, headingId, viewScope = "full", chatLoading = false }: Props) {
   const lv = useLeadView({ dto, ui, lang, wonLabel, onChanged, viewScope });
   const d = lv.d;
   const clock = useClock();
@@ -146,7 +148,7 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
       ui={ui}
       hide={variant === "page" ? ["details"] : undefined}
       panels={{
-        chat: () => <LeadChat dto={d} ui={ui} lang={lang} onSent={() => void lv.reload()} />,
+        chat: () => <LeadChat dto={d} ui={ui} lang={lang} chatLoading={chatLoading} onSent={() => void lv.reload()} />,
         activity: () => <LeadTimeline timeline={d.timeline} ui={ui} lang={lang} clock={clock} wonLabel={wonLabel} />,
         details: () => <LeadDetails dto={d} ui={ui} />,
       }}
