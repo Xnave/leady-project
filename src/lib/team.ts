@@ -1,5 +1,6 @@
-import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
+import { clerkClient } from "@clerk/nextjs/server";
 import { adminBypass, isAdminSession, primaryEmailFromClerkUser } from "@/lib/admin";
+import { getClerkAuth, getClerkUser } from "@/lib/clerk-auth";
 import { isClerkCustomDomainInviteError, clerkErrorMessage } from "@/lib/clerk-errors";
 import { prisma } from "@/lib/db";
 import {
@@ -64,7 +65,7 @@ export async function requireTeamActor(): Promise<TeamActor> {
     const acting = await impersonatedTenantId();
     if (acting) {
       const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: acting } });
-      const user = await currentUser();
+      const user = await getClerkUser();
       return {
         tenantId: tenant.id,
         clerkOrgId: tenant.clerkOrgId,
@@ -75,11 +76,11 @@ export async function requireTeamActor(): Promise<TeamActor> {
     }
   }
 
-  const { orgId, userId, orgRole } = await auth();
+  const { orgId, userId, orgRole } = await getClerkAuth();
   if (!userId || !orgId) throw new Error("Select a Clerk organization");
   const tenant = await prisma.tenant.findUnique({ where: { clerkOrgId: orgId } });
   if (!tenant) throw new Error("No Zapidly tenant for this organization");
-  const user = await currentUser();
+  const user = await getClerkUser();
   const email = await primaryEmailFromClerkUser(user);
   const role = await resolveTenantRole(tenant, userId, email, orgRole);
   return { tenantId: tenant.id, clerkOrgId: tenant.clerkOrgId, userId, email, role };

@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
+import { clerkClientProxyUrl, isClerkReady } from "@/lib/clerk";
 import { devAuthBypassEnabled } from "@/lib/dev-auth-bypass";
 
 const isPublicRoute = createRouteMatcher([
@@ -14,13 +15,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/dev/inbound(.*)",
 ]);
 
-/** Both keys required — clerkMiddleware throws if the secret is missing. */
-function clerkKeysReady(): boolean {
-  return Boolean(
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() &&
-      process.env.CLERK_SECRET_KEY?.trim(),
-  );
-}
+const proxyUrl = clerkClientProxyUrl();
 
 const withClerk = clerkMiddleware(
   async (auth, req) => {
@@ -36,12 +31,15 @@ const withClerk = clerkMiddleware(
   {
     // Required for *.vercel.app: Clerk cannot use DNS CNAMEs there, so FAPI is
     // proxied through this app at /__clerk (Dashboard → Domains → Verify).
-    frontendApiProxy: { enabled: !!process.env.NEXT_PUBLIC_CLERK_PROXY_URL },
+    // Use a relative proxyUrl so preview/staging hosts handshake on their own
+    // origin instead of a production URL baked into NEXT_PUBLIC_CLERK_PROXY_URL.
+    ...(proxyUrl ? { proxyUrl } : {}),
+    frontendApiProxy: { enabled: Boolean(proxyUrl) },
   },
 );
 
 export default function middleware(req: NextRequest, event: NextFetchEvent) {
-  if (devAuthBypassEnabled() || !clerkKeysReady()) {
+  if (devAuthBypassEnabled() || !isClerkReady()) {
     return NextResponse.next();
   }
   return withClerk(req, event);

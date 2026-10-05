@@ -1,4 +1,4 @@
-import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
+import { clerkClient } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import {
   impersonatedTenantId,
@@ -6,6 +6,7 @@ import {
   adminBypass,
   primaryEmailFromClerkUser,
 } from "@/lib/admin";
+import { getClerkAuth, getClerkUser } from "@/lib/clerk-auth";
 import { claimOwnerOrganizations } from "@/lib/claim-owner";
 import { claimPendingTeamInvites } from "@/lib/claim-team";
 import { prisma } from "@/lib/db";
@@ -28,7 +29,7 @@ export async function requireTenantId(): Promise<string> {
     return id;
   }
 
-  const { orgId, userId } = await auth();
+  const { orgId, userId } = await getClerkAuth();
   if (!userId) throw new Error("Sign in required");
   if (!orgId) {
     if (await isAdminSession()) throw new Error("Select a tenant from Admin");
@@ -38,7 +39,7 @@ export async function requireTenantId(): Promise<string> {
       limit: 10,
     });
     if (memberships.data.length === 0) {
-      const user = await currentUser();
+      const user = await getClerkUser();
       const email = await primaryEmailFromClerkUser(user);
       const claimed = [
         ...(await claimOwnerOrganizations(userId, email)),
@@ -57,7 +58,7 @@ export async function requireTenantId(): Promise<string> {
   const tenant = await prisma.tenant.findUnique({ where: { clerkOrgId: orgId } });
   if (!tenant) {
     // Active Clerk org is not a Zapidly tenant (e.g. personal org). Switch via /activating.
-    const user = await currentUser();
+    const user = await getClerkUser();
     const email = await primaryEmailFromClerkUser(user);
     const { resolveAccessibleOrgIds } = await import("@/lib/resolve-orgs");
     const zapidlyOrgs = await resolveAccessibleOrgIds(userId, email);

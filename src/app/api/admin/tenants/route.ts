@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { currentUser } from "@clerk/nextjs/server";
 import { isAdminSession } from "@/lib/admin";
+import { getClerkUser } from "@/lib/clerk-auth";
 import { createTenant } from "@/lib/provision-tenant";
 import { requestOrigin } from "@/lib/request-url";
 
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   if (!name) return NextResponse.json({ error: "Name required" }, { status: 400 });
   if (!ownerEmail) return NextResponse.json({ error: "Owner email required" }, { status: 400 });
 
-  const user = await currentUser();
+  const user = await getClerkUser();
   try {
     const { tenant, ownerAccess } = await createTenant({
       name,

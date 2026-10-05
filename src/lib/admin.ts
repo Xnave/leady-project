@@ -1,5 +1,5 @@
-import { currentUser } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
+import { getClerkUser } from "@/lib/clerk-auth";
 import { TENANT_COOKIE } from "@/lib/cookies";
 import { devAuthBypassEnabled } from "@/lib/dev-auth-bypass";
 import { normalizeEmail } from "@/lib/org-roles";
@@ -37,7 +37,7 @@ export async function primaryEmailFromClerkUser(
 
 export async function isAdminSession(): Promise<boolean> {
   if (adminBypass()) return true;
-  const user = await currentUser();
+  const user = await getClerkUser();
   const email = await primaryEmailFromClerkUser(user);
   return isPlatformAdminEmail(email);
 }
