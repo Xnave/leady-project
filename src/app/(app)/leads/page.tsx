@@ -1,6 +1,6 @@
 import { LeadsList } from "@/components/crm/LeadsList";
 import { getUiLang } from "@/lib/cookies";
-import { isQueueTab, loadLeadRows, type CrmTab } from "@/lib/crm/view";
+import { isQueueTab, loadLeadRows, type CrmCounts, type CrmTab } from "@/lib/crm/view";
 import { isFollowUpReason, isPipelineStage } from "@/lib/crm/types";
 import { loadWonLabel } from "@/lib/crm/won-label";
 import { logCrmPerf } from "@/lib/perf";
@@ -30,9 +30,8 @@ export default async function LeadsPage({
   const channel = sp.ch === "whatsapp" || sp.ch === "instagram" ? sp.ch : undefined;
   const q = sp.q?.trim() ?? "";
   const showDemo = sp.demo === "1";
-  const wonLabel = await loadWonLabel(tenantId, ui);
 
-  const load = (t: CrmTab) =>
+  const load = (t: CrmTab, counts?: CrmCounts) =>
     loadLeadRows({
       tenantId,
       tab: t,
@@ -45,14 +44,17 @@ export default async function LeadsPage({
       pageSize: isQueueTab(t) ? QUEUE_CAP : pageSize,
       ui,
       lang,
+      skipCounts: Boolean(counts),
+      counts,
     });
 
   // Default to the first non-empty of: Needs you, Gone cold, Active.
   let tab = TABS.includes(sp.tab as CrmTab) ? (sp.tab as CrmTab) : undefined;
-  let data = await load(tab ?? "needs");
+  const [wonLabel, first] = await Promise.all([loadWonLabel(tenantId, ui), load(tab ?? "needs")]);
+  let data = first;
   if (!tab && data.counts.needs === 0) {
     tab = data.counts.cold > 0 ? "cold" : "active";
-    data = await load(tab);
+    data = await load(tab, data.counts);
   }
 
   logCrmPerf("crm.leads_page", {

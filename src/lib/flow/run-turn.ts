@@ -59,9 +59,12 @@ export async function sendAndSave(
     });
     if (existing) return;
   }
+  const persistStarted = Date.now();
   await insertAgentMessage(ctx.tenantId, ctx.conversation.id, cleaned, {
     providerMessageId: opts?.idempotencyKey,
   });
+  addTurnPerf({ send_persist_ms: Date.now() - persistStarted });
+  const httpStarted = Date.now();
   await sendOnChannel({
     apiBase: ctx.connection.apiBase,
     accessToken: ctx.connection.accessToken,
@@ -75,7 +78,7 @@ export async function sendAndSave(
         ? ctx.lead.fields.zernioConversationId
         : undefined,
   });
-  addTurnPerf({ send_ms: Date.now() - sendStarted });
+  addTurnPerf({ send_http_ms: Date.now() - httpStarted, send_ms: Date.now() - sendStarted });
   // Recompute lastOutboundAt / cold. Inside a turn this joins the turn's single refresh.
   await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
 }
