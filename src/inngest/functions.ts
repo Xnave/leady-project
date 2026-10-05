@@ -43,25 +43,26 @@ export const runAgentTurn = inngest.createFunction(
       return { skipped: "missing_conversation" };
     }
 
-    const interpretStarted = Date.now();
-    const result = await step.run("interpret", () =>
-      runTurnNow({
+    const result = await step.run("interpret", async () => {
+      const interpretStarted = Date.now();
+      const turn = await runTurnNow({
         tenantId,
         conversationId,
         resume,
         triggerMessageId,
-      }),
-    );
-    console.log(
-      JSON.stringify({
-        msg: "inngest.turn",
-        tenantId,
-        conversationId,
-        interpret_ms: Date.now() - interpretStarted,
-        stage: (result as { stage?: string }).stage,
-        action: (result as { action?: string }).action,
-      }),
-    );
+      });
+      console.log(
+        JSON.stringify({
+          msg: "inngest.turn",
+          tenantId,
+          conversationId,
+          interpret_ms: Date.now() - interpretStarted,
+          stage: turn.stage,
+          action: turn.action,
+        }),
+      );
+      return turn;
+    });
 
     const nudgeEvent = (result as { nudgeEvent?: NudgeRequestedEvent | null }).nudgeEvent;
     if (nudgeEvent) {

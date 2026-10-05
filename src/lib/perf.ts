@@ -19,6 +19,8 @@ export type TurnPerf = {
   summarize_ms?: number;
   persist_ms?: number;
   send_ms?: number;
+  send_persist_ms?: number;
+  send_http_ms?: number;
   refresh_ms?: number;
 };
 

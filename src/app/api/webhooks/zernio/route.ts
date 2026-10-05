@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { persistInboundIfNew } from "@/lib/conversations";
 import { verifyZernioSignature } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { enqueueAgentTurn } from "@/lib/flow/run-turn";
+import { safeRefreshLeadState } from "@/lib/crm/refresh";
 import { timeAsync } from "@/lib/perf";
 import {
   contactDisplayName,
@@ -58,6 +59,7 @@ export async function POST(req: Request) {
   }
   const channel = await prisma.channelConnection.findFirst({
     where: { providerExternalId: inbound.accountId, enabled: true },
+    include: { agent: true, tenant: true },
   });
   if (!channel) {
     console.warn("zernio webhook: unknown channel", {
@@ -104,6 +106,7 @@ export async function POST(req: Request) {
           ? instagramIdentityFields(senderName, senderUsername)
           : {}),
       },
+      channel,
     }),
   );
   if (!inserted) {
@@ -126,6 +129,7 @@ export async function POST(req: Request) {
       triggerMessageId: inserted.messageId,
     }),
   );
+  after(() => safeRefreshLeadState(channel.tenantId, inserted.leadId));
   console.log(
     JSON.stringify({
       msg: "zernio.inbound",

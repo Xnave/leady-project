@@ -52,12 +52,12 @@ function buildDetails(fields: Record<string, unknown>, ui: UiCopy): { label: str
 
 const viewInclude = {
   channel: true,
-  stageEvents: { orderBy: { createdAt: "desc" } },
-  notes: { orderBy: [{ pinned: "desc" }, { createdAt: "desc" }] },
-  adminDecisionLogs: { orderBy: { createdAt: "desc" } },
-  requests: { orderBy: { createdAt: "desc" } },
-  hitlTasks: { orderBy: { createdAt: "desc" } },
-  conversations: { orderBy: { createdAt: "desc" } },
+  stageEvents: { orderBy: { createdAt: "desc" }, take: 40 },
+  notes: { orderBy: [{ pinned: "desc" }, { createdAt: "desc" }], take: 40 },
+  adminDecisionLogs: { orderBy: { createdAt: "desc" }, take: 40 },
+  requests: { orderBy: { createdAt: "desc" }, take: 20 },
+  hitlTasks: { orderBy: { createdAt: "desc" }, take: 40 },
+  conversations: { orderBy: { createdAt: "desc" }, take: 8 },
 } satisfies Prisma.LeadInclude;
 
 /** Full lead detail for `GET /api/leads/[id]/view`. Null when the lead is not in this tenant. */

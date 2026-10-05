@@ -4,6 +4,8 @@ import { adminBypass } from "@/lib/admin";
 import { decryptSecret, verifyHookMyAppHmac } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { enqueueAgentTurn } from "@/lib/flow/run-turn";
+import { safeRefreshLeadState } from "@/lib/crm/refresh";
+import { after } from "next/server";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -71,6 +73,7 @@ export async function POST(req: Request) {
       conversationId: inserted.conversationId,
       triggerMessageId: inserted.messageId,
     });
+    after(() => safeRefreshLeadState(channel.tenantId, inserted.leadId));
   }
 
   return new Response("ok", { status: 200 });

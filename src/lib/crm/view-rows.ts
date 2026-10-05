@@ -16,7 +16,7 @@ import {
 } from "./view";
 import { logCrmPerf } from "@/lib/perf";
 import { coldWhere, needsWhere, reasonWhere } from "./needs";
-import { ACTIVE_STAGES, CLOSED_STAGES, FOLLOW_UP_PRIORITY, PIPELINE_STAGES, type FollowUpReason, type PipelineStage } from "./types";
+import { ACTIVE_STAGES, CLOSED_STAGES, FOLLOW_UP_PRIORITY, PIPELINE_STAGES, isPipelineStage, type FollowUpReason, type PipelineStage } from "./types";
 
 function demoWhere(showDemo: boolean): Prisma.LeadWhereInput {
   return showDemo ? {} : { NOT: { externalUserId: { startsWith: "demo-" } } };
@@ -65,30 +65,50 @@ function buildRowsWhere(
   return where;
 }
 
+/** Derive tab/stage totals from one groupBy plus the queue counts. Exported for tests. */
+export function countsFromStageGroups(
+  groups: { pipelineStage: string; count: number }[],
+  extras: { needs: number; cold: number; byReason: Record<FollowUpReason, number> },
+): CrmCounts {
+  const byStage = Object.fromEntries(PIPELINE_STAGES.map((st) => [st, 0])) as CrmCounts["byStage"];
+  let all = 0;
+  for (const g of groups) {
+    all += g.count;
+    if (isPipelineStage(g.pipelineStage)) byStage[g.pipelineStage] = g.count;
+  }
+  return {
+    needs: extras.needs,
+    cold: extras.cold,
+    active: ACTIVE_STAGES.reduce((sum, st) => sum + byStage[st], 0),
+    won: byStage.won,
+    closed: CLOSED_STAGES.reduce((sum, st) => sum + byStage[st], 0),
+    all,
+    byStage,
+    byReason: extras.byReason,
+  };
+}
+
 async function computeCounts(tenantId: string, showDemo: boolean, now: Date): Promise<CrmCounts> {
   const base: Prisma.LeadWhereInput = { tenantId, ...demoWhere(showDemo) };
-  const needs = { ...base, ...needsWhere(now) };
   const count = (where: Prisma.LeadWhereInput) => prisma.lead.count({ where });
-  const [nNeeds, nCold, nActive, nWon, nClosed, nAll, stages, reasons] = await Promise.all([
-    count(needs),
+  const [stageGroups, nNeeds, nCold, ...reasonCounts] = await Promise.all([
+    prisma.lead.groupBy({
+      by: ["pipelineStage"],
+      where: base,
+      _count: { _all: true },
+    }),
+    count({ ...base, ...needsWhere(now) }),
     count({ ...base, ...coldWhere(now) }),
-    count({ ...base, pipelineStage: { in: [...ACTIVE_STAGES] } }),
-    count({ ...base, pipelineStage: "won" }),
-    count({ ...base, pipelineStage: { in: [...CLOSED_STAGES] } }),
-    count(base),
-    Promise.all(PIPELINE_STAGES.map((st) => count({ ...base, pipelineStage: st }))),
-    Promise.all(FOLLOW_UP_PRIORITY.map((r) => count({ ...base, ...reasonWhere(r, now) }))),
+    ...FOLLOW_UP_PRIORITY.map((r) => count({ ...base, ...reasonWhere(r, now) })),
   ]);
-  return {
-    needs: nNeeds,
-    cold: nCold,
-    active: nActive,
-    won: nWon,
-    closed: nClosed,
-    all: nAll,
-    byStage: Object.fromEntries(PIPELINE_STAGES.map((st, i) => [st, stages[i]])) as CrmCounts["byStage"],
-    byReason: Object.fromEntries(FOLLOW_UP_PRIORITY.map((r, i) => [r, reasons[i]])) as CrmCounts["byReason"],
-  };
+  return countsFromStageGroups(
+    stageGroups.map((g) => ({ pipelineStage: g.pipelineStage, count: g._count._all })),
+    {
+      needs: nNeeds,
+      cold: nCold,
+      byReason: Object.fromEntries(FOLLOW_UP_PRIORITY.map((r, i) => [r, reasonCounts[i]])) as CrmCounts["byReason"],
+    },
+  );
 }
 
 const rowInclude = {
@@ -145,6 +165,8 @@ export async function loadLeadRows(o: {
   pageSize: number;
   ui: UiCopy;
   lang: UiLang;
+  skipCounts?: boolean;
+  counts?: CrmCounts;
 }): Promise<{ rows: LeadRowDTO[]; total: number; counts: CrmCounts }> {
   const started = Date.now();
   const now = new Date();
@@ -152,8 +174,13 @@ export async function loadLeadRows(o: {
   const labels = requestFieldLabels(o.ui, instanceLabels);
   const where = buildRowsWhere(o, now);
 
+  const countsPromise =
+    o.skipCounts && o.counts
+      ? Promise.resolve(o.counts)
+      : computeCounts(o.tenantId, o.showDemo, now);
+
   const [counts, total, leads] = await Promise.all([
-    computeCounts(o.tenantId, o.showDemo, now),
+    countsPromise,
     prisma.lead.count({ where }),
     isQueueTab(o.tab)
       ? prisma.lead.findMany({ where, take: 200, include: rowInclude })

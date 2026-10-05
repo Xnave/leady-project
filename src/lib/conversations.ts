@@ -76,6 +76,14 @@ export async function clearLeadForceFreshInbound(tenantId: string, leadId: strin
   });
 }
 
+type InboundChannel = Prisma.ChannelConnectionGetPayload<{
+  include: { agent: true; tenant: true };
+}>;
+
+const inboundConvoInclude = {
+  messages: { orderBy: { createdAt: "desc" as const }, take: 1 },
+};
+
 export async function persistInboundIfNew(opts: {
   tenantId: string;
   channelId: string;
@@ -85,6 +93,8 @@ export async function persistInboundIfNew(opts: {
   text: string;
   displayName?: string;
   extraFields?: Record<string, unknown>;
+  /** Skip a second channel+agent+tenant read when the webhook already loaded them. */
+  channel?: InboundChannel;
 }): Promise<{ conversationId: string; messageId: string; leadId: string } | null> {
   const existing = await prisma.message.findUnique({
     where: {
@@ -96,10 +106,12 @@ export async function persistInboundIfNew(opts: {
   });
   if (existing) return null;
 
-  const channel = await prisma.channelConnection.findFirstOrThrow({
-    where: { id: opts.channelId, tenantId: opts.tenantId },
-    include: { agent: true, tenant: true },
-  });
+  const channel =
+    opts.channel ??
+    (await prisma.channelConnection.findFirstOrThrow({
+      where: { id: opts.channelId, tenantId: opts.tenantId },
+      include: { agent: true, tenant: true },
+    }));
 
   const extraFields = { ...(opts.extraFields ?? {}) };
   if (channel.provider === "whatsapp" && looksLikePhoneNumber(opts.from.trim())) {
@@ -122,8 +134,9 @@ export async function persistInboundIfNew(opts: {
       externalUserId: opts.from,
       displayName,
       fields: extraFields as Prisma.InputJsonValue,
+      adminUnread: true,
     },
-    update: {},
+    update: { adminUnread: true },
   });
 
   const current = (lead.fields as Record<string, unknown>) ?? {};
@@ -156,19 +169,13 @@ export async function persistInboundIfNew(opts: {
   let conversation = await prisma.conversation.findFirst({
     where: { tenantId: opts.tenantId, leadId: lead.id, status: { not: "closed" } },
     orderBy: { createdAt: "desc" },
-    include: {
-      messages: { orderBy: { createdAt: "desc" }, take: 1 },
-    },
+    include: inboundConvoInclude,
   });
 
   const flow = channel.agent.flow as FlowDefinition;
   const leadFields = (lead.fields as LeadFields) ?? {};
   const forceFresh = String(leadFields[FORCE_FRESH_INBOUND_KEY] ?? "") === "1";
   const idleResetDays = channel.tenant.idleResetDays ?? 3;
-  const relevantRequest = await hasRelevantRequest({
-    tenantId: opts.tenantId,
-    leadId: lead.id,
-  });
 
   // Admin "סיים שיחה" → next inbound must not continue a lingering open thread.
   if (forceFresh && conversation) {
@@ -181,13 +188,14 @@ export async function persistInboundIfNew(opts: {
   }
 
   if (!conversation) {
-    const latestClosed = await prisma.conversation.findFirst({
-      where: { tenantId: opts.tenantId, leadId: lead.id, status: "closed" },
-      orderBy: { updatedAt: "desc" },
-      include: {
-        messages: { orderBy: { createdAt: "desc" }, take: 1 },
-      },
-    });
+    const [latestClosed, relevantRequest] = await Promise.all([
+      prisma.conversation.findFirst({
+        where: { tenantId: opts.tenantId, leadId: lead.id, status: "closed" },
+        orderBy: { updatedAt: "desc" },
+        include: inboundConvoInclude,
+      }),
+      hasRelevantRequest({ tenantId: opts.tenantId, leadId: lead.id }),
+    ]);
     const closedLastMessageAt =
       latestClosed?.messages[0]?.createdAt ?? latestClosed?.updatedAt ?? null;
     const decision = decideInboundThread({
@@ -205,9 +213,7 @@ export async function persistInboundIfNew(opts: {
       });
       conversation = await prisma.conversation.findFirst({
         where: { id: reopened.conversationId, tenantId: opts.tenantId },
-        include: {
-          messages: { orderBy: { createdAt: "desc" }, take: 1 },
-        },
+        include: inboundConvoInclude,
       });
     }
   }
@@ -246,7 +252,7 @@ export async function persistInboundIfNew(opts: {
         lifecycleReason: "inbound_create",
         session: {} as Prisma.InputJsonValue,
       },
-      include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
+      include: inboundConvoInclude,
     });
   }
 
@@ -260,11 +266,7 @@ export async function persistInboundIfNew(opts: {
         providerMessageId: opts.providerMessageId,
       },
     });
-    await prisma.lead.update({
-      where: { id: lead.id },
-      data: { adminUnread: true },
-    });
-    await safeRefreshLeadState(opts.tenantId, lead.id);
+    // CRM refresh is deferred to the webhook `after()` / the turn so enqueue is not blocked.
     return { conversationId: conversation.id, messageId: message.id, leadId: lead.id };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -274,6 +276,9 @@ export async function persistInboundIfNew(opts: {
   }
 }
 
+/** Talk uses the last 12; a small buffer covers lastLeadMessageAt / restart. Newest first from SQL, then reversed. */
+const TURN_MESSAGE_TAKE = 16;
+
 export async function loadTurnContext(
   tenantId: string,
   conversationId: string,
@@ -282,15 +287,57 @@ export async function loadTurnContext(
   const convoStarted = Date.now();
   const conversation = await prisma.conversation.findFirstOrThrow({
     where: { id: conversationId, tenantId },
-    include: {
-      lead: true,
-      agent: true,
-      channel: true,
-      tenant: true,
-      messages: { orderBy: { createdAt: "asc" }, take: 40 },
+    select: {
+      id: true,
+      status: true,
+      flowState: true,
+      flowVersion: true,
+      nudgeCountByStage: true,
+      summary: true,
+      lifecycleReason: true,
+      session: true,
+      lead: { select: { id: true, externalUserId: true, fields: true } },
+      agent: {
+        select: {
+          id: true,
+          catalogId: true,
+          systemPrompt: true,
+          knowledgeText: true,
+          flow: true,
+          flowVersion: true,
+          leadSchema: true,
+          hitlPolicy: true,
+          calcomEventTypeId: true,
+        },
+      },
+      channel: {
+        select: {
+          id: true,
+          provider: true,
+          providerAccountId: true,
+          apiBase: true,
+          accessTokenEnc: true,
+          providerExternalId: true,
+        },
+      },
+      tenant: {
+        select: {
+          name: true,
+          phone: true,
+          intro: true,
+          chatLanguage: true,
+          idleResetDays: true,
+        },
+      },
+      messages: {
+        orderBy: { createdAt: "desc" },
+        take: TURN_MESSAGE_TAKE,
+        select: { role: true, text: true, createdAt: true },
+      },
     },
   });
   const load_convo_ms = Date.now() - convoStarted;
+  const messagesChrono = [...conversation.messages].reverse();
 
   const agent: AgentSnapshot = {
     id: conversation.agent.id,
@@ -383,7 +430,7 @@ export async function loadTurnContext(
       externalUserId: conversation.lead.externalUserId,
       fields,
     },
-    messages: conversation.messages.map((m) => ({
+    messages: messagesChrono.map((m) => ({
       role: m.role as "lead" | "agent" | "human" | "system",
       text: m.text,
       createdAt: m.createdAt,
