@@ -96,6 +96,7 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, reason, channe
   const qTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Row click, Enter and the message icon open the peek; with it open, the cursor follows its lead.
   const { peekId, cursor, gap, openLead, closePeek } = useLeadPeek({ rows, kb, setKb, markRead });
+  const peekRow = peekId ? rows.find((r) => r.id === peekId) ?? null : null;
 
   // Client clock for relative times; ticks once a minute.
   useEffect(() => {
@@ -274,7 +275,7 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, reason, channe
         onOpen={openLead}
         onSubmenu={(kind, m) => setMenu({ ...m, kind })}
       />
-      <LeadPeek leadId={peekId} onClose={closePeek} onChanged={absorb} ui={ui} lang={lang} wonLabel={wonLabel} />
+      <LeadPeek leadId={peekId} peekRow={peekRow} onClose={closePeek} onChanged={absorb} ui={ui} lang={lang} wonLabel={wonLabel} />
     </div>
   );
 }
