@@ -1,4 +1,4 @@
-import { loadTurnContext } from "@/lib/conversations";
+import { ensureChannelAccessToken, loadTurnContext } from "@/lib/conversations";
 import { prisma } from "@/lib/db";
 
 /**
@@ -31,10 +31,11 @@ export async function sendStaffReply(opts: {
     where: { id: ctx.lead.id, tenantId: opts.tenantId },
     data: { lastOutboundAt: now },
   });
+  const accessToken = await ensureChannelAccessToken(opts.tenantId, ctx.connection);
   const { sendOnChannel } = await import("@/lib/channels/meta");
   await sendOnChannel({
     apiBase: ctx.connection.apiBase,
-    accessToken: ctx.connection.accessToken,
+    accessToken,
     provider: ctx.connection.provider,
     providerAccountId: ctx.connection.providerAccountId,
     to: ctx.lead.externalUserId,

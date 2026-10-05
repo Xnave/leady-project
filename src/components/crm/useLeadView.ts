@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LeadRowDTO, LeadViewDTO } from "@/lib/crm/view";
+import type { LeadRowDTO, LeadViewDTO, LeadViewScope } from "@/lib/crm/view";
 import type { PipelineStage } from "@/lib/crm/types";
 import { fillUi, type UiCopy } from "@/lib/ui";
 import { crmApi, type SnoozeDays } from "./crm-client";
@@ -45,8 +45,12 @@ export function useLeadView(o: {
   lang: "he" | "en";
   wonLabel: string;
   onChanged?: (report: PeekReport) => void;
+  viewScope?: LeadViewScope;
 }) {
   const { ui, lang, wonLabel } = o;
+  const viewScope = o.viewScope ?? "full";
+  const scopeRef = useRef(viewScope);
+  scopeRef.current = viewScope;
   const toast = useToastsOptional();
   const [d, setD] = useState(o.dto);
   // A new DTO from the parent (another lead, or a fresh fetch) replaces local state.
@@ -85,7 +89,7 @@ export function useLeadView(o: {
     const id = dRef.current.id;
     const seq = ++reloadSeq.current;
     try {
-      const fresh = await crmApi.view(id);
+      const fresh = await crmApi.view(id, { scope: scopeRef.current });
       if (seq !== reloadSeq.current || inflight.current > 0 || dRef.current.id !== fresh.id) return;
       setD(fresh);
       report(fresh, "confirmed", action);

@@ -1,5 +1,6 @@
 import { sendOnChannel } from "@/lib/channels/meta";
 import {
+  ensureChannelAccessToken,
   insertAgentMessage,
   loadTurnContext,
   pauseForHuman,
@@ -60,15 +61,19 @@ export async function sendAndSave(
     if (existing) return;
   }
   const persistStarted = Date.now();
-  await insertAgentMessage(ctx.tenantId, ctx.conversation.id, cleaned, {
-    providerMessageId: opts?.idempotencyKey,
-    leadId: ctx.lead.id,
-  });
+  // Token fetch overlaps message persist so loadTurnContext can skip accessTokenEnc.
+  const [, accessToken] = await Promise.all([
+    insertAgentMessage(ctx.tenantId, ctx.conversation.id, cleaned, {
+      providerMessageId: opts?.idempotencyKey,
+      leadId: ctx.lead.id,
+    }),
+    ensureChannelAccessToken(ctx.tenantId, ctx.connection),
+  ]);
   addTurnPerf({ send_persist_ms: Date.now() - persistStarted });
   const httpStarted = Date.now();
   await sendOnChannel({
     apiBase: ctx.connection.apiBase,
-    accessToken: ctx.connection.accessToken,
+    accessToken,
     provider: ctx.connection.provider,
     providerAccountId: ctx.connection.providerAccountId,
     to: ctx.lead.externalUserId,

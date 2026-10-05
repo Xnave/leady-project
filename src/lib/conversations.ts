@@ -294,65 +294,69 @@ export async function loadTurnContext(
 ): Promise<TurnContext & { connection: ConnectionView }> {
   const loadStarted = Date.now();
   ensureFlowRegistry();
-  const convoStarted = Date.now();
-  const instancesStarted = Date.now();
   // Instances only need tenantId — overlap with the fat conversation read.
-  const [conversation, capabilityInstances] = await Promise.all([
-    prisma.conversation.findFirstOrThrow({
-      where: { id: conversationId, tenantId },
-      select: {
-        id: true,
-        status: true,
-        flowState: true,
-        flowVersion: true,
-        nudgeCountByStage: true,
-        summary: true,
-        lifecycleReason: true,
-        session: true,
-        lead: { select: { id: true, externalUserId: true, fields: true } },
-        agent: {
-          select: {
-            id: true,
-            catalogId: true,
-            systemPrompt: true,
-            knowledgeText: true,
-            flow: true,
-            flowVersion: true,
-            leadSchema: true,
-            hitlPolicy: true,
-            calcomEventTypeId: true,
+  // Channel access token is loaded lazily in sendAndSave (overlaps message persist).
+  const [conversation, capabilityInstances, load_convo_ms, load_instances_ms] = await Promise.all([
+    (async () => {
+      const t0 = Date.now();
+      const row = await prisma.conversation.findFirstOrThrow({
+        where: { id: conversationId, tenantId },
+        select: {
+          id: true,
+          status: true,
+          flowState: true,
+          flowVersion: true,
+          nudgeCountByStage: true,
+          summary: true,
+          lifecycleReason: true,
+          session: true,
+          lead: { select: { id: true, externalUserId: true, fields: true } },
+          agent: {
+            select: {
+              id: true,
+              catalogId: true,
+              systemPrompt: true,
+              knowledgeText: true,
+              flow: true,
+              flowVersion: true,
+              leadSchema: true,
+              hitlPolicy: true,
+              calcomEventTypeId: true,
+            },
+          },
+          channel: {
+            select: {
+              id: true,
+              provider: true,
+              providerAccountId: true,
+              apiBase: true,
+              providerExternalId: true,
+            },
+          },
+          tenant: {
+            select: {
+              name: true,
+              phone: true,
+              intro: true,
+              chatLanguage: true,
+              idleResetDays: true,
+            },
+          },
+          messages: {
+            orderBy: { createdAt: "desc" },
+            take: TURN_MESSAGE_TAKE,
+            select: { role: true, text: true, createdAt: true },
           },
         },
-        channel: {
-          select: {
-            id: true,
-            provider: true,
-            providerAccountId: true,
-            apiBase: true,
-            accessTokenEnc: true,
-            providerExternalId: true,
-          },
-        },
-        tenant: {
-          select: {
-            name: true,
-            phone: true,
-            intro: true,
-            chatLanguage: true,
-            idleResetDays: true,
-          },
-        },
-        messages: {
-          orderBy: { createdAt: "desc" },
-          take: TURN_MESSAGE_TAKE,
-          select: { role: true, text: true, createdAt: true },
-        },
-      },
-    }),
-    loadCapabilityInstances(tenantId),
-  ]);
-  const load_convo_ms = Date.now() - convoStarted;
-  const load_instances_ms = Date.now() - instancesStarted;
+      });
+      return { row, ms: Date.now() - t0 };
+    })(),
+    (async () => {
+      const t0 = Date.now();
+      const instances = await loadCapabilityInstances(tenantId);
+      return { instances, ms: Date.now() - t0 };
+    })(),
+  ]).then(([convo, caps]) => [convo.row, caps.instances, convo.ms, caps.ms] as const);
   const messagesChrono = [...conversation.messages].reverse();
 
   const agent: AgentSnapshot = {
@@ -455,7 +459,8 @@ export async function loadTurnContext(
       provider: conversation.channel.provider,
       providerAccountId: conversation.channel.providerAccountId,
       apiBase: conversation.channel.apiBase,
-      accessToken: decryptSecret(conversation.channel.accessTokenEnc),
+      // Filled on first send via ensureChannelAccessToken (overlaps message persist).
+      accessToken: "",
       zernioAccountId: conversation.channel.providerExternalId || undefined,
     },
   };
@@ -469,6 +474,21 @@ export type ConnectionView = {
   accessToken: string;
   zernioAccountId?: string;
 };
+
+/** Decrypt channel credentials once per turn, overlapping with outbound message persist. */
+export async function ensureChannelAccessToken(
+  tenantId: string,
+  connection: ConnectionView,
+): Promise<string> {
+  if (connection.accessToken) return connection.accessToken;
+  const ch = await prisma.channelConnection.findFirst({
+    where: { id: connection.id, tenantId },
+    select: { accessTokenEnc: true },
+  });
+  if (!ch) throw new Error("Channel not found");
+  connection.accessToken = decryptSecret(ch.accessTokenEnc);
+  return connection.accessToken;
+}
 
 export async function persistStage(tenantId: string, conversationId: string, stageId: string) {
   await prisma.conversation.update({
