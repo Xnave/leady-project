@@ -36,6 +36,7 @@ import {
 } from "@/lib/leads";
 import { fetchZernioInboxContact } from "@/lib/zernio";
 import { safeRefreshLeadState } from "@/lib/crm/refresh";
+import { addTurnPerf } from "@/lib/perf";
 
 export {
   reopenConversation,
@@ -277,6 +278,8 @@ export async function loadTurnContext(
   tenantId: string,
   conversationId: string,
 ): Promise<TurnContext & { connection: ConnectionView }> {
+  const loadStarted = Date.now();
+  const convoStarted = Date.now();
   const conversation = await prisma.conversation.findFirstOrThrow({
     where: { id: conversationId, tenantId },
     include: {
@@ -287,6 +290,7 @@ export async function loadTurnContext(
       messages: { orderBy: { createdAt: "asc" }, take: 40 },
     },
   });
+  const load_convo_ms = Date.now() - convoStarted;
 
   const agent: AgentSnapshot = {
     id: conversation.agent.id,
@@ -330,8 +334,11 @@ export async function loadTurnContext(
   // Each capability loads its own durable state and parses its own instance
   // config; this loader stays domain-free.
   ensureFlowRegistry();
+  const instancesStarted = Date.now();
   const capabilityInstances = await loadCapabilityInstances(tenantId);
+  const load_instances_ms = Date.now() - instancesStarted;
   const capabilityState: Record<string, unknown> = {};
+  const stateStarted = Date.now();
   await Promise.all(
     capabilityStateLoaders().map(async ({ id, load }) => {
       const state = await load({
@@ -342,6 +349,12 @@ export async function loadTurnContext(
       if (state !== undefined) capabilityState[id] = state;
     }),
   );
+  addTurnPerf({
+    load_ms: Date.now() - loadStarted,
+    load_convo_ms,
+    load_instances_ms,
+    load_capability_state_ms: Date.now() - stateStarted,
+  });
 
   return {
     tenantId,

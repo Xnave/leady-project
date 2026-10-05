@@ -43,12 +43,23 @@ export const runAgentTurn = inngest.createFunction(
       return { skipped: "missing_conversation" };
     }
 
+    const interpretStarted = Date.now();
     const result = await step.run("interpret", () =>
       runTurnNow({
         tenantId,
         conversationId,
         resume,
         triggerMessageId,
+      }),
+    );
+    console.log(
+      JSON.stringify({
+        msg: "inngest.turn",
+        tenantId,
+        conversationId,
+        interpret_ms: Date.now() - interpretStarted,
+        stage: (result as { stage?: string }).stage,
+        action: (result as { action?: string }).action,
       }),
     );
 

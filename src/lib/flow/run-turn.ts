@@ -31,6 +31,7 @@ import { rewritePhonesInText } from "@/lib/leads";
 import { inngest } from "@/inngest/client";
 import { prisma } from "@/lib/db";
 import { batchLeadRefreshes, safeRefreshLeadState } from "@/lib/crm/refresh";
+import { addTurnPerf, runWithTurnPerf, timeAsync } from "@/lib/perf";
 
 function logTurn(phase: "enter" | "exit", extra: Record<string, unknown>) {
   console.log(JSON.stringify({ msg: "runAgentTurn", phase, ...extra }));
@@ -47,6 +48,7 @@ export async function sendAndSave(
     callbackPhone(ctx),
     typeof ctx.lead.externalUserId === "string" ? ctx.lead.externalUserId : null,
   ]);
+  const sendStarted = Date.now();
   if (opts?.idempotencyKey) {
     const existing = await prisma.message.findFirst({
       where: {
@@ -73,6 +75,7 @@ export async function sendAndSave(
         ? ctx.lead.fields.zernioConversationId
         : undefined,
   });
+  addTurnPerf({ send_ms: Date.now() - sendStarted });
   // Recompute lastOutboundAt / cold. Inside a turn this joins the turn's single refresh.
   await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
 }
@@ -192,13 +195,28 @@ type RunTurnOpts = {
 };
 
 /** One turn. Every CRM refresh the turn triggers collapses into one, after it ends. */
-export function runTurnNow(opts: RunTurnOpts) {
-  return batchLeadRefreshes(() => runTurn(opts));
+export async function runTurnNow(opts: RunTurnOpts) {
+  const started = Date.now();
+  const { result, perf } = await runWithTurnPerf(async () =>
+    batchLeadRefreshes(() => runTurn(opts)),
+  );
+  logTurn("exit", {
+    tenantId: opts.tenantId,
+    conversationId: result.conversationId ?? opts.conversationId,
+    previousConversationId:
+      "previousConversationId" in result ? result.previousConversationId : undefined,
+    stage: result.stage,
+    action: result.action,
+    effects: result.effects,
+    ms: Date.now() - started,
+    triggerMessageId: opts.triggerMessageId,
+    ...perf,
+  });
+  return result;
 }
 
 async function runTurn(opts: RunTurnOpts) {
   ensureFlowRegistry();
-  const started = Date.now();
   const ctx = await loadTurnContext(opts.tenantId, opts.conversationId);
   const outboundKey = opts.triggerMessageId
     ? `out-${opts.conversationId}-${opts.triggerMessageId}`
@@ -206,41 +224,79 @@ async function runTurn(opts: RunTurnOpts) {
 
   let nudgeEvent: NudgeRequestedEvent | null = null;
 
-  const result = await interpretTurn(ctx, { resume: opts.resume }, {
-    classify: classifyIntent,
-    extract: extractFields,
-    draftQuestion,
-    answerFaq,
-    talk: talkTurn,
-    // One generic seam for every capability side effect — adding a capability
-    // registers an action instead of adding a port here.
-    runEffect: (c, effectId, stage) => runCapabilityEffect(c, effectId, stage),
-    requestHuman: async (c, reason) => {
-      const summary = await summarizeConversation(c.conversation.id);
-      await pauseForHuman({
-        tenantId: c.tenantId,
-        conversationId: c.conversation.id,
-        leadId: c.lead.id,
-        reason,
-        summary,
-      });
-    },
-    persistStage: (c, stageId) => persistStage(c.tenantId, c.conversation.id, stageId),
-    persistFields: (c, fields) =>
-      persistTurnFields(c.tenantId, c.lead.id, c.conversation.id, fields, {
-        extraSessionKeys: allCapabilitySessionFieldKeys(c),
-      }),
-    sendAndSave: (c, text) =>
-      sendAndSave(c as Awaited<ReturnType<typeof loadTurnContext>>, text, {
-        idempotencyKey: outboundKey
-          ? `${outboundKey}-${Buffer.from(text).toString("base64url").slice(0, 24)}`
-          : undefined,
-      }),
-    scheduleNudge: async (c, stageId, stage) => {
-      nudgeEvent = buildNudgeRequestedEvent(c, stageId, stage, opts.triggerMessageId);
-    },
-    log: logTurn,
-  });
+  const { result, ms: interpret_ms } = await timeAsync(() =>
+    interpretTurn(ctx, { resume: opts.resume }, {
+      classify: async (c, stage) => {
+        const { result: r, ms } = await timeAsync(() => classifyIntent(c, stage));
+        addTurnPerf({ classify_ms: ms });
+        return r;
+      },
+      extract: async (c, stage) => {
+        const { result: r, ms } = await timeAsync(() => extractFields(c, stage));
+        addTurnPerf({ extract_ms: ms });
+        return r;
+      },
+      draftQuestion: async (c, stage, missing) => {
+        const { result: r, ms } = await timeAsync(() => draftQuestion(c, stage, missing));
+        addTurnPerf({ draft_ms: ms });
+        return r;
+      },
+      answerFaq: async (c, stage) => {
+        const { result: r, ms } = await timeAsync(() => answerFaq(c, stage));
+        addTurnPerf({ faq_ms: ms });
+        return r;
+      },
+      talk: async (c, stage) => {
+        const { result: r, ms } = await timeAsync(() => talkTurn(c, stage));
+        addTurnPerf({ talk_llm_ms: ms });
+        return r;
+      },
+      runEffect: async (c, effectId, stage) => {
+        const { result: r, ms } = await timeAsync(() => runCapabilityEffect(c, effectId, stage));
+        addTurnPerf({ effect_ms: ms });
+        return r;
+      },
+      requestHuman: async (c, reason) => {
+        const { result: summary, ms: summarize_ms } = await timeAsync(() =>
+          summarizeConversation(c.conversation.id),
+        );
+        addTurnPerf({ summarize_ms });
+        const { ms: pause_ms } = await timeAsync(() =>
+          pauseForHuman({
+            tenantId: c.tenantId,
+            conversationId: c.conversation.id,
+            leadId: c.lead.id,
+            reason,
+            summary,
+          }),
+        );
+        addTurnPerf({ effect_ms: pause_ms });
+      },
+      persistStage: async (c, stageId) => {
+        const { ms } = await timeAsync(() => persistStage(c.tenantId, c.conversation.id, stageId));
+        addTurnPerf({ persist_ms: ms });
+      },
+      persistFields: async (c, fields) => {
+        const { ms } = await timeAsync(() =>
+          persistTurnFields(c.tenantId, c.lead.id, c.conversation.id, fields, {
+            extraSessionKeys: allCapabilitySessionFieldKeys(c),
+          }),
+        );
+        addTurnPerf({ persist_ms: ms });
+      },
+      sendAndSave: (c, text) =>
+        sendAndSave(c as Awaited<ReturnType<typeof loadTurnContext>>, text, {
+          idempotencyKey: outboundKey
+            ? `${outboundKey}-${Buffer.from(text).toString("base64url").slice(0, 24)}`
+            : undefined,
+        }),
+      scheduleNudge: async (c, stageId, stage) => {
+        nudgeEvent = buildNudgeRequestedEvent(c, stageId, stage, opts.triggerMessageId);
+      },
+      log: logTurn,
+    }),
+  );
+  addTurnPerf({ interpret_ms });
 
   if (result.action === "start_new_conversation") {
     const intro = (result.reply ?? "").trim();
@@ -258,18 +314,14 @@ async function runTurn(opts: RunTurnOpts) {
           : undefined,
       });
     }
-    logTurn("exit", {
-      tenantId: opts.tenantId,
+    await safeRefreshLeadState(opts.tenantId, ctx.lead.id);
+    return {
+      ...result,
+      stage: ctx.agent.flow.start,
+      nudgeEvent,
       conversationId: rotated.conversationId,
       previousConversationId: opts.conversationId,
-      stage: ctx.agent.flow.start,
-      action: result.action,
-      effects: result.effects,
-      ms: Date.now() - started,
-      triggerMessageId: opts.triggerMessageId,
-    });
-    await safeRefreshLeadState(opts.tenantId, ctx.lead.id);
-    return { ...result, stage: ctx.agent.flow.start, nudgeEvent };
+    };
   }
 
   if (result.action === "done" || result.stage === "done") {
@@ -280,16 +332,6 @@ async function runTurn(opts: RunTurnOpts) {
     });
   }
 
-  logTurn("exit", {
-    tenantId: opts.tenantId,
-    conversationId: opts.conversationId,
-    stage: result.stage,
-    action: result.action,
-    effects: result.effects,
-    ms: Date.now() - started,
-    triggerMessageId: opts.triggerMessageId,
-  });
-
   await safeRefreshLeadState(opts.tenantId, ctx.lead.id);
-  return { ...result, nudgeEvent };
+  return { ...result, nudgeEvent, conversationId: opts.conversationId };
 }

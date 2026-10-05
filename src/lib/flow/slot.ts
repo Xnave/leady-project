@@ -56,6 +56,25 @@ export type NormalizedSlot = {
   display: string;
 };
 
+/**
+ * True when the text has a bare hour 1–12 with no morning/evening/am/pm marker
+ * (e.g. "רביעי ב6"). Callers should ask for clarification instead of assuming AM.
+ */
+export function isAmbiguousBareHour(text: string): boolean {
+  const forTime = stripDateFragments(text);
+  if (/\b(a\.?m\.?|p\.?m\.?)\b/i.test(text) || /ערב|בוקר|צהריים/i.test(text)) {
+    return false;
+  }
+  // Explicit HH:MM is exact (including 06:00 / 18:00).
+  if (/\b\d{1,2}:\d{2}\b/.test(forTime)) return false;
+  const bare = forTime.match(
+    /(?:ב־|ב-|at\s+|בשעה\s+|ב\s*)(\d{1,2})(?!\d)(?!\s*:)/i,
+  );
+  if (!bare) return false;
+  const h = Number(bare[1]);
+  return h >= 1 && h <= 12;
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
@@ -108,6 +127,9 @@ function parseTime(text: string): string | undefined {
   );
   if (bare) {
     let h = Number(bare[1]);
+    const hasMeridian = /ערב|בוקר|צהריים|a\.?m\.?|p\.?m\.?/i.test(text);
+    // Bare 1–12 without morning/evening is ambiguous — do not invent AM.
+    if (!hasMeridian && h >= 1 && h <= 12) return undefined;
     if (/ערב|pm/i.test(text) && h < 12) h += 12;
     if (/בוקר|am/i.test(text) && h === 12) h = 0;
     if (h >= 0 && h <= 23) return `${pad2(h)}:00`;
@@ -188,6 +210,24 @@ function resolveDay(text: string, now: Date, lang: "en" | "he" = "he"): Date | u
     ) {
       return nextWeekday(today, weekday);
     }
+  }
+
+  // Hebrew day letters: "יום ב", "ביום ג'", "יום ה'"
+  const heLetter: Record<string, number> = {
+    א: 0,
+    ב: 1,
+    ג: 2,
+    ד: 3,
+    ה: 4,
+    ו: 5,
+    ש: 6,
+  };
+  const letterMatch = text.match(
+    /(?:ביום|יום)\s*([אבגדהוש])(?:['׳])?(?=$|[^\u0590-\u05FF]|בשעה|ב־|ב-|\d)/,
+  );
+  if (letterMatch) {
+    const weekday = heLetter[letterMatch[1]];
+    if (weekday !== undefined) return nextWeekday(today, weekday);
   }
 
   const enNames = [...EN_WEEKDAYS].map((name, weekday) => ({

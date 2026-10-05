@@ -39,6 +39,12 @@ export type ChatCopy = {
   askTime: (hours: string) => string;
   /** When a proposed time is outside venue hours. */
   askTimeOutsideHours: (hours: string) => string;
+  /** Bare hour without morning/evening — ask which they meant. */
+  askTimeAmbiguous: string;
+  /** Day/time wording had no clear clock. */
+  askTimeUnclear: string;
+  /** Venue hours are configured but unusable for the gate. */
+  askTimeInvalidHours: string;
   askFieldFallback: (field: string) => string;
   /** Generic ask for a field that has a fixed set of choices. */
   askFieldWithOptions: (field: string, options: string) => string;
