@@ -331,8 +331,9 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
 
   try {
     const system = buildTalkSystemPrompt(ctx, stage, fieldsForTurn);
+    // Cap talk transcript at 8 (load may keep more for clocks/helpers).
     const prompt = ctx.messages
-      .slice(-12)
+      .slice(-8)
       .map((m) => `${m.role}: ${m.text}`)
       .join("\n");
     addTurnPerf({ talk_prompt_chars: system.length + prompt.length });
@@ -344,7 +345,7 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
         typeof generateText
       >[0]["tools"],
       stopWhen: stepCountIs(8),
-      maxRetries: 2,
+      maxRetries: 1,
     });
     const toolsUsed: string[] = [];
     for (const step of result.steps ?? []) {
