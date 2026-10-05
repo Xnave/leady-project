@@ -142,7 +142,7 @@ export class PromptBuilder {
     const hint =
       instruction.trim() || copyFor(lang).prompts.nudgeDefaultInstruction;
     this.parts.push(
-      "IGNORE tool instructions above (reply, set_intent, ask_field, etc.) — this turn is plain text generation only.",
+      "IGNORE tool instructions above (reply, ask_field, etc.) — this turn is plain text generation only.",
       copyFor(lang).prompts.nudgeTurn(hint),
     );
     return this;
@@ -150,7 +150,7 @@ export class PromptBuilder {
 
   withClosing(stage?: TalkStage): this {
     this.parts.push(
-      "Call set_intent every turn.",
+      "Prefer one reply call that includes intent (sales / support / other) and the user-facing text.",
       "Call reply unless a tool already set the outbound text.",
       "Use transition when the goal is complete (on_complete) or you must hand off (on_escalate).",
       "Conversation continuity: keep the SAME thread for follow-ups. Never invent a fresh welcome mid-thread.",

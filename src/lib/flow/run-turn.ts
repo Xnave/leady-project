@@ -62,6 +62,7 @@ export async function sendAndSave(
   const persistStarted = Date.now();
   await insertAgentMessage(ctx.tenantId, ctx.conversation.id, cleaned, {
     providerMessageId: opts?.idempotencyKey,
+    leadId: ctx.lead.id,
   });
   addTurnPerf({ send_persist_ms: Date.now() - persistStarted });
   const httpStarted = Date.now();

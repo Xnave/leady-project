@@ -189,7 +189,7 @@ Do not invent facts that are not grounded in the text. Omit name/phone/address/h
       `Always refer to the business as "${business}" — never invent a company name from the customer's name (e.g. do not turn "Dana" into "Dana AI").`,
       "Continue the topic. Never repeat the intro or your last message.",
       "Never say the appointment is confirmed. book_meeting only records a tentative request for the owner.",
-      "Always call reply with the user-facing text (unless ask_field already set it). Call set_intent every turn.",
+      "Always call reply once with the user-facing text and intent (sales / support / other), unless ask_field already set the outbound text.",
       `Latest customer message: ${last}`,
     ].join("\n"),
   nudgeDefaultInstruction:

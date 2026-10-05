@@ -34,6 +34,13 @@ export async function loadLeadStateSnapshot(
   });
   if (!lead) return null;
 
+  const latest = (...ds: (Date | null)[]) =>
+    ds.reduce<Date | null>((max, d) => (d && (!max || d > max) ? d : max), null);
+
+  // Prefer denormalized clocks on Lead (bumped on each message write). Fall back to
+  // groupBy only when both are null — cold/legacy leads that never got a bump.
+  const needsMessageScan = !lead.lastLeadMessageAt && !lead.lastOutboundAt;
+
   const [convo, lastByRole, linkSentTask] = await Promise.all([
     // Every conversation closed: the stage still reads the last one's flow position.
     lead.conversations[0] ??
@@ -42,19 +49,23 @@ export async function loadLeadStateSnapshot(
         orderBy: { createdAt: "desc" },
         select: convoSelect,
       }),
-    prisma.message.groupBy({
-      by: ["role"],
-      where: { tenantId, conversation: { leadId } },
-      _max: { createdAt: true },
-    }),
+    needsMessageScan
+      ? prisma.message.groupBy({
+          by: ["role"],
+          where: { tenantId, conversation: { leadId } },
+          _max: { createdAt: true },
+        })
+      : Promise.resolve([] as { role: string; _max: { createdAt: Date | null } }[]),
     prisma.hitlTask.findFirst({
       where: { tenantId, leadId, type: RESERVATION_LINK_SENT_TASK },
       select: { id: true },
     }),
   ]);
   const lastAt = (role: string) => lastByRole.find((g) => g.role === role)?._max.createdAt ?? null;
-  const latest = (...ds: (Date | null)[]) =>
-    ds.reduce<Date | null>((max, d) => (d && (!max || d > max) ? d : max), null);
+
+  const lastLeadMessageAt = lead.lastLeadMessageAt ?? lastAt("lead");
+  const lastOutboundAt =
+    lead.lastOutboundAt ?? latest(lastAt("agent"), lastAt("human"));
 
   // The oldest open task sets "waiting since": the owner has been needed from then on.
   const oldest = (approval: boolean) =>
@@ -80,14 +91,15 @@ export async function loadLeadStateSnapshot(
       flow: (convo?.agent.flow as FlowDefinition | undefined) ?? null,
       currentFlowStage: convo?.flowState ?? null,
       fields: (lead.fields as Record<string, unknown>) ?? {},
-      hasAgentReply: lastAt("agent") != null,
+      // lastOutboundAt covers agent + human outbound; enough for "engaged".
+      hasAgentReply: lastOutboundAt != null || lastAt("agent") != null,
       requests: lead.requests.map((r) => ({ status: r.status, kind: r.kind })),
       linkSent: linkSentTask != null,
     },
     openHandoffSince: oldest(false),
     pendingApprovalSince: oldest(true),
-    lastLeadMessageAt: lastAt("lead"),
-    lastOutboundAt: latest(lastAt("agent"), lastAt("human")),
+    lastLeadMessageAt,
+    lastOutboundAt,
     lastRequestChangeAt,
   };
 }

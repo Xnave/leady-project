@@ -233,21 +233,22 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
   const baseTools = {
     reply: tool({
       description:
-        "WhatsApp message to the customer. Call once unless another tool already set the outbound text.",
-      inputSchema: z.object({ text: z.string() }),
-      execute: async ({ text }: { text: string }) => {
+        "WhatsApp message to the customer. Call once unless another tool already set the outbound text. Include intent in the same call (sales / support / other).",
+      inputSchema: z.object({
+        text: z.string(),
+        intent: z.enum(["sales", "support", "other"]).optional(),
+      }),
+      execute: async ({
+        text,
+        intent,
+      }: {
+        text: string;
+        intent?: "sales" | "support" | "other";
+      }) => {
         if (!collected.replyLocked) {
           collected.reply = text.trim();
         }
-        return "ok";
-      },
-    }),
-    set_intent: tool({
-      description:
-        "What they want: sales (buy/book/quote), support (warranty, complaint, no-show), or other. Call every turn.",
-      inputSchema: z.object({ intent: z.enum(["sales", "support", "other"]) }),
-      execute: async ({ intent }: { intent: "sales" | "support" | "other" }) => {
-        collected.intent = intent;
+        if (intent) collected.intent = intent;
         return "ok";
       },
     }),

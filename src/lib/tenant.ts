@@ -1,5 +1,6 @@
 import { clerkClient } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import {
   impersonatedTenantId,
   isAdminSession,
@@ -11,7 +12,8 @@ import { claimOwnerOrganizations } from "@/lib/claim-owner";
 import { claimPendingTeamInvites } from "@/lib/claim-team";
 import { prisma } from "@/lib/db";
 
-export async function requireTenantId(): Promise<string> {
+/** One resolution per RSC request (AppShell + page share). */
+export const requireTenantId = cache(async (): Promise<string> => {
   const acting = await impersonatedTenantId();
   if (acting) {
     const tenant = await prisma.tenant.findUnique({ where: { id: acting } });
@@ -66,7 +68,7 @@ export async function requireTenantId(): Promise<string> {
     throw new Error("No Zapidly tenant for this organization");
   }
   return tenant.id;
-}
+});
 
 /** Same as requireTenantId but redirects for page navigation. */
 export async function requireTenantIdForPage(): Promise<string> {
