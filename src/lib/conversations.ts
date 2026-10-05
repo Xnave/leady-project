@@ -257,16 +257,25 @@ export async function persistInboundIfNew(opts: {
   }
 
   try {
-    const message = await prisma.message.create({
-      data: {
-        tenantId: opts.tenantId,
-        conversationId: conversation.id,
-        role: "lead",
-        text: opts.text,
-        providerMessageId: opts.providerMessageId,
-      },
-    });
-    // CRM refresh is deferred to the webhook `after()` / the turn so enqueue is not blocked.
+    const now = new Date();
+    const [message] = await prisma.$transaction([
+      prisma.message.create({
+        data: {
+          tenantId: opts.tenantId,
+          conversationId: conversation.id,
+          role: "lead",
+          text: opts.text,
+          providerMessageId: opts.providerMessageId,
+          createdAt: now,
+        },
+      }),
+      // Denorm clock so refreshLeadState can skip message.groupBy on the hot path.
+      prisma.lead.update({
+        where: { id: lead.id },
+        data: { lastLeadMessageAt: now, adminUnread: true },
+      }),
+    ]);
+    // CRM refresh is deferred to the turn so enqueue is not blocked.
     return { conversationId: conversation.id, messageId: message.id, leadId: lead.id };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -284,59 +293,66 @@ export async function loadTurnContext(
   conversationId: string,
 ): Promise<TurnContext & { connection: ConnectionView }> {
   const loadStarted = Date.now();
+  ensureFlowRegistry();
   const convoStarted = Date.now();
-  const conversation = await prisma.conversation.findFirstOrThrow({
-    where: { id: conversationId, tenantId },
-    select: {
-      id: true,
-      status: true,
-      flowState: true,
-      flowVersion: true,
-      nudgeCountByStage: true,
-      summary: true,
-      lifecycleReason: true,
-      session: true,
-      lead: { select: { id: true, externalUserId: true, fields: true } },
-      agent: {
-        select: {
-          id: true,
-          catalogId: true,
-          systemPrompt: true,
-          knowledgeText: true,
-          flow: true,
-          flowVersion: true,
-          leadSchema: true,
-          hitlPolicy: true,
-          calcomEventTypeId: true,
+  const instancesStarted = Date.now();
+  // Instances only need tenantId — overlap with the fat conversation read.
+  const [conversation, capabilityInstances] = await Promise.all([
+    prisma.conversation.findFirstOrThrow({
+      where: { id: conversationId, tenantId },
+      select: {
+        id: true,
+        status: true,
+        flowState: true,
+        flowVersion: true,
+        nudgeCountByStage: true,
+        summary: true,
+        lifecycleReason: true,
+        session: true,
+        lead: { select: { id: true, externalUserId: true, fields: true } },
+        agent: {
+          select: {
+            id: true,
+            catalogId: true,
+            systemPrompt: true,
+            knowledgeText: true,
+            flow: true,
+            flowVersion: true,
+            leadSchema: true,
+            hitlPolicy: true,
+            calcomEventTypeId: true,
+          },
+        },
+        channel: {
+          select: {
+            id: true,
+            provider: true,
+            providerAccountId: true,
+            apiBase: true,
+            accessTokenEnc: true,
+            providerExternalId: true,
+          },
+        },
+        tenant: {
+          select: {
+            name: true,
+            phone: true,
+            intro: true,
+            chatLanguage: true,
+            idleResetDays: true,
+          },
+        },
+        messages: {
+          orderBy: { createdAt: "desc" },
+          take: TURN_MESSAGE_TAKE,
+          select: { role: true, text: true, createdAt: true },
         },
       },
-      channel: {
-        select: {
-          id: true,
-          provider: true,
-          providerAccountId: true,
-          apiBase: true,
-          accessTokenEnc: true,
-          providerExternalId: true,
-        },
-      },
-      tenant: {
-        select: {
-          name: true,
-          phone: true,
-          intro: true,
-          chatLanguage: true,
-          idleResetDays: true,
-        },
-      },
-      messages: {
-        orderBy: { createdAt: "desc" },
-        take: TURN_MESSAGE_TAKE,
-        select: { role: true, text: true, createdAt: true },
-      },
-    },
-  });
+    }),
+    loadCapabilityInstances(tenantId),
+  ]);
   const load_convo_ms = Date.now() - convoStarted;
+  const load_instances_ms = Date.now() - instancesStarted;
   const messagesChrono = [...conversation.messages].reverse();
 
   const agent: AgentSnapshot = {
@@ -378,12 +394,6 @@ export async function loadTurnContext(
     (looksLikePhoneNumber(fromId) ? fromId : "") ||
     undefined;
 
-  // Each capability loads its own durable state and parses its own instance
-  // config; this loader stays domain-free.
-  ensureFlowRegistry();
-  const instancesStarted = Date.now();
-  const capabilityInstances = await loadCapabilityInstances(tenantId);
-  const load_instances_ms = Date.now() - instancesStarted;
   const capabilityState: Record<string, unknown> = {};
   const stateStarted = Date.now();
   await Promise.all(
@@ -516,8 +526,9 @@ export async function insertAgentMessage(
   tenantId: string,
   conversationId: string,
   text: string,
-  opts?: { providerMessageId?: string },
+  opts?: { providerMessageId?: string; leadId?: string },
 ) {
+  const now = new Date();
   await prisma.message.create({
     data: {
       tenantId,
@@ -525,8 +536,20 @@ export async function insertAgentMessage(
       role: "agent",
       text,
       providerMessageId: opts?.providerMessageId ?? `out-${crypto.randomUUID()}`,
+      createdAt: now,
     },
   });
+  if (opts?.leadId) {
+    await prisma.lead.updateMany({
+      where: { id: opts.leadId, tenantId },
+      data: { lastOutboundAt: now },
+    });
+  } else {
+    await prisma.lead.updateMany({
+      where: { tenantId, conversations: { some: { id: conversationId } } },
+      data: { lastOutboundAt: now },
+    });
+  }
 }
 
 export async function pauseForHuman(opts: {
@@ -649,6 +672,10 @@ export async function completeHitlTask(opts: {
         providerMessageId: `hitl-${task.id}`,
         metadata: { hitlTaskId: task.id, approved: opts.approved },
       },
+    }),
+    prisma.lead.updateMany({
+      where: { id: task.leadId, tenantId: opts.tenantId },
+      data: { lastOutboundAt: new Date() },
     }),
   ]);
   const resumed = await resumeConversationAfterHitl({

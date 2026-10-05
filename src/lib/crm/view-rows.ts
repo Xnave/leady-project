@@ -91,7 +91,9 @@ export function countsFromStageGroups(
 async function computeCounts(tenantId: string, showDemo: boolean, now: Date): Promise<CrmCounts> {
   const base: Prisma.LeadWhereInput = { tenantId, ...demoWhere(showDemo) };
   const count = (where: Prisma.LeadWhereInput) => prisma.lead.count({ where });
-  const [stageGroups, nNeeds, nCold, ...reasonCounts] = await Promise.all([
+  // cold byReason === nCold; only count the three "needs" reasons separately.
+  const needsReasons = FOLLOW_UP_PRIORITY.filter((r) => r !== "cold");
+  const [stageGroups, nNeeds, nCold, ...needsReasonCounts] = await Promise.all([
     prisma.lead.groupBy({
       by: ["pipelineStage"],
       where: base,
@@ -99,15 +101,15 @@ async function computeCounts(tenantId: string, showDemo: boolean, now: Date): Pr
     }),
     count({ ...base, ...needsWhere(now) }),
     count({ ...base, ...coldWhere(now) }),
-    ...FOLLOW_UP_PRIORITY.map((r) => count({ ...base, ...reasonWhere(r, now) })),
+    ...needsReasons.map((r) => count({ ...base, ...reasonWhere(r, now) })),
   ]);
+  const byReason = {
+    ...Object.fromEntries(needsReasons.map((r, i) => [r, needsReasonCounts[i]])),
+    cold: nCold,
+  } as CrmCounts["byReason"];
   return countsFromStageGroups(
     stageGroups.map((g) => ({ pipelineStage: g.pipelineStage, count: g._count._all })),
-    {
-      needs: nNeeds,
-      cold: nCold,
-      byReason: Object.fromEntries(FOLLOW_UP_PRIORITY.map((r, i) => [r, reasonCounts[i]])) as CrmCounts["byReason"],
-    },
+    { needs: nNeeds, cold: nCold, byReason },
   );
 }
 
@@ -117,10 +119,7 @@ const rowInclude = {
   conversations: {
     orderBy: { createdAt: "desc" },
     take: 1,
-    select: {
-      summary: true,
-      messages: { where: { role: "lead" }, orderBy: { createdAt: "desc" }, take: 1, select: { text: true } },
-    },
+    select: { summary: true },
   },
 } satisfies Prisma.LeadInclude;
 
@@ -148,7 +147,8 @@ function rowInput(lead: RowLead, lang: UiLang, labels: Record<string, string>): 
     channelProvider: lead.channel.provider,
     requestLine: request ? summarizeRequest(toRequestRow(request), lang, labels) : null,
     summary: convo?.summary?.trim() || null,
-    lastLeadText: convo?.messages[0]?.text ?? null,
+    // List line uses summary / request / next-step; skip a nested message join.
+    lastLeadText: null,
   };
 }
 

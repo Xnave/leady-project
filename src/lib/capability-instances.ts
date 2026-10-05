@@ -4,6 +4,7 @@
  * the flow kernel or the schema changes.
  */
 import { Prisma } from "@prisma/client";
+import { cache } from "react";
 import { prisma } from "@/lib/db";
 import type { CapabilityInstanceSnapshot } from "@/lib/flow/types";
 
@@ -32,15 +33,15 @@ function toSnapshot(row: {
   };
 }
 
-export async function loadCapabilityInstances(
-  tenantId: string,
-): Promise<CapabilityInstanceSnapshot[]> {
-  const rows = await prisma.capabilityInstance.findMany({
-    where: { tenantId },
-    orderBy: { createdAt: "asc" },
-  });
-  return rows.map(toSnapshot);
-}
+export const loadCapabilityInstances = cache(
+  async (tenantId: string): Promise<CapabilityInstanceSnapshot[]> => {
+    const rows = await prisma.capabilityInstance.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map(toSnapshot);
+  },
+);
 
 /**
  * Config of the tenant's instance for a capability. Returns `{}` when the tenant
@@ -67,19 +68,19 @@ export async function loadInstanceConfig(opts: {
  * Field labels configured across every instance, for operator surfaces that
  * render a request without knowing which vertical produced it.
  */
-export async function loadInstanceFieldLabels(
-  tenantId: string,
-): Promise<Record<string, string>> {
-  const labels: Record<string, string> = {};
-  for (const instance of await loadCapabilityInstances(tenantId)) {
-    const raw = instance.config.fieldLabels;
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
-    for (const [key, label] of Object.entries(raw as Record<string, unknown>)) {
-      if (typeof label === "string" && label.trim()) labels[key] = label.trim();
+export const loadInstanceFieldLabels = cache(
+  async (tenantId: string): Promise<Record<string, string>> => {
+    const labels: Record<string, string> = {};
+    for (const instance of await loadCapabilityInstances(tenantId)) {
+      const raw = instance.config.fieldLabels;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+      for (const [key, label] of Object.entries(raw as Record<string, unknown>)) {
+        if (typeof label === "string" && label.trim()) labels[key] = label.trim();
+      }
     }
-  }
-  return labels;
-}
+    return labels;
+  },
+);
 
 /** Create or replace one instance, keyed by its tenant-facing kind. */
 export async function upsertCapabilityInstance(opts: {

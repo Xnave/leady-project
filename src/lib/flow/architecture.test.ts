@@ -368,7 +368,7 @@ describe("talkTurn with mocked LLM", () => {
     }) => {
       seenSystem = opts.system;
       seenTools = Object.keys(opts.tools).sort();
-      await opts.tools.reply?.execute?.({ text: "Happy to help with widgets." });
+      await opts.tools.reply?.execute?.({ text: "Happy to help with widgets.", intent: "sales" });
       return { text: "" };
     });
 
@@ -377,15 +377,16 @@ describe("talkTurn with mocked LLM", () => {
     const out = await talkTurn(ctx, talkStage(flow));
 
     expect(out.reply).toBe("Happy to help with widgets.");
+    expect(out.intent).toBe("sales");
     expect(seenTools).toEqual(
       expect.arrayContaining([
         "reply",
-        "set_intent",
         "transition",
         "start_booking",
         "update_meeting_details",
       ]),
     );
+    expect(seenTools).not.toContain("set_intent");
     expect(seenTools).not.toContain("ask_field");
     expect(seenSystem).toMatch(/Visit booking is NOT started|start_booking/i);
     expect(seenSystem).toMatch(/NOT a booking request|explicitly ask to schedule/i);
@@ -401,7 +402,7 @@ describe("talkTurn with mocked LLM", () => {
     }) => {
       seenSystem = opts.system;
       seenTools = Object.keys(opts.tools).sort();
-      await opts.tools.reply?.execute?.({ text: "Here is what we offer." });
+      await opts.tools.reply?.execute?.({ text: "Here is what we offer.", intent: "other" });
       return { text: "" };
     });
 
@@ -409,9 +410,11 @@ describe("talkTurn with mocked LLM", () => {
     const out = await talkTurn(baseCtx(flow), talkStage(flow));
 
     expect(out.reply).toBe("Here is what we offer.");
+    expect(out.intent).toBe("other");
     expect(seenTools).toEqual(
-      expect.arrayContaining(["reply", "set_intent", "transition", "request_human"]),
+      expect.arrayContaining(["reply", "transition", "request_human"]),
     );
+    expect(seenTools).not.toContain("set_intent");
     expect(seenTools).not.toContain("start_booking");
     expect(seenTools).not.toContain("update_meeting_details");
     expect(seenTools).not.toContain("ask_field");

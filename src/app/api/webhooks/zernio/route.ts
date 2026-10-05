@@ -1,4 +1,4 @@
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { persistInboundIfNew } from "@/lib/conversations";
 import { verifyZernioSignature } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
@@ -122,14 +122,21 @@ export async function POST(req: Request) {
     return new Response("ok", { status: 200 });
   }
 
-  const { ms: enqueue_ms } = await timeAsync(() =>
-    enqueueAgentTurn({
-      tenantId: channel.tenantId,
-      conversationId: inserted.conversationId,
-      triggerMessageId: inserted.messageId,
-    }),
-  );
-  after(() => safeRefreshLeadState(channel.tenantId, inserted.leadId));
+  let enqueue_ms = 0;
+  try {
+    const timed = await timeAsync(() =>
+      enqueueAgentTurn({
+        tenantId: channel.tenantId,
+        conversationId: inserted.conversationId,
+        triggerMessageId: inserted.messageId,
+      }),
+    );
+    enqueue_ms = timed.ms;
+  } catch (err) {
+    // Turn won't refresh CRM if enqueue never lands — keep the inbox clocks honest.
+    console.warn(JSON.stringify({ msg: "zernio.enqueue_failed", error: String(err) }));
+    await safeRefreshLeadState(channel.tenantId, inserted.leadId);
+  }
   console.log(
     JSON.stringify({
       msg: "zernio.inbound",
