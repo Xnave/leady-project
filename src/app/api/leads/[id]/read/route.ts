@@ -12,11 +12,10 @@ export async function POST(
   const body = z.object({ unread: z.boolean().optional() }).safeParse(await req.json().catch(() => null));
   if (!body.success) return NextResponse.json({ error: "bad_body" }, { status: 400 });
   const unread = body.data.unread === true;
-  const lead = await prisma.lead.findFirst({ where: { id, tenantId } });
-  if (!lead) return NextResponse.json({ error: "not found" }, { status: 404 });
-  await prisma.lead.update({
-    where: { id },
+  const result = await prisma.lead.updateMany({
+    where: { id, tenantId },
     data: { adminUnread: unread },
   });
+  if (result.count === 0) return NextResponse.json({ error: "not found" }, { status: 404 });
   return NextResponse.json({ ok: true, adminUnread: unread });
 }

@@ -1,5 +1,6 @@
+import { cache } from "react";
 import { clerkClient } from "@clerk/nextjs/server";
-import { adminBypass, isAdminSession, primaryEmailFromClerkUser } from "@/lib/admin";
+import { adminBypass, impersonatedTenantId, isAdminSession, primaryEmailFromClerkUser } from "@/lib/admin";
 import { getClerkAuth, getClerkUser } from "@/lib/clerk-auth";
 import { isClerkCustomDomainInviteError, clerkErrorMessage } from "@/lib/clerk-errors";
 import { prisma } from "@/lib/db";
@@ -12,7 +13,7 @@ import {
   normalizeEmail,
 } from "@/lib/org-roles";
 import { appOrigin } from "@/lib/request-url";
-import { requireTenantId } from "@/lib/tenant";
+import { getTenantShell, requireTenantId } from "@/lib/tenant";
 
 export type TeamActor = {
   tenantId: string;
@@ -44,6 +45,29 @@ export async function resolveTenantRole(
   const invite = inviteRoleFromClerk(clerkOrgRole);
   return invite === "admin" ? "admin" : "member";
 }
+
+/**
+ * Whether the sidebar should show Team settings. Prefer auth + tenant shell over
+ * full `requireTeamActor()` (avoids `currentUser()` when org:admin / ownerClerkUserId suffice).
+ * Impersonation hides Team (same as AppShell before).
+ */
+export const canManageTeamNav = cache(async (tenantId: string): Promise<boolean> => {
+  if (adminBypass()) return true;
+  if (await impersonatedTenantId()) return false;
+
+  const { orgId, userId, orgRole } = await getClerkAuth();
+  if (!userId || !orgId) return false;
+  if (inviteRoleFromClerk(orgRole) === "admin") return true;
+
+  const shell = await getTenantShell(tenantId);
+  if (!shell) return false;
+  if (shell.ownerClerkUserId && shell.ownerClerkUserId === userId) return true;
+
+  // Owner matched only by email (before ownerClerkUserId backfill).
+  const user = await getClerkUser();
+  const email = await primaryEmailFromClerkUser(user);
+  return Boolean(email && shell.ownerEmail && normalizeEmail(email) === normalizeEmail(shell.ownerEmail));
+});
 
 /** CRM staff in the active org (or platform admin impersonating / bypass). */
 export async function requireTeamActor(): Promise<TeamActor> {

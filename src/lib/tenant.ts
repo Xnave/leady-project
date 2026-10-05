@@ -70,6 +70,14 @@ export const requireTenantId = cache(async (): Promise<string> => {
   return tenant.id;
 });
 
+/** Sidebar / shell fields for a tenant. One read per RSC request. */
+export const getTenantShell = cache(async (tenantId: string) => {
+  return prisma.tenant.findFirst({
+    where: { id: tenantId },
+    select: { name: true, ownerEmail: true, ownerClerkUserId: true },
+  });
+});
+
 /** Same as requireTenantId but redirects for page navigation. */
 export async function requireTenantIdForPage(): Promise<string> {
   try {

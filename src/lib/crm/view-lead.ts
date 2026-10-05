@@ -50,15 +50,119 @@ function buildDetails(fields: Record<string, unknown>, ui: UiCopy): { label: str
   return out;
 }
 
-const viewInclude = {
-  channel: true,
-  stageEvents: { orderBy: { createdAt: "desc" }, take: 40 },
-  notes: { orderBy: [{ pinned: "desc" }, { createdAt: "desc" }], take: 40 },
-  adminDecisionLogs: { orderBy: { createdAt: "desc" }, take: 40 },
-  requests: { orderBy: { createdAt: "desc" }, take: 20 },
-  hitlTasks: { orderBy: { createdAt: "desc" }, take: 40 },
-  conversations: { orderBy: { createdAt: "desc" }, take: 8 },
-} satisfies Prisma.LeadInclude;
+/** Select-only shape: columns the DTO / timeline actually use (no Channel secrets). */
+const viewSelect = {
+  id: true,
+  displayName: true,
+  externalUserId: true,
+  fields: true,
+  pipelineStage: true,
+  pipelineStageSource: true,
+  pipelineStageReason: true,
+  pipelineStageChangedAt: true,
+  attentionReason: true,
+  attentionAt: true,
+  snoozedUntil: true,
+  nextStepText: true,
+  nextStepAt: true,
+  lastLeadMessageAt: true,
+  lastOutboundAt: true,
+  updatedAt: true,
+  adminUnread: true,
+  channel: { select: { provider: true } },
+  stageEvents: {
+    orderBy: { createdAt: "desc" as const },
+    take: 40,
+    select: {
+      id: true,
+      from: true,
+      to: true,
+      source: true,
+      reason: true,
+      actorUserId: true,
+      createdAt: true,
+    },
+  },
+  notes: {
+    orderBy: [{ pinned: "desc" as const }, { createdAt: "desc" as const }],
+    take: 40,
+    select: {
+      id: true,
+      body: true,
+      authorLabel: true,
+      pinned: true,
+      createdAt: true,
+    },
+  },
+  adminDecisionLogs: {
+    orderBy: { createdAt: "desc" as const },
+    take: 40,
+    select: {
+      id: true,
+      category: true,
+      action: true,
+      actorUserId: true,
+      actorLabel: true,
+      details: true,
+      createdAt: true,
+    },
+  },
+  requests: {
+    orderBy: { createdAt: "desc" as const },
+    take: 20,
+    select: {
+      id: true,
+      tenantId: true,
+      leadId: true,
+      conversationId: true,
+      capabilityId: true,
+      kind: true,
+      status: true,
+      startAt: true,
+      endAt: true,
+      timeText: true,
+      contactName: true,
+      contactEmail: true,
+      contactPhone: true,
+      data: true,
+      quotedTotal: true,
+      decidedBy: true,
+      decidedAt: true,
+      createdAt: true,
+    },
+  },
+  hitlTasks: {
+    orderBy: { createdAt: "desc" as const },
+    take: 40,
+    select: {
+      id: true,
+      type: true,
+      reason: true,
+      status: true,
+      payload: true,
+      createdAt: true,
+      completedAt: true,
+    },
+  },
+  conversations: {
+    orderBy: { createdAt: "desc" as const },
+    take: 8,
+    select: {
+      id: true,
+      status: true,
+      lifecycleReason: true,
+      summary: true,
+      createdAt: true,
+      updatedAt: true,
+      // Nested on every returned conversation; UI only reads the latest thread.
+      messages: {
+        orderBy: { createdAt: "desc" as const },
+        take: 60,
+        select: { id: true, role: true, text: true, createdAt: true },
+      },
+    },
+  },
+} satisfies Prisma.LeadSelect;
 
 /** Full lead detail for `GET /api/leads/[id]/view`. Null when the lead is not in this tenant. */
 export async function loadLeadView(
@@ -69,31 +173,44 @@ export async function loadLeadView(
 ): Promise<LeadViewDTO | null> {
   const started = Date.now();
   const now = new Date();
-  const instanceLabels = await loadInstanceFieldLabels(tenantId);
+
+  let labelsMs = 0;
+  let leadMs = 0;
+  const labelsP = (async () => {
+    const t0 = Date.now();
+    const instanceLabels = await loadInstanceFieldLabels(tenantId);
+    labelsMs = Date.now() - t0;
+    return instanceLabels;
+  })();
+  const leadP = (async () => {
+    const t0 = Date.now();
+    const row = await prisma.lead.findFirst({
+      where: { id: leadId, tenantId },
+      select: viewSelect,
+    });
+    leadMs = Date.now() - t0;
+    return row;
+  })();
+  const tenantP = prisma.tenant.findUnique({ where: { id: tenantId }, select: { timezone: true } });
+
+  const [instanceLabels, lead, tenant] = await Promise.all([labelsP, leadP, tenantP]);
   const labels = requestFieldLabels(ui, instanceLabels);
 
-  const [lead, tenant] = await Promise.all([
-    prisma.lead.findFirst({ where: { id: leadId, tenantId }, include: viewInclude }),
-    prisma.tenant.findUnique({ where: { id: tenantId }, select: { timezone: true } }),
-  ]);
   if (!lead || !tenant) {
     logCrmPerf("crm.load_lead_view", {
       tenantId,
       leadId,
       found: false,
+      labels_ms: labelsMs,
+      lead_ms: leadMs,
+      messages_ms: 0,
       ms: Date.now() - started,
     });
     return null;
   }
 
   const latestConversation = lead.conversations[0] ?? null;
-  const rawMessages = latestConversation
-    ? await prisma.message.findMany({
-        where: { tenantId, conversationId: latestConversation.id },
-        orderBy: { createdAt: "desc" },
-        take: 60,
-      })
-    : [];
+  const rawMessages = latestConversation?.messages ?? [];
   const messages = [...rawMessages].reverse();
   const lastLeadText = rawMessages.find((m) => m.role === "lead")?.text ?? null;
 
@@ -255,6 +372,10 @@ export async function loadLeadView(
     tenantId,
     leadId,
     found: true,
+    labels_ms: labelsMs,
+    lead_ms: leadMs,
+    // Messages are nested in the lead query (no separate round-trip).
+    messages_ms: 0,
     ms: Date.now() - started,
   });
   return dto;

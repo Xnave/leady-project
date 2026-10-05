@@ -180,8 +180,9 @@ export function useLeadRows(o: {
           : crmApi.bulk({ ids: saved.map((s) => s.row.id), op: unread ? "unread" : "read" });
       call.then(
         () => {
+          // Unread is already patched locally; skip router.refresh() so peek open
+          // does not re-run AppShell + the leads RSC while the view loads.
           settle(tokens, true);
-          refresh();
         },
         () => {
           settle(tokens, false);
@@ -191,7 +192,7 @@ export function useLeadRows(o: {
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- helpers read refs only
-    [refresh, failed],
+    [failed],
   );
 
   const markRead = useCallback((ids: string[]) => setUnread(ids, false), [setUnread]);
