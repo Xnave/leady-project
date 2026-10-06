@@ -10,4 +10,10 @@ describe("zernio webhook refresh policy", () => {
     expect(src).toMatch(/enqueue_failed/);
     expect(src).toMatch(/safeRefreshLeadState/);
   });
+
+  it("rejects in production when ZERNIO_WEBHOOK_SECRET is unset", () => {
+    expect(src).toMatch(/isProductionRuntime/);
+    expect(src).toMatch(/webhook secret not configured/);
+    expect(src).toMatch(/status:\s*401/);
+  });
 });
