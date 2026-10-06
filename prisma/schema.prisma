@@ -411,3 +411,12 @@ model DigestLog {
 
   @@unique([tenantId, date])
 }
+
+/** Fixed-window rate-limit counter (`src/lib/rate-limit.ts`). Key includes the tenant. */
+model RateLimitBucket {
+  key         String
+  windowStart DateTime
+  count       Int      @default(0)
+
+  @@id([key, windowStart])
+}

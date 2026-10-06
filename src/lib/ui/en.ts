@@ -508,6 +508,7 @@ export const en: UiCopy = {
     noAgent: "No agent. Seed the database.",
     noTenant: "No tenant. Seed the database.",
     forbidden: "You do not have access to this page.",
+    rateLimited: "Too many requests. Try again in {seconds} seconds.",
   },
   team: {
     inviteEmail: "Email",

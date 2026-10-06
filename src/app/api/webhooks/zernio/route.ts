@@ -12,6 +12,7 @@ import {
 import {
   fetchZernioInboxContact,
   parseZernioMessageReceived,
+  zernioSignatureRequired,
   zernioWebhookSecret,
 } from "@/lib/zernio";
 
@@ -47,6 +48,9 @@ export async function POST(req: Request) {
     if (!verifyZernioSignature(raw, signature, secret)) {
       return new Response("bad signature", { status: 401 });
     }
+  } else if (zernioSignatureRequired()) {
+    console.error(JSON.stringify({ msg: "zernio.webhook_secret_missing" }));
+    return new Response("webhook secret not configured", { status: 503 });
   }
 
   const { handleDigestReply } = await import("@/lib/crm/digest-send");

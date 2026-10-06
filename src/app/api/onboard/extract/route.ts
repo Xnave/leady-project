@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
+import { getUiLang } from "@/lib/cookies";
 import { extractOnboardDetails } from "@/lib/flow/onboard-extract";
 import { llmConfigured } from "@/lib/flow/model";
+import { RATE_LIMITS, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 import { tenantRoleOr403 } from "@/lib/tenant-role";
+import { fillUi, uiCopy } from "@/lib/ui";
 
 export async function POST(req: Request) {
   const access = await tenantRoleOr403("manager");
@@ -13,6 +16,11 @@ export async function POST(req: Request) {
   }
   if (!llmConfigured()) {
     return NextResponse.json({ extracted: {}, llmConfigured: false });
+  }
+  const limited = await rateLimit(`onboard-extract:${access.tenantId}`, RATE_LIMITS.onboardExtract);
+  if (!limited.ok) {
+    const ui = uiCopy(await getUiLang());
+    return tooManyRequests(limited, fillUi(ui.errors.rateLimited, { seconds: limited.retryAfterSec }));
   }
   try {
     const extracted = await extractOnboardDetails(text);

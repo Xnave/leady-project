@@ -60,6 +60,14 @@ export function zernioWebhookSecret(): string {
   return env("ZERNIO_WEBHOOK_SECRET");
 }
 
+/**
+ * Deployed builds must verify every webhook: without a secret anyone who knows a channel's
+ * accountId could inject inbound messages (LLM turns + outbound sends). Unsigned is local-only.
+ */
+export function zernioSignatureRequired(): boolean {
+  return Boolean(process.env.VERCEL) || process.env.NODE_ENV === "production";
+}
+
 export class ZernioApiError extends Error {
   status: number;
   code?: string;
