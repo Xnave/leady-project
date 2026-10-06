@@ -81,7 +81,7 @@ That file re-reads `.env` from disk on every `env()` call by design: Next inline
 
 ### Inbound message path
 
-`POST /api/webhooks/zernio` verifies the optional `X-Zernio-Signature` HMAC, resolves the channel by `providerExternalId`, calls `persistInboundIfNew()` (idempotent on `tenantId_providerMessageId`), then `enqueueAgentTurn()` and ACKs fast. `/api/dev/inbound` and `/api/demo/message` are the local equivalents, the latter running the turn inline.
+`POST /api/webhooks/zernio` verifies `X-Zernio-Signature` HMAC when `ZERNIO_WEBHOOK_SECRET` is set, and in production returns 401 if the secret is missing. Resolves the channel by `providerExternalId`, calls `persistInboundIfNew()` (idempotent on `tenantId_providerMessageId`), then `enqueueAgentTurn()` and ACKs fast. `/api/dev/inbound` and `/api/demo/message` are the local equivalents, the latter running the turn inline. `/api/inngest` likewise requires `INNGEST_SIGNING_KEY` in production.
 
 ### Two separate i18n layers (en/he)
 

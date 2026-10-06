@@ -31,7 +31,7 @@ Gemini/Anthropic still work if those keys are set and OpenAI is not. Without any
 
 Set `zerino_api_key` (or `ZERNIO_API_KEY`) and `zerino_sandbox_number` (or `ZERNIO_SANDBOX_NUMBER`). Seed / Channels binds that sandbox number to the dev tenant.
 
-Inbound: `POST /api/webhooks/zernio` (`message.received`). The URL must be public HTTPS. Optional `ZERNIO_WEBHOOK_SECRET` for `X-Zernio-Signature`.
+Inbound: `POST /api/webhooks/zernio` (`message.received`). The URL must be public HTTPS. Set `ZERNIO_WEBHOOK_SECRET` (and the same secret on the Zernio webhook) for `X-Zernio-Signature` — required in production; optional only for local dev.
 
 Outbound replies use the Zernio inbox API once a WhatsApp conversation id is stored from the inbound webhook. Chat preview does not send to WhatsApp.
 

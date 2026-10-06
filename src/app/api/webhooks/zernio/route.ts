@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { persistInboundIfNew } from "@/lib/conversations";
 import { verifyZernioSignature } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
+import { isProductionRuntime } from "@/lib/dev-auth-bypass";
 import { enqueueAgentTurn } from "@/lib/flow/run-turn";
 import { safeRefreshLeadState } from "@/lib/crm/refresh";
 import { timeAsync } from "@/lib/perf";
@@ -43,10 +44,17 @@ export async function POST(req: Request) {
   const secret = zernioWebhookSecret();
   const signature =
     req.headers.get("X-Zernio-Signature") ?? req.headers.get("X-Late-Signature");
-  if (secret) {
-    if (!verifyZernioSignature(raw, signature, secret)) {
-      return new Response("bad signature", { status: 401 });
+  // Production must never skip HMAC — without a secret anyone who knows a
+  // channel providerExternalId can inject inbound traffic.
+  if (!secret) {
+    if (isProductionRuntime()) {
+      console.error(
+        JSON.stringify({ msg: "zernio.webhook_secret_missing", status: 401 }),
+      );
+      return new Response("webhook secret not configured", { status: 401 });
     }
+  } else if (!verifyZernioSignature(raw, signature, secret)) {
+    return new Response("bad signature", { status: 401 });
   }
 
   const { handleDigestReply } = await import("@/lib/crm/digest-send");

@@ -1,9 +1,33 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { adminBypass, isAdminSession } from "@/lib/admin";
-import { devAuthBypassEnabled } from "@/lib/dev-auth-bypass";
+import { devAuthBypassEnabled, isProductionRuntime } from "@/lib/dev-auth-bypass";
 
 vi.mock("@clerk/nextjs/server", () => ({ currentUser: async () => null }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
+
+describe("isProductionRuntime", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is false in local development", () => {
+    vi.stubEnv("VERCEL", "");
+    vi.stubEnv("NODE_ENV", "development");
+    expect(isProductionRuntime()).toBe(false);
+  });
+
+  it("is true on Vercel", () => {
+    vi.stubEnv("VERCEL", "1");
+    vi.stubEnv("NODE_ENV", "development");
+    expect(isProductionRuntime()).toBe(true);
+  });
+
+  it("is true when NODE_ENV is production", () => {
+    vi.stubEnv("VERCEL", "");
+    vi.stubEnv("NODE_ENV", "production");
+    expect(isProductionRuntime()).toBe(true);
+  });
+});
 
 describe("DEV_AUTH_BYPASS guard", () => {
   afterEach(() => {
