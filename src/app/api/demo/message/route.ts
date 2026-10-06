@@ -3,9 +3,13 @@ import { persistInboundIfNew } from "@/lib/conversations";
 import { runTurnNow, tryDispatchNudgeEvent, tryEnqueueAgentTurn } from "@/lib/flow/run-turn";
 import { prisma } from "@/lib/db";
 import { ensureLocalDemoChannel } from "@/lib/provision-tenant";
+import { RATE_LIMITS, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 import { requireTenantId } from "@/lib/tenant";
 import { getUiLang } from "@/lib/cookies";
 import { fillUi, uiCopy } from "@/lib/ui";
+
+/** WhatsApp caps a text message at 4096 characters. */
+const MAX_DEMO_TEXT = 4096;
 
 async function sleep(ms: number) {
   await new Promise((r) => setTimeout(r, ms));
@@ -38,6 +42,14 @@ export async function POST(req: Request) {
   const body = (await req.json()) as { leadId?: string; from?: string; text?: string };
   const text = body.text?.trim() ?? "";
   if (!text) return NextResponse.json({ error: "Empty message" }, { status: 400 });
+  if (text.length > MAX_DEMO_TEXT) {
+    return NextResponse.json({ error: "Message too long" }, { status: 413 });
+  }
+  const limited = await rateLimit(`demo:${tenantId}`, RATE_LIMITS.demoMessage);
+  if (!limited.ok) {
+    const ui = uiCopy(await getUiLang());
+    return tooManyRequests(limited, fillUi(ui.errors.rateLimited, { seconds: limited.retryAfterSec }));
+  }
 
   let channel = await prisma.channelConnection.findFirst({
     where: { tenantId, enabled: true },

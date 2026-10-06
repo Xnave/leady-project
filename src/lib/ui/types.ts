@@ -423,6 +423,8 @@ export type UiCopy = {
     noAgent: string;
     noTenant: string;
     forbidden: string;
+    /** `{seconds}` = time until the limit resets. */
+    rateLimited: string;
   };
   team: {
     inviteEmail: string;

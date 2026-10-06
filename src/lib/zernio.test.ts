@@ -1,5 +1,11 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { createZernioProfile, parseZernioInboxContact, parseZernioMessageReceived, zernioProfileName } from "./zernio";
+import {
+  createZernioProfile,
+  parseZernioInboxContact,
+  parseZernioMessageReceived,
+  zernioProfileName,
+  zernioSignatureRequired,
+} from "./zernio";
 
 describe("zernioProfileName", () => {
   it("includes tenant id suffix for uniqueness", () => {
@@ -162,5 +168,29 @@ describe("parseZernioMessageReceived", () => {
         message: { text: "hi", sender: { id: "1" }, conversationId: "c1" },
       }),
     ).toBeNull();
+  });
+});
+
+describe("zernioSignatureRequired", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is off in local dev", () => {
+    vi.stubEnv("VERCEL", "");
+    vi.stubEnv("NODE_ENV", "development");
+    expect(zernioSignatureRequired()).toBe(false);
+  });
+
+  it("is on for Vercel deployments", () => {
+    vi.stubEnv("VERCEL", "1");
+    vi.stubEnv("NODE_ENV", "development");
+    expect(zernioSignatureRequired()).toBe(true);
+  });
+
+  it("is on in production builds", () => {
+    vi.stubEnv("VERCEL", "");
+    vi.stubEnv("NODE_ENV", "production");
+    expect(zernioSignatureRequired()).toBe(true);
   });
 });

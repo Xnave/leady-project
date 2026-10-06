@@ -508,6 +508,7 @@ export const he: UiCopy = {
     noAgent: "אין סוכן. הריצו seed לבסיס הנתונים.",
     noTenant: "אין דייר. הריצו seed לבסיס הנתונים.",
     forbidden: "אין לכם הרשאה לדף זה.",
+    rateLimited: "יותר מדי בקשות. נסו שוב בעוד {seconds} שניות.",
   },
   team: {
     inviteEmail: "אימייל",
