@@ -1,5 +1,6 @@
 import { SignUp } from "@clerk/nextjs";
 import { BrandMark } from "@/components/BrandMark";
+import { LegalConsent } from "@/components/legal/LegalConsent";
 import { isClerkReady } from "@/lib/clerk";
 import { getUiLang } from "@/lib/cookies";
 import { uiCopy } from "@/lib/ui";
@@ -32,6 +33,7 @@ export default async function SignUpPage() {
         fallbackRedirectUrl="/"
         forceRedirectUrl="/"
       />
+      <LegalConsent ui={ui} />
     </div>
   );
 }

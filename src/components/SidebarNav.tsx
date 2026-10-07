@@ -193,6 +193,15 @@ export function SidebarNav({
               </button>
             ))}
           </form>
+
+          <nav className="sidebar-legal">
+            <Link href="/terms" onClick={() => setOpen(false)}>
+              {ui.legal.terms}
+            </Link>
+            <Link href="/privacy" onClick={() => setOpen(false)}>
+              {ui.legal.privacy}
+            </Link>
+          </nav>
         </div>
       </aside>
     </>

@@ -1,5 +1,6 @@
 import { SignIn } from "@clerk/nextjs";
 import { BrandMark } from "@/components/BrandMark";
+import { LegalConsent } from "@/components/legal/LegalConsent";
 import { SwitchAccountActions } from "@/components/SwitchAccountActions";
 import { isClerkReady } from "@/lib/clerk";
 import { getClerkAuth } from "@/lib/clerk-auth";
@@ -47,6 +48,7 @@ export default async function SignInPage() {
           fallbackRedirectUrl="/"
         />
       )}
+      <LegalConsent ui={ui} />
     </div>
   );
 }

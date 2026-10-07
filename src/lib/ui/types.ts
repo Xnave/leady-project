@@ -442,4 +442,15 @@ export type UiCopy = {
     inviteClaimOnSignIn: string;
   };
   crm: CrmCopy;
+  legal: {
+    privacy: string;
+    terms: string;
+    /** Shown under sign-in / sign-up: "{before}<terms>{middle}<privacy>{after}". */
+    consentBefore: string;
+    consentMiddle: string;
+    consentAfter: string;
+    /** Shown above the Hebrew-only legal texts when the UI is in English. */
+    hebrewOnly: string;
+    backToApp: string;
+  };
 };

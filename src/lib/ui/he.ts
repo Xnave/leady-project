@@ -685,4 +685,13 @@ export const he: UiCopy = {
     digestFeatureOff: "התקציר בוואטסאפ עדיין לא הופעל עבור החשבון הזה.",
     saved: "נשמר",
   },
+  legal: {
+    privacy: "מדיניות פרטיות",
+    terms: "הסכם שירות",
+    consentBefore: "בהתחברות או בהרשמה את/ה מסכים/ה ל",
+    consentMiddle: " ול",
+    consentAfter: ".",
+    hebrewOnly: "",
+    backToApp: "חזרה למערכת",
+  },
 };
