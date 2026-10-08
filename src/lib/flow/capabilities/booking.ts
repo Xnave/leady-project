@@ -26,6 +26,12 @@ import {
   type RecentMeetingSnapshot,
 } from "@/lib/meetings";
 import { looksLikeShortAffirmation } from "../affirm";
+import {
+  gatheredInterest,
+  looksLikeNeedDeixis,
+  looksLikeNothingToAdd,
+  resolveNeedFromReply,
+} from "../need-context";
 import { proposesDifferentSlot } from "../slot";
 import {
   bookingNoun,
@@ -44,6 +50,25 @@ import {
   looksLikeIncompleteCustomerName,
   rewritePhonesInText,
 } from "@/lib/leads";
+
+/** Ask the next booking gap; when asking need, present CRM interest if we have it. */
+function askNextBookingGap(
+  lang: "en" | "he",
+  field: string,
+  fields: LeadFields,
+  extras: { hours?: string; deducedPhone?: string },
+): string {
+  return askBookingField(lang, field, {
+    ...extras,
+    gatheredNeed: field === "need" ? gatheredInterest(fields) : undefined,
+  });
+}
+
+function markNeedPrompted(collected: TalkCollected, field: string): void {
+  if (field === "need") {
+    collected.fields = { ...collected.fields, need_prompted: "1" };
+  }
+}
 
 export type TalkCollected = TalkOutcome & {
   askFieldUsed?: boolean;
@@ -96,7 +121,24 @@ export function reconcileBooking(
 
   let confirm = bookingConfirmStatus(fields);
   const nextFields = { ...(out.fields ?? {}) };
-  const affirmed = looksLikeBookingAffirmation(lastLeadText(ctx));
+  const last = lastLeadText(ctx);
+  const affirmed = looksLikeBookingAffirmation(last);
+
+  // After we presented gathered interest + asked for more: soft "no" / deixis → commit interest as need.
+  {
+    const interest = gatheredInterest({ ...fields, ...nextFields });
+    const needEmpty = !String(fields.need ?? nextFields.need ?? "").trim();
+    const prompted = String(fields.need_prompted ?? nextFields.need_prompted ?? "").trim() === "1";
+    if (
+      needEmpty &&
+      prompted &&
+      interest &&
+      (looksLikeNothingToAdd(last) || looksLikeNeedDeixis(last))
+    ) {
+      nextFields.need = interest;
+      nextFields.need_prompted = "";
+    }
+  }
 
   // Customer agreed to the summary — treat the listed name as verified so a
   // single-token name cannot block book_meeting / inbox HITL after "כן".
@@ -124,7 +166,10 @@ export function reconcileBooking(
 
   // Affirmed while gaps remain: never keep a free-text "I saved your request".
   if (confirm === "pending" && affirmed && gapsAfter.length > 0) {
-    reply = askBookingField(replyLang(ctx, lastLeadText(ctx)), gapsAfter[0], {
+    reply = askNextBookingGap(replyLang(ctx, lastLeadText(ctx)), gapsAfter[0], {
+      ...fields,
+      ...nextFields,
+    }, {
       hours: venueHoursFromCtx(ctx),
     });
   }
@@ -266,6 +311,7 @@ export function registerBookingCapability(): void {
           "time_preference: weekday + clock is enough — save when inside bookable hours (latest start is 30 minutes before closing, e.g. by 18:30 when hours end at 19). Bare morning clock without ערב/בוקר may be rejected as AM — ask them to clarify evening if needed.",
           "CRITICAL: After save_fields accepts a time_preference, do NOT re-confirm the slot — immediately ask_field for the next gap only.",
           "If outside bookable hours (including at/after closing), do not save and do not ask other fields until time is valid.",
+          "need / פרטי הפגישה: ask_field presents any saved interest and invites extras. Never save pointer phrases (מה שכתבתי למעלה / as above) as need — save_fields resolves them. Soft 'no / nothing else' keeps the gathered interest as need.",
           "Before book_meeting: confirm_details (only when Gaps is none), then save_fields booking_confirm=confirmed after they agree, then book_meeting.",
           `confirm_details text: use label פרטי הפגישה / ${noun} details for the need field — never צורך or Need.`,
           `CRITICAL: Never tell the customer you recorded/submitted a ${noun} request unless you called book_meeting and it returned ok. A plain reply claiming that is a bug.`,
@@ -274,6 +320,10 @@ export function registerBookingCapability(): void {
           `Never say the ${noun} is confirmed — book_meeting only stores a tentative request for a human.`,
           "When acknowledging a saved request, name the business from context only — never invent a company name from the customer's name.",
         ];
+        const interest = gatheredInterest(fields);
+        if (interest && gaps.includes("need")) {
+          lines.push(`Gathered interest to present when asking need: "${interest}".`);
+        }
         if (
           required.includes("name") &&
           storedName &&
@@ -304,12 +354,18 @@ export function registerBookingCapability(): void {
         return lines;
       }
 
-      return [
+      const interest = gatheredInterest(fields);
+      const idle = [
         `${noun} booking is NOT started. Use reply to answer product/sales questions from knowledge.`,
         'Examples that must NOT trigger booking: "I want a WhatsApp agent", "how much is it", "tell me more", "I need something for Instagram".',
         `Only call start_booking if they explicitly ask to schedule a ${noun}/meeting/demo/call, or clearly accept an offer to book.`,
+        "When they already shared concrete context (pain, business type, goals — e.g. a mini-app dump), call save_interest with their wording in the SAME turn as reply. Do not invent. Do not start booking for that alone.",
         "Past/expired meetings are irrelevant — do not mention them, do not say בהמשך לפגישה, and do not reuse their need text unless the customer explicitly brings that meeting up.",
       ];
+      if (interest) {
+        idle.push(`Saved interest on this lead: "${interest}". Pass it via start_booking interest when booking starts.`);
+      }
+      return idle;
     },
     tools: ({ ctx, stage, collected }) => {
       const lang = replyLang(ctx, lastLeadText(ctx));
@@ -405,25 +461,68 @@ export function registerBookingCapability(): void {
 
       if (!active) {
         return {
+          save_interest: tool({
+            description:
+              "Save concrete context the customer already stated (pain, business type, goals, mini-app findings) for later meeting details. Pass their wording only — do not invent or summarize into staff jargon. Does NOT start booking and does NOT send WhatsApp — still call reply in the same turn.",
+            inputSchema: z.object({
+              interest: z
+                .string()
+                .describe("Customer's own wording about what matters for them / the visit"),
+            }),
+            execute: async ({ interest }: { interest: string }) => {
+              const text = interest.trim();
+              if (!text) {
+                return JSON.stringify({ ok: false, error: "empty_interest" });
+              }
+              if (looksLikeNeedDeixis(text)) {
+                return JSON.stringify({
+                  ok: false,
+                  error: "deixis",
+                  hint: "Pass the concrete wording from their earlier message, not a pointer phrase.",
+                });
+              }
+              collected.fields = { ...collected.fields, interest: text };
+              return JSON.stringify({ ok: true, interest: text });
+            },
+          }),
           start_booking: tool({
             description:
-              "Begin collecting visit/meeting details. Call ONLY when the customer explicitly asks to schedule a meeting, visit, demo, or call — or clearly accepts your offer to book one. Do NOT call for product interest alone (e.g. wanting a WhatsApp agent, asking how it works, pricing, features). Do NOT call when they are only clarifying details for an existing/approved meeting — use update_meeting_details + reply instead.",
+              "Begin collecting visit/meeting details. Call ONLY when the customer explicitly asks to schedule a meeting, visit, demo, or call — or clearly accepts your offer to book one. Do NOT call for product interest alone (e.g. wanting a WhatsApp agent, asking how it works, pricing, features). Do NOT call when they are only clarifying details for an existing/approved meeting — use update_meeting_details + reply instead. Optional interest: pass concrete context they already gave (or reuse saved interest) so the later need ask can present it.",
             inputSchema: z.object({
               reason: z.string().optional(),
+              interest: z
+                .string()
+                .optional()
+                .describe(
+                  "Concrete visit/context wording they already shared; stored as CRM interest, not yet as need",
+                ),
             }),
-            execute: async () => {
+            execute: async ({ interest }: { reason?: string; interest?: string }) => {
               const first = required[0] ?? "time_preference";
+              const fromArg = interest?.trim() ?? "";
+              const existing = gatheredInterest(fieldsForTurn);
+              const seeded =
+                fromArg && !looksLikeNeedDeixis(fromArg)
+                  ? fromArg
+                  : existing;
               collected.fields = {
                 ...collected.fields,
                 booking_flow: "active",
+                ...(seeded ? { interest: seeded } : {}),
               };
               collected.askFieldUsed = true;
               collected.replyLocked = true;
-              collected.reply = askBookingField(lang, first, {
+              const merged = { ...fieldsForTurn, ...collected.fields };
+              collected.reply = askNextBookingGap(lang, first, merged, {
                 hours,
                 deducedPhone: first === "phone" ? callbackPhone(ctx) : undefined,
               });
-              return JSON.stringify({ ok: true, next_field: first });
+              markNeedPrompted(collected, first);
+              return JSON.stringify({
+                ok: true,
+                next_field: first,
+                ...(seeded ? { interest: seeded } : {}),
+              });
             },
           }),
           update_meeting_details: updateMeetingDetailsTool(ctx, collected),
@@ -442,7 +541,7 @@ export function registerBookingCapability(): void {
         update_meeting_details: updateMeetingDetailsTool(ctx, collected),
         save_fields: tool({
           description:
-            "Save details they already gave in chat, in their original wording. Do not invent. Do not translate names. Do not copy the WhatsApp/profile display name into name. For phone, only save after they gave or confirmed a number. Pass empty string to clear a field. time_preference must be inside opening hours when a clock time is clear.",
+            "Save details they already gave in chat, in their original wording. Do not invent. Do not translate names. Do not copy the WhatsApp/profile display name into name. For phone, only save after they gave or confirmed a number. Pass empty string to clear a field. time_preference must be inside opening hours when a clock time is clear. For need: never pass pointer phrases — rails resolve deixis / soft 'nothing else' against saved interest.",
           inputSchema: z.object(fieldShape),
           execute: async (raw: Record<string, unknown>) => {
             const fields: LeadFields = {};
@@ -490,6 +589,27 @@ export function registerBookingCapability(): void {
                   hint: "Ask again for a complete email only. Do not ask name or other fields until email is valid.",
                 });
               }
+              if (key === "need") {
+                const mergedForNeed = { ...fieldsForTurn, ...collected.fields, ...fields };
+                const resolved = resolveNeedFromReply(value, gatheredInterest(mergedForNeed));
+                if ("reject" in resolved) {
+                  const gathered = gatheredInterest(mergedForNeed);
+                  collected.askFieldUsed = true;
+                  collected.replyLocked = true;
+                  collected.reply = askNextBookingGap(lang, "need", mergedForNeed, { hours });
+                  markNeedPrompted(collected, "need");
+                  return JSON.stringify({
+                    ok: false,
+                    error: resolved.reject,
+                    hint: gathered
+                      ? "Need was not saved. Re-ask with gathered interest; if they add nothing, save the gathered text as need."
+                      : "Need was not saved — ask for concrete meeting details, not a pointer to earlier messages.",
+                  });
+                }
+                fields.need = resolved.need;
+                fields.need_prompted = "";
+                continue;
+              }
               fields[key] = value.trim();
               if (key === "name" && value.trim()) {
                 fields.name_collected_by_agent = "1";
@@ -508,10 +628,11 @@ export function registerBookingCapability(): void {
                 const next = gaps[0];
                 collected.askFieldUsed = true;
                 collected.replyLocked = true;
-                collected.reply = askBookingField(lang, next, {
+                collected.reply = askNextBookingGap(lang, next, merged, {
                   hours,
                   deducedPhone: next === "phone" ? callbackPhone(ctx) : undefined,
                 });
+                markNeedPrompted(collected, next);
                 return JSON.stringify({ ok: true, next_field: next });
               }
             }
@@ -520,7 +641,7 @@ export function registerBookingCapability(): void {
         }),
         ask_field: tool({
           description:
-            "Ask for the next missing booking field (always the first gap). Only fields in the required booking list. Sets outbound text to that ask. Do not call after a failed time_preference save in the same turn.",
+            "Ask for the next missing booking field (always the first gap). Only fields in the required booking list. Sets outbound text to that ask. When asking need, presents saved interest and invites optional extras. Do not call after a failed time_preference save in the same turn.",
           inputSchema: z.object({
             field: z.enum([
               "time_preference",
@@ -551,14 +672,18 @@ export function registerBookingCapability(): void {
             const next = gaps[0];
             collected.askFieldUsed = true;
             collected.replyLocked = true;
-            collected.reply = askBookingField(lang, next, {
+            collected.reply = askNextBookingGap(lang, next, merged, {
               hours,
               deducedPhone: next === "phone" ? callbackPhone(ctx) : undefined,
             });
+            markNeedPrompted(collected, next);
             return JSON.stringify({
               ok: true,
               asked: next,
               ...(next !== field ? { redirected_from: field } : {}),
+              ...(next === "need" && gatheredInterest(merged)
+                ? { presented_interest: true }
+                : {}),
             });
           },
         }),
@@ -573,10 +698,11 @@ export function registerBookingCapability(): void {
               const next = gaps[0];
               collected.askFieldUsed = true;
               collected.replyLocked = true;
-              collected.reply = askBookingField(lang, next, {
+              collected.reply = askNextBookingGap(lang, next, merged, {
                 hours,
                 deducedPhone: next === "phone" ? callbackPhone(ctx) : undefined,
               });
+              markNeedPrompted(collected, next);
               return JSON.stringify({
                 ok: false,
                 missing: gaps,

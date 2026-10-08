@@ -241,11 +241,12 @@ describe("capability tools surface", () => {
     ensureFlowRegistry();
   });
 
-  it("exposes start_booking + update_meeting_details when booking idle", () => {
+  it("exposes start_booking + save_interest + update_meeting_details when booking idle", () => {
     const flow = flowForCapabilities({ capabilities: ["booking"] });
     const ctx = baseCtx(flow);
     const names = toolNamesFromCapability("booking", ctx, talkStage(flow));
     expect(names).toContain("start_booking");
+    expect(names).toContain("save_interest");
     expect(names).toContain("update_meeting_details");
     expect(names).not.toContain("ask_field");
     expect(names).not.toContain("resolve_offered_slot");

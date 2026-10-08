@@ -28,6 +28,13 @@ export const chat: ChatCopy = {
   askFieldAgain: (field) => `עדיין חסר לי ${field} כדי לשלוח את בקשת הביקור.`,
   waitingHumanHold: "קיבלנו, נציג חוזר אליך.",
   askNeed: "ספר לי בקצרה מה חשוב שנדע לקראת הפגישה?",
+  askNeedWithGathered: (gathered) =>
+    [
+      "מה שכבר הבנתי מהשיחה:",
+      gathered,
+      "",
+      "יש משהו נוסף שחשוב שנוסיף לקראת הפגישה? אפשר להוסיף פרטים או לכתוב שזה מספיק.",
+    ].join("\n"),
   askVisitKind: "איזה סוג ביקור מתאים לך?",
   askTime: (hours) =>
     hours

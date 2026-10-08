@@ -118,15 +118,18 @@ describe("splitCrmAndSession", () => {
     const { crm, session } = splitCrmAndSession({
       name: "Dana",
       phone: "+1",
+      interest: "hours gap",
       booking_flow: "active",
       time_preference: "Thu 18:00",
       need: "demo",
+      need_prompted: "1",
     });
-    expect(crm).toEqual({ name: "Dana", phone: "+1" });
+    expect(crm).toEqual({ name: "Dana", phone: "+1", interest: "hours gap" });
     expect(session).toEqual({
       booking_flow: "active",
       time_preference: "Thu 18:00",
       need: "demo",
+      need_prompted: "1",
     });
     expect(mergeLeadAndSession(crm, session).booking_flow).toBe("active");
   });

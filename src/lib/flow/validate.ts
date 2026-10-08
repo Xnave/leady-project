@@ -110,6 +110,8 @@ export const defaultLeadSchema: LeadSchema = {
     time_preference: { type: "string" },
     visit_kind: { type: "string" },
     need: { type: "string" },
+    /** Early chat context (CRM) — copied into booking need after the need step. */
+    interest: { type: "string" },
     booking: { type: "string" },
     booking_confirm: { type: "string" },
     booking_flow: { type: "string" },

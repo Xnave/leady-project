@@ -35,6 +35,8 @@ export type ChatCopy = {
   askFieldAgain: (field: string) => string;
   waitingHumanHold: string;
   askNeed: string;
+  /** Present gathered context and invite optional extras in one message. */
+  askNeedWithGathered: (gathered: string) => string;
   askVisitKind: string;
   askTime: (hours: string) => string;
   /** When a proposed time is outside venue hours. */

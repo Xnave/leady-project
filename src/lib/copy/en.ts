@@ -28,6 +28,13 @@ export const chat: ChatCopy = {
     `I still need ${field} before I can send the visit request.`,
   waitingHumanHold: "We've got this - a teammate will take over.",
   askNeed: "In a few words — what should we know ahead of the visit?",
+  askNeedWithGathered: (gathered) =>
+    [
+      "From what you already shared:",
+      gathered,
+      "",
+      "Anything else we should know ahead of the visit? You can add details or say you're good.",
+    ].join("\n"),
   askVisitKind: "What kind of visit works for you?",
   askTime: (hours) =>
     hours

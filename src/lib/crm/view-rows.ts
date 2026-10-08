@@ -147,6 +147,10 @@ function rowInput(lead: RowLead, lang: UiLang, labels: Record<string, string>): 
     channelProvider: lead.channel.provider,
     requestLine: request ? summarizeRequest(toRequestRow(request), lang, labels) : null,
     summary: convo?.summary?.trim() || null,
+    interest:
+      typeof (lead.fields as Record<string, unknown> | null)?.interest === "string"
+        ? String((lead.fields as Record<string, unknown>).interest).trim() || null
+        : null,
     // List line uses summary / request / next-step; skip a nested message join.
     lastLeadText: null,
   };
