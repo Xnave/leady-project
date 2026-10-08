@@ -7,6 +7,7 @@ export function talkGuardrails(opts: {
   whatsappPhone?: string;
   lang: "en" | "he";
   voiceLayer?: boolean;
+  bundledQuestions?: boolean;
 }): string {
   return copyFor(opts.lang).prompts.talkGuardrails({
     allowBook: opts.allowBook,
@@ -14,5 +15,6 @@ export function talkGuardrails(opts: {
     hours: opts.hours,
     whatsappPhone: opts.whatsappPhone ?? "",
     voiceLayer: opts.voiceLayer,
+    bundledQuestions: opts.bundledQuestions,
   });
 }

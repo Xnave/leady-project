@@ -38,7 +38,7 @@ export function previewThrottle(tenantId: string, now = Date.now()): boolean {
 export async function runPersonaPreview(
   input: { persona: Persona; lang: "en" | "he"; agent: AgentForPreview; tenant: TenantSnapshot },
   talk: TalkFn = talkTurn,
-): Promise<{ id: SampleId; customer: string; reply: string }[]> {
+): Promise<{ id: SampleId; customer: string; reply: string; handoff: boolean }[]> {
   const entry = Object.entries(input.agent.flow.stages).find(([, s]) => s.type === "talk");
   if (!entry) throw new Error("agent has no talk stage");
   const [stageKey, stage] = entry as [string, TalkStage];
@@ -65,7 +65,9 @@ export async function runPersonaPreview(
       };
       const out = await talk(ctx, stage);
       if (isLlmDegrade(out)) throw new PreviewUnavailableError();
-      return { id: sample.id, customer: sample.customer, reply: out.reply ?? "" };
+      const reply = out.reply?.trim() ?? "";
+      // No text = the agent handed off (or only transitioned); show that, not an empty bubble.
+      return { id: sample.id, customer: sample.customer, reply, handoff: !reply };
     }),
   );
 }

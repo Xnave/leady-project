@@ -134,6 +134,7 @@ export class PromptBuilder {
         whatsappPhone: !saved && deduced ? deduced : undefined,
         lang,
         voiceLayer: !legacyPromptPipeline(),
+        bundledQuestions: !legacyPromptPipeline() && personaOf(ctx).questionStyle === "bundled",
       }),
     );
     return this;

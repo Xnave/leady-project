@@ -5,13 +5,13 @@ import type { SampleId } from "@/lib/persona/samples";
 import type { UiCopy } from "@/lib/ui";
 import { SegmentedControl } from "./SegmentedControl";
 
-export type PreviewSample = { id: SampleId; customer: string; reply: string };
+export type PreviewSample = { id: SampleId; customer: string; reply: string; handoff?: boolean };
 export type PreviewState =
   | { kind: "idle" }
   | { kind: "loading"; previous?: PreviewSample[] }
   | { kind: "ready"; samples: PreviewSample[]; stale: boolean }
   | { kind: "no_llm" }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; previous?: PreviewSample[] };
 
 const SAMPLE_IDS: SampleId[] = ["pricing", "vague", "complaint"];
 
@@ -37,7 +37,12 @@ export function PersonaPreview({
 }) {
   const [tab, setTab] = useState<SampleId>("pricing");
   const loading = state.kind === "loading";
-  const samples = state.kind === "ready" ? state.samples : state.kind === "loading" ? state.previous : undefined;
+  const samples =
+    state.kind === "ready"
+      ? state.samples
+      : state.kind === "loading" || state.kind === "error"
+        ? state.previous
+        : undefined;
   const current = samples?.find((s) => s.id === tab);
   const stale = state.kind === "ready" && state.stale;
 
@@ -90,6 +95,8 @@ export function PersonaPreview({
               <i />
               <i />
             </div>
+          ) : current?.handoff ? (
+            <p className="persona-handoff">{ui.previewHandoff}</p>
           ) : current ? (
             <div className="persona-bubble agent" key={current.reply}>
               {agentName ? <span className="persona-sender">{agentName}</span> : null}

@@ -733,6 +733,7 @@ export const en: UiCopy = {
     previewNoLlm: "Live preview needs an AI key on this environment.",
     previewSlowDown: "One moment — try again in a few seconds.",
     previewFailed: "Couldn't load the preview. Try again.",
+    previewHandoff: "Your agent would hand this one to a teammate.",
     previewSamples: { pricing: "Price question", vague: "Vague opener", complaint: "Upset customer" },
     previewLangToggle: "Preview language",
     unsaved: "You have unsaved changes",

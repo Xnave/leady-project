@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PERSONA } from "@/lib/persona/presets";
 import type { Persona } from "@/lib/persona/types";
-import { draftReducer, isDirty } from "./persona-draft";
+import { draftReducer, isDirty, previewWait } from "./persona-draft";
 
 describe("persona draft", () => {
   it("picking a preset keeps name, gender, rules", () => {
@@ -44,5 +44,13 @@ describe("persona draft", () => {
     expect(isDirty(DEFAULT_PERSONA, { ...DEFAULT_PERSONA, rules: [""] })).toBe(false);
     expect(isDirty(DEFAULT_PERSONA, { ...DEFAULT_PERSONA, agentName: " " })).toBe(false);
     expect(isDirty(DEFAULT_PERSONA, { ...DEFAULT_PERSONA, tone: "direct", presetId: "custom" })).toBe(true);
+  });
+});
+
+describe("previewWait", () => {
+  it("waits out the rest of the server's 4s window, never negative", () => {
+    expect(previewWait(undefined, 10_000)).toBe(0);
+    expect(previewWait(10_000, 11_500)).toBe(2_700);
+    expect(previewWait(10_000, 20_000)).toBe(0);
   });
 });

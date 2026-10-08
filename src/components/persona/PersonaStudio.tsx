@@ -8,7 +8,7 @@ import type { UiCopy } from "@/lib/ui";
 import { PersonaControls } from "./PersonaControls";
 import { PersonaPreview, type PreviewSample, type PreviewState } from "./PersonaPreview";
 import { PresetGallery } from "./PresetGallery";
-import { cleanDraft, draftReducer, isDirty } from "./persona-draft";
+import { cleanDraft, draftReducer, isDirty, previewWait } from "./persona-draft";
 
 function previewKey(p: Persona, lang: string) {
   return JSON.stringify(cleanDraft(p)) + lang;
@@ -34,6 +34,7 @@ export function PersonaStudio({
   const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
   const [ruleErrors, setRuleErrors] = useState<Record<number, string>>({});
   const lastPreviewed = useRef("");
+  const lastPreviewStart = useRef<number | undefined>(undefined);
   const dirty = isDirty(saved, draft);
 
   const sampleCustomer = useMemo(
@@ -54,8 +55,12 @@ export function PersonaStudio({
   }, [toast]);
 
   async function runPreview(p: Persona = draft) {
-    const previous = preview.kind === "ready" ? preview.samples : undefined;
+    const previous =
+      preview.kind === "ready" ? preview.samples : preview.kind === "error" ? preview.previous : undefined;
     setPreview({ kind: "loading", previous });
+    const wait = previewWait(lastPreviewStart.current, Date.now());
+    if (wait) await new Promise((r) => setTimeout(r, wait));
+    lastPreviewStart.current = Date.now();
     try {
       const res = await fetch("/api/agent/persona/preview", {
         method: "POST",
@@ -63,13 +68,13 @@ export function PersonaStudio({
         body: JSON.stringify({ persona: cleanDraft(p), lang: previewLang }),
       });
       if (res.status === 409) return setPreview({ kind: "no_llm" });
-      if (res.status === 429) return setPreview({ kind: "error", message: ui.previewSlowDown });
-      if (!res.ok) return setPreview({ kind: "error", message: ui.previewFailed });
+      if (res.status === 429) return setPreview({ kind: "error", message: ui.previewSlowDown, previous });
+      if (!res.ok) return setPreview({ kind: "error", message: ui.previewFailed, previous });
       const body = (await res.json()) as { samples: PreviewSample[] };
       lastPreviewed.current = previewKey(p, previewLang);
       setPreview({ kind: "ready", samples: body.samples, stale: false });
     } catch {
-      setPreview({ kind: "error", message: ui.previewFailed });
+      setPreview({ kind: "error", message: ui.previewFailed, previous });
     }
   }
 

@@ -732,6 +732,7 @@ export const he: UiCopy = {
     previewNoLlm: "תצוגה חיה דורשת מפתח AI בסביבה הזו.",
     previewSlowDown: "רגע — נסו שוב בעוד כמה שניות.",
     previewFailed: "לא הצלחנו לטעון תצוגה. נסו שוב.",
+    previewHandoff: "כאן הסוכן היה מעביר את השיחה לנציג מהצוות.",
     previewSamples: { pricing: "שאלת מחיר", vague: "פתיחה כללית", complaint: "לקוח מתוסכל" },
     previewLangToggle: "שפת התצוגה",
     unsaved: "יש שינויים שלא נשמרו",

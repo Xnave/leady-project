@@ -109,6 +109,8 @@ export type PromptCopy = {
     whatsappPhone: string;
     /** New prompt pipeline: identity lives above, so open with BOUNDARIES instead of ROLE. */
     voiceLayer?: boolean;
+    /** Persona allows several related questions per message. */
+    bundledQuestions?: boolean;
   }) => string;
   extractFields: (nextField: string) => string;
   draftQuestion: (nextField: string) => string;

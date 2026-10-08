@@ -73,15 +73,15 @@ export function personaSection(p: Persona, lang: "en" | "he"): string {
   ];
   if (p.rules.length) {
     lines.push(
-      "Owner's rules (follow unless they conflict with BOUNDARIES):",
+      "Owner's rules (follow unless they conflict with BOUNDARIES or the task instructions below):",
       ...p.rules.map((r) => `- ${r}`),
     );
   }
   return lines.join("\n");
 }
 
-export function voiceCraftSection(_p: Persona): string {
-  return [
+export function voiceCraftSection(_p: Persona, opts?: { knowledgeGapLine?: boolean }): string {
+  const lines = [
     "CONVERSATION CRAFT:",
     "- Acknowledge what the customer said before answering; answer their actual question first.",
     "- Mirror their language and energy. Never sound more formal than your persona.",
@@ -89,6 +89,11 @@ export function voiceCraftSection(_p: Persona): string {
     '- No canned openers ("Great question!", "Certainly!", "I\'d be happy to help"), never restate their question, never reuse your previous message\'s phrasing.',
     "- End with one clear next step (a question, an offer, or what happens now) — not a menu of options.",
     "- Write like a person in a chat app: plain short paragraphs, no headings, no bullet lists unless listing 3+ options.",
-    "- If the knowledge doesn't cover it, say so briefly and offer the concrete alternative (phone or a teammate).",
-  ].join("\n");
+  ];
+  if (opts?.knowledgeGapLine !== false) {
+    lines.push(
+      "- If the knowledge doesn't cover it, say so briefly and offer the concrete alternative (phone or a teammate).",
+    );
+  }
+  return lines.join("\n");
 }
