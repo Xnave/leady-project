@@ -6,11 +6,13 @@ export function talkGuardrails(opts: {
   hours: string;
   whatsappPhone?: string;
   lang: "en" | "he";
+  voiceLayer?: boolean;
 }): string {
   return copyFor(opts.lang).prompts.talkGuardrails({
     allowBook: opts.allowBook,
     fields: opts.requiredForBook.join(", "),
     hours: opts.hours,
     whatsappPhone: opts.whatsappPhone ?? "",
+    voiceLayer: opts.voiceLayer,
   });
 }
