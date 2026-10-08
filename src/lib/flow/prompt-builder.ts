@@ -11,6 +11,18 @@ import {
   savedPhone,
 } from "./booking-collect";
 import { formatPhoneDisplay } from "@/lib/leads";
+import { personaOf } from "@/lib/persona/context";
+import {
+  identitySection,
+  personaSection,
+  stripLegacyRole,
+  voiceCraftSection,
+} from "@/lib/persona/prompt";
+
+/** Eval-only switch: reproduce the pre-persona prompt as a baseline. */
+export function legacyPromptPipeline(): boolean {
+  return process.env["PROMPT_PIPELINE"] === "legacy";
+}
 
 function lastLeadText(ctx: TurnContext): string {
   return [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
@@ -29,15 +41,38 @@ export class PromptBuilder {
   private parts: string[] = [];
 
   withBase(ctx: TurnContext, lang: "en" | "he"): this {
-    this.parts.push(ctx.agent.systemPrompt);
+    this.parts.push(
+      legacyPromptPipeline() ? ctx.agent.systemPrompt : stripLegacyRole(ctx.agent.systemPrompt),
+    );
     const intro = ctx.tenant?.intro?.trim() || "";
     if (!hasAgentReplied(ctx)) {
       this.parts.push(
-        lang === "he"
+        legacyPromptPipeline()
           ? `FIRST MESSAGE: Greet using this business intro (do not invent a different welcome): ${intro || "(short hello)"}. Then address their message.`
-          : `FIRST MESSAGE: Greet using this business intro (do not invent a different welcome): ${intro || "(short hello)"}. Then address their message.`,
+          : `FIRST MESSAGE: Open with a short welcome in the spirit of this business intro, in the customer's language and your persona's voice: ${intro || "(short hello)"}. If they only said hello, you may use the intro as written. If they already asked something, keep the welcome to a few words, answer it in the same message, and do not ask how you can help.`,
       );
     }
+    return this;
+  }
+
+  withIdentity(ctx: TurnContext): this {
+    this.parts.push(
+      identitySection({
+        business: ctx.tenant?.name?.trim() || "this business",
+        agentName: personaOf(ctx).agentName,
+        channel: ctx.channel?.provider ?? "chat",
+      }),
+    );
+    return this;
+  }
+
+  withPersona(ctx: TurnContext, lang: "en" | "he"): this {
+    this.parts.push(personaSection(personaOf(ctx), lang));
+    return this;
+  }
+
+  withVoiceCraft(ctx: TurnContext): this {
+    this.parts.push(voiceCraftSection(personaOf(ctx)));
     return this;
   }
 
@@ -98,6 +133,8 @@ export class PromptBuilder {
         hours: booking.venueHours,
         whatsappPhone: !saved && deduced ? deduced : undefined,
         lang,
+        voiceLayer: !legacyPromptPipeline(),
+        bundledQuestions: !legacyPromptPipeline() && personaOf(ctx).questionStyle === "bundled",
       }),
     );
     return this;
@@ -173,13 +210,28 @@ export function buildTalkSystemPrompt(
   fields: LeadFields = ctx.lead.fields,
 ): string {
   const lang = replyLang(ctx, lastLeadText(ctx));
+  if (legacyPromptPipeline()) {
+    return new PromptBuilder()
+      .withBase(ctx, lang)
+      .withStage(stage)
+      .withGuardrails(ctx, stage, lang)
+      .withChannel(ctx, fields)
+      .withTalkContext(ctx, stage, fields, lang)
+      .withCapabilities(ctx, stage, fields)
+      .withClosing(stage)
+      .build();
+  }
+  // Voice first, safety rules last so style never outranks them.
   return new PromptBuilder()
+    .withIdentity(ctx)
+    .withPersona(ctx, lang)
+    .withVoiceCraft(ctx)
     .withBase(ctx, lang)
     .withStage(stage)
-    .withGuardrails(ctx, stage, lang)
     .withChannel(ctx, fields)
     .withTalkContext(ctx, stage, fields, lang)
     .withCapabilities(ctx, stage, fields)
+    .withGuardrails(ctx, stage, lang)
     .withClosing(stage)
     .build();
 }
@@ -192,14 +244,18 @@ export function buildNudgeSystemPrompt(
   fields: LeadFields = ctx.lead.fields,
 ): string {
   const lang = replyLang(ctx, lastLeadText(ctx));
-  const builder = new PromptBuilder().withBase(ctx, lang).withStage(stage);
+  const legacy = legacyPromptPipeline();
+  const builder = new PromptBuilder();
+  if (!legacy) builder.withIdentity(ctx).withPersona(ctx, lang).withVoiceCraft(ctx);
+  builder.withBase(ctx, lang).withStage(stage);
 
   if (stage.type === "talk") {
+    if (legacy) builder.withGuardrails(ctx, stage, lang);
     builder
-      .withGuardrails(ctx, stage, lang)
       .withChannel(ctx, fields)
       .withTalkContext(ctx, stage, fields, lang)
       .withCapabilities(ctx, stage, fields);
+    if (!legacy) builder.withGuardrails(ctx, stage, lang);
   } else {
     builder.withChannel(ctx, fields);
   }

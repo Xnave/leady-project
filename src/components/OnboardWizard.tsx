@@ -1,8 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RadioCard } from "@/components/RadioCard";
+import { PresetGallery } from "@/components/persona/PresetGallery";
+import { SegmentedControl } from "@/components/persona/SegmentedControl";
+import { cleanDraft, draftReducer } from "@/components/persona/persona-draft";
+import { normalizePersona } from "@/lib/persona/validate";
 import {
   isBookingStance,
   isCapabilityId,
@@ -48,6 +52,8 @@ type Props = {
   bookingApprovedTemplate?: string;
   bookingRejectedTemplate?: string;
   reservationConfig?: unknown;
+  /** Stored Agent.persona; the wizard edits it in place so re-running setup keeps it. */
+  persona?: unknown;
   uiLang?: UiLang;
 };
 
@@ -72,6 +78,7 @@ export function OnboardWizard(props: Props) {
   const ui = uiCopy(props.uiLang === "en" ? "en" : "he");
   const router = useRouter();
   const [step, setStep] = useState(0);
+  const [persona, personaDispatch] = useReducer(draftReducer, props.persona, normalizePersona);
   const [name, setName] = useState(props.name);
   const [phone, setPhone] = useState(props.phone);
   const [intro, setIntro] = useState(props.intro);
@@ -248,6 +255,7 @@ export function OnboardWizard(props: Props) {
         bookingApprovedTemplate,
         bookingRejectedTemplate,
         reservationConfig,
+        persona: cleanDraft(persona),
       }),
     });
     setSaving(false);
@@ -469,6 +477,38 @@ export function OnboardWizard(props: Props) {
               </div>
             </details>
             ) : null}
+            <fieldset className="persona-onboard">
+              <legend>{ui.persona.stepStyle}</legend>
+              <p className="muted">{ui.persona.blurb}</p>
+              <PresetGallery
+                value={persona.presetId}
+                onPick={(id) => personaDispatch({ type: "preset", id })}
+                ui={ui.persona}
+                sampleLang={chatLanguage === "en" ? "en" : "he"}
+              />
+              <div className="persona-onboard-identity">
+                <label>
+                  <span>{ui.persona.agentName}</span>
+                  <input
+                    value={persona.agentName}
+                    placeholder={ui.persona.agentNamePlaceholder}
+                    onChange={(e) => personaDispatch({ type: "name", value: e.target.value })}
+                  />
+                </label>
+                <div>
+                  <span>{ui.persona.gender}</span>
+                  <SegmentedControl
+                    label={ui.persona.gender}
+                    value={persona.gender}
+                    options={(["female", "male", "neutral"] as const).map((g) => ({
+                      value: g,
+                      label: ui.persona.genderOptions[g],
+                    }))}
+                    onChange={(value) => personaDispatch({ type: "set", key: "gender", value })}
+                  />
+                </div>
+              </div>
+            </fieldset>
             <div className="wizard-footer">
               <button type="button" className="btn-secondary" onClick={() => setStep(0)}>
                 {ui.common.back}

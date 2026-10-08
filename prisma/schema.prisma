@@ -93,6 +93,7 @@ model Agent {
   catalogId            String   @default("inbox")
   systemPrompt         String   @default("")
   knowledgeText        String   @default("")
+  persona              Json     @default("{}")
   flow                 Json
   flowVersion          Int      @default(1)
   flowChangedAt        DateTime @default(now())
