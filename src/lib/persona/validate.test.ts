@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PERSONA, PRESETS, applyPreset } from "./presets";
-import { PersonaConfigError, normalizePersona, validatePersona } from "./validate";
+import { PersonaConfigError, normalizePersona, tryValidatePersona, validatePersona } from "./validate";
 
 describe("normalizePersona", () => {
   it("empty / garbage → warm concierge, neutral gender", () => {
@@ -61,5 +61,13 @@ describe("validatePersona", () => {
       tone: "cheerful",
     });
     expect(p.presetId).toBe("custom");
+  });
+});
+
+describe("tryValidatePersona", () => {
+  it("returns the persona when valid, undefined when missing or invalid", () => {
+    expect(tryValidatePersona({ ...DEFAULT_PERSONA, agentName: "Noa" })?.agentName).toBe("Noa");
+    expect(tryValidatePersona(undefined)).toBeUndefined();
+    expect(tryValidatePersona({ tone: "evil" })).toBeUndefined();
   });
 });

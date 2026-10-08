@@ -76,3 +76,13 @@ export function validatePersona(raw: unknown): Persona {
   if (errors.length) throw new PersonaConfigError(errors);
   return normalizePersona(raw);
 }
+
+/** For optional persona payloads (onboarding): valid → persona, anything else → undefined (keep stored). */
+export function tryValidatePersona(raw: unknown): Persona | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  try {
+    return validatePersona(raw);
+  } catch {
+    return undefined;
+  }
+}

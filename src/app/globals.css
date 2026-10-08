@@ -4216,3 +4216,8 @@ button.crm-stage { cursor: pointer; }
   .persona-bubble.agent { animation: none; }
   .persona-bubble.typing i { animation: none; opacity: 0.6; }
 }
+
+.persona-onboard { display: grid; gap: 12px; }
+.persona-onboard-identity { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+.persona-onboard-identity label,
+.persona-onboard-identity > div { display: grid; gap: 6px; font-size: var(--fs-sm); color: var(--text-soft); }
