@@ -4222,3 +4222,4 @@ button.crm-stage { cursor: pointer; }
 .persona-onboard-identity label,
 .persona-onboard-identity > div { display: grid; gap: 6px; font-size: var(--fs-sm); color: var(--text-soft); }
 .persona-handoff { align-self: center; margin: 4px 0 0; font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
+.persona-row-control input.persona-invalid { border-color: var(--danger); background: var(--danger-soft); }

@@ -48,3 +48,18 @@ export function previewWait(lastStart: number | undefined, now: number): number 
   if (lastStart === undefined) return 0;
   return Math.max(0, PREVIEW_GAP_MS - (now - lastStart));
 }
+
+export type IssueCode = "too_long" | "too_many" | "override" | "unknown_value";
+type Issue = { field: string; index?: number; code: IssueCode };
+
+/** Map server issues (indexes into the cleaned rule list) back onto visible rule rows. */
+export function issuesToFieldErrors(draft: Persona, issues: Issue[]) {
+  const visible = draft.rules.map((r, i) => (r.trim() ? i : -1)).filter((i) => i >= 0);
+  const rules: Record<number, IssueCode> = {};
+  let name: IssueCode | undefined;
+  for (const it of issues) {
+    if (it.field === "rules" && it.index !== undefined) rules[visible[it.index] ?? it.index] = it.code;
+    if (it.field === "agentName") name = it.code;
+  }
+  return { rules, name };
+}

@@ -8,7 +8,15 @@ import type { UiCopy } from "@/lib/ui";
 import { PersonaControls } from "./PersonaControls";
 import { PersonaPreview, type PreviewSample, type PreviewState } from "./PersonaPreview";
 import { PresetGallery } from "./PresetGallery";
-import { cleanDraft, draftReducer, isDirty, previewWait } from "./persona-draft";
+import {
+  cleanDraft,
+  draftReducer,
+  isDirty,
+  issuesToFieldErrors,
+  previewWait,
+  type DraftAction,
+  type IssueCode,
+} from "./persona-draft";
 
 function previewKey(p: Persona, lang: string) {
   return JSON.stringify(cleanDraft(p)) + lang;
@@ -32,7 +40,8 @@ export function PersonaStudio({
   const [previewLang, setPreviewLang] = useState(defaultPreviewLang);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
-  const [ruleErrors, setRuleErrors] = useState<Record<number, string>>({});
+  const [ruleErrors, setRuleErrors] = useState<Record<number, IssueCode>>({});
+  const [nameError, setNameError] = useState<IssueCode | undefined>();
   const lastPreviewed = useRef("");
   const lastPreviewStart = useRef<number | undefined>(undefined);
   const dirty = isDirty(saved, draft);
@@ -54,6 +63,29 @@ export function PersonaStudio({
     return () => clearTimeout(t);
   }, [toast]);
 
+  function showIssues(p: Persona, body: unknown) {
+    const issues = (body as { issues?: Parameters<typeof issuesToFieldErrors>[1] })?.issues ?? [];
+    const mapped = issuesToFieldErrors(p, issues);
+    setRuleErrors(mapped.rules);
+    setNameError(mapped.name);
+  }
+
+  // Editing a row clears its error; structural edits (add/remove/reset) clear all.
+  function edit(a: DraftAction) {
+    if (a.type === "editRule") {
+      setRuleErrors((e) => {
+        const next = { ...e };
+        delete next[a.index];
+        return next;
+      });
+    } else if (a.type === "name") {
+      setNameError(undefined);
+    } else if (a.type === "removeRule" || a.type === "reset") {
+      setRuleErrors({});
+    }
+    dispatch(a);
+  }
+
   async function runPreview(p: Persona = draft) {
     const previous =
       preview.kind === "ready" ? preview.samples : preview.kind === "error" ? preview.previous : undefined;
@@ -69,6 +101,10 @@ export function PersonaStudio({
       });
       if (res.status === 409) return setPreview({ kind: "no_llm" });
       if (res.status === 429) return setPreview({ kind: "error", message: ui.previewSlowDown, previous });
+      if (res.status === 400) {
+        showIssues(p, await res.json().catch(() => null));
+        return setPreview({ kind: "error", message: ui.previewFixRules, previous });
+      }
       if (!res.ok) return setPreview({ kind: "error", message: ui.previewFailed, previous });
       const body = (await res.json()) as { samples: PreviewSample[] };
       lastPreviewed.current = previewKey(p, previewLang);
@@ -87,6 +123,7 @@ export function PersonaStudio({
   async function save() {
     setSaving(true);
     setRuleErrors({});
+    setNameError(undefined);
     try {
       const res = await fetch("/api/agent/persona", {
         method: "PUT",
@@ -94,15 +131,7 @@ export function PersonaStudio({
         body: JSON.stringify({ persona: cleanDraft(draft) }),
       });
       if (res.status === 400) {
-        const { errors } = (await res.json()) as { errors: string[] };
-        // Rule indexes refer to the cleaned list; map them back to the visible rows.
-        const visible = draft.rules.map((r, i) => (r.trim() ? i : -1)).filter((i) => i >= 0);
-        const byRow: Record<number, string> = {};
-        for (const e of errors) {
-          const m = /^rules\[(\d+)\]: (.*)$/.exec(e);
-          if (m) byRow[visible[Number(m[1])] ?? Number(m[1])] = m[2];
-        }
-        setRuleErrors(byRow);
+        showIssues(draft, await res.json().catch(() => null));
         setToast({ text: ui.saveFailed, ok: false });
         return;
       }
@@ -137,7 +166,7 @@ export function PersonaStudio({
             <span className="persona-step-num">2</span>
             {ui.stepTune}
           </h2>
-          <PersonaControls p={draft} dispatch={dispatch} ui={ui} ruleErrors={ruleErrors} />
+          <PersonaControls p={draft} dispatch={edit} ui={ui} ruleErrors={ruleErrors} nameError={nameError} />
         </section>
       </div>
 
@@ -160,7 +189,7 @@ export function PersonaStudio({
 
       <div className={`persona-savebar${dirty ? " show" : ""}`} aria-hidden={!dirty} inert={!dirty || undefined}>
         <span>{ui.unsaved}</span>
-        <button type="button" className="btn-ghost" onClick={() => dispatch({ type: "reset", persona: saved })}>
+        <button type="button" className="btn-ghost" onClick={() => edit({ type: "reset", persona: saved })}>
           {ui.discard}
         </button>
         <button type="button" className="btn" disabled={saving} onClick={() => void save()}>

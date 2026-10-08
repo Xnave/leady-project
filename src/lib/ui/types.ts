@@ -488,6 +488,9 @@ export type UiCopy = {
     previewSlowDown: string;
     previewFailed: string;
     previewHandoff: string;
+    previewFixRules: string;
+    issue: Record<"too_long" | "too_many" | "override" | "unknown_value", string>;
+    nameOverride: string;
     previewSamples: Record<"pricing" | "vague" | "complaint", string>;
     previewLangToggle: string;
     unsaved: string;

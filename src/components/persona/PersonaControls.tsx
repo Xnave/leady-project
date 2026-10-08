@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { PERSONA_LIMITS, type Persona } from "@/lib/persona/types";
 import type { UiCopy } from "@/lib/ui";
 import { SegmentedControl } from "./SegmentedControl";
-import type { DraftAction } from "./persona-draft";
+import type { DraftAction, IssueCode } from "./persona-draft";
 
 type SetKey = Extract<DraftAction, { type: "set" }>["key"];
 
@@ -29,11 +29,13 @@ export function PersonaControls({
   dispatch,
   ui,
   ruleErrors,
+  nameError,
 }: {
   p: Persona;
   dispatch: (a: DraftAction) => void;
   ui: UiCopy["persona"];
-  ruleErrors: Record<number, string>;
+  ruleErrors: Record<number, IssueCode>;
+  nameError?: IssueCode;
 }) {
   const set = (key: SetKey) => (value: string) => dispatch({ type: "set", key, value });
   const left = PERSONA_LIMITS.rules - p.rules.length;
@@ -44,12 +46,18 @@ export function PersonaControls({
         <legend>{ui.identity}</legend>
         <Row label={ui.agentName} hint={ui.agentNameHint}>
           <input
+            dir="auto"
+            aria-invalid={Boolean(nameError)}
+            className={nameError ? "persona-invalid" : undefined}
             value={p.agentName}
             maxLength={PERSONA_LIMITS.nameChars}
             placeholder={ui.agentNamePlaceholder}
             aria-label={ui.agentName}
             onChange={(e) => dispatch({ type: "name", value: e.target.value })}
           />
+          {nameError ? (
+            <small className="persona-error">{nameError === "override" ? ui.nameOverride : ui.issue[nameError]}</small>
+          ) : null}
         </Row>
         <Row label={ui.gender} hint={ui.genderHint}>
           <SegmentedControl label={ui.gender} value={p.gender} options={opts(ui.genderOptions)} onChange={set("gender")} />
@@ -91,6 +99,7 @@ export function PersonaControls({
         {p.rules.map((r, i) => (
           <div key={i} className={`persona-rule${ruleErrors[i] ? " invalid" : ""}`}>
             <input
+              dir="auto"
               value={r}
               maxLength={PERSONA_LIMITS.ruleChars}
               placeholder={ui.rulePlaceholder}
@@ -109,7 +118,7 @@ export function PersonaControls({
                 <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
               </svg>
             </button>
-            {ruleErrors[i] ? <small className="persona-error">{ruleErrors[i]}</small> : null}
+            {ruleErrors[i] ? <small className="persona-error">{ui.issue[ruleErrors[i]]}</small> : null}
           </div>
         ))}
         {left > 0 ? (

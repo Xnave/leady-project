@@ -27,7 +27,7 @@ export async function PUT(req: Request) {
     return NextResponse.json({ persona });
   } catch (e) {
     if (e instanceof PersonaConfigError) {
-      return NextResponse.json({ errors: e.errors }, { status: 400 });
+      return NextResponse.json({ errors: e.errors, issues: e.issues }, { status: 400 });
     }
     throw e;
   }
