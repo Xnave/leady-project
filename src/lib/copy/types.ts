@@ -107,6 +107,8 @@ export type PromptCopy = {
     fields: string;
     hours: string;
     whatsappPhone: string;
+    /** New prompt pipeline: identity lives above, so open with BOUNDARIES instead of ROLE. */
+    voiceLayer?: boolean;
   }) => string;
   extractFields: (nextField: string) => string;
   draftQuestion: (nextField: string) => string;

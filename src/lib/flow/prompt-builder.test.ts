@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { DEFAULT_PERSONA } from "@/lib/persona/presets";
 import { bookingInstance } from "./booking-config";
 import { normalizeTalkOutcome } from "./interpreter";
-import { buildTalkSystemPrompt, talkTransitionTargets } from "./prompt-builder";
+import { buildNudgeSystemPrompt, buildTalkSystemPrompt, talkTransitionTargets } from "./prompt-builder";
 import { ensureFlowRegistry } from "./capabilities";
 import { flowForCatalog } from "./catalog";
 import type { TalkStage, TurnContext } from "./types";
@@ -70,5 +71,83 @@ describe("PromptBuilder", () => {
     expect(prompt).toMatch(/Today is /);
     expect(prompt).toMatch(/Asia\/Jerusalem/);
     expect(prompt).not.toMatch(/Booking field gaps: time_preference/);
+  });
+});
+
+describe("persona prompt order", () => {
+  function makeCtx(agentOverrides: Partial<TurnContext["agent"]>): TurnContext {
+    ensureFlowRegistry();
+    const flow = flowForCatalog("inbox");
+    return {
+      tenantId: "t1",
+      tenant: { name: "Demo", phone: "", intro: "Hello from Demo.", chatLanguage: "en" },
+      agent: {
+        id: "a1",
+        tenantId: "t1",
+        systemPrompt:
+          "Reply in the customer's language.\nYou represent Demo as a front-desk assistant only - not a professional.",
+        knowledgeText: "We sell widgets.",
+        flow,
+        flowVersion: 1,
+        leadSchema: defaultLeadSchema,
+        hitlPolicy: defaultHitlPolicy,
+        persona: DEFAULT_PERSONA,
+        ...agentOverrides,
+      },
+      conversation: { id: "c1", status: "open", flowState: "talk", flowVersion: 1, nudgeCountByStage: {} },
+      lead: { id: "l1", externalUserId: "u1", fields: {} },
+      messages: [
+        { role: "agent", text: "Hello from Demo." },
+        { role: "lead", text: "how much?" },
+      ],
+    } as TurnContext;
+  }
+  const talkStage = (ctx: TurnContext) => ctx.agent.flow.stages.talk as TalkStage;
+
+  afterEach(() => {
+    delete process.env.PROMPT_PIPELINE;
+  });
+
+  it("identity → persona → craft → boundaries → closing", () => {
+    const ctx = makeCtx({ persona: { ...DEFAULT_PERSONA, agentName: "Noa" } });
+    const s = buildTalkSystemPrompt(ctx, talkStage(ctx));
+    const at = (m: string) => s.indexOf(m);
+    expect(at("IDENTITY:")).toBeGreaterThanOrEqual(0);
+    expect(at("IDENTITY:")).toBeLessThan(at("PERSONA"));
+    expect(at("PERSONA")).toBeLessThan(at("CONVERSATION CRAFT"));
+    expect(at("CONVERSATION CRAFT")).toBeLessThan(at("BOUNDARIES (always"));
+    expect(at("BOUNDARIES (always")).toBeLessThan(at("Prefer one reply call"));
+  });
+
+  it("keeps every MUST NOT rule and drops the ROLE/front-desk framing", () => {
+    const ctx = makeCtx({});
+    const s = buildTalkSystemPrompt(ctx, talkStage(ctx));
+    expect(s).toMatch(/MUST NOT: jump to day\/time questions/);
+    expect(s).not.toMatch(/ROLE: Front-desk chat assistant/);
+    expect(s).not.toMatch(/You represent .* front-desk assistant only/);
+  });
+
+  it("owner rules come before boundaries", () => {
+    const ctx = makeCtx({ persona: { ...DEFAULT_PERSONA, rules: ["Always mention free parking"] } });
+    const s = buildTalkSystemPrompt(ctx, talkStage(ctx));
+    expect(s.indexOf("free parking")).toBeLessThan(s.indexOf("BOUNDARIES (always"));
+  });
+
+  it("missing persona falls back to default", () => {
+    const ctx = makeCtx({ persona: undefined });
+    expect(buildTalkSystemPrompt(ctx, talkStage(ctx))).toMatch(/Warm and friendly/);
+  });
+
+  it("nudge prompt has persona too", () => {
+    const ctx = makeCtx({ persona: { ...DEFAULT_PERSONA, length: "short" } });
+    expect(buildNudgeSystemPrompt(ctx, talkStage(ctx), "")).toMatch(/1–2 short sentences/);
+  });
+
+  it("PROMPT_PIPELINE=legacy reproduces the old prompt", () => {
+    process.env.PROMPT_PIPELINE = "legacy";
+    const ctx = makeCtx({});
+    const s = buildTalkSystemPrompt(ctx, talkStage(ctx));
+    expect(s).toMatch(/ROLE: Front-desk chat assistant/);
+    expect(s).not.toMatch(/PERSONA/);
   });
 });
