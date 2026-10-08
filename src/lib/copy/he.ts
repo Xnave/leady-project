@@ -13,9 +13,9 @@ export const chat: ChatCopy = {
     }
     return intro;
   },
-  tellMeMore: "הבנתי. ספר לי עוד קצת.",
+  tellMeMore: "הבנתי. אפשר לספר לי עוד קצת?",
   supportAsk: "אשמח לעזור עם התקלה. מה בדיוק קורה?",
-  savingVisit: "קולט את ההזמנה במערכת.",
+  savingVisit: "קולטים את ההזמנה במערכת.",
   faqUnresolved: "אעביר את זה למישהו מהצוות.",
   faqNoKnowledge: "אין לי תשובה במאגר הידע.",
   whyCollect: "אני מבקש פרטים כדי שאוכל לעזור עם הפנייה שלך. איך אפשר לעזור לך עכשיו?",
