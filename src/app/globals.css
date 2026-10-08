@@ -1,18 +1,18 @@
 /* ==========================================================================
-   Zapidly — WhatsApp-native CRM design system
+   Zapidly - WhatsApp-native CRM design system
    Light (WhatsApp Web) is the default. Dark (WhatsApp dark x Linear) follows
    the OS, and can be forced with [data-theme="dark"] / [data-theme="light"].
 
    Rules:
    - Every colour is a token. No raw hex below the token block.
-   - Logical properties only (inline-start/end) — Hebrew RTL is the default UI.
+   - Logical properties only (inline-start/end) - Hebrew RTL is the default UI.
    - Hand-written CSS, zero dependencies, no Tailwind.
    ========================================================================== */
 
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Hebrew:wght@400;500;600;700&display=swap");
 
 /* --------------------------------------------------------------------------
-   1. Tokens — light (WhatsApp Web)
+   1. Tokens - light (WhatsApp Web)
    -------------------------------------------------------------------------- */
 
 :root {
@@ -33,11 +33,11 @@
   /* Text */
   --text: #111b21;
   --text-soft: #3b4a54;
-  /* 4.99:1 on the app canvas, 5.60:1 on cards — the previous #667781 was 4.14:1
+  /* 4.99:1 on the app canvas, 5.60:1 on cards - the previous #667781 was 4.14:1
      on --bg, i.e. below AA for the page-header blurb. */
   --muted: #5a6a75;
 
-  /* Brand — WhatsApp green family.
+  /* Brand - WhatsApp green family.
      --accent is contrast-safe for text/fills (4.9:1 on white);
      --accent-bright is for graphics, borders and icons only (3:1). */
   --accent: #008069;
@@ -57,7 +57,7 @@
   --brand-mark-to: #ff6a3d;
   --brand-mark-bolt: #1a0d06;
 
-  /* Inverse surface — toasts and the CRM bulk-action bar. A dark chip on the
+  /* Inverse surface - toasts and the CRM bulk-action bar. A dark chip on the
      light canvas; --inverse-hover tints its buttons, --inverse-link is the
      action (Undo) colour on it. */
   --inverse: #111b21;
@@ -122,7 +122,7 @@
     "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Roboto Mono", Menlo, Consolas, monospace;
 
-  /* Type scale — 12 / 13 / 14 / 15 / 17 / 22 / 28, no arbitrary sizes */
+  /* Type scale - 12 / 13 / 14 / 15 / 17 / 22 / 28, no arbitrary sizes */
   --fs-2xs: 12px;
   --fs-xs: 13px;
   --fs-sm: 14px;
@@ -131,7 +131,7 @@
   --fs-xl: 22px;
   --fs-2xl: 28px;
 
-  /* Spacing — strict 4/8 rhythm */
+  /* Spacing - strict 4/8 rhythm */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -150,7 +150,7 @@
 }
 
 /* --------------------------------------------------------------------------
-   2. Tokens — dark (WhatsApp dark x Linear)
+   2. Tokens - dark (WhatsApp dark x Linear)
    -------------------------------------------------------------------------- */
 
 @media (prefers-color-scheme: dark) {
@@ -290,7 +290,7 @@
 html {
   /* Skill: "Smooth Scroll" (Navigation, High). Reduced-motion opt-out lives at the
      bottom of this file. scroll-padding keeps the sticky topbar off a focused target
-     — skill: "Focus Not Obscured". */
+     - skill: "Focus Not Obscured". */
   scroll-behavior: smooth;
   scroll-padding-block-start: calc(var(--topbar-h) + var(--space-2));
 }
@@ -400,7 +400,7 @@ samp {
 .main.wide { max-width: none; }
 
 /* --------------------------------------------------------------------------
-   5. Sidebar — WhatsApp Web left panel
+   5. Sidebar - WhatsApp Web left panel
    -------------------------------------------------------------------------- */
 
 .sidebar {
@@ -1045,15 +1045,15 @@ legend {
 
 /* Selectable card.
 
-   The native radio/checkbox stays in the DOM — it carries the name/value, the
-   role and the keyboard behaviour — but leaves the visual layer, and the card
+   The native radio/checkbox stays in the DOM - it carries the name/value, the
+   role and the keyboard behaviour - but leaves the visual layer, and the card
    draws its own indicator. Selection is read from :has(input:checked) so
    server-rendered forms update live with no JS, while .selected stays supported
    for the components that compute it themselves. */
 .radio-card {
   position: relative;
   display: flex;
-  /* base `label` is flex-direction: column — must be reset explicitly */
+  /* base `label` is flex-direction: column - must be reset explicitly */
   flex-direction: row;
   align-items: flex-start;
   gap: 10px;
@@ -1211,7 +1211,7 @@ legend {
   border-color: var(--accent-bright);
   box-shadow: var(--ring);
 }
-/* Hidden but focusable — the pill itself is the visible control. */
+/* Hidden but focusable - the pill itself is the visible control. */
 .chip-toggle input {
   position: absolute;
   width: 1px;
@@ -1518,7 +1518,7 @@ td .muted { font-size: var(--fs-xs); }
 .status-select-error { font-size: var(--fs-2xs); color: var(--danger); font-weight: 600; }
 
 /* --------------------------------------------------------------------------
-   14. Chat — the WhatsApp surface
+   14. Chat - the WhatsApp surface
    Wallpaper + tailed bubbles + delivery ticks. Used by /demo and the /inbox
    preview. Tails and ticks are pseudo-elements with empty content and a
    background image, so screen readers never announce them.
@@ -1763,7 +1763,7 @@ td .muted { font-size: var(--fs-xs); }
 }
 .bubble.human .bubble-role { color: var(--bubble-human-label); }
 
-/* Tail — a clipped square welded to the top corner on the bubble's own side. */
+/* Tail - a clipped square welded to the top corner on the bubble's own side. */
 .bubble::before {
   content: "";
   position: absolute;
@@ -1811,7 +1811,7 @@ td .muted { font-size: var(--fs-xs); }
   padding-inline-end: 18px;
 }
 
-/* Delivery ticks — decorative, background image so SRs stay silent. */
+/* Delivery ticks - decorative, background image so SRs stay silent. */
 .bubble.agent::after,
 .bubble.human::after {
   content: "";
@@ -1953,7 +1953,7 @@ td .muted { font-size: var(--fs-xs); }
 }
 
 /* --------------------------------------------------------------------------
-   15. Chat list (leads sidebar) — WhatsApp conversation rows
+   15. Chat list (leads sidebar) - WhatsApp conversation rows
    -------------------------------------------------------------------------- */
 
 .lead-list { list-style: none; padding: 0; margin: var(--space-2) 0 0; }
@@ -2946,7 +2946,7 @@ td .muted { font-size: var(--fs-xs); }
   position: relative;
 }
 .crm-av.lg { width: 44px; height: 44px; font-size: var(--fs-md); }
-/* Channel dot on the avatar — WhatsApp green is allowed here (channel mark). */
+/* Channel dot on the avatar - WhatsApp green is allowed here (channel mark). */
 .crm-av-ch {
   position: absolute;
   inset-inline-end: -2px;
@@ -3161,7 +3161,7 @@ button.crm-stage { cursor: pointer; }
 }
 .crm-bulk button:active { transform: scale(0.97); }
 
-/* Quiet button — small presets and "done" only */
+/* Quiet button - small presets and "done" only */
 .crm-btn-quiet {
   min-height: 32px;
   padding: 0 var(--space-3);
@@ -3810,7 +3810,7 @@ button.crm-stage { cursor: pointer; }
 .crm-skel.av.lg { width: 44px; height: 44px; }
 .crm-skel-stack { display: grid; gap: var(--space-2); flex: 1; }
 
-/* Hover — pointer devices only */
+/* Hover - pointer devices only */
 @media (hover: hover) {
   .crm-next-text:hover { background: var(--bg-sunken); }
   .crm-lv-chat .composer button[type="submit"]:not(.btn-ghost):not(.btn-secondary):hover {

@@ -8,7 +8,7 @@ describe("demo message route fallback", () => {
     expect(src).toMatch(/inngest_unreachable/);
     expect(src).toMatch(/demo\.turn\.inngest_timeout/);
     expect(src).toMatch(/No sync runTurnNow/);
-    // Timeout path must not call runTurnNow — only the !enqueued branch should.
+    // Timeout path must not call runTurnNow - only the !enqueued branch should.
     const timeoutBlock = src.slice(
       src.indexOf("demo.turn.inngest_timeout"),
       src.indexOf("inngest_unreachable"),

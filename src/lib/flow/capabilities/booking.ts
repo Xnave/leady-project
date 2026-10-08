@@ -99,7 +99,7 @@ function displayTimePreference(
   return text;
 }
 
-/** Deterministic confirm body — used by confirm_details and reconcileBooking. */
+/** Deterministic confirm body - used by confirm_details and reconcileBooking. */
 export function buildBookingConfirmText(
   lang: "en" | "he",
   fields: LeadFields,
@@ -135,7 +135,7 @@ function railsConfirmReply(ctx: TurnContext, fields: LeadFields): string {
 export type TalkCollected = TalkOutcome & {
   askFieldUsed?: boolean;
   replyLocked?: boolean;
-  /** Set when time_preference was rejected this turn — do not overwrite with another ask. */
+  /** Set when time_preference was rejected this turn - do not overwrite with another ask. */
   timeRejected?: boolean;
 };
 
@@ -181,7 +181,7 @@ export function reconcileBooking(
     return active ? { ...out, effects } : out;
   }
 
-  // Pending from a prior turn (lead fields only) — not set by tools this turn.
+  // Pending from a prior turn (lead fields only) - not set by tools this turn.
   const enteredPending = bookingConfirmStatus(ctx.lead.fields) === "pending";
   let confirm = bookingConfirmStatus(fields);
   const nextFields = { ...(out.fields ?? {}) };
@@ -204,7 +204,7 @@ export function reconcileBooking(
     }
   }
 
-  // Customer agreed to the summary — treat the listed name as verified so a
+  // Customer agreed to the summary - treat the listed name as verified so a
   // single-token name cannot block book_meeting / inbox HITL after "כן".
   if (confirm === "pending" && affirmed && String(fields.name ?? "").trim()) {
     nextFields.name_collected_by_agent = "1";
@@ -239,7 +239,7 @@ export function reconcileBooking(
     );
   }
 
-  // Gaps filled but confirm never started — rails own the one confirm message.
+  // Gaps filled but confirm never started - rails own the one confirm message.
   if (gapsAfter.length === 0 && confirm === "" && !affirmed) {
     nextFields.booking_confirm = "pending";
     confirm = "pending";
@@ -287,12 +287,12 @@ function lastStaffNoteQuestion(ctx: TurnContext, lang: "en" | "he"): string | un
   return undefined;
 }
 
-/** Persist meeting details. Does not send WhatsApp — call reply in the same turn. */
+/** Persist meeting details. Does not send WhatsApp - call reply in the same turn. */
 function updateMeetingDetailsTool(ctx: TurnContext, collected: TalkCollected) {
   const meetingId = recentMeeting(ctx)?.id;
   return tool({
     description:
-      "Save meeting details (פרטי הפגישה) when the customer gave concrete wording to store. Does NOT send WhatsApp text — always call reply in the SAME turn with a short message TO THE CUSTOMER (ack, or ask what to write if they only said it's wrong). Pass their words only; never invent a staff/CRM summary.",
+      "Save meeting details (פרטי הפגישה) when the customer gave concrete wording to store. Does NOT send WhatsApp text - always call reply in the SAME turn with a short message TO THE CUSTOMER (ack, or ask what to write if they only said it's wrong). Pass their words only; never invent a staff/CRM summary.",
     inputSchema: z.object({
       need: z
         .string()
@@ -385,18 +385,18 @@ export function registerBookingCapability(): void {
         const lines = [
           `${noun} booking is in progress. Gaps: ${gaps.join(", ") || "none"}. booking_confirm=${confirm || "(none)"}.`,
           "When they answer a booking question, call save_fields with their wording first, then ask_field for the next gap only.",
-          "time_preference: weekday + clock is enough — save when inside bookable hours (latest start is 30 minutes before closing, e.g. by 18:30 when hours end at 19). Bare morning clock without ערב/בוקר may be rejected as AM — ask them to clarify evening if needed.",
-          "CRITICAL: After save_fields accepts a time_preference, do NOT re-confirm the slot — immediately ask_field for the next gap only.",
+          "time_preference: weekday + clock is enough - save when inside bookable hours (latest start is 30 minutes before closing, e.g. by 18:30 when hours end at 19). Bare morning clock without ערב/בוקר may be rejected as AM - ask them to clarify evening if needed.",
+          "CRITICAL: After save_fields accepts a time_preference, do NOT re-confirm the slot - immediately ask_field for the next gap only.",
           "If outside bookable hours (including at/after closing), do not save and do not ask other fields until time is valid.",
-          "need / פרטי הפגישה: ask_field presents any saved interest and invites extras. Never save pointer phrases (מה שכתבתי למעלה / as above) as need — save_fields resolves them. Soft 'no / nothing else' keeps the gathered interest as need.",
-          "Before book_meeting: confirm_details ONCE (only when Gaps is none and booking_confirm is not already pending). Rails write the confirm text — do not invent a second summary. Then after they agree: save_fields booking_confirm=confirmed, then book_meeting.",
-          "Never call confirm_details again while booking_confirm=pending — wait for yes/no.",
-          `confirm_details labels: פרטי הפגישה / ${noun} details for need — never צורך or Need.`,
+          "need / פרטי הפגישה: ask_field presents any saved interest and invites extras. Never save pointer phrases (מה שכתבתי למעלה / as above) as need - save_fields resolves them. Soft 'no / nothing else' keeps the gathered interest as need.",
+          "Before book_meeting: confirm_details ONCE (only when Gaps is none and booking_confirm is not already pending). Rails write the confirm text - do not invent a second summary. Then after they agree: save_fields booking_confirm=confirmed, then book_meeting.",
+          "Never call confirm_details again while booking_confirm=pending - wait for yes/no.",
+          `confirm_details labels: פרטי הפגישה / ${noun} details for need - never צורך or Need.`,
           `CRITICAL: Never tell the customer you recorded/submitted a ${noun} request unless you called book_meeting and it returned ok. A plain reply claiming that is a bug.`,
-          `After a teammate declines a ${noun}, collect a new time_preference and call book_meeting again — do not invent a confirmation.`,
+          `After a teammate declines a ${noun}, collect a new time_preference and call book_meeting again - do not invent a confirmation.`,
           "Do not transition to on_complete/done while booking is in progress.",
-          `Never say the ${noun} is confirmed — book_meeting only stores a tentative request for a human.`,
-          "When acknowledging a saved request, name the business from context only — never invent a company name from the customer's name.",
+          `Never say the ${noun} is confirmed - book_meeting only stores a tentative request for a human.`,
+          "When acknowledging a saved request, name the business from context only - never invent a company name from the customer's name.",
         ];
         const interest = gatheredInterest(fields);
         if (interest && gaps.includes("need")) {
@@ -421,7 +421,7 @@ export function registerBookingCapability(): void {
           "Only treat this turn as a meeting follow-up when their message CLEARLY relates to that meeting (details, time, confirmation, answering a staff note about it).",
           "Bare hellos, or unrelated chat → normal reply. Do NOT mention the meeting, past need text, or ask how else to help with it.",
           "When they clearly give/correct meeting details for that meeting: update_meeting_details then reply in the SAME turn.",
-          "If they say details are wrong but give no replacement, do NOT call update_meeting_details — only reply and ask what to write.",
+          "If they say details are wrong but give no replacement, do NOT call update_meeting_details - only reply and ask what to write.",
           "Do NOT send a fresh business intro. Do NOT call start_booking unless they explicitly ask for a new/different meeting.",
         ];
         if (staffNote) {
@@ -437,8 +437,8 @@ export function registerBookingCapability(): void {
         `${noun} booking is NOT started. Use reply to answer product/sales questions from knowledge.`,
         'Examples that must NOT trigger booking: "I want a WhatsApp agent", "how much is it", "tell me more", "I need something for Instagram".',
         `Only call start_booking if they explicitly ask to schedule a ${noun}/meeting/demo/call, or clearly accept an offer to book.`,
-        "When they already shared concrete context (pain, business type, goals — e.g. a mini-app dump), call save_interest with their wording in the SAME turn as reply. Do not invent. Do not start booking for that alone.",
-        "Past/expired meetings are irrelevant — do not mention them, do not say בהמשך לפגישה, and do not reuse their need text unless the customer explicitly brings that meeting up.",
+        "When they already shared concrete context (pain, business type, goals - e.g. a mini-app dump), call save_interest with their wording in the SAME turn as reply. Do not invent. Do not start booking for that alone.",
+        "Past/expired meetings are irrelevant - do not mention them, do not say בהמשך לפגישה, and do not reuse their need text unless the customer explicitly brings that meeting up.",
       ];
       if (interest) {
         idle.push(`Saved interest on this lead: "${interest}". Pass it via start_booking interest when booking starts.`);
@@ -460,7 +460,7 @@ export function registerBookingCapability(): void {
         return {
           resolve_offered_slot: tool({
             description:
-              "Decide whether the customer accepted the teammate's offered alternative visit slot. Never accept if they named a different day or time — use decline + proposed_slot. Soft hint: if their message parses to a different slot than the offer, prefer decline.",
+              "Decide whether the customer accepted the teammate's offered alternative visit slot. Never accept if they named a different day or time - use decline + proposed_slot. Soft hint: if their message parses to a different slot than the offer, prefer decline.",
             inputSchema: z.object({
               decision: z.enum(["accept", "decline", "unclear"]),
               reason: z.string().optional(),
@@ -508,8 +508,8 @@ export function registerBookingCapability(): void {
                   nextFields.booking_flow = "active";
                   collected.reply =
                     lang === "he"
-                      ? `הבנתי, רשמתי מועד אחר: ${proposedText}. אעביר לנציג לאישור — זה מתאים?`
-                      : `Got it — noted a different time: ${proposedText}. I'll send that to the team for approval — does that look right?`;
+                      ? `הבנתי, רשמתי מועד אחר: ${proposedText}. אעביר לנציג לאישור - זה מתאים?`
+                      : `Got it - noted a different time: ${proposedText}. I'll send that to the team for approval - does that look right?`;
                 } else {
                   collected.reply =
                     lang === "he"
@@ -527,8 +527,8 @@ export function registerBookingCapability(): void {
               }
               collected.reply =
                 lang === "he"
-                  ? `רק לוודא — האם המועד ${offered.slot} מתאים לך?`
-                  : `Just to confirm — does ${offered.slot} work for you?`;
+                  ? `רק לוודא - האם המועד ${offered.slot} מתאים לך?`
+                  : `Just to confirm - does ${offered.slot} work for you?`;
               collected.replyLocked = true;
               return JSON.stringify({ ok: true, decision: "unclear" });
             },
@@ -541,7 +541,7 @@ export function registerBookingCapability(): void {
         return {
           save_interest: tool({
             description:
-              "Save concrete context the customer already stated (pain, business type, goals, mini-app findings) for later meeting details. Pass their wording only — do not invent or summarize into staff jargon. Does NOT start booking and does NOT send WhatsApp — still call reply in the same turn.",
+              "Save concrete context the customer already stated (pain, business type, goals, mini-app findings) for later meeting details. Pass their wording only - do not invent or summarize into staff jargon. Does NOT start booking and does NOT send WhatsApp - still call reply in the same turn.",
             inputSchema: z.object({
               interest: z
                 .string()
@@ -565,7 +565,7 @@ export function registerBookingCapability(): void {
           }),
           start_booking: tool({
             description:
-              "Begin collecting visit/meeting details. Call ONLY when the customer explicitly asks to schedule a meeting, visit, demo, or call — or clearly accepts your offer to book one. Do NOT call for product interest alone (e.g. wanting a WhatsApp agent, asking how it works, pricing, features). Do NOT call when they are only clarifying details for an existing/approved meeting — use update_meeting_details + reply instead. Optional interest: pass concrete context they already gave (or reuse saved interest) so the later need ask can present it.",
+              "Begin collecting visit/meeting details. Call ONLY when the customer explicitly asks to schedule a meeting, visit, demo, or call - or clearly accepts your offer to book one. Do NOT call for product interest alone (e.g. wanting a WhatsApp agent, asking how it works, pricing, features). Do NOT call when they are only clarifying details for an existing/approved meeting - use update_meeting_details + reply instead. Optional interest: pass concrete context they already gave (or reuse saved interest) so the later need ask can present it.",
             inputSchema: z.object({
               reason: z.string().optional(),
               interest: z
@@ -625,7 +625,7 @@ export function registerBookingCapability(): void {
         update_meeting_details: updateMeetingDetailsTool(ctx, collected),
         save_fields: tool({
           description:
-            "Save details they already gave in chat, in their original wording. Do not invent. Do not translate names. Do not copy the WhatsApp/profile display name into name. For phone, only save after they gave or confirmed a number. Pass empty string to clear a field. time_preference must be inside opening hours when a clock time is clear. For need: never pass pointer phrases — rails resolve deixis / soft 'nothing else' against saved interest.",
+            "Save details they already gave in chat, in their original wording. Do not invent. Do not translate names. Do not copy the WhatsApp/profile display name into name. For phone, only save after they gave or confirmed a number. Pass empty string to clear a field. time_preference must be inside opening hours when a clock time is clear. For need: never pass pointer phrases - rails resolve deixis / soft 'nothing else' against saved interest.",
           inputSchema: z.object(fieldShape),
           execute: async (raw: Record<string, unknown>) => {
             const fields: LeadFields = {};
@@ -693,7 +693,7 @@ export function registerBookingCapability(): void {
                     error: resolved.reject,
                     hint: gathered
                       ? "Need was not saved. Re-ask with gathered interest; if they add nothing, save the gathered text as need."
-                      : "Need was not saved — ask for concrete meeting details, not a pointer to earlier messages.",
+                      : "Need was not saved - ask for concrete meeting details, not a pointer to earlier messages.",
                   });
                 }
                 fields.need = resolved.need;
@@ -760,7 +760,7 @@ export function registerBookingCapability(): void {
               return JSON.stringify({
                 ok: false,
                 skip: true,
-                hint: "Outbound ask already set this turn — do not ask another field.",
+                hint: "Outbound ask already set this turn - do not ask another field.",
               });
             }
             const merged = { ...fieldsForTurn, ...collected.fields };
@@ -801,7 +801,7 @@ export function registerBookingCapability(): void {
             text: z
               .string()
               .optional()
-              .describe("Ignored — confirm text is built by the system"),
+              .describe("Ignored - confirm text is built by the system"),
           }),
           execute: async () => {
             const merged = { ...fieldsForTurn, ...collected.fields };
@@ -809,7 +809,7 @@ export function registerBookingCapability(): void {
               return JSON.stringify({
                 ok: false,
                 skip: true,
-                hint: "Already awaiting yes — do not resend confirm_details.",
+                hint: "Already awaiting yes - do not resend confirm_details.",
               });
             }
             const gaps = bookingFieldGaps(merged, required);

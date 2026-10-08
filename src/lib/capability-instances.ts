@@ -1,5 +1,5 @@
 /**
- * Reads and writes of `CapabilityInstance` rows — the one place per-tenant
+ * Reads and writes of `CapabilityInstance` rows - the one place per-tenant
  * behavior is configured. Adding a business type is an insert here; nothing in
  * the flow kernel or the schema changes.
  */

@@ -197,11 +197,11 @@ export const he: UiCopy = {
       "השאירו ריק לברירת מחדל לפי שפה. מציינים: {{date}} {{time}} {{slot}} {{name}} {{phone}} {{details}} {{need}} {{kind}} {{address}} {{hours}} {{email}}",
     fieldIdleDays: "איפוס שיחה אחרי ימי שקט",
     idleHint:
-      "ההודעה הראשונה תמיד מקבלת את המבוא (ללא AI). אחרי תקופת שקט ארוכה הסוכן יכול לשאול אם לפתוח שיחה חדשה — בלי לסובב אוטומטית. 0 = לא להתייחס לשקט כרמז.",
+      "ההודעה הראשונה תמיד מקבלת את המבוא (ללא AI). אחרי תקופת שקט ארוכה הסוכן יכול לשאול אם לפתוח שיחה חדשה - בלי לסובב אוטומטית. 0 = לא להתייחס לשקט כרמז.",
     doneHint: "ההודעה הראשונה תמיד המבוא שלכם. מההודעה השנייה הסוכן מתחיל לדבר.",
     catalogLegend: "מצב הסוכן",
     capabilitiesLegend: "יכולות",
-    capabilitiesHint: "מה הסוכן יכול לעשות. בלי יכולות — רק מענה מהידע.",
+    capabilitiesHint: "מה הסוכן יכול לעשות. בלי יכולות - רק מענה מהידע.",
     bookingStanceLegend: "סגנון תיאום",
     collectLegend: "מה לאסוף לפני ביקור",
     collectHint:
@@ -239,7 +239,7 @@ export const he: UiCopy = {
     },
     faq: {
       title: "שאלות ותשובות בלבד",
-      blurb: "מענה מהמבוא והקבצים — בלי יכולות עסקיות.",
+      blurb: "מענה מהמבוא והקבצים - בלי יכולות עסקיות.",
     },
   },
   capabilities: {
@@ -315,7 +315,7 @@ export const he: UiCopy = {
     summaryIntent: "כוונה",
     declineNoteLabel: "הערה ללקוח (אופציונלי)",
     declineNotePlaceholder: "תתווסף מתחת להודעה עם הקידומת ״הערת הנציג״",
-    customReplyLabel: "תשובה מותאמת (אופציונלי — לאישור בלבד, במקום התבנית)",
+    customReplyLabel: "תשובה מותאמת (אופציונלי - לאישור בלבד, במקום התבנית)",
     customReplyPlaceholder: "השאירו ריק לשימוש בתבנית",
     newConversation: "סיים שיחה",
     startConversation: "התחל שיחה חדשה",
@@ -323,7 +323,7 @@ export const he: UiCopy = {
     startDisabledHint: "שיחה הסתיימה",
     conversationEnded: "שיחה הסתיימה",
     reopenDisabledHint: "לא ניתן לפתוח מחדש כשיש שיחה חדשה פתוחה",
-    decisionsLockedHint: "לא ניתן לשנות החלטה בשיחה ישנה — נפתחה כבר שיחה חדשה",
+    decisionsLockedHint: "לא ניתן לשנות החלטה בשיחה ישנה - נפתחה כבר שיחה חדשה",
     decisionLogAction: "פעולה",
     decisionLogWhen: "מתי",
     decisionLogActor: "מי ביצע",
@@ -353,7 +353,7 @@ export const he: UiCopy = {
     currentDecision: "החלטה נוכחית",
     changeDecision: "שנה החלטה",
     awaitingCustomer: "ממתין לאישור לקוח",
-    awaitingCustomerHint: "הוצע מועד חלופי — ממתינים שהלקוח יאשר בשיחה.",
+    awaitingCustomerHint: "הוצע מועד חלופי - ממתינים שהלקוח יאשר בשיחה.",
     customerConfirmed: "הלקוח אישר",
     reasons: {
       support_unresolved: "הסוכן לא הצליח לפתור וביקש נציג.",
@@ -503,7 +503,7 @@ export const he: UiCopy = {
   errors: {
     createFailed: "יצירה נכשלה",
     createdClaimOnSignIn:
-      "הדייר נוצר. הזמנות Clerk דורשות דומיין מותאם — בקשו מהבעלים להירשם באפליקציה עם אותו אימייל; הגישה תינתן אוטומטית.",
+      "הדייר נוצר. הזמנות Clerk דורשות דומיין מותאם - בקשו מהבעלים להירשם באפליקציה עם אותו אימייל; הגישה תינתן אוטומטית.",
     connectFailed: "החיבור נכשל",
     noAgent: "אין סוכן. הריצו seed לבסיס הנתונים.",
     noTenant: "אין דייר. הריצו seed לבסיס הנתונים.",
@@ -525,7 +525,7 @@ export const he: UiCopy = {
     loadFailed: "טעינת הצוות נכשלה",
     empty: "עדיין אין.",
     inviteClaimOnSignIn:
-      "נשמר. הזמנות Clerk דורשות דומיין מותאם — בקשו מהם להירשם כאן עם אותו אימייל; הגישה תינתן אוטומטית.",
+      "נשמר. הזמנות Clerk דורשות דומיין מותאם - בקשו מהם להירשם כאן עם אותו אימייל; הגישה תינתן אוטומטית.",
   },
   crm: {
     stages: {

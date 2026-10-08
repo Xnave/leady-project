@@ -114,7 +114,7 @@ export function buildNudgeRequestedEvent(
   const after = resolveNudgeAfterDuration(nudge.after);
   const anchorAt = lastLeadMessageAt(ctx.messages);
   const nudgeAt = resolveNudgeFireAt(anchorAt, after);
-  if (!nudgeAt) return null; // already due — skip this turn
+  if (!nudgeAt) return null; // already due - skip this turn
   return {
     name: "agent/nudge.requested",
     id: `nudge-${ctx.conversation.id}-${triggerMessageId}`,
@@ -181,7 +181,7 @@ export const nudgeIfSilent = inngest.createFunction(
 );
 ```
 
-CEL names: `event` is the **cancel** event (`turn.requested`); `async` is the **original** `nudge.requested`. Comparing `triggerMessageId` on the nudge payload (or `scheduledAfterMessageId` on the turn payload) never matches — those fields live on the other event — and stacked 1h jobs all send.
+CEL names: `event` is the **cancel** event (`turn.requested`); `async` is the **original** `nudge.requested`. Comparing `triggerMessageId` on the nudge payload (or `scheduledAfterMessageId` on the turn payload) never matches - those fields live on the other event - and stacked 1h jobs all send.
 
 There is no `nudgeCountByStage` increment on send. Cancel-on-turn is the cap.
 

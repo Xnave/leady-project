@@ -52,7 +52,7 @@ model Tenant {
 /**
  * One configured request type for a tenant: "the villa's stay flow", "the dress
  * shop's fitting flow". Onboarding a business type is a row here, not a column on
- * Tenant and not new code — one tenant can run several instances at once.
+ * Tenant and not new code - one tenant can run several instances at once.
  */
 model CapabilityInstance {
   id           String   @id @default(cuid())
@@ -244,7 +244,7 @@ model Message {
 }
 
 /**
- * One structured commitment awaiting human approval — a visit, a stay, a fitting,
+ * One structured commitment awaiting human approval - a visit, a stay, a fitting,
  * a rental. Verticals differ only in their `kind`, whether the time spine is a point
  * or a span, and the typed values in `data`; they are not separate tables.
  *
@@ -261,7 +261,7 @@ model Request {
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   /** Capability that owns this request: "booking" | "reservations" | … */
   capabilityId   String
-  /** Tenant-facing kind: "visit" | "stay" | "fitting" | "rental" — a CapabilityInstance id. */
+  /** Tenant-facing kind: "visit" | "stay" | "fitting" | "rental" - a CapabilityInstance id. */
   kind           String
   status         String    @default("pending")
   /** Normalized time spine: a point in time sets startAt only; a span sets both. */
@@ -398,7 +398,7 @@ model DigestRecipient {
   @@unique([tenantId, clerkUserId])
 }
 
-/** One row per tenant per local day — the idempotency guard for the digest. */
+/** One row per tenant per local day - the idempotency guard for the digest. */
 model DigestLog {
   id         String   @id @default(cuid())
   tenantId   String

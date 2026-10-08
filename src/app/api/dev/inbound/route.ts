@@ -33,7 +33,7 @@ export async function POST(req: Request) {
       conversationId: inserted.conversationId,
       triggerMessageId: inserted.messageId,
     });
-    // Sync only when enqueue failed — never race an in-flight Inngest turn.
+    // Sync only when enqueue failed - never race an in-flight Inngest turn.
     if (!enqueued) {
       const turn = await runTurnNow({
         tenantId,

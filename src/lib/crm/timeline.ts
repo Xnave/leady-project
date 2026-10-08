@@ -1,6 +1,6 @@
 /**
  * Pure activity-timeline builder for a lead. No Prisma, no business domain
- * names — see architecture.test.ts ("crm purity").
+ * names - see architecture.test.ts ("crm purity").
  */
 export type TimelineKind = "stage" | "note" | "next_step" | "snooze" | "request" | "handoff" | "conversation";
 export type TimelineItem = { id: string; at: Date; kind: TimelineKind; data: Record<string, unknown> };

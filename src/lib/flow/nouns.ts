@@ -1,6 +1,6 @@
 /**
- * Per-instance vocabulary. What the business calls a request — "stay", "fitting",
- * "rental", "visit" — is tenant data, not code: `copy/` keeps the sentence
+ * Per-instance vocabulary. What the business calls a request - "stay", "fitting",
+ * "rental", "visit" - is tenant data, not code: `copy/` keeps the sentence
  * mechanics and an instance supplies the noun that slots into them.
  */
 import type { FieldLang } from "./fields";

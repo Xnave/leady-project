@@ -92,7 +92,7 @@ export async function POST(req: Request) {
     triggerMessageId: inserted.messageId,
   });
 
-  // Sync fallback only when enqueue failed — never race an in-flight Inngest turn.
+  // Sync fallback only when enqueue failed - never race an in-flight Inngest turn.
   let answered = false;
   if (enqueued) {
     answered = await waitForAgentReply({

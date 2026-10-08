@@ -228,7 +228,7 @@ export async function listZernioWebhookSettings(): Promise<ZernioWebhookSettings
 
 /**
  * Path of Zernio's bulk template send (SDK: whatsapp.sendWhatsAppBulk).
- * Verify against the API reference before enabling the digest — this has not
+ * Verify against the API reference before enabling the digest - this has not
  * been confirmed against a live send (no platform number / approved template
  * yet). See task-14 report for details.
  */

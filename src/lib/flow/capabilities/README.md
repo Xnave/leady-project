@@ -4,7 +4,7 @@
  * The flow interpreter is a **closed kernel**: stage types, transitions, HITL, nudges,
  * and generic dispatch. It names no business domain, and `architecture.test.ts`
  * ("kernel purity") fails if one creeps back in. Domain behavior is added by
- * **registering** — never by editing `interpretTurn`.
+ * **registering** - never by editing `interpretTurn`.
  *
  * ## Lifecycle hooks
  *
@@ -29,7 +29,7 @@
  * 2. Call its register function from `capabilities/index.ts`.
  * 3. Attach it on a talk stage: `capabilities: ["booking", "<id>"]`.
  * 4. For a durable "submit for human approval" side effect, `registerAction("<effect>", handler)`
- *    plus `registerApprovalEffect({ effectId, capabilityId })` — that pair covers the
+ *    plus `registerApprovalEffect({ effectId, capabilityId })` - that pair covers the
  *    whole park-on-waiting_human flow, so do not hand-roll a talk effect for it.
  *
  * Describe what you collect as a `FieldSpec[]` (see `../fields/`) rather than branching
@@ -49,7 +49,7 @@
  * the action registry.
  *
  * Current packs:
- * - `booking` — point-in-time requests (`Request` with `kind` from the instance, default "visit")
- * - `reservations` — date-span requests + configurable link-probe availability (nouns from instance config)
+ * - `booking` - point-in-time requests (`Request` with `kind` from the instance, default "visit")
+ * - `reservations` - date-span requests + configurable link-probe availability (nouns from instance config)
  */
 export {};

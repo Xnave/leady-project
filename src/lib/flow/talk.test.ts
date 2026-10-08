@@ -51,7 +51,7 @@ describe("degradeTalk", () => {
     expect(out.effects).toBeUndefined();
   });
 
-  it("does not invent booking — holds and escalates when LLM is down", () => {
+  it("does not invent booking - holds and escalates when LLM is down", () => {
     const ctx = talkCtx("please book Thursday", {
       messages: [
         { role: "lead", text: "hi" },

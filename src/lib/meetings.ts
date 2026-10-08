@@ -200,7 +200,7 @@ export async function requestTentativeMeeting(
   return { ok: true, reply: requestText() };
 }
 
-/** Latest still-relevant visit on the lead — for post-approval follow-ups in talk. */
+/** Latest still-relevant visit on the lead - for post-approval follow-ups in talk. */
 export type RecentMeetingSnapshot = {
   id: string;
   status: string;
@@ -269,7 +269,7 @@ export async function markMeetingDecision(opts: {
   decision: MeetingDecision;
   note?: string;
   customReply?: string;
-  /** Required when decision is reschedule — shown to the customer as the offered slot */
+  /** Required when decision is reschedule - shown to the customer as the offered slot */
   alternativeSlot?: string;
   /** When the customer accepted a staff-offered slot */
   customerConfirmed?: boolean;

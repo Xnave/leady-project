@@ -158,7 +158,7 @@ const batch = new AsyncLocalStorage<Map<string, { tenantId: string; leadId: stri
 /**
  * Runs `fn` with lead refreshes deferred: however many times the code inside asks
  * (one per saved message, per closed thread, …), each lead is refreshed once, after
- * `fn` settles — even when it throws, since what it wrote before failing still counts.
+ * `fn` settles - even when it throws, since what it wrote before failing still counts.
  * Nested calls join the outer batch.
  */
 export async function batchLeadRefreshes<T>(fn: () => Promise<T>): Promise<T> {

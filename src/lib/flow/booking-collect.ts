@@ -23,7 +23,7 @@ export const bookingCollectMeta: {
   {
     id: "name",
     title: "Name",
-    blurb: "Full name — always collected; re-asked if only a nickname is known.",
+    blurb: "Full name - always collected; re-asked if only a nickname is known.",
     locked: true,
   },
   {
@@ -102,7 +102,7 @@ export function bookingRequiredFields(ctx: TurnContext): string[] {
 export { looksLikePhoneNumber } from "./phone";
 import { looksLikePhoneNumber } from "./phone";
 
-/** Basic email shape — rejects incomplete values like "nave@". */
+/** Basic email shape - rejects incomplete values like "nave@". */
 export function looksLikeEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }

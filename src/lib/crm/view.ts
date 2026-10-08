@@ -1,7 +1,7 @@
 /**
  * `whereItStands`, the DTO shapes, and the small pieces shared by the two
  * loaders. Loading itself needs Prisma and lives in `view-rows.ts` (list rows)
- * and `view-lead.ts` (one lead's full view) — this file was pushing 300 lines
+ * and `view-lead.ts` (one lead's full view) - this file was pushing 300 lines
  * once both were inline, so they were split out and are re-exported here to
  * keep `loadLeadRows` / `loadLeadView` importable from `@/lib/crm/view`.
  */

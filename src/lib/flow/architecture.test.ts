@@ -430,7 +430,7 @@ describe("talkTurn with mocked LLM", () => {
       tools: Record<string, { execute?: (args: unknown) => Promise<unknown> }>;
     }) => {
       seenSystem = opts.system;
-      await opts.tools.reply?.execute?.({ text: "Sure — want to book a visit?" });
+      await opts.tools.reply?.execute?.({ text: "Sure - want to book a visit?" });
       return { text: "" };
     });
 

@@ -8,9 +8,9 @@ import { getTenantShell, requireTenantId, requireTenantIdForPage } from "@/lib/t
 
 /**
  * Permission matrix (who may call what):
- * - member:  CRM work — leads, notes, stages, staff messages, HITL, requests, demo chat, digest.
+ * - member:  CRM work - leads, notes, stages, staff messages, HITL, requests, demo chat, digest.
  * - manager (tenant owner or admin): + channels, onboarding/setup, team.
- * - platform: platform staff only (PLATFORM_ADMIN_EMAILS, incl. acting as a tenant) —
+ * - platform: platform staff only (PLATFORM_ADMIN_EMAILS, incl. acting as a tenant) -
  *   raw agent flow/policy (`/api/ops/*`) and capability-instance edits.
  */
 export type TenantAccessLevel = "member" | "manager" | "platform";

@@ -20,14 +20,14 @@ const withClerk = clerkMiddleware(
     if (isPublicRoute(req)) {
       return NextResponse.next();
     }
-    // Always send signed-out users to our in-app /sign-in — never Clerk Account Portal
+    // Always send signed-out users to our in-app /sign-in - never Clerk Account Portal
     // (accounts.<app>.vercel.app) which is not hosted and returns connection errors / 404.
     const signIn = new URL("/sign-in", req.url);
     signIn.searchParams.set("redirect_url", req.url);
     await auth.protect({ unauthenticatedUrl: signIn.toString() });
   },
   (req) => {
-    // Proxy only on *.vercel.app. Custom domains (app.zapidly.com) use Clerk DNS —
+    // Proxy only on *.vercel.app. Custom domains (app.zapidly.com) use Clerk DNS -
     // enabling /__clerk there causes host_invalid on handshake.
     const proxyUrl = clerkClientProxyUrl(req.nextUrl.hostname);
     return {

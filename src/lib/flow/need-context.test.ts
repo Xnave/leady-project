@@ -40,7 +40,7 @@ describe("need-context", () => {
   });
 
   it("resolves need from reply against gathered interest", () => {
-    const gathered = "קליניקה — מענה לא מכסה שעות פניות";
+    const gathered = "קליניקה - מענה לא מכסה שעות פניות";
     expect(resolveNeedFromReply("מה שכתבתי למעלה", gathered)).toEqual({ need: gathered });
     expect(resolveNeedFromReply("לא", gathered)).toEqual({ need: gathered });
     expect(resolveNeedFromReply("גם בעברית", gathered)).toEqual({

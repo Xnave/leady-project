@@ -44,7 +44,7 @@ export async function POST(req: Request) {
   const secret = zernioWebhookSecret();
   const signature =
     req.headers.get("X-Zernio-Signature") ?? req.headers.get("X-Late-Signature");
-  // Production must never skip HMAC — without a secret anyone who knows a
+  // Production must never skip HMAC - without a secret anyone who knows a
   // channel providerExternalId can inject inbound traffic.
   if (!secret) {
     if (isProductionRuntime()) {
@@ -109,7 +109,7 @@ export async function POST(req: Request) {
       }),
       extraFields: {
         zernioConversationId: inbound.conversationId,
-        // Instagram identity only — never store WA phone as instagramUsername / profile name as booking name.
+        // Instagram identity only - never store WA phone as instagramUsername / profile name as booking name.
         ...(channel.provider === "instagram" || inbound.platform === "instagram"
           ? instagramIdentityFields(senderName, senderUsername)
           : {}),
@@ -141,7 +141,7 @@ export async function POST(req: Request) {
     );
     enqueue_ms = timed.ms;
   } catch (err) {
-    // Turn won't refresh CRM if enqueue never lands — keep the inbox clocks honest.
+    // Turn won't refresh CRM if enqueue never lands - keep the inbox clocks honest.
     console.warn(JSON.stringify({ msg: "zernio.enqueue_failed", error: String(err) }));
     await safeRefreshLeadState(channel.tenantId, inserted.leadId);
   }

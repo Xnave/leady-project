@@ -1,4 +1,4 @@
-/** Stay reservation configuration — the `config` JSON of a reservations CapabilityInstance. */
+/** Stay reservation configuration - the `config` JSON of a reservations CapabilityInstance. */
 import {
   nounFor,
   parseInstanceNouns,

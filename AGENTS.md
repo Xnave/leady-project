@@ -2,7 +2,7 @@
 
 Guidance for coding agents (Cursor, Claude Code, Codex, etc.) working in this repo.
 
-Human-oriented architecture: [docs/architecture.md](docs/architecture.md). Commands and conventions also live in [CLAUDE.md](CLAUDE.md) — keep them consistent when you change either.
+Human-oriented architecture: [docs/architecture.md](docs/architecture.md). Commands and conventions also live in [CLAUDE.md](CLAUDE.md) - keep them consistent when you change either.
 
 ---
 
@@ -16,10 +16,10 @@ Transactional verticals (visits, stays, fittings, rentals) share one primitive: 
 
 ## Read these first (in order)
 
-1. [docs/architecture.md](docs/architecture.md) — map, important files, LLM vs rails, how to add capabilities.
-2. [src/lib/flow/capabilities/README.md](src/lib/flow/capabilities/README.md) — register hooks / OCP rules.
-3. [src/lib/flow/architecture.test.ts](src/lib/flow/architecture.test.ts) — executable architecture contract (“kernel purity”, one Request, instances).
-4. [prisma/schema.prisma](prisma/schema.prisma) — `CapabilityInstance`, `Request`, `Agent.flow`.
+1. [docs/architecture.md](docs/architecture.md) - map, important files, LLM vs rails, how to add capabilities.
+2. [src/lib/flow/capabilities/README.md](src/lib/flow/capabilities/README.md) - register hooks / OCP rules.
+3. [src/lib/flow/architecture.test.ts](src/lib/flow/architecture.test.ts) - executable architecture contract (“kernel purity”, one Request, instances).
+4. [prisma/schema.prisma](prisma/schema.prisma) - `CapabilityInstance`, `Request`, `Agent.flow`.
 
 Then the file you are changing.
 
@@ -39,7 +39,7 @@ Then the file you are changing.
 | **Nudges** | `runTurnNow` only *returns* `nudgeEvent`. Inngest sends it; direct callers must `dispatchNudgeEvent()`. See [docs/nudges.md](docs/nudges.md). |
 | **Tests without LLM keys** | Prefer fake ports / heuristics; do not require `OPENAI_API_KEY` in unit tests. |
 
-If a change would violate an `architecture.test.ts` assertion, stop and redesign — that test is the contract.
+If a change would violate an `architecture.test.ts` assertion, stop and redesign - that test is the contract.
 
 ---
 
@@ -79,7 +79,7 @@ Full narrative: [docs/architecture.md § Adding a new capability](docs/architect
 
 ## LLM vs deterministic (one paragraph)
 
-The **interpreter** always owns stage transitions, HITL gates, allowed talk edges, effect execution, and persistence. The **LLM** (in `llm.ts`) owns wording and *which registered tools to call* on `talk` (and classify/extract/faq/nudge helpers). Capability `tools`’ `execute` functions and `reconcile` hooks veto or fix bad model output. Never “trust the model” to mark a visit confirmed or skip HITL — `book_meeting` / `create_reservation_hold` are code paths that create a pending `Request`.
+The **interpreter** always owns stage transitions, HITL gates, allowed talk edges, effect execution, and persistence. The **LLM** (in `llm.ts`) owns wording and *which registered tools to call* on `talk` (and classify/extract/faq/nudge helpers). Capability `tools`’ `execute` functions and `reconcile` hooks veto or fix bad model output. Never “trust the model” to mark a visit confirmed or skip HITL - `book_meeting` / `create_reservation_hold` are code paths that create a pending `Request`.
 
 ---
 
@@ -104,7 +104,7 @@ Dev: `npm run dev` (demo turn is sync; Inngest only for nudges).
 - Wiring a new port in Inngest *and* `run-turn.ts` (Inngest must stay a thin wrapper).
 - Forgetting `dispatchNudgeEvent` on demo / HITL resume paths.
 - Mixing `copy` and `ui` strings.
-- Assuming `Tenant.venueHours` / `reservationConfig` still exist — they moved to instances.
+- Assuming `Tenant.venueHours` / `reservationConfig` still exist - they moved to instances.
 
 ---
 
@@ -112,8 +112,8 @@ Dev: `npm run dev` (demo turn is sync; Inngest only for nudges).
 
 | Doc | Audience |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | Humans + agents — current architecture |
-| [CLAUDE.md](CLAUDE.md) | Claude Code — commands + short architecture |
+| [docs/architecture.md](docs/architecture.md) | Humans + agents - current architecture |
+| [CLAUDE.md](CLAUDE.md) | Claude Code - commands + short architecture |
 | [docs/nudges.md](docs/nudges.md) | Silence reminders (Inngest cancelOn, last-lead clock) |
 | [docs/latency-production.md](docs/latency-production.md) | Prod reply + CRM latency passes, bottlenecks, log fields |
 | [docs/conversation-lifecycle.md](docs/conversation-lifecycle.md) | When to close / reopen / create a thread |

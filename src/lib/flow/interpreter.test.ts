@@ -482,7 +482,7 @@ describe("reconcileBooking (booking capability reconcile hook)", () => {
       ],
     });
     const out = reconcileBooking(state, stage, {
-      reply: "רשמתי בקשה לפגישה למחר — הצוות יבדוק.",
+      reply: "רשמתי בקשה לפגישה למחר - הצוות יבדוק.",
       nextStage: "done",
     });
     expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBe(true);

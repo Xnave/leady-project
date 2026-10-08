@@ -294,7 +294,7 @@ export async function loadTurnContext(
 ): Promise<TurnContext & { connection: ConnectionView }> {
   const loadStarted = Date.now();
   ensureFlowRegistry();
-  // Instances only need tenantId — overlap with the fat conversation read.
+  // Instances only need tenantId - overlap with the fat conversation read.
   // Channel access token is loaded lazily in sendAndSave (overlaps message persist).
   const [conversation, capabilityInstances, load_convo_ms, load_instances_ms] = await Promise.all([
     (async () => {

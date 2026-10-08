@@ -59,7 +59,7 @@ function formatCapturedValue(key: string, value: unknown, ui: UiCopy): string {
   return "";
 }
 
-/** Read-only captured fields with optional edit form — same UX as the lead detail page. */
+/** Read-only captured fields with optional edit form - same UX as the lead detail page. */
 export function CapturedFieldsBlock({
   ui,
   leadId,

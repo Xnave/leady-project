@@ -1,7 +1,7 @@
 /**
  * Sends the WhatsApp daily digest: which leads are due, the per-tenant runner
  * with its `DigestLog` idempotency guard, and routing an owner's reply to the
- * full list. Everything here is a no-op unless `digestFeatureOn()` — see
+ * full list. Everything here is a no-op unless `digestFeatureOn()` - see
  * `./flags`.
  */
 import { prisma } from "@/lib/db";
@@ -70,7 +70,7 @@ export async function loadDueDigestItems(tenantId: string, now: Date): Promise<D
  * empty digest writes nothing, so a later run the same day (once something
  * becomes due) can still send. Once the digest is non-empty, the day's log
  * row is claimed (found-or-created) and each successful send appends its
- * recipient's `clerkUserId` to `DigestLog.recipients` — so a retry after a
+ * recipient's `clerkUserId` to `DigestLog.recipients` - so a retry after a
  * partial failure (one send throws mid-loop) only sends to whoever is still
  * missing from that list, instead of either re-sending to everyone or
  * skipping the whole day via `already_sent`.
@@ -93,7 +93,7 @@ export async function runDigestForTenant(
   if (!digest) return { sent: 0, skipped: "empty" as const };
 
   // Find or create today's log row. The unique index means a concurrent
-  // create loses the race harmlessly — re-read picks up whichever row won.
+  // create loses the race harmlessly - re-read picks up whichever row won.
   let log = await prisma.digestLog.findUnique({ where: { tenantId_date: { tenantId, date } } });
   if (!log) {
     try {
@@ -129,7 +129,7 @@ export async function runDigestForTenant(
 
 /**
  * Owner replied to the digest (24h window now open): send the full list as
- * free text. Returns whether the inbound was handled here — the webhook route
+ * free text. Returns whether the inbound was handled here - the webhook route
  * must skip its normal tenant-channel routing when this returns true.
  *
  * `accountId !== DIGEST_WHATSAPP_ACCOUNT_ID` guarantees this never intercepts
@@ -140,7 +140,7 @@ export async function handleDigestReply(o: { accountId: string; conversationId: 
   const digestAccountId = env("DIGEST_WHATSAPP_ACCOUNT_ID");
   if (!digestFeatureOn() || !digestAccountId || o.accountId !== digestAccountId) return false;
   // Cross-tenant by necessity: the inbound arrives on the shared platform
-  // number, before any tenant is known — the reply is matched to a tenant by
+  // number, before any tenant is known - the reply is matched to a tenant by
   // phone, scoped to recipients who have explicitly opted in.
   const recipients = await prisma.digestRecipient.findMany({ where: { optedInAt: { not: null } } });
   const r = recipients.find((x) => phoneDigitsMatch(x.phone, o.from));

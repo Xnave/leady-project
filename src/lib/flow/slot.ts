@@ -115,7 +115,7 @@ function parseTime(text: string): string | undefined {
     if (!ap && h === 12) h = 0;
     if (h >= 0 && h <= 23 && m >= 0 && m <= 59) return `${pad2(h)}:${pad2(m)}`;
   }
-  // Colon only — never treat dotted dates (11.11) as a clock time.
+  // Colon only - never treat dotted dates (11.11) as a clock time.
   const colon = forTime.match(/\b(\d{1,2}):(\d{2})\b/);
   if (colon) {
     const h = Number(colon[1]);
@@ -128,7 +128,7 @@ function parseTime(text: string): string | undefined {
   if (bare) {
     let h = Number(bare[1]);
     const hasMeridian = /ערב|בוקר|צהריים|a\.?m\.?|p\.?m\.?/i.test(text);
-    // Bare 1–12 without morning/evening is ambiguous — do not invent AM.
+    // Bare 1–12 without morning/evening is ambiguous - do not invent AM.
     if (!hasMeridian && h >= 1 && h <= 12) return undefined;
     if (/ערב|pm/i.test(text) && h < 12) h += 12;
     if (/בוקר|am/i.test(text) && h === 12) h = 0;
@@ -271,7 +271,7 @@ export function resolveCalendarDate(
   return day ? toDateIso(day) : null;
 }
 
-const RANGE_SPLIT = /\s*(?:\u2013|\u2014|–|—|until|\bto\b|עד)\s*/iu;
+const RANGE_SPLIT = /\s*(?:\u2013|\u2014|–|-|until|\bto\b|עד)\s*/iu;
 
 /**
  * Start/end ISO dates from "next Thursday until Saturday" / "בחמישי הבא עד שבת".
@@ -406,7 +406,7 @@ export function proposesDifferentSlot(
   if (proposed.time && offered.time && proposed.time !== offered.time) {
     return true;
   }
-  // They named a day/time but the offer could not be parsed the same way —
+  // They named a day/time but the offer could not be parsed the same way -
   // treat as a different proposal rather than silently approving.
   if ((proposed.dateIso || proposed.time) && !offered.dateIso && !offered.time) {
     return true;

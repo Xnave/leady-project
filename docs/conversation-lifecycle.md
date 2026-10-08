@@ -33,7 +33,7 @@ All of these call `closeConversationAsDone` or `rotateConversation` (which close
 
 **Close keeps:** message transcript, approved/pending `Request` rows, CRM fields on the lead (`name`, `phone`, …).
 
-Approve closes for inbox hygiene. The next customer message can reopen the same thread (see below) — a thank-you does not start a blank conversation.
+Approve closes for inbox hygiene. The next customer message can reopen the same thread (see below) - a thank-you does not start a blank conversation.
 
 ---
 
@@ -98,7 +98,7 @@ The model does **not** choose the inbound thread. It may call `start_new_convers
 
 - customer short-yes after we asked to reset, or
 - idle-gap turn (`isIdleConversationReset`), or
-- `lifecycleReason === "inbound_reopen"` (decide + intro wording in one `talkTurn` — no second LLM round-trip).
+- `lifecycleReason === "inbound_reopen"` (decide + intro wording in one `talkTurn` - no second LLM round-trip).
 
 On `inbound_reopen`, the talk prompt states that a thank-you / follow-up about the prior approval is **not** a new matter. Booking and reservations capabilities still strip `start_new_conversation` while collect is active.
 
@@ -121,4 +121,4 @@ On `inbound_reopen`, the talk prompt states that a thank-you / follow-up about t
 - Do not auto-create a new conversation on approve (close the thread; let inbound reopen).
 - Do not reopen forever: past `idleResetDays` without a relevant request → new thread.
 - Do not add a second LLM call to choose the thread; routing stays in `decideInboundThread`.
-- Do not treat “תודה” as a new matter after approve — that is the reopen + prompt guard.
+- Do not treat “תודה” as a new matter after approve - that is the reopen + prompt guard.

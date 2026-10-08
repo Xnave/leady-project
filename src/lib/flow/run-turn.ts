@@ -39,7 +39,7 @@ function logTurn(phase: "enter" | "exit", extra: Record<string, unknown>) {
   console.log(JSON.stringify({ msg: "runAgentTurn", phase, ...extra }));
 }
 
-/** One agent outbound per inbound trigger — no text hash (retries must not double-send). */
+/** One agent outbound per inbound trigger - no text hash (retries must not double-send). */
 export function primaryOutboundIdempotencyKey(
   conversationId: string,
   triggerMessageId: string,
@@ -213,7 +213,7 @@ type RunTurnOpts = {
   conversationId: string;
   resume?: boolean;
   triggerMessageId?: string;
-  /** Epoch ms stamped at enqueue — worker start minus this is queue_ms. */
+  /** Epoch ms stamped at enqueue - worker start minus this is queue_ms. */
   inboundAt?: number;
 };
 
@@ -264,7 +264,7 @@ async function runTurn(opts: RunTurnOpts) {
   try {
     ctx = await loadTurnContext(opts.tenantId, opts.conversationId);
   } catch (err) {
-    // Conversation deleted between enqueue and worker — same skip as the old load-context step.
+    // Conversation deleted between enqueue and worker - same skip as the old load-context step.
     const code =
       err && typeof err === "object" && "code" in err
         ? String((err as { code: unknown }).code)
@@ -359,7 +359,7 @@ async function runTurn(opts: RunTurnOpts) {
       },
       sendAndSave: (c, text) =>
         sendAndSave(c as Awaited<ReturnType<typeof loadTurnContext>>, text, {
-          // Stable per inbound — retries with different LLM wording must not double-send.
+          // Stable per inbound - retries with different LLM wording must not double-send.
           idempotencyKey: outboundKey,
         }),
       scheduleNudge: async (c, stageId, stage) => {

@@ -11,7 +11,7 @@ type Labels = {
   sendFailed: string;
 };
 
-/** Customer simulator — used on /demo only. */
+/** Customer simulator - used on /demo only. */
 export function ChatComposer({
   leadId,
   from,
@@ -71,7 +71,7 @@ export function ChatComposer({
   );
 }
 
-/** Staff reply composer for lead workspace — posts as human, not customer. */
+/** Staff reply composer for lead workspace - posts as human, not customer. */
 export function StaffChatComposer({
   leadId,
   conversationId,

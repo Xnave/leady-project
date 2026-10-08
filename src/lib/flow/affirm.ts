@@ -5,7 +5,7 @@ function lastLeadText(ctx: TurnContext): string {
   return [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
 }
 
-/** Short yes/ok — used for confirm_details and for agreeing to a new thread. */
+/** Short yes/ok - used for confirm_details and for agreeing to a new thread. */
 export function looksLikeShortAffirmation(text: string): boolean {
   const t = text.trim();
   if (!t || t.length > 40) return false;

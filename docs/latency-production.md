@@ -1,4 +1,4 @@
-# Production latency — findings, passes, and how to read them
+# Production latency - findings, passes, and how to read them
 
 Living summary of the Zapidly reply-path + CRM latency work (Oct 2026). Numbers are from **production** Vercel Runtime Logs unless noted. Local Phase 0 probes were useful for structure, but they mis-ranked the live bottleneck (local turns looked ~99% LLM; prod was Neon RTT + webhook work + later Inngest queue + Zernio).
 
@@ -19,12 +19,12 @@ Two surfaces, two stories:
 
 ```text
 webhook ACK     ~0.5s   (persist + enqueue)
-+ Inngest queue ~1.6s   (queue_ms — was invisible before)
++ Inngest queue ~1.6s   (queue_ms - was invisible before)
 + turn work     ~3.2s   (LLM ~1.3s + Zernio send ~1.8s; load ~40ms)
 ≈ ~5s class
 ```
 
-Demo / non-Zernio channels show `send_http_ms: 0` and shorter turn totals — do not use those as WhatsApp SLOs.
+Demo / non-Zernio channels show `send_http_ms: 0` and shorter turn totals - do not use those as WhatsApp SLOs.
 
 ---
 
@@ -82,7 +82,7 @@ flowchart LR
 
 ---
 
-### Pass one — enqueue sooner, fewer Neon RTTs on inbound
+### Pass one - enqueue sooner, fewer Neon RTTs on inbound
 
 | Change | Logical / product effect |
 |---|---|
@@ -99,7 +99,7 @@ flowchart LR
 
 ---
 
-### Pass two — one refresh, denorm clocks, one LLM step, CRM list RTTs
+### Pass two - one refresh, denorm clocks, one LLM step, CRM list RTTs
 
 | Change | Logical / product effect |
 |---|---|
@@ -119,7 +119,7 @@ flowchart LR
 
 ---
 
-### Pass three — CRM nav feel (mark-read, peek overlap)
+### Pass three - CRM nav feel (mark-read, peek overlap)
 
 | Change | Logical / product effect |
 |---|---|
@@ -130,14 +130,14 @@ flowchart LR
 
 | Metric | Expectation | Result |
 |---|---|---|
-| `crm.load_lead_view` | Big drop | **Little change** — still ~1.5–2s (RTT dominated) |
+| `crm.load_lead_view` | Big drop | **Little change** - still ~1.5–2s (RTT dominated) |
 | Mark-read induced `crm.leads_page` | Gone | **Win** for perceived nav |
 
 **Lesson:** overlap/select surgery ≠ latency when each query is ~1.5s overseas.
 
 ---
 
-### Pass four — chat-first peek + client metrics
+### Pass four - chat-first peek + client metrics
 
 | Change | Logical / product effect |
 |---|---|
@@ -148,11 +148,11 @@ flowchart LR
 | Metric | Result |
 |---|---|
 | Server payload size | Down on lite |
-| Felt peek | Still slow until region move — **proved payload ≠ RTT** |
+| Felt peek | Still slow until region move - **proved payload ≠ RTT** |
 
 ---
 
-### Pass five — region + instant shell (biggest CRM win)
+### Pass five - region + instant shell (biggest CRM win)
 
 | Change | Logical / product effect |
 |---|---|
@@ -170,7 +170,7 @@ flowchart LR
 
 ---
 
-### Pass six — queue visibility + less wait before LLM
+### Pass six - queue visibility + less wait before LLM
 
 | Change | Logical / product effect |
 |---|---|
@@ -213,7 +213,7 @@ flowchart LR
 | Pass | What changed | Latency effect |
 |---|---|---|
 | (ongoing) | Parallel persist + token fetch before HTTP | Small overlap win |
-| — | Provider HTTP itself | Still **~1–1.8s**; accept as floor |
+| - | Provider HTTP itself | Still **~1–1.8s**; accept as floor |
 
 ### D. CRM list / nav
 
@@ -257,14 +257,14 @@ Search Vercel Runtime Logs (production) after a WhatsApp message + opening a lea
 | Log `msg` | Key fields | Meaning |
 |---|---|---|
 | `zernio.inbound` | `persist_ms`, `enqueue_ms`, `ms` | Webhook ACK budget |
-| `zernio.enqueue_failed` | `error` | Turn never starts (seen once as `fetch failed` — transient?) |
+| `zernio.enqueue_failed` | `error` | Turn never starts (seen once as `fetch failed` - transient?) |
 | `runAgentTurn` `phase:enter` | **`queue_ms`**, `triggerMessageId` | Inngest wake gap |
 | `runAgentTurn` `phase:exit` | `ms`, `talk_llm_ms`, `talk_steps`, `tools_used`, `load_ms`, `send_http_ms`, `send_persist_ms`, `refresh_ms`, `queue_ms` | Full turn split |
 | `inngest.turn` | `interpret_ms` | Single interpret step wall (inside worker) |
 | `crm.leads_page` / `crm.load_lead_rows` / `crm.nav_counts` | `ms` | Inbox server work |
 | `crm.load_lead_view` | `ms`, `scope`, `lead_ms` | Peek/server view |
 | `crm.client.peek_shell` / `peek_open` / `peek_paint` | `ms`, `scope` | Operator-felt peek |
-| `crm.refresh_slow` | — | Should be rare; investigate if common |
+| `crm.refresh_slow` | - | Should be rare; investigate if common |
 
 **Healthy real WhatsApp turn (ballpark):**
 
@@ -288,7 +288,7 @@ Search Vercel Runtime Logs (production) after a WhatsApp message + opening a lea
 3. **Telemetry is part of the contract.** New reply-path work should preserve `queue_ms` / `send_http_ms` / `talk_llm_ms` on exit logs.
 4. **Closed kernel still applies.** Latency passes must not put domain rules in `interpreter.ts` or add parallel Request tables.
 5. **Next lever for reply feel** (if `queue_ms` stays routinely &gt;1s): durable **alternative wake** (not more select trimming). Do not run the full turn synchronously in the webhook without a durability design.
-6. **Zernio ~1s+** is an external floor — product expectations should include it unless the provider changes.
+6. **Zernio ~1s+** is an external floor - product expectations should include it unless the provider changes.
 
 ---
 
@@ -307,7 +307,7 @@ Search Vercel Runtime Logs (production) after a WhatsApp message + opening a lea
 
 ---
 
-## 9. Snapshot — latest production pull (post pass six)
+## 9. Snapshot - latest production pull (post pass six)
 
 Approximate 3h window after the latency deploy:
 

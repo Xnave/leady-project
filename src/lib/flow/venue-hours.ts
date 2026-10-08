@@ -84,7 +84,7 @@ const EN_DAY_NAMES: { re: RegExp; day: number }[] = [
   { re: /\bsat\b/gi, day: 6 },
 ];
 
-const TIME_RANGE_RE = /(\d{1,2})(?::(\d{2}))?\s*[-–—]\s*(\d{1,2})(?::(\d{2}))?/g;
+const TIME_RANGE_RE = /(\d{1,2})(?::(\d{2}))?\s*[-–-]\s*(\d{1,2})(?::(\d{2}))?/g;
 
 function toMinutes(h: number, m: number): number {
   return h * 60 + m;
@@ -130,7 +130,7 @@ function uniqueSorted(days: number[]): number[] {
 
 /** True when the clause text is only separators (no day labels). */
 function isBlankDayPrefix(text: string): boolean {
-  return !text.trim() || /^[\s,;|/·•\-–—]+$/.test(text.trim());
+  return !text.trim() || /^[\s,;|/·•\-–-]+$/.test(text.trim());
 }
 
 /**
@@ -145,7 +145,7 @@ export function parseDaysFromHoursPrefix(prefix: string): number[] | null {
   const found: number[] = [];
 
   const heRange = text.match(
-    /([אבגדהוש])(?:['׳])?\s*[-–—]\s*([אבגדהוש])(?:['׳])?/,
+    /([אבגדהוש])(?:['׳])?\s*[-–-]\s*([אבגדהוש])(?:['׳])?/,
   );
   if (heRange) {
     const a = HE_DAY_LETTER[heRange[1]];
@@ -154,7 +154,7 @@ export function parseDaysFromHoursPrefix(prefix: string): number[] | null {
   }
 
   const enRange = text.match(
-    /\b(sun(?:day)?|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?)\s*[-–—]\s*(sun(?:day)?|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?)\b/i,
+    /\b(sun(?:day)?|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?)\s*[-–-]\s*(sun(?:day)?|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?)\b/i,
   );
   if (enRange) {
     const a = EN_DAY_NAMES.find((x) => new RegExp(x.re.source, "i").test(enRange[1]))?.day;
@@ -297,12 +297,12 @@ function weekdayFromIso(dateIso: string): number | null {
 
 /**
  * Whether a customer time preference falls inside bookable venue hours.
- * Closing hour itself is not bookable — must start at least
+ * Closing hour itself is not bookable - must start at least
  * {@link LAST_BOOKABLE_BEFORE_CLOSE_MINUTES} before close.
  * Prefer a persisted {@link VenueScheduleSegment} list when available;
  * otherwise parse free-text `hours` as a fallback.
  *
- * Prefer {@link checkBookableSlot} for new call sites — it distinguishes
+ * Prefer {@link checkBookableSlot} for new call sites - it distinguishes
  * ambiguous / unclear / invalid-hours instead of collapsing them to `null`.
  * `null` = cannot decide (legacy wrapper).
  */

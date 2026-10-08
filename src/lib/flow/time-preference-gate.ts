@@ -1,5 +1,5 @@
 /**
- * Shared time_preference hours gate — used by booking save_fields and
+ * Shared time_preference hours gate - used by booking save_fields and
  * datetime_text field normalize so policy/copy cannot drift.
  */
 import { copyFor } from "@/lib/copy";

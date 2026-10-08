@@ -170,7 +170,7 @@ export function listActions(): string[] {
 
 /**
  * Invoke a registered action/effect. This is the single generic seam for every
- * durable capability side effect — the interpreter has no per-domain ports.
+ * durable capability side effect - the interpreter has no per-domain ports.
  */
 export async function runCapabilityEffect(
   ctx: TurnContext,

@@ -1,6 +1,6 @@
 /**
  * Booking "need" / פרטי הפגישה helpers: early CRM interest, deixis, and soft "nothing to add".
- * Rails only — the talk LLM captures interest via tools in the same turn (no extra extract call).
+ * Rails only - the talk LLM captures interest via tools in the same turn (no extra extract call).
  */
 
 import type { LeadFields, MessageSnapshot } from "./types";
@@ -15,7 +15,7 @@ const SHORT_LEAD_RE =
   /^(כן|לא|ok|okay|yes|no|yep|yeah|טוב|סבבה|יאללה|בסדר)[!?.]*$/iu;
 
 /**
- * First substantial lead message — fallback when save_interest never ran.
+ * First substantial lead message - fallback when save_interest never ran.
  * No LLM; skips short affirmations and very short time-only replies.
  */
 export function interestFromTranscript(

@@ -8,7 +8,7 @@ export type OrgAccessResult =
 /**
  * Grant org access: add immediately if the email already has a Clerk user,
  * otherwise create an organization invitation and return its accept URL.
- * Clerk often does not deliver invite emails on development instances — callers
+ * Clerk often does not deliver invite emails on development instances - callers
  * should surface `inviteUrl` in the UI.
  */
 export async function grantOrganizationAccess(opts: {

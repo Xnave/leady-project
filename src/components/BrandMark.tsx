@@ -1,6 +1,6 @@
 /**
  * Zapidly logo: a chat bubble with a lightning bolt. Colours come from the
- * --brand-mark-* tokens in globals.css. `id` must be unique per page — it
+ * --brand-mark-* tokens in globals.css. `id` must be unique per page - it
  * names the gradient, and a duplicate id inside a hidden element (the
  * off-canvas sidebar on mobile) would blank every other copy.
  */

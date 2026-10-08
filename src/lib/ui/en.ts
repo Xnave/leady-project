@@ -197,7 +197,7 @@ export const en: UiCopy = {
       "Leave empty for language defaults. Placeholders: {{date}} {{time}} {{slot}} {{name}} {{phone}} {{details}} {{need}} {{kind}} {{address}} {{hours}} {{email}}",
     fieldIdleDays: "Reset conversation after idle days",
     idleHint:
-      "The first customer message always gets this intro (no AI). After a long quiet period the agent may ask whether to start a fresh conversation — it will not rotate automatically. 0 = never treat silence as a cue.",
+      "The first customer message always gets this intro (no AI). After a long quiet period the agent may ask whether to start a fresh conversation - it will not rotate automatically. 0 = never treat silence as a cue.",
     doneHint: "The first message is always your intro. The next message is when the agent starts talking.",
     catalogLegend: "Agent mode",
     capabilitiesLegend: "Capabilities",
@@ -315,7 +315,7 @@ export const en: UiCopy = {
     summaryIntent: "Intent",
     declineNoteLabel: "Note for the customer (optional)",
     declineNotePlaceholder: "Appended under the message as “Note from the team”",
-    customReplyLabel: "Custom reply (optional — approve only, replaces the template)",
+    customReplyLabel: "Custom reply (optional - approve only, replaces the template)",
     customReplyPlaceholder: "Leave empty to use the default message",
     newConversation: "End conversation",
     startConversation: "Start a new conversation",
@@ -323,7 +323,7 @@ export const en: UiCopy = {
     startDisabledHint: "Conversation ended",
     conversationEnded: "Conversation ended",
     reopenDisabledHint: "Cannot reopen while a newer conversation is open",
-    decisionsLockedHint: "Decisions are locked — a newer conversation was started",
+    decisionsLockedHint: "Decisions are locked - a newer conversation was started",
     decisionLogAction: "Action",
     decisionLogWhen: "When",
     decisionLogActor: "Who",
@@ -353,7 +353,7 @@ export const en: UiCopy = {
     currentDecision: "Current decision",
     changeDecision: "Change decision",
     awaitingCustomer: "Waiting for customer",
-    awaitingCustomerHint: "An alternative time was offered — waiting for the customer to confirm in chat.",
+    awaitingCustomerHint: "An alternative time was offered - waiting for the customer to confirm in chat.",
     customerConfirmed: "Customer confirmed",
     reasons: {
       support_unresolved: "The agent could not resolve this and asked for a human.",
@@ -503,7 +503,7 @@ export const en: UiCopy = {
   errors: {
     createFailed: "Could not create",
     createdClaimOnSignIn:
-      "Tenant created. Clerk invites need a custom domain — tell the owner to sign up at this app with that email; access is granted automatically.",
+      "Tenant created. Clerk invites need a custom domain - tell the owner to sign up at this app with that email; access is granted automatically.",
     connectFailed: "Could not start connect",
     noAgent: "No agent. Seed the database.",
     noTenant: "No tenant. Seed the database.",
@@ -525,7 +525,7 @@ export const en: UiCopy = {
     loadFailed: "Could not load team",
     empty: "None yet.",
     inviteClaimOnSignIn:
-      "Saved. Clerk invite emails need a custom domain — ask them to sign up here with that email; access is granted automatically.",
+      "Saved. Clerk invite emails need a custom domain - ask them to sign up here with that email; access is granted automatically.",
   },
   crm: {
     stages: {

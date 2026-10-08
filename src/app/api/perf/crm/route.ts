@@ -21,7 +21,7 @@ const bodySchema = z.object({
   extra: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
 });
 
-/** Client CRM timings — auth + log only; no DB. */
+/** Client CRM timings - auth + log only; no DB. */
 export async function POST(req: Request) {
   let tenantId: string;
   try {

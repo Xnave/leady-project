@@ -79,7 +79,7 @@ export function isBookingCollectActive(
   return false;
 }
 
-/** Fields that belong to an in-progress booking — live on Conversation.session. */
+/** Fields that belong to an in-progress booking - live on Conversation.session. */
 export const BOOKING_SESSION_FIELD_KEYS = [
   "booking_flow",
   "booking_confirm",

@@ -22,7 +22,7 @@ export function LeadChat({
   ui: UiCopy;
   lang: "he" | "en";
   onSent: () => void;
-  /** Lite view still in flight — show thread skeletons instead of an empty inbox. */
+  /** Lite view still in flight - show thread skeletons instead of an empty inbox. */
   chatLoading?: boolean;
 }) {
   const conversationClosed = dto.conversationStatus === "closed";

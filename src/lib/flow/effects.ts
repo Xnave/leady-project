@@ -13,7 +13,7 @@ function hitlReasonKey(raw?: string): string {
  * run the durable effect, park the conversation on `waiting_human`, tell the
  * customer, and stop the turn.
  *
- * Booking and reservations are both this shape, and so is any future vertical —
+ * Booking and reservations are both this shape, and so is any future vertical -
  * a capability calls this instead of hand-rolling a handler.
  */
 export function registerApprovalEffect(opts: {
@@ -69,7 +69,7 @@ export function registerSelfServeEffect(opts: {
   });
 }
 
-/** Built-in talk effects — registered so the interpreter dispatches via the registry. */
+/** Built-in talk effects - registered so the interpreter dispatches via the registry. */
 export function registerBuiltinTalkEffects(): void {
   registerTalkEffect("request_human", async ({ effect }) => ({
     escalateReason: hitlReasonKey(

@@ -19,15 +19,15 @@ export const chat: ChatCopy = {
   faqUnresolved: "אעביר את זה למישהו מהצוות.",
   faqNoKnowledge: "אין לי תשובה במאגר הידע.",
   whyCollect: "רק אם זה עוזר לי באמת לעזור. במה אפשר לעזור עכשיו?",
-  askName: "נעים להכיר — איך קוראים לך במלא, כדי שנוכל לרשום את הפגישה?",
+  askName: "נעים להכיר - איך קוראים לך במלא, כדי שנוכל לרשום את הפגישה?",
   askEmail: "לאן לשלוח את אישור הפגישה? אפשר לכתוב כאן אימייל.",
   askPhone: "מה מספר הטלפון הכי נוח לחזרה אלייך?",
   askPhoneConfirm: (phone) =>
-    `אשמח לוודא — לחזרה אשתמש במספר ${phone}. מתאים, או לשלוח מספר אחר?`,
+    `אשמח לוודא - לחזרה אשתמש במספר ${phone}. מתאים, או לשלוח מספר אחר?`,
   askPhoneAgain: "עדיין חסר לי מספר לחזרה כדי לקלוט את בקשת הביקור. אפשר לשלוח מספר?",
   askFieldAgain: (field) => `עדיין חסר לי ${field} כדי לשלוח את בקשת הביקור.`,
   waitingHumanHold: "קיבלנו, נציג חוזר אליך.",
-  askNeed: "אשמח להכין את הפגישה כמו שצריך — מה חשוב שנדע עליך או על מה שתרצו לראות?",
+  askNeed: "אשמח להכין את הפגישה כמו שצריך - מה חשוב שנדע עליך או על מה שתרצו לראות?",
   askNeedWithGathered: (gathered) =>
     [
       "מעולה, ככה הבנתי עד עכשיו מהשיחה:",
@@ -40,14 +40,14 @@ export const chat: ChatCopy = {
   askVisitKind: "איזה סוג ביקור מתאים לך?",
   askTime: (hours) =>
     hours
-      ? `אנחנו זמינים ${hours}. מתי יהיה לך נוח להיפגש — יום ושעה?`
-      : "מתי יהיה לך נוח להיפגש — יום ושעה?",
+      ? `אנחנו זמינים ${hours}. מתי יהיה לך נוח להיפגש - יום ושעה?`
+      : "מתי יהיה לך נוח להיפגש - יום ושעה?",
   askFieldFallback: (field) => `חסר לי עוד פרט לפגישה: ${field}.`,
   askFieldWithOptions: (field, options) => `איזה ${field} מתאים לך? אפשרויות: ${options}`,
   availability: (hours) =>
     hours
-      ? `אנחנו זמינים ${hours}. מתי יהיה לך נוח להיפגש — יום ושעה?`
-      : "מתי יהיה לך נוח להיפגש — יום ושעה?",
+      ? `אנחנו זמינים ${hours}. מתי יהיה לך נוח להיפגש - יום ושעה?`
+      : "מתי יהיה לך נוח להיפגש - יום ושעה?",
   hoursLine: (hours) => `שעות פתיחה: ${hours}`,
   askTimeOutsideHours: (hours) =>
     hours
@@ -84,7 +84,7 @@ export const chat: ChatCopy = {
     invalidDates: "תאריכי ההתחלה/סיום לא תקינים.",
     stillNeed: (gaps) => `עדיין חסר: ${gaps}`,
     availabilityNotConfigured:
-      "לא ניתן לבדוק זמינות אוטומטית — נעביר לנציג או נשלח קישור להזמנה.",
+      "לא ניתן לבדוק זמינות אוטומטית - נעביר לנציג או נשלח קישור להזמנה.",
     datesUnavailable: (url) =>
       url
         ? `התאריכים תפוסים. אפשר לבדוק תאריכים אחרים או לפתוח: ${url}`
@@ -92,7 +92,7 @@ export const chat: ChatCopy = {
     datesAvailable: "התאריכים פנויים לפי היומן המקוון.",
     availabilityUnknownLink: (url) =>
       `לא הצלחתי לאשר זמינות בוודאות. אפשר לבדוק ולהזמין כאן: ${url}`,
-    availabilityUnknownHitl: "לא הצלחתי לאשר זמינות בוודאות — אעביר לנציג לאישור.",
+    availabilityUnknownHitl: "לא הצלחתי לאשר זמינות בוודאות - אעביר לנציג לאישור.",
     defaultRequest: ({ noun, from, to, details }) =>
       `רשמתי בקשת ${noun} מ-${from} עד ${to}${details ? ` · ${details}` : ""}. נציג יאשר או יציע תאריכים אחרים.`,
     defaultApproved: (noun, from, to) =>
@@ -100,11 +100,11 @@ export const chat: ChatCopy = {
     defaultRejected: (noun, from, to, note) =>
       `לצערנו לא הצלחנו לאשר ${noun} בתאריכים ${from}–${to}.${note ? ` ${note}` : ""}`,
     completeBookingLink: (url) => `לסיום ההזמנה: ${url}`,
-    sendBookingLink: (noun, url) => `מעולה — אפשר להשלים את ה${noun} כאן: ${url}`,
+    sendBookingLink: (noun, url) => `מעולה - אפשר להשלים את ה${noun} כאן: ${url}`,
     offerAltDates: (from, to) =>
       `התאריכים המבוקשים לא זמינים. האם ${from} עד ${to} מתאים?`,
-    offerDeclineAsk: "אין בעיה — איזה תאריכים אחרים מתאימים לך?",
-    offerUnclearAsk: "רק לוודא — האם התאריכים שהוצעו מתאימים?",
+    offerDeclineAsk: "אין בעיה - איזה תאריכים אחרים מתאימים לך?",
+    offerUnclearAsk: "רק לוודא - האם התאריכים שהוצעו מתאימים?",
   },
 };
 

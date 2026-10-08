@@ -39,7 +39,7 @@ export type InterpreterPorts = {
   talk: (ctx: TurnContext, stage: TalkStage) => Promise<TalkOutcome>;
   /**
    * Run a registered capability side effect by id. This is the only seam for
-   * durable domain work — adding a capability never adds a port.
+   * durable domain work - adding a capability never adds a port.
    */
   runEffect: (
     ctx: TurnContext,
@@ -80,8 +80,8 @@ async function sendWaitingHumanHold(ctx: TurnContext, ports: InterpreterPorts): 
 
 /**
  * Map legacy TalkOutcome flags into nextStage + effects.
- * Domain flags come from the registry; only escalation and completion — which are
- * kernel concerns — are handled here by name.
+ * Domain flags come from the registry; only escalation and completion - which are
+ * kernel concerns - are handled here by name.
  */
 export function normalizeTalkOutcome(out: TalkOutcome, stage: TalkStage): TalkOutcome {
   ensureFlowRegistry();

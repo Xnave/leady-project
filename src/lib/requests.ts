@@ -3,7 +3,7 @@
  *
  * A request is: collected field values, a normalized time spine, a pending row, a
  * HITL task for a human, and a logged decision. A visit, a stay, a dress fitting and
- * an equipment rental are all this — they differ in `kind`, in whether the time spine
+ * an equipment rental are all this - they differ in `kind`, in whether the time spine
  * is a point or a span, and in the typed values in `data`.
  *
  * Vertical-specific wording still lives with each capability; everything structural
@@ -98,7 +98,7 @@ export function isRequestStillRelevant(
   const last = toDate(request.endAt) ?? toDate(request.startAt);
   if (last) return now.getTime() <= endOfDay(last).getTime();
 
-  // No spine (legacy row, or wording we could not parse) — try the wording, then age out.
+  // No spine (legacy row, or wording we could not parse) - try the wording, then age out.
   const fromText = request.timeText
     ? timeTextToStartAt(request.timeText, { now })
     : null;
@@ -277,7 +277,7 @@ export async function createRequestWithApprovalTask(opts: {
 
 /**
  * Record a decision on a request: update the row, resolve only the HITL tasks that
- * point at *this* request, and append to the decision log — in one transaction.
+ * point at *this* request, and append to the decision log - in one transaction.
  *
  * `reschedule` keeps the request pending (the customer has not accepted yet) and
  * leaves the task open awaiting their confirmation.

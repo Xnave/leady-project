@@ -53,7 +53,7 @@ function FollowUp({ r, ui, lang, clock }: { r: LeadRowDTO; ui: UiCopy; lang: Lan
       </span>
     );
   }
-  return <span className="crm-fu-none">—</span>;
+  return <span className="crm-fu-none">-</span>;
 }
 
 function LastContact({ r, ui, lang, clock }: { r: LeadRowDTO; ui: UiCopy; lang: Lang; clock: Clock }) {
