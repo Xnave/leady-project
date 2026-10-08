@@ -756,4 +756,61 @@ describe("reconcileBooking (booking capability reconcile hook)", () => {
     expect(out.reply).toMatch(/מועד:/);
     expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBeFalsy();
   });
+
+  it("appends תוסיף extras onto need without save_fields and re-shows confirm", async () => {
+    const { reconcileBooking } = await import("./capabilities/booking");
+    const stage = {
+      type: "talk" as const,
+      prompt: "",
+      allowBook: true,
+      required_for_book: ["time_preference", "name", "need"],
+      on_complete: "done",
+      on_escalate: "escalate",
+    };
+    const state = ctx({
+      conversation: {
+        id: "c1",
+        status: "open",
+        flowState: "talk",
+        flowVersion: 1,
+        nudgeCountByStage: {},
+      },
+      tenant: {
+        name: "Zapidly",
+        phone: "",
+        intro: "היי",
+        chatLanguage: "he",
+      },
+      agent: {
+        id: "a1",
+        tenantId: "t1",
+        systemPrompt: "",
+        knowledgeText: "",
+        flow: defaultFlow(),
+        flowVersion: 1,
+        leadSchema: defaultLeadSchema,
+        hitlPolicy: defaultHitlPolicy,
+      },
+      lead: {
+        id: "l1",
+        externalUserId: "+972501234567",
+        fields: {
+          booking_flow: "active",
+          booking_confirm: "pending",
+          time_preference: "9 באוקטובר בשעה 13:00",
+          name: "נווה עיני 2",
+          need: "demo",
+          phone: "0526595639",
+        },
+      },
+      messages: [{ role: "lead", text: "תוסיף שאנחנו עסק בתחום הנדלן" }],
+    });
+    const out = reconcileBooking(state, stage, { reply: "" });
+    expect(out.fields?.need).toMatch(/נדלן/);
+    expect(out.fields?.need).toMatch(/demo/);
+    expect(out.reply).toMatch(/הנה פרטי הפגישה/);
+    expect(out.reply).toMatch(/נדלן/);
+    expect(out.reply).toMatch(/מועד:/);
+    expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBeFalsy();
+  });
 });

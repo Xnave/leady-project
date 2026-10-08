@@ -169,6 +169,55 @@ function looksLikeBookingConfirmReply(reply: string): boolean {
   return false;
 }
 
+/** Short stall while they think - do not treat as a details amendment. */
+function looksLikeConfirmStall(text: string): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  if (t.length > 24) return false;
+  return /^(רגע|רק רגע|שניה|שנייה|רגע אחד|wait|hold on|one sec|one second|sec)[!?.]*$/iu.test(
+    t,
+  );
+}
+
+function bookingFieldsAmended(nextFields: LeadFields, prev: LeadFields): boolean {
+  return BOOKING_CONFIRM_AMEND_KEYS.some((key) => {
+    if (!(key in nextFields)) return false;
+    const next = String(nextFields[key] ?? "").trim();
+    const prevVal = String(prev[key] ?? "").trim();
+    return Boolean(next) && next !== prevVal;
+  });
+}
+
+/** Last inbound already captured in need (same-turn confirm retry, not a new extra). */
+function lastLooksLikeAlreadyCapturedNeed(last: string, need: string): boolean {
+  const t = last.trim();
+  const n = need.trim();
+  if (!t || !n) return false;
+  if (n.includes(t) || t.includes(n)) return true;
+  const tokens = n.split(/\s+/).filter((w) => w.length > 3);
+  if (tokens.length === 0) return false;
+  const hits = tokens.filter((w) => t.includes(w)).length;
+  return hits / tokens.length >= 0.6;
+}
+
+/**
+ * Append last customer wording onto need when they correct the pending summary.
+ * Returns the new need, or null when this is yes / stall / already captured.
+ */
+function applyPendingNeedAmendment(last: string, currentNeed: string): string | null {
+  const t = last.trim();
+  if (!t) return null;
+  if (looksLikeBookingAffirmation(t) || looksLikeConfirmStall(t)) return null;
+  if (looksLikeNothingToAdd(t) || looksLikeNeedDeixis(t)) return null;
+  const existing = currentNeed.trim();
+  if (lastLooksLikeAlreadyCapturedNeed(t, existing)) return null;
+  const resolved = resolveNeedFromReply(t, existing);
+  if ("reject" in resolved) return null;
+  const need = resolved.need.trim();
+  if (!need || need === existing) return null;
+  return need;
+}
+
 /**
  * Ensure a confirmed booking always goes through book_meeting (HITL), never a
  * free-text reply, and treat a short "yes" after confirm_details as confirmation.
@@ -263,15 +312,20 @@ export function reconcileBooking(
   }
 
   // Already awaiting yes from a prior turn.
-  // Corrections/additions (save_fields this turn) → re-show confirm with updated facts.
-  // Duplicate confirm-shaped replies → suppress. Other clarifications → keep.
+  // Corrections/additions (save_fields or rails append) → re-show confirm.
+  // Duplicate confirm-shaped replies with no change / stall → suppress.
   if (enteredPending && confirm === "pending" && !affirmed) {
-    const amended = BOOKING_CONFIRM_AMEND_KEYS.some((key) => {
-      if (!(key in nextFields)) return false;
-      const next = String(nextFields[key] ?? "").trim();
-      const prev = String(ctx.lead.fields[key] ?? "").trim();
-      return Boolean(next) && next !== prev;
-    });
+    let amended = bookingFieldsAmended(nextFields, ctx.lead.fields);
+    if (!amended) {
+      const patched = applyPendingNeedAmendment(
+        last,
+        String(fields.need ?? nextFields.need ?? ""),
+      );
+      if (patched) {
+        nextFields.need = patched;
+        amended = true;
+      }
+    }
     if (amended) {
       reply = railsConfirmReply(ctx, { ...fields, ...nextFields });
     } else if (looksLikeBookingConfirmReply(reply)) {
@@ -831,14 +885,35 @@ export function registerBookingCapability(): void {
               .optional()
               .describe("Ignored - confirm text is built by the system"),
           }),
-          execute: async () => {
+            execute: async () => {
             const merged = { ...fieldsForTurn, ...collected.fields };
             if (bookingConfirmStatus(merged) === "pending") {
-              return JSON.stringify({
-                ok: false,
-                skip: true,
-                hint: "Already awaiting yes - do not resend confirm_details.",
-              });
+              const last = lastLeadText(ctx);
+              if (looksLikeBookingAffirmation(last) || looksLikeConfirmStall(last)) {
+                return JSON.stringify({
+                  ok: false,
+                  skip: true,
+                  hint: "Already awaiting yes - do not resend confirm_details.",
+                });
+              }
+              const patched = applyPendingNeedAmendment(
+                last,
+                String(merged.need ?? ""),
+              );
+              if (!patched) {
+                return JSON.stringify({
+                  ok: false,
+                  skip: true,
+                  hint: "Already awaiting yes - do not resend confirm_details.",
+                });
+              }
+              collected.fields = { ...collected.fields, need: patched };
+              const phoneRaw = savedPhone(merged) || callbackPhone(ctx) || "";
+              const displayPhone = formatPhoneDisplay(phoneRaw) || phoneRaw;
+              const forConfirm = { ...merged, ...collected.fields, need: patched };
+              collected.reply = buildBookingConfirmText(lang, forConfirm, displayPhone);
+              collected.replyLocked = true;
+              return JSON.stringify({ ok: true, amended: "need" });
             }
             const gaps = bookingFieldGaps(merged, required);
             if (gaps.length > 0) {

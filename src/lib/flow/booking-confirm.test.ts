@@ -110,6 +110,37 @@ describe("booking confirm_details rails", () => {
     expect(collected2.reply).toBe(before);
   });
 
+  it("confirm_details while pending appends a תוסיף extra instead of skip", async () => {
+    const fields = {
+      booking_flow: "active",
+      booking_confirm: "pending",
+      time_preference: "9 באוקטובר בשעה 13:00",
+      name: "נווה עיני 2",
+      need: "demo",
+      phone: "0526595639",
+    };
+    const ctx = ctxWithFields(fields);
+    ctx.messages = [{ role: "lead", text: "תוסיף שאנחנו עסק בתחום הנדלן" }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+      replyLocked?: boolean;
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const confirm = tools.confirm_details as {
+      execute: (args: Record<string, unknown>) => Promise<unknown>;
+    };
+    const result = await confirm.execute({});
+    expect(JSON.parse(String(result))).toMatchObject({ ok: true, amended: "need" });
+    expect(collected.fields.need).toMatch(/נדלן/);
+    expect(collected.reply).toMatch(/הנה פרטי הפגישה/);
+    expect(collected.reply).toMatch(/נדלן/);
+    expect(collected.reply).toMatch(/מועד:/);
+    expect(collected.replyLocked).toBe(true);
+  });
+
   it("ask_field need presents transcript interest when CRM interest is empty", async () => {
     const fields = {
       booking_flow: "active",
