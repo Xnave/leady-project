@@ -12,7 +12,7 @@ import { interpretTurn } from "@/lib/flow/interpreter";
 import { answerFaq, classifyIntent, draftQuestion, extractFields, talkTurn } from "@/lib/flow/llm";
 import { llmConfigured } from "@/lib/flow/model";
 import type { TurnContext } from "@/lib/flow/types";
-import { applyPreset, type BuiltinPresetId } from "@/lib/persona/presets";
+import { DEFAULT_PERSONA, PRESETS, applyPreset, type BuiltinPresetId } from "@/lib/persona/presets";
 import type { Persona } from "@/lib/persona/types";
 import { KNOWLEDGE, fixtureAgent, fixtureTenant } from "./persona-eval/fixture";
 import { judge, type Score } from "./persona-eval/judge";
@@ -28,12 +28,23 @@ function arg(name: string): string[] | undefined {
 }
 
 const ARMS = (arg("arms") ?? ["legacy", "warm_concierge", "precise_short", "premium_formal"]) as Arm[];
+for (const a of ARMS) {
+  if (a !== "legacy" && !(a in PRESETS)) {
+    console.error(`Unknown arm "${a}". Use legacy or one of: ${Object.keys(PRESETS).join(", ")}`);
+    process.exit(1);
+  }
+}
 const ONLY = arg("only");
 
+/**
+ * legacy and warm_concierge both use DEFAULT_PERSONA (what every existing tenant gets: no name,
+ * neutral gender), so the headline before/after compares like with like. The other presets
+ * exercise named female and male agents so Hebrew gender is measured in all three forms.
+ */
 function personaFor(arm: Arm): Persona {
-  // Baseline is graded against the default persona, so "legacy vs warm_concierge" is a fair before/after.
-  const id: BuiltinPresetId = arm === "legacy" ? "warm_concierge" : arm;
-  return applyPreset(id, { agentName: "נועה", gender: "female", rules: [] });
+  if (arm === "legacy" || arm === "warm_concierge") return DEFAULT_PERSONA;
+  if (arm === "premium_formal") return applyPreset(arm, { agentName: "דניאל", gender: "male", rules: [] });
+  return applyPreset(arm, { agentName: "נועה", gender: "female", rules: [] });
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -73,11 +84,16 @@ async function runScenario(arm: Arm, sc: Scenario): Promise<Result> {
 
   for (const line of sc.customer) {
     ctx.messages.push({ role: "lead", text: line });
-    const sent: string[] = [];
+    const snapshot = structuredClone({ conversation: ctx.conversation, lead: ctx.lead, messages: ctx.messages });
+    let sent: string[] = [];
     let degraded = false;
     await withRetry(
-      () =>
-        interpretTurn(ctx, {}, {
+      () => {
+        // A retry must replay the same turn, not continue from a half-applied one.
+        Object.assign(ctx, structuredClone(snapshot));
+        sent = [];
+        degraded = false;
+        return interpretTurn(ctx, {}, {
           classify: classifyIntent,
           extract: extractFields,
           draftQuestion,
@@ -103,12 +119,17 @@ async function runScenario(arm: Arm, sc: Scenario): Promise<Result> {
           },
           scheduleNudge: async () => undefined,
           log: () => undefined,
-        }),
+        });
+      },
       `${arm}/${sc.id}`,
     );
     const reply = sent.join("\n");
     if (degraded) {
       turns.push({ customer: line, reply, score: null, error: "LLM unavailable (quota/rate limit) — talk degraded" });
+      continue;
+    }
+    if (!sent.length) {
+      turns.push({ customer: line, reply: "", score: null, error: "no reply sent (hand-off or waiting for a human)" });
       continue;
     }
     const transcript = ctx.messages.slice(0, -sent.length || undefined).map((m) => ({ role: m.role, text: m.text }));
@@ -156,7 +177,7 @@ function scorecard(sum: ReturnType<typeof summarize>): string {
   const rows = [
     ...METRICS.map((m) => `| ${m} | ${ARMS.map((a) => fmt(sum[a]?.[m])).join(" | ")} |`),
     `| rulesRespected % | ${ARMS.map((a) => fmt(sum[a]?.rulesPct, 0)).join(" | ")} |`,
-    `| graded / failed | ${ARMS.map((a) => `${sum[a]?.graded ?? 0} / ${sum[a]?.failed ?? 0}`).join(" | ")} |`,
+    `| graded / not graded | ${ARMS.map((a) => `${sum[a]?.graded ?? 0} / ${sum[a]?.failed ?? 0}`).join(" | ")} |`,
   ];
   const checks: string[] = [];
   const L = sum.legacy;
@@ -217,7 +238,13 @@ async function main() {
         console.log(r.turns.map((t) => (t.score ? "✓" : "✗")).join(""));
       } catch (e) {
         console.log(`error: ${String(e).slice(0, 160)}`);
-        results.push({ arm, scenario: sc.id, lang: sc.lang, turns: [] });
+        // Count every expected turn as not graded so a crash can't make the scorecard look clean.
+        results.push({
+          arm,
+          scenario: sc.id,
+          lang: sc.lang,
+          turns: sc.customer.map((customer) => ({ customer, reply: "", score: null, error: `scenario crashed: ${String(e).slice(0, 120)}` })),
+        });
       }
       writeFileSync(join(dir, "raw.json"), JSON.stringify(results, null, 2));
     }
