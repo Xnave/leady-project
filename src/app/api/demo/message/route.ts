@@ -92,22 +92,29 @@ export async function POST(req: Request) {
     triggerMessageId: inserted.messageId,
   });
 
-  // No Inngest server: skip the wait and answer in-process right away.
-  const answered = enqueued
-    ? await waitForAgentReply({
-        conversationId: inserted.conversationId,
-        after: enqueuedAt,
-        timeoutMs: 18_000,
-      })
-    : false;
-
-  // Local DX: if Inngest worker is not running, fall back once so demo still works.
-  if (!answered) {
+  // Sync fallback only when enqueue failed — never race an in-flight Inngest turn.
+  let answered = false;
+  if (enqueued) {
+    answered = await waitForAgentReply({
+      conversationId: inserted.conversationId,
+      after: enqueuedAt,
+      timeoutMs: 18_000,
+    });
+    if (!answered) {
+      console.warn(
+        JSON.stringify({
+          msg: "demo.turn.inngest_timeout",
+          conversationId: inserted.conversationId,
+          hint: "Inngest still may complete; client should poll. No sync runTurnNow.",
+        }),
+      );
+    }
+  } else {
     console.warn(
       JSON.stringify({
         msg: "demo.turn.fallback_sync",
         conversationId: inserted.conversationId,
-        reason: enqueued ? "inngest_timeout" : "inngest_unreachable",
+        reason: "inngest_unreachable",
       }),
     );
     const turn = await runTurnNow({
@@ -116,6 +123,7 @@ export async function POST(req: Request) {
       triggerMessageId: inserted.messageId,
     });
     await tryDispatchNudgeEvent(turn.nudgeEvent);
+    answered = true;
   }
 
   const lead = await prisma.lead.findFirstOrThrow({
@@ -124,6 +132,6 @@ export async function POST(req: Request) {
   return NextResponse.json({
     leadId: lead.id,
     conversationId: inserted.conversationId,
-    viaInngest: answered,
+    viaInngest: enqueued && answered,
   });
 }

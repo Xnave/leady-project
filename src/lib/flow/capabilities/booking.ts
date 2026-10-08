@@ -99,7 +99,8 @@ function displayTimePreference(
   return text;
 }
 
-function buildBookingConfirmText(
+/** Deterministic confirm body — used by confirm_details and reconcileBooking. */
+export function buildBookingConfirmText(
   lang: "en" | "he",
   fields: LeadFields,
   phoneDisplay: string,
@@ -122,6 +123,13 @@ function buildBookingConfirmText(
   if (email) body.push(`${labelEmail}: ${email}`);
   body.push("", chat.bookingConfirmAsk);
   return body.join("\n");
+}
+
+function railsConfirmReply(ctx: TurnContext, fields: LeadFields): string {
+  const lang = replyLang(ctx, lastLeadText(ctx));
+  const phoneRaw = savedPhone(fields) || callbackPhone(ctx) || "";
+  const displayPhone = formatPhoneDisplay(phoneRaw) || phoneRaw;
+  return buildBookingConfirmText(lang, fields, displayPhone);
 }
 
 export type TalkCollected = TalkOutcome & {
@@ -173,6 +181,8 @@ export function reconcileBooking(
     return active ? { ...out, effects } : out;
   }
 
+  // Pending from a prior turn (lead fields only) — not set by tools this turn.
+  const enteredPending = bookingConfirmStatus(ctx.lead.fields) === "pending";
   let confirm = bookingConfirmStatus(fields);
   const nextFields = { ...(out.fields ?? {}) };
   const last = lastLeadText(ctx);
@@ -227,6 +237,18 @@ export function reconcileBooking(
       { hours: venueHoursFromCtx(ctx) },
       { ctx },
     );
+  }
+
+  // Gaps filled but confirm never started — rails own the one confirm message.
+  if (gapsAfter.length === 0 && confirm === "" && !affirmed) {
+    nextFields.booking_confirm = "pending";
+    confirm = "pending";
+    reply = railsConfirmReply(ctx, { ...fields, ...nextFields });
+  }
+
+  // Already awaiting yes from a prior turn: do not let reply re-ask / re-summarize.
+  if (enteredPending && confirm === "pending" && !affirmed) {
+    reply = "";
   }
 
   // Never mark the talk goal complete while booking is still in progress.

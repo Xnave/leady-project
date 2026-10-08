@@ -33,18 +33,8 @@ export async function POST(req: Request) {
       conversationId: inserted.conversationId,
       triggerMessageId: inserted.messageId,
     });
-    // Fallback when Inngest worker is not running (local DX).
-    if (enqueued) await new Promise((r) => setTimeout(r, 800));
-    const agentMsg = enqueued
-      ? await prisma.message.findFirst({
-          where: {
-            conversationId: inserted.conversationId,
-            role: "agent",
-            createdAt: { gt: new Date(Date.now() - 60_000) },
-          },
-        })
-      : null;
-    if (!agentMsg) {
+    // Sync only when enqueue failed — never race an in-flight Inngest turn.
+    if (!enqueued) {
       const turn = await runTurnNow({
         tenantId,
         conversationId: inserted.conversationId,

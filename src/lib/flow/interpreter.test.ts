@@ -585,4 +585,110 @@ describe("reconcileBooking (booking capability reconcile hook)", () => {
     expect(out.fields?.booking_confirm).toBe("confirmed");
     expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBe(true);
   });
+
+  it("auto-emits rails confirm when gaps are empty and confirm not started", async () => {
+    const { reconcileBooking } = await import("./capabilities/booking");
+    const stage = {
+      type: "talk" as const,
+      prompt: "",
+      allowBook: true,
+      required_for_book: ["time_preference", "name", "need"],
+      on_complete: "done",
+      on_escalate: "escalate",
+    };
+    const state = ctx({
+      tenant: {
+        name: "Demo",
+        phone: "",
+        intro: "",
+        chatLanguage: "he",
+      },
+      conversation: {
+        id: "c1",
+        status: "open",
+        flowState: "talk",
+        flowVersion: 1,
+        nudgeCountByStage: {},
+      },
+      agent: {
+        id: "a1",
+        tenantId: "t1",
+        systemPrompt: "",
+        knowledgeText: "",
+        flow: defaultFlow(),
+        flowVersion: 1,
+        leadSchema: defaultLeadSchema,
+        hitlPolicy: defaultHitlPolicy,
+      },
+      lead: {
+        id: "l1",
+        externalUserId: "+972501234567",
+        fields: {
+          booking_flow: "active",
+          time_preference: "מחר ב17:00",
+          name: "נווה עיני",
+          need: "שעות פניות",
+          phone: "0526595639",
+        },
+      },
+      messages: [{ role: "lead", text: "0526595639" }],
+    });
+    const out = reconcileBooking(state, stage, {
+      reply: "האם הפרטים נכונים ואפשר לשמור את הבקשה?",
+    });
+    expect(out.fields?.booking_confirm).toBe("pending");
+    expect(out.reply).toMatch(/מעולה, הנה פרטי הפגישה/);
+    expect(out.reply).toMatch(/האם הפרטים נכונים ואפשר לשמור/);
+    expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBeFalsy();
+  });
+
+  it("suppresses reply re-ask while confirm is already pending from a prior turn", async () => {
+    const { reconcileBooking } = await import("./capabilities/booking");
+    const stage = {
+      type: "talk" as const,
+      prompt: "",
+      allowBook: true,
+      required_for_book: ["time_preference", "name", "need"],
+      on_complete: "done",
+      on_escalate: "escalate",
+    };
+    const state = ctx({
+      conversation: {
+        id: "c1",
+        status: "open",
+        flowState: "talk",
+        flowVersion: 1,
+        nudgeCountByStage: {},
+      },
+      agent: {
+        id: "a1",
+        tenantId: "t1",
+        systemPrompt: "",
+        knowledgeText: "",
+        flow: defaultFlow(),
+        flowVersion: 1,
+        leadSchema: defaultLeadSchema,
+        hitlPolicy: defaultHitlPolicy,
+      },
+      lead: {
+        id: "l1",
+        externalUserId: "+972501234567",
+        fields: {
+          booking_flow: "active",
+          booking_confirm: "pending",
+          time_preference: "8 באוקטובר 2026 בשעה 17:00",
+          name: "נווה עיני",
+          need: "demo",
+          phone: "0526595639",
+        },
+      },
+      messages: [{ role: "lead", text: "רגע" }],
+    });
+    const out = reconcileBooking(state, stage, {
+      reply: "האם הפרטים נכונים ואפשר לשמור את הבקשה?",
+    });
+    expect(out.reply).toBe("");
+    expect(out.fields?.booking_confirm).toBeUndefined();
+    expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBeFalsy();
+  });
 });
