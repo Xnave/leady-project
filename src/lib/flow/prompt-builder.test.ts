@@ -173,3 +173,40 @@ describe("question style vs boundaries", () => {
     expect(s).toMatch(/up to 3 related clarifying questions/);
   });
 });
+
+describe("first message", () => {
+  function firstCtx(): TurnContext {
+    ensureFlowRegistry();
+    const flow = flowForCatalog("inbox");
+    return {
+      tenantId: "t1",
+      tenant: { name: "Demo", phone: "", intro: "שלום, הגעתם לדמו. במה אפשר לעזור?", chatLanguage: "multi" },
+      agent: {
+        id: "a1", tenantId: "t1", systemPrompt: "", knowledgeText: "", flow, flowVersion: 1,
+        leadSchema: defaultLeadSchema, hitlPolicy: defaultHitlPolicy, persona: DEFAULT_PERSONA,
+      },
+      conversation: { id: "c1", status: "open", flowState: "talk", flowVersion: 1, nudgeCountByStage: {} },
+      lead: { id: "l1", externalUserId: "u1", fields: {} },
+      messages: [{ role: "lead", text: "How much for a kitchen?" }],
+    } as TurnContext;
+  }
+  afterEach(() => {
+    delete process.env.PROMPT_PIPELINE;
+  });
+
+  it("uses the intro as inspiration, answers first, no 'how can I help' after a real question", () => {
+    const ctx = firstCtx();
+    const s = buildTalkSystemPrompt(ctx, ctx.agent.flow.stages.talk as TalkStage);
+    expect(s).not.toMatch(/do not invent a different welcome/);
+    expect(s).toMatch(/FIRST MESSAGE:[^\n]*customer's language/);
+    expect(s).toMatch(/do not ask how you can help/i);
+  });
+
+  it("legacy pipeline keeps the verbatim-intro instruction", () => {
+    process.env.PROMPT_PIPELINE = "legacy";
+    const ctx = firstCtx();
+    expect(buildTalkSystemPrompt(ctx, ctx.agent.flow.stages.talk as TalkStage)).toMatch(
+      /do not invent a different welcome/,
+    );
+  });
+});

@@ -8,6 +8,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
+import { cannedIntroText, hasAgentReplied } from "@/lib/flow/intro";
 import { interpretTurn } from "@/lib/flow/interpreter";
 import { answerFaq, classifyIntent, draftQuestion, extractFields, talkTurn } from "@/lib/flow/llm";
 import { llmConfigured } from "@/lib/flow/model";
@@ -35,6 +36,8 @@ for (const a of ARMS) {
   }
 }
 const ONLY = arg("only");
+// Free-tier Gemini allows only a few requests per minute; space turns out (ms).
+const PACE_MS = Number(arg("pace")?.[0] ?? 4000);
 
 /**
  * legacy and warm_concierge both use DEFAULT_PERSONA (what every existing tenant gets: no name,
@@ -99,8 +102,11 @@ async function runScenario(arm: Arm, sc: Scenario): Promise<Result> {
           draftQuestion,
           answerFaq,
           talk: async (c, stage) => {
+            const first = !hasAgentReplied(c);
             const out = await talkTurn(c, stage);
             if (out.effects?.some((e) => e.args?.reason === "llm_unavailable")) degraded = true;
+            // On a first turn the LLM-down fallback is the bare canned intro, with no marker.
+            if (first && out.reply?.trim() === cannedIntroText(c).trim()) degraded = true;
             return out;
           },
           runEffect: async (_c, effectId) => ({ ok: true, reply: `${effectId} recorded` }),
@@ -123,6 +129,7 @@ async function runScenario(arm: Arm, sc: Scenario): Promise<Result> {
       },
       `${arm}/${sc.id}`,
     );
+    await sleep(PACE_MS);
     const reply = sent.join("\n");
     if (degraded) {
       turns.push({ customer: line, reply, score: null, error: "LLM unavailable (quota/rate limit) — talk degraded" });
