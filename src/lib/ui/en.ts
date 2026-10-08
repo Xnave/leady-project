@@ -741,6 +741,7 @@ export const en: UiCopy = {
       unknown_value: "Unknown option.",
     },
     nameOverride: "The name can't contain instructions or links.",
+    previewQuota: "The AI quota for this environment is used up for now, so the live preview is unavailable. Your settings still save normally.",
     previewHandoff: "Your agent would hand this one to a teammate.",
     previewSamples: { pricing: "Price question", vague: "Vague opener", complaint: "Upset customer" },
     previewLangToggle: "Preview language",
