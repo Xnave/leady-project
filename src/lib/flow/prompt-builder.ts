@@ -47,9 +47,9 @@ export class PromptBuilder {
     const intro = ctx.tenant?.intro?.trim() || "";
     if (!hasAgentReplied(ctx)) {
       this.parts.push(
-        lang === "he"
+        legacyPromptPipeline()
           ? `FIRST MESSAGE: Greet using this business intro (do not invent a different welcome): ${intro || "(short hello)"}. Then address their message.`
-          : `FIRST MESSAGE: Greet using this business intro (do not invent a different welcome): ${intro || "(short hello)"}. Then address their message.`,
+          : `FIRST MESSAGE: Open with a short welcome in the spirit of this business intro, in the customer's language and your persona's voice: ${intro || "(short hello)"}. If they only said hello, you may use the intro as written. If they already asked something, keep the welcome to a few words, answer it in the same message, and do not ask how you can help.`,
       );
     }
     return this;
