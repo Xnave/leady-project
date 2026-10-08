@@ -194,7 +194,7 @@ export const he: UiCopy = {
     fieldBookingApproved: "הודעת ביקור מאושר",
     fieldBookingRejected: "הודעת ביקור נדחה",
     templatesHint:
-      "השאירו ריק לברירת מחדל לפי שפה. מציינים: {{date}} {{time}} {{slot}} {{name}} {{phone}} {{details}} {{need}} {{kind}} {{address}} {{hours}} {{email}}",
+      "השאירו ריק לברירת מחדל לפי שפה. מציינים: {{date}} {{time}} {{weekday}} {{slot}} {{name}} {{phone}} {{details}} {{need}} {{kind}} {{address}} {{hours}} {{email}}",
     fieldIdleDays: "איפוס שיחה אחרי ימי שקט",
     idleHint:
       "ההודעה הראשונה תמיד מקבלת את המבוא (ללא AI). אחרי תקופת שקט ארוכה הסוכן יכול לשאול אם לפתוח שיחה חדשה - בלי לסובב אוטומטית. 0 = לא להתייחס לשקט כרמז.",

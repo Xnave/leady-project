@@ -56,7 +56,7 @@ describe("booking confirm_details rails", () => {
   it("builds deterministic confirm with calendar slot and skips a second confirm", async () => {
     const fields = {
       booking_flow: "active",
-      time_preference: "מחר ב-17:00",
+      time_preference: "מחר ב12",
       name: "נווה עיני",
       need: "מענה לא מכסה שעות פניות",
       phone: "0526595639",
@@ -76,11 +76,11 @@ describe("booking confirm_details rails", () => {
 
     const first = await confirm.execute({});
     expect(first).toBe("ok");
-    expect(collected.reply).toMatch(/מעולה, הנה פרטי הפגישה/);
+    expect(collected.reply).toMatch(/הנה פרטי הפגישה/);
     expect(collected.reply).toMatch(/פרטי הפגישה: מענה לא מכסה/);
     expect(collected.reply).toMatch(/מועד:/);
-    expect(collected.reply).not.toMatch(/מחר ב-17/);
-    expect(collected.reply).toMatch(/17:00/);
+    expect(collected.reply).not.toMatch(/מחר ב12|מחר ב-12/);
+    expect(collected.reply).toMatch(/בשעה 12:00/);
     expect(collected.reply).toMatch(/052-659-5639|0526595639/);
     expect(collected.fields.booking_confirm).toBe("pending");
 
@@ -131,7 +131,7 @@ describe("booking confirm_details rails", () => {
       execute: (args: { field: string }) => Promise<unknown>;
     };
     await ask.execute({ field: "need" });
-    expect(collected.reply).toMatch(/ככה הבנתי עד עכשיו|מעולה/);
+    expect(collected.reply).toMatch(/הנה מה שהבנתי עד עכשיו/);
     expect(collected.reply).toMatch(/שעות הפניות|מפת הזדמנויות/);
     expect(String(collected.fields.interest ?? "")).toMatch(/שעות הפניות|מפת הזדמנויות/);
   });

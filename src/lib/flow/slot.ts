@@ -300,10 +300,27 @@ export function resolveCalendarDateRange(
 }
 
 function formatDateLabel(d: Date, lang: "en" | "he"): string {
+  // Year is omitted in customer-facing copy - current year is obvious.
   if (lang === "he") {
-    return `${d.getDate()} ב${HE_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+    return `${d.getDate()} ב${HE_MONTHS[d.getMonth()]}`;
   }
-  return `${EN_MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  return `${EN_MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
+function formatWeekdayLabel(d: Date, lang: "en" | "he"): string {
+  return lang === "he" ? HE_WEEKDAYS[d.getDay()] : EN_WEEKDAYS[d.getDay()];
+}
+
+/** Bare hour digit from "ב12" / "at 6" when colon time is absent. */
+function bareHourDigit(text: string): number | undefined {
+  const forTime = stripDateFragments(text);
+  const bare = forTime.match(
+    /(?:ב־|ב-|at\s+|בשעה\s+|ב\s*)(\d{1,2})(?!\d)(?!\s*:)/i,
+  );
+  if (!bare) return undefined;
+  const h = Number(bare[1]);
+  if (!Number.isFinite(h) || h < 0 || h > 23) return undefined;
+  return h;
 }
 
 /** Split an already-normalized display string back into date + time. */
@@ -332,24 +349,31 @@ export function normalizeSlot(
   const existing = splitExistingDisplay(text, lang);
   if (existing) {
     const day = resolveDay(existing.dateLabel, now, lang);
+    const dateLabel = day ? formatDateLabel(day, lang) : existing.dateLabel;
     const display =
-      existing.dateLabel && existing.timeLabel
+      dateLabel && existing.timeLabel
         ? lang === "he"
-          ? `${existing.dateLabel} בשעה ${existing.timeLabel}`
-          : `${existing.dateLabel} at ${existing.timeLabel}`
+          ? `${dateLabel} בשעה ${existing.timeLabel}`
+          : `${dateLabel} at ${existing.timeLabel}`
         : text;
     return {
       raw: text,
       dateIso: day ? toDateIso(day) : undefined,
       time: existing.timeLabel,
-      dateLabel: existing.dateLabel,
+      dateLabel,
       timeLabel: existing.timeLabel,
       display,
     };
   }
 
   const day = resolveDay(text, now, lang);
-  const time = parseTime(text);
+  // Bare "ב12" stays ambiguous for the hours gate (isAmbiguousBareHour), but
+  // customer-facing display still needs a clock hour so templates are not blank.
+  let time = parseTime(text);
+  if (!time) {
+    const bare = bareHourDigit(text);
+    if (bare !== undefined) time = `${pad2(bare)}:00`;
+  }
 
   if (!day && !time) {
     return {
@@ -383,6 +407,37 @@ export function normalizeSlot(
       : dateLabel || text;
 
   return { raw: text, dateIso, time, dateLabel, timeLabel, display };
+}
+
+/**
+ * Confirm / CRM-facing slot line. Relative wording ("מחר ב12") becomes a
+ * calendar date + HH:MM. Bare 1–12 hours are shown as that clock hour (:00);
+ * the hours gate still asks morning/evening before save when configured.
+ */
+export function formatSlotForDisplay(
+  raw: string,
+  opts?: { now?: Date; lang?: "en" | "he" },
+): string {
+  const text = raw.trim();
+  if (!text) return "";
+  const slot = normalizeSlot(text, opts);
+  if (slot.dateIso && slot.timeLabel) return slot.display;
+  if (slot.dateLabel && slot.timeLabel && slot.display !== text) return slot.display;
+  if (slot.dateIso && slot.display !== text) return slot.display;
+  return text;
+}
+
+/** Weekday name for approval copy ("חמישי" / "Thursday"). */
+export function weekdayLabelForSlot(
+  raw: string,
+  opts?: { now?: Date; lang?: "en" | "he" },
+): string {
+  const lang = opts?.lang ?? "he";
+  const slot = normalizeSlot(raw, opts);
+  if (!slot.dateIso) return "";
+  const day = new Date(`${slot.dateIso}T12:00:00`);
+  if (Number.isNaN(day.getTime())) return "";
+  return formatWeekdayLabel(day, lang);
 }
 
 /**

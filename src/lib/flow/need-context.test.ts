@@ -7,7 +7,7 @@ import {
   resolveNeedFromReply,
 } from "./need-context";
 import { askBookingField } from "./booking";
-import { normalizeSlot } from "./slot";
+import { formatSlotForDisplay, normalizeSlot } from "./slot";
 
 describe("need-context", () => {
   it("reads CRM interest", () => {
@@ -54,10 +54,10 @@ describe("need-context", () => {
     const he = askBookingField("he", "need", {
       gatheredNeed: "המענה לא מכסה את כל שעות הפניות",
     });
-    expect(he).toMatch(/ככה הבנתי עד עכשיו|מה שכבר הבנתי/);
+    expect(he).toMatch(/הנה מה שהבנתי עד עכשיו/);
     expect(he).toMatch(/המענה לא מכסה/);
-    expect(he).toMatch(/יש משהו נוסף/);
-    expect(askBookingField("he", "need")).toMatch(/אשמח להכין את הפגישה/);
+    expect(he).toMatch(/יש עוד משהו שחשוב/);
+    expect(askBookingField("he", "need")).toMatch(/מה חשוב לך שנדע מראש/);
   });
 });
 
@@ -71,5 +71,14 @@ describe("normalizeSlot display for booking confirm", () => {
     expect(out.dateIso).toBe("2026-10-08");
     expect(out.display).toMatch(/17:00/);
     expect(out.display).not.toMatch(/^מחר/);
+  });
+
+  it("formats bare hour like מחר ב12 as calendar date + 12:00", () => {
+    const out = formatSlotForDisplay("מחר ב12", {
+      now: new Date("2026-10-08T12:00:00"),
+      lang: "he",
+    });
+    expect(out).toBe("9 באוקטובר בשעה 12:00");
+    expect(out).not.toMatch(/מחר|2026/);
   });
 });

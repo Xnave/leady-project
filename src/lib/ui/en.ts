@@ -194,7 +194,7 @@ export const en: UiCopy = {
     fieldBookingApproved: "Approved booking message",
     fieldBookingRejected: "Declined booking message",
     templatesHint:
-      "Leave empty for language defaults. Placeholders: {{date}} {{time}} {{slot}} {{name}} {{phone}} {{details}} {{need}} {{kind}} {{address}} {{hours}} {{email}}",
+      "Leave empty for language defaults. Placeholders: {{date}} {{time}} {{weekday}} {{slot}} {{name}} {{phone}} {{details}} {{need}} {{kind}} {{address}} {{hours}} {{email}}",
     fieldIdleDays: "Reset conversation after idle days",
     idleHint:
       "The first customer message always gets this intro (no AI). After a long quiet period the agent may ask whether to start a fresh conversation - it will not rotate automatically. 0 = never treat silence as a cue.",

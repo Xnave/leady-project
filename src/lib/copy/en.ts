@@ -67,12 +67,8 @@ export const chat: ChatCopy = {
     "Visit details: {{details}}",
     "Address: {{address}}",
   ].join("\n"),
-  bookingApprovedTemplate: [
-    "Your visit is confirmed for {{slot}}.",
-    "Name: {{name}}",
-    "Phone: {{phone}}",
-    "Visit details: {{details}}",
-  ].join("\n"),
+  bookingApprovedTemplate:
+    "Your visit is confirmed for {{weekday}}, {{date}} at {{time}}.",
   bookingRejected:
     "Unfortunately we could not confirm the visit on {{slot}} for {{name}}. The visit request for that time is cancelled. Please reply with another day and time that works - we're open {{hours}}.",
   bookingReschedule:

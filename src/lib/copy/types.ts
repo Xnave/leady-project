@@ -2,6 +2,8 @@ export type BookingVars = {
   slot: string;
   date: string;
   time: string;
+  /** Weekday name for approval copy (e.g. חמישי / Thursday). */
+  weekday: string;
   address: string;
   hours: string;
   name: string;

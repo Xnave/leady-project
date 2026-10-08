@@ -79,8 +79,9 @@ describe("booking helpers", () => {
   it("fills booking templates and drops empty labeled lines", () => {
     const text = fillTemplate(copyFor("en").chat.bookingRequestTemplate, {
       slot: "Thu 18:00",
-      date: "September 10, 2026",
+      date: "September 10",
       time: "18:00",
+      weekday: "Thursday",
       kind: "visit",
       need: "quote",
       details: "quote",
@@ -91,10 +92,30 @@ describe("booking helpers", () => {
       hours: "",
       business: "Acme Co",
     });
-    expect(text).toMatch(/September 10, 2026/);
+    expect(text).toMatch(/September 10/);
     expect(text).toMatch(/Dana/);
     expect(text).toMatch(/Acme Co/);
     expect(text).not.toMatch(/^Phone:/m);
+  });
+
+  it("approval template is a short weekday + time + date line", () => {
+    const text = fillTemplate(copyFor("he").chat.bookingApprovedTemplate, {
+      slot: "9 באוקטובר בשעה 12:00",
+      date: "9 באוקטובר",
+      time: "12:00",
+      weekday: "חמישי",
+      kind: "visit",
+      need: "x",
+      details: "should not appear",
+      name: "נווה",
+      phone: "052-659-5639",
+      email: "",
+      address: "",
+      hours: "",
+      business: "Zapidly",
+    });
+    expect(text).toBe("הפגישה אושרה ליום חמישי בשעה 12:00 בתאריך 9 באוקטובר.");
+    expect(text).not.toMatch(/נווה|052|should not appear/);
   });
 });
 
@@ -150,7 +171,7 @@ describe("gateBookOnGaps", () => {
   it("asks for time and includes opening hours", () => {
     expect(askBookingField("he", "time_preference", { hours: "א-ה 9-19" })).toMatch(/א-ה 9-19/);
     expect(askBookingField("he", "time_preference", { hours: "א-ה 9-19" })).toMatch(
-      /מתי יהיה לך נוח להיפגש/,
+      /איזה יום ושעה יתאימו לך/,
     );
     expect(askBookingField("en", "time_preference", { hours: "Sun–Thu 09:00–19:00" })).toMatch(
       /Sun–Thu 09:00–19:00/,
@@ -186,7 +207,7 @@ describe("normalizeSlot", () => {
     const out = normalizeSlot("11.11.26 10:00", { lang: "he" });
     expect(out.dateIso).toBe("2026-11-11");
     expect(out.time).toBe("10:00");
-    expect(out.display).toBe("11 בנובמבר 2026 בשעה 10:00");
+    expect(out.display).toBe("11 בנובמבר בשעה 10:00");
   });
 
   it("time-only does not put בשעה into dateLabel", () => {

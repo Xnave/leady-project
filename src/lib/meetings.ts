@@ -21,7 +21,7 @@ import {
   savedPhone,
 } from "@/lib/flow/booking-collect";
 import { isChatLanguage, resolveReplyLanguage } from "@/lib/flow/locale";
-import { normalizeSlot } from "@/lib/flow/slot";
+import { normalizeSlot, weekdayLabelForSlot } from "@/lib/flow/slot";
 import { summarizeConversation } from "@/lib/flow/summarize";
 import type { TurnContext } from "@/lib/flow/types";
 import { persistTurnFields } from "@/lib/conversations";
@@ -82,6 +82,7 @@ function meetingMessageVars(opts: {
       slot: normalized.display,
       date: normalized.dateLabel,
       time: normalized.timeLabel || normalized.time || "",
+      weekday: weekdayLabelForSlot(opts.slotRaw, { lang: opts.lang }),
       address: opts.address,
       hours: opts.hours,
       name: opts.name,

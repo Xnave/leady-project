@@ -33,7 +33,7 @@ import {
   looksLikeNothingToAdd,
   resolveNeedFromReply,
 } from "../need-context";
-import { normalizeSlot, proposesDifferentSlot } from "../slot";
+import { formatSlotForDisplay, proposesDifferentSlot } from "../slot";
 import {
   bookingNoun,
   bookingConfigFromCtx,
@@ -91,12 +91,7 @@ function displayTimePreference(
   lang: "en" | "he",
   now?: Date,
 ): string {
-  const text = raw.trim();
-  if (!text) return "";
-  const slot = normalizeSlot(text, { lang, now });
-  if (slot.dateIso && slot.timeLabel) return slot.display;
-  if (slot.dateLabel && slot.timeLabel && slot.display !== text) return slot.display;
-  return text;
+  return formatSlotForDisplay(raw, { lang, now });
 }
 
 /** Deterministic confirm body - used by confirm_details and reconcileBooking. */

@@ -286,6 +286,7 @@ export function OnboardWizard(props: Props) {
   const tokens = [
     "{{date}}",
     "{{time}}",
+    "{{weekday}}",
     "{{slot}}",
     "{{name}}",
     "{{phone}}",
