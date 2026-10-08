@@ -637,12 +637,12 @@ describe("reconcileBooking (booking capability reconcile hook)", () => {
       reply: "האם הפרטים נכונים ואפשר לשמור את הבקשה?",
     });
     expect(out.fields?.booking_confirm).toBe("pending");
-    expect(out.reply).toMatch(/מעולה, הנה פרטי הפגישה/);
-    expect(out.reply).toMatch(/האם הפרטים נכונים ואפשר לשמור/);
+    expect(out.reply).toMatch(/הנה פרטי הפגישה/);
+    expect(out.reply).toMatch(/הכול נכון ואפשר לשמור/);
     expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBeFalsy();
   });
 
-  it("suppresses reply re-ask while confirm is already pending from a prior turn", async () => {
+  it("suppresses duplicate confirm re-ask while pending, but keeps clarifications", async () => {
     const { reconcileBooking } = await import("./capabilities/booking");
     const stage = {
       type: "talk" as const,
@@ -651,6 +651,18 @@ describe("reconcileBooking (booking capability reconcile hook)", () => {
       required_for_book: ["time_preference", "name", "need"],
       on_complete: "done",
       on_escalate: "escalate",
+    };
+    const baseLead = {
+      id: "l1",
+      externalUserId: "+972501234567",
+      fields: {
+        booking_flow: "active",
+        booking_confirm: "pending",
+        time_preference: "8 באוקטובר 2026 בשעה 17:00",
+        name: "נווה עיני",
+        need: "demo",
+        phone: "0526595639",
+      },
     };
     const state = ctx({
       conversation: {
@@ -670,25 +682,78 @@ describe("reconcileBooking (booking capability reconcile hook)", () => {
         leadSchema: defaultLeadSchema,
         hitlPolicy: defaultHitlPolicy,
       },
+      lead: baseLead,
+      messages: [{ role: "lead", text: "רגע" }],
+    });
+    const suppressed = reconcileBooking(state, stage, {
+      reply: "הנה פרטי הפגישה, כדי שנוכל לוודא שהכול נכון:\nשם: נווה",
+    });
+    expect(suppressed.reply).toBe("");
+    expect(suppressed.fields?.booking_confirm).toBeUndefined();
+
+    const clarified = reconcileBooking(state, stage, {
+      reply: "בטח, קח את הזמן ותגיד מתי מוכן.",
+    });
+    expect(clarified.reply).toMatch(/קח את הזמן/);
+  });
+
+  it("re-shows confirm when need is amended while pending", async () => {
+    const { reconcileBooking } = await import("./capabilities/booking");
+    const stage = {
+      type: "talk" as const,
+      prompt: "",
+      allowBook: true,
+      required_for_book: ["time_preference", "name", "need"],
+      on_complete: "done",
+      on_escalate: "escalate",
+    };
+    const state = ctx({
+      conversation: {
+        id: "c1",
+        status: "open",
+        flowState: "talk",
+        flowVersion: 1,
+        nudgeCountByStage: {},
+      },
+      tenant: {
+        name: "Zapidly",
+        phone: "",
+        intro: "היי",
+        chatLanguage: "he",
+      },
+      agent: {
+        id: "a1",
+        tenantId: "t1",
+        systemPrompt: "",
+        knowledgeText: "",
+        flow: defaultFlow(),
+        flowVersion: 1,
+        leadSchema: defaultLeadSchema,
+        hitlPolicy: defaultHitlPolicy,
+      },
       lead: {
         id: "l1",
         externalUserId: "+972501234567",
         fields: {
           booking_flow: "active",
           booking_confirm: "pending",
-          time_preference: "8 באוקטובר 2026 בשעה 17:00",
-          name: "נווה עיני",
+          time_preference: "9 באוקטובר בשעה 13:00",
+          name: "נווה עיני 2",
           need: "demo",
           phone: "0526595639",
         },
       },
-      messages: [{ role: "lead", text: "רגע" }],
+      messages: [{ role: "lead", text: "תוסיף שאנחנו עסק בתחום הנדלן" }],
     });
     const out = reconcileBooking(state, stage, {
-      reply: "האם הפרטים נכונים ואפשר לשמור את הבקשה?",
+      reply: "עדכנתי",
+      fields: {
+        need: "demo · עסק בתחום הנדלן",
+      },
     });
-    expect(out.reply).toBe("");
-    expect(out.fields?.booking_confirm).toBeUndefined();
+    expect(out.reply).toMatch(/הנה פרטי הפגישה/);
+    expect(out.reply).toMatch(/נדלן/);
+    expect(out.reply).toMatch(/מועד:/);
     expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBeFalsy();
   });
 });

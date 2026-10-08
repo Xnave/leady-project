@@ -148,6 +148,27 @@ function looksLikeBookingAffirmation(text: string): boolean {
   return looksLikeShortAffirmation(text);
 }
 
+const BOOKING_CONFIRM_AMEND_KEYS = [
+  "need",
+  "name",
+  "time_preference",
+  "phone",
+  "email",
+] as const;
+
+/** True when outbound text is another confirm_details fact block (either language). */
+function looksLikeBookingConfirmReply(reply: string): boolean {
+  const t = reply.trim();
+  if (!t) return false;
+  for (const lang of ["he", "en"] as const) {
+    const chat = copyFor(lang).chat;
+    if (t.includes(chat.bookingConfirmIntro) || t.includes(chat.bookingConfirmAsk)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Ensure a confirmed booking always goes through book_meeting (HITL), never a
  * free-text reply, and treat a short "yes" after confirm_details as confirmation.
@@ -241,9 +262,21 @@ export function reconcileBooking(
     reply = railsConfirmReply(ctx, { ...fields, ...nextFields });
   }
 
-  // Already awaiting yes from a prior turn: do not let reply re-ask / re-summarize.
+  // Already awaiting yes from a prior turn.
+  // Corrections/additions (save_fields this turn) → re-show confirm with updated facts.
+  // Duplicate confirm-shaped replies → suppress. Other clarifications → keep.
   if (enteredPending && confirm === "pending" && !affirmed) {
-    reply = "";
+    const amended = BOOKING_CONFIRM_AMEND_KEYS.some((key) => {
+      if (!(key in nextFields)) return false;
+      const next = String(nextFields[key] ?? "").trim();
+      const prev = String(ctx.lead.fields[key] ?? "").trim();
+      return Boolean(next) && next !== prev;
+    });
+    if (amended) {
+      reply = railsConfirmReply(ctx, { ...fields, ...nextFields });
+    } else if (looksLikeBookingConfirmReply(reply)) {
+      reply = "";
+    }
   }
 
   // Never mark the talk goal complete while booking is still in progress.
@@ -385,7 +418,7 @@ export function registerBookingCapability(): void {
           "If outside bookable hours (including at/after closing), do not save and do not ask other fields until time is valid.",
           "need / פרטי הפגישה: ask_field presents any saved interest and invites extras. Never save pointer phrases (מה שכתבתי למעלה / as above) as need - save_fields resolves them. Soft 'no / nothing else' keeps the gathered interest as need.",
           "Before book_meeting: confirm_details ONCE (only when Gaps is none and booking_confirm is not already pending). Rails write the confirm text - do not invent a second summary. Then after they agree: save_fields booking_confirm=confirmed, then book_meeting.",
-          "Never call confirm_details again while booking_confirm=pending - wait for yes/no.",
+          "While booking_confirm=pending: short yes → book_meeting path; corrections/additions (e.g. תוסיף…) → save_fields with the updated field (append onto need when they add context), then reply briefly - rails re-show the confirm. Never call confirm_details again while pending. Do not call book_meeting until they affirm.",
           `confirm_details labels: פרטי הפגישה / ${noun} details for need - never צורך or Need.`,
           `CRITICAL: Never tell the customer you recorded/submitted a ${noun} request unless you called book_meeting and it returned ok. A plain reply claiming that is a bug.`,
           `After a teammate declines a ${noun}, collect a new time_preference and call book_meeting again - do not invent a confirmation.`,
