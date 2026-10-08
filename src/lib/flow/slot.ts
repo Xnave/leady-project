@@ -441,6 +441,29 @@ export function weekdayLabelForSlot(
 }
 
 /**
+ * Confirm מועד line: "יום שישי בשעה 12:00 בתאריך 9 באוקטובר".
+ * Falls back to formatSlotForDisplay when weekday/time/date cannot all be resolved.
+ */
+export function formatSlotPhrase(
+  raw: string,
+  opts?: { now?: Date; lang?: "en" | "he" },
+): string {
+  const text = raw.trim();
+  if (!text) return "";
+  const lang = opts?.lang ?? "he";
+  const slot = normalizeSlot(text, opts);
+  const weekday = weekdayLabelForSlot(text, opts);
+  const time = slot.timeLabel || slot.time || "";
+  const date = slot.dateLabel || "";
+  if (weekday && time && date) {
+    return lang === "he"
+      ? `יום ${weekday} בשעה ${time} בתאריך ${date}`
+      : `${weekday}, ${date} at ${time}`;
+  }
+  return formatSlotForDisplay(text, opts);
+}
+
+/**
  * True when the customer named a day and/or clock time that conflicts with a
  * staff-offered slot. Used to block false "accept" on a fresh booking ask
  * (e.g. "Sunday at 11" while the offer is Nov 11 at 10:00).

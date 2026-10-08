@@ -76,26 +76,26 @@ describe("booking helpers", () => {
     );
   });
 
-  it("fills booking templates and drops empty labeled lines", () => {
-    const text = fillTemplate(copyFor("en").chat.bookingRequestTemplate, {
-      slot: "Thu 18:00",
-      date: "September 10",
-      time: "18:00",
-      weekday: "Thursday",
+  it("request ack is a short single line without repeating details", () => {
+    const text = fillTemplate(copyFor("he").chat.bookingRequestTemplate, {
+      slot: "9 באוקטובר בשעה 12:00",
+      date: "9 באוקטובר",
+      time: "12:00",
+      weekday: "שישי",
       kind: "visit",
-      need: "quote",
-      details: "quote",
-      name: "Dana",
-      phone: "",
+      need: "should not appear",
+      details: "should not appear",
+      name: "נווה",
+      phone: "052-659-5639",
       email: "",
-      address: "1 Main St",
+      address: "should not appear",
       hours: "",
-      business: "Acme Co",
+      business: "Zapidly",
     });
-    expect(text).toMatch(/September 10/);
-    expect(text).toMatch(/Dana/);
-    expect(text).toMatch(/Acme Co/);
-    expect(text).not.toMatch(/^Phone:/m);
+    expect(text).toBe(
+      "רשמתי בקשה לפגישה ב־9 באוקטובר בשעה 12:00. נציג מZapidly יאשר את הבקשה בקרוב.",
+    );
+    expect(text).not.toMatch(/נווה|052|should not appear|שם:|טלפון:|פרטי/);
   });
 
   it("approval template is a short weekday + time + date line", () => {

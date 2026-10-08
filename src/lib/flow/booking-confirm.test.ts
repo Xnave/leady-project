@@ -80,7 +80,7 @@ describe("booking confirm_details rails", () => {
     expect(collected.reply).toMatch(/פרטי הפגישה: מענה לא מכסה/);
     expect(collected.reply).toMatch(/מועד:/);
     expect(collected.reply).not.toMatch(/מחר ב12|מחר ב-12/);
-    expect(collected.reply).toMatch(/בשעה 12:00/);
+    expect(collected.reply).toMatch(/יום \S+ בשעה 12:00 בתאריך \d+ ב/);
     expect(collected.reply).toMatch(/052-659-5639|0526595639/);
     expect(collected.fields.booking_confirm).toBe("pending");
 

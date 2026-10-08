@@ -7,7 +7,7 @@ import {
   resolveNeedFromReply,
 } from "./need-context";
 import { askBookingField } from "./booking";
-import { formatSlotForDisplay, normalizeSlot } from "./slot";
+import { formatSlotForDisplay, formatSlotPhrase, normalizeSlot } from "./slot";
 
 describe("need-context", () => {
   it("reads CRM interest", () => {
@@ -80,5 +80,13 @@ describe("normalizeSlot display for booking confirm", () => {
     });
     expect(out).toBe("9 באוקטובר בשעה 12:00");
     expect(out).not.toMatch(/מחר|2026/);
+  });
+
+  it("confirm phrase includes weekday", () => {
+    const out = formatSlotPhrase("מחר ב12", {
+      now: new Date("2026-10-08T12:00:00"),
+      lang: "he",
+    });
+    expect(out).toBe("יום שישי בשעה 12:00 בתאריך 9 באוקטובר");
   });
 });

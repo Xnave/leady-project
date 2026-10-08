@@ -59,14 +59,8 @@ export const chat: ChatCopy = {
   askTimeUnclear: "What day and clock time works for you? Please include a specific hour.",
   askTimeInvalidHours:
     "I can't check our opening hours right now. What other day and time works for you?",
-  bookingRequestTemplate: [
-    "Got it - I've noted a visit request for {{date}} at {{time}}. A teammate from {{business}} will confirm or suggest another time.",
-    "Name: {{name}}",
-    "Phone: {{phone}}",
-    "Email: {{email}}",
-    "Visit details: {{details}}",
-    "Address: {{address}}",
-  ].join("\n"),
+  bookingRequestTemplate:
+    "Got it — I've noted a visit request for {{date}} at {{time}}. A teammate from {{business}} will confirm shortly.",
   bookingApprovedTemplate:
     "Your visit is confirmed for {{weekday}}, {{date}} at {{time}}.",
   bookingRejected:

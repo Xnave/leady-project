@@ -56,14 +56,8 @@ export const chat: ChatCopy = {
   askTimeAmbiguous: "רק כדי לוודא שהבנתי נכון — הכוונה לבוקר או לערב? אפשר לכתוב למשל 6 בערב או 18:00.",
   askTimeUnclear: "כדי שאוכל לרשום את המועד נכון, אפשר לציין יום ושעה? למשל, יום שלישי ב־14:00.",
   askTimeInvalidHours: "כרגע לא הצלחתי לבדוק את שעות הפעילות. איזה מועד נוסף יכול להתאים לך?",
-  bookingRequestTemplate: [
-    "רשמתי בקשה לפגישה ב־{{date}} בשעה {{time}}. נציג מ{{business}} יאשר או יציע מועד אחר.",
-    "שם: {{name}}",
-    "טלפון: {{phone}}",
-    "אימייל: {{email}}",
-    "פרטי הפגישה: {{details}}",
-    "כתובת: {{address}}",
-  ].join("\n"),
+  bookingRequestTemplate:
+    "רשמתי בקשה לפגישה ב־{{date}} בשעה {{time}}. נציג מ{{business}} יאשר את הבקשה בקרוב.",
   bookingApprovedTemplate:
     "הפגישה אושרה ליום {{weekday}} בשעה {{time}} בתאריך {{date}}.",
   bookingRejected:

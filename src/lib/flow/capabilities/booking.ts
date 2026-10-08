@@ -33,7 +33,7 @@ import {
   looksLikeNothingToAdd,
   resolveNeedFromReply,
 } from "../need-context";
-import { formatSlotForDisplay, proposesDifferentSlot } from "../slot";
+import { formatSlotForDisplay, formatSlotPhrase, proposesDifferentSlot } from "../slot";
 import {
   bookingNoun,
   bookingConfigFromCtx,
@@ -103,7 +103,7 @@ export function buildBookingConfirmText(
   const chat = copyFor(lang).chat;
   const name = String(fields.name ?? "").trim();
   const need = String(fields.need ?? "").trim();
-  const slot = displayTimePreference(String(fields.time_preference ?? ""), lang);
+  const slot = formatSlotPhrase(String(fields.time_preference ?? ""), { lang });
   const email = String(fields.email ?? "").trim();
   const labelName = lang === "he" ? "שם" : "Name";
   const labelNeed = lang === "he" ? "פרטי הפגישה" : "Visit details";
