@@ -711,7 +711,7 @@ export const he: UiCopy = {
     toneOptions: { friendly: "ידידותי", professional: "מקצועי", cheerful: "שמח", direct: "ישיר" },
     length: "אורך תשובה",
     lengthOptions: { short: "קצר", medium: "מאוזן", detailed: "מפורט" },
-    lengthExample: { short: "1–2 משפטים", medium: "2–3 משפטים", detailed: "עד פסקה קצרה" },
+    lengthExample: { short: "עד שני משפטים", medium: "שניים־שלושה משפטים", detailed: "עד פסקה קצרה" },
     formality: "רשמיות",
     formalityOptions: { casual: "יומיומי", formal: "רשמי" },
     emoji: "אימוג'י",

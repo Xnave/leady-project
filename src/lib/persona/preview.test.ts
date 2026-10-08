@@ -3,7 +3,7 @@ import { flowForCatalog } from "@/lib/flow/catalog";
 import type { TurnContext } from "@/lib/flow/types";
 import { defaultHitlPolicy, defaultLeadSchema } from "@/lib/flow/validate";
 import { DEFAULT_PERSONA } from "./presets";
-import { previewThrottle, runPersonaPreview } from "./preview";
+import { PreviewUnavailableError, previewThrottle, runPersonaPreview } from "./preview";
 
 const agent = {
   systemPrompt: "",
@@ -29,6 +29,17 @@ describe("runPersonaPreview", () => {
     expect(seen[0].agent.persona?.agentName).toBe("Noa");
     expect(seen[0].messages[0].role).toBe("agent");
     expect(seen[0].tenant?.chatLanguage).toBe("en");
+  });
+});
+
+describe("runPersonaPreview degrade", () => {
+  it("throws instead of showing the LLM-down fallback as the agent's voice", async () => {
+    await expect(
+      runPersonaPreview({ persona: DEFAULT_PERSONA, lang: "he", agent, tenant }, async () => ({
+        reply: "קיבלנו, נציג חוזר אליך.",
+        effects: [{ type: "request_human", args: { reason: "llm_unavailable" } }],
+      })),
+    ).rejects.toThrow(PreviewUnavailableError);
   });
 });
 

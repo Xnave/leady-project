@@ -1,5 +1,5 @@
 import { talkTurn } from "@/lib/flow/llm";
-import type { AgentSnapshot, TalkStage, TenantSnapshot, TurnContext } from "@/lib/flow/types";
+import type { AgentSnapshot, TalkOutcome, TalkStage, TenantSnapshot, TurnContext } from "@/lib/flow/types";
 import { PREVIEW_SAMPLES, type SampleId } from "./samples";
 import type { Persona } from "./types";
 
@@ -7,7 +7,21 @@ export type AgentForPreview = Pick<
   AgentSnapshot,
   "systemPrompt" | "knowledgeText" | "flow" | "leadSchema" | "hitlPolicy"
 >;
-type TalkFn = (ctx: TurnContext, stage: TalkStage) => Promise<{ reply?: string }>;
+type TalkFn = (ctx: TurnContext, stage: TalkStage) => Promise<Pick<TalkOutcome, "reply" | "effects">>;
+
+/** The LLM failed and talk fell back to a canned hand-off — not the persona's voice. */
+export class PreviewUnavailableError extends Error {
+  constructor() {
+    super("preview unavailable: LLM call failed");
+    this.name = "PreviewUnavailableError";
+  }
+}
+
+function isLlmDegrade(out: Pick<TalkOutcome, "effects">): boolean {
+  return Boolean(
+    out.effects?.some((e) => e.type === "request_human" && e.args?.reason === "llm_unavailable"),
+  );
+}
 
 const PREVIEW_GAP_MS = 4000;
 const lastCall = new Map<string, number>();
@@ -50,6 +64,7 @@ export async function runPersonaPreview(
         channel: { provider: "whatsapp" },
       };
       const out = await talk(ctx, stage);
+      if (isLlmDegrade(out)) throw new PreviewUnavailableError();
       return { id: sample.id, customer: sample.customer, reply: out.reply ?? "" };
     }),
   );

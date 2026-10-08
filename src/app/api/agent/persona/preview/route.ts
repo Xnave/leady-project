@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { llmConfigured } from "@/lib/flow/model";
 import type { ChatLanguage } from "@/lib/flow/locale";
 import type { FlowDefinition, HitlPolicy, LeadSchema } from "@/lib/flow/types";
-import { previewThrottle, runPersonaPreview } from "@/lib/persona/preview";
+import { PreviewUnavailableError, previewThrottle, runPersonaPreview } from "@/lib/persona/preview";
 import { PersonaConfigError, validatePersona } from "@/lib/persona/validate";
 import { tenantRoleOr403 } from "@/lib/tenant-role";
 
@@ -30,22 +30,29 @@ export async function POST(req: Request) {
     include: { tenant: { select: { name: true, phone: true, intro: true, chatLanguage: true } } },
   });
   if (!agent) return NextResponse.json({ error: "no agent" }, { status: 404 });
-  const samples = await runPersonaPreview({
-    persona,
-    lang: body?.lang === "he" ? "he" : "en",
-    agent: {
-      systemPrompt: agent.systemPrompt,
-      knowledgeText: agent.knowledgeText,
-      flow: agent.flow as FlowDefinition,
-      leadSchema: agent.leadSchema as LeadSchema,
-      hitlPolicy: agent.hitlPolicy as HitlPolicy,
-    },
-    tenant: {
-      name: agent.tenant.name,
-      phone: agent.tenant.phone,
-      intro: agent.tenant.intro,
-      chatLanguage: agent.tenant.chatLanguage as ChatLanguage,
-    },
-  });
-  return NextResponse.json({ samples });
+  try {
+    const samples = await runPersonaPreview({
+      persona,
+      lang: body?.lang === "he" ? "he" : "en",
+      agent: {
+        systemPrompt: agent.systemPrompt,
+        knowledgeText: agent.knowledgeText,
+        flow: agent.flow as FlowDefinition,
+        leadSchema: agent.leadSchema as LeadSchema,
+        hitlPolicy: agent.hitlPolicy as HitlPolicy,
+      },
+      tenant: {
+        name: agent.tenant.name,
+        phone: agent.tenant.phone,
+        intro: agent.tenant.intro,
+        chatLanguage: agent.tenant.chatLanguage as ChatLanguage,
+      },
+    });
+    return NextResponse.json({ samples });
+  } catch (e) {
+    if (e instanceof PreviewUnavailableError) {
+      return NextResponse.json({ error: "llm_unavailable" }, { status: 503 });
+    }
+    throw e;
+  }
 }
