@@ -1,4 +1,6 @@
 import { generateObject, generateText, stepCountIs, tool } from "ai";
+import { stripLegacyRole } from "@/lib/persona/prompt";
+import { voicePreamble } from "@/lib/persona/system";
 import { z } from "zod";
 import { copyFor, replyLang } from "@/lib/copy";
 import { missingRequired } from "./helpers";
@@ -103,7 +105,7 @@ export async function draftQuestion(
   }
   const { text } = await generateText({
     model: chatModel(),
-    system: `${stage.prompt}\n${ctx.agent.systemPrompt}\n${copyFor(lang).prompts.draftQuestion(nextField)}`,
+    system: `${voicePreamble(ctx, lang)}\n${stage.prompt}\n${stripLegacyRole(ctx.agent.systemPrompt)}\n${copyFor(lang).prompts.draftQuestion(nextField)}`,
     prompt: JSON.stringify({ fields: ctx.lead.fields, missing, lastCustomerMessage: last }),
   });
   return text.trim();
@@ -125,7 +127,7 @@ export async function answerFaq(
   }
   const { text } = await generateText({
     model: chatModel(),
-    system: copyFor(lang).prompts.faqSystem(stage.prompt, knowledge),
+    system: `${voicePreamble(ctx, lang)}\n${copyFor(lang).prompts.faqSystem(stage.prompt, knowledge)}`,
     prompt: question,
   });
   if (text.includes("UNRESOLVED")) {
