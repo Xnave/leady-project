@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { tryValidatePersona } from "@/lib/persona/validate";
 import { prisma } from "@/lib/db";
 import {
   catalogIdFromCapabilities,
@@ -44,12 +45,15 @@ export async function POST(req: Request) {
     bookingApprovedTemplate?: string;
     bookingRejectedTemplate?: string;
     reservationConfig?: unknown;
+    persona?: unknown;
   };
 
   const name = String(body.name ?? "").trim();
   const phone = String(body.phone ?? "").trim();
   const intro = String(body.intro ?? "").trim();
   const knowledgeText = String(body.knowledgeText ?? "");
+  // Missing/invalid persona keeps whatever the owner saved in Settings → Your agent.
+  const persona = tryValidatePersona(body.persona);
   const chatLanguage: ChatLanguage = isChatLanguage(String(body.chatLanguage ?? "multi"))
     ? (body.chatLanguage as ChatLanguage)
     : "multi";
@@ -155,6 +159,7 @@ export async function POST(req: Request) {
           flow,
           leadSchema: defaultLeadSchema,
           hitlPolicy,
+          ...(persona ? { persona } : {}),
         },
       });
       return;
@@ -181,6 +186,7 @@ export async function POST(req: Request) {
         flowChangedAt: new Date(),
         hitlPolicy,
         leadSchema: defaultLeadSchema,
+        ...(persona ? { persona } : {}),
       },
     });
   });
