@@ -519,6 +519,7 @@ export type UiCopy = {
     previewNoLlm: string;
     previewSlowDown: string;
     previewFailed: string;
+    previewHandoff: string;
     previewSamples: Record<"pricing" | "vague" | "complaint", string>;
     previewLangToggle: string;
     unsaved: string;

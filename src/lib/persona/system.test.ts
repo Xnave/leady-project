@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { TurnContext } from "@/lib/flow/types";
 import { DEFAULT_PERSONA } from "./presets";
-import { voicePreamble } from "./system";
+import { faqSystemPrompt, voicePreamble } from "./system";
 
 const ctx = {
   tenant: { name: "Acme", phone: "", intro: "", chatLanguage: "multi" },
@@ -24,5 +24,14 @@ describe("voicePreamble", () => {
   it("empty in legacy pipeline", () => {
     process.env.PROMPT_PIPELINE = "legacy";
     expect(voicePreamble(ctx, "en")).toBe("");
+  });
+});
+
+describe("faqSystemPrompt", () => {
+  it("keeps the UNRESOLVED contract above the style guidance", () => {
+    const s = faqSystemPrompt(ctx, "en", "Knowledge:\nWe sell widgets.\nIf the knowledge does not answer, reply with exactly UNRESOLVED.");
+    expect(s).not.toMatch(/offer the concrete alternative/);
+    expect(s).toMatch(/output exactly UNRESOLVED/);
+    expect(s.indexOf("output exactly UNRESOLVED")).toBeGreaterThan(s.indexOf("PERSONA"));
   });
 });

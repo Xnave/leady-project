@@ -151,3 +151,25 @@ describe("persona prompt order", () => {
     expect(s).not.toMatch(/PERSONA/);
   });
 });
+
+describe("question style vs boundaries", () => {
+  it("bundled persona is not contradicted by a one-question boundary", () => {
+    ensureFlowRegistry();
+    const flow = flowForCatalog("inbox");
+    const ctx = {
+      tenantId: "t1",
+      tenant: { name: "Demo", phone: "", intro: "Hi", chatLanguage: "en" },
+      agent: {
+        id: "a1", tenantId: "t1", systemPrompt: "", knowledgeText: "", flow, flowVersion: 1,
+        leadSchema: defaultLeadSchema, hitlPolicy: defaultHitlPolicy,
+        persona: { ...DEFAULT_PERSONA, questionStyle: "bundled" },
+      },
+      conversation: { id: "c1", status: "open", flowState: "talk", flowVersion: 1, nudgeCountByStage: {} },
+      lead: { id: "l1", externalUserId: "u1", fields: {} },
+      messages: [{ role: "agent", text: "Hi" }, { role: "lead", text: "hello" }],
+    } as TurnContext;
+    const s = buildTalkSystemPrompt(ctx, flow.stages.talk as TalkStage);
+    expect(s).not.toMatch(/ask at most one clarifying question/);
+    expect(s).toMatch(/up to 3 related clarifying questions/);
+  });
+});

@@ -43,6 +43,16 @@ describe("runPersonaPreview degrade", () => {
   });
 });
 
+describe("runPersonaPreview handoff", () => {
+  it("flags an empty reply as a hand-off instead of an empty bubble", async () => {
+    const out = await runPersonaPreview(
+      { persona: DEFAULT_PERSONA, lang: "en", agent, tenant },
+      async () => ({ reply: "", effects: [{ type: "request_human", args: { reason: "escalation_requested" } }] }),
+    );
+    expect(out[0]).toMatchObject({ reply: "", handoff: true });
+  });
+});
+
 describe("previewThrottle", () => {
   it("allows one call per 4s per tenant", () => {
     expect(previewThrottle("t1", 1000)).toBe(true);

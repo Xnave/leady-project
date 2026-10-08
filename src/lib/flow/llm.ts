@@ -1,6 +1,6 @@
 import { generateObject, generateText, stepCountIs, tool } from "ai";
 import { stripLegacyRole } from "@/lib/persona/prompt";
-import { voicePreamble } from "@/lib/persona/system";
+import { faqSystemPrompt, voicePreamble } from "@/lib/persona/system";
 import { z } from "zod";
 import { copyFor, replyLang } from "@/lib/copy";
 import { missingRequired } from "./helpers";
@@ -127,7 +127,7 @@ export async function answerFaq(
   }
   const { text } = await generateText({
     model: chatModel(),
-    system: `${voicePreamble(ctx, lang)}\n${copyFor(lang).prompts.faqSystem(stage.prompt, knowledge)}`,
+    system: faqSystemPrompt(ctx, lang, copyFor(lang).prompts.faqSystem(stage.prompt, knowledge)),
     prompt: question,
   });
   if (text.includes("UNRESOLVED")) {

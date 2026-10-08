@@ -41,3 +41,10 @@ export function cleanDraft(p: Persona): Persona {
 
 export const isDirty = (saved: Persona, draft: Persona) =>
   JSON.stringify(cleanDraft(saved)) !== JSON.stringify(cleanDraft(draft));
+
+/** Server allows one preview per tenant every 4s; wait out the rest (+ margin) instead of hitting 429. */
+const PREVIEW_GAP_MS = 4200;
+export function previewWait(lastStart: number | undefined, now: number): number {
+  if (lastStart === undefined) return 0;
+  return Math.max(0, PREVIEW_GAP_MS - (now - lastStart));
+}
