@@ -1,3 +1,4 @@
+import type { PersonaGender } from "@/lib/persona/types";
 import { chat as chatEn, prompts as promptsEn } from "./en";
 import { chat as chatHe, prompts as promptsHe } from "./he";
 import type { BookingVars } from "./types";
@@ -10,8 +11,18 @@ export type { BookingVars } from "./types";
 export { chat as enChat, prompts as enPrompts } from "./en";
 export { chat as heChat, prompts as hePrompts } from "./he";
 
-export function copyFor(lang: "en" | "he") {
-  return lang === "he" ? { chat: chatHe, prompts: promptsHe } : { chat: chatEn, prompts: promptsEn };
+// Hebrew strings where the agent refers to itself get one entry per persona gender.
+// The base he.ts text is the neutral ("we") form; customer-directed text stays gender-neutral.
+const HE_SELF: Record<PersonaGender, Partial<typeof chatHe>> = {
+  female: { savingVisit: "קולטת את ההזמנה במערכת." },
+  male: { savingVisit: "קולט את ההזמנה במערכת." },
+  neutral: {},
+};
+
+export function copyFor(lang: "en" | "he", opts?: { gender?: PersonaGender }) {
+  if (lang !== "he") return { chat: chatEn, prompts: promptsEn };
+  const over = HE_SELF[opts?.gender ?? "neutral"];
+  return { chat: Object.keys(over).length ? { ...chatHe, ...over } : chatHe, prompts: promptsHe };
 }
 
 export function replyLang(ctx: TurnContext, lastCustomer = ""): "en" | "he" {
