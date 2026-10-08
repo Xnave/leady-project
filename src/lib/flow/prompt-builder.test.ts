@@ -210,3 +210,23 @@ describe("first message", () => {
     );
   });
 });
+
+describe("reply language", () => {
+  it("states this turn's resolved reply language", () => {
+    ensureFlowRegistry();
+    const flow = flowForCatalog("inbox");
+    const ctx = {
+      tenantId: "t1",
+      tenant: { name: "Demo", phone: "", intro: "שלום", chatLanguage: "multi" },
+      agent: {
+        id: "a1", tenantId: "t1", systemPrompt: "", knowledgeText: "ידע בעברית", flow, flowVersion: 1,
+        leadSchema: defaultLeadSchema, hitlPolicy: defaultHitlPolicy, persona: DEFAULT_PERSONA,
+      },
+      conversation: { id: "c1", status: "open", flowState: "talk", flowVersion: 1, nudgeCountByStage: {} },
+      lead: { id: "l1", externalUserId: "u1", fields: {} },
+      messages: [{ role: "lead", text: "How much for a kitchen?" }],
+    } as TurnContext;
+    const s = buildTalkSystemPrompt(ctx, flow.stages.talk as TalkStage);
+    expect(s).toMatch(/Write this reply in English/);
+  });
+});

@@ -69,6 +69,7 @@ export function personaSection(p: Persona, lang: "en" | "he"): string {
     `- Formality: ${p.formality === "formal" ? "Formal and respectful." : "Casual and natural."}`,
     `- Emoji: ${p.emoji === "none" ? "No emoji." : "At most one fitting emoji, and not in every message."}`,
     `- Questions: ${QUESTIONS[p.questionStyle]}`,
+    `- Language: Write this reply in ${lang === "he" ? "Hebrew" : "English"} — the customer's language — even if the business info is in another language.`,
     ...(lang === "he" ? hebrewLines(p).map((l) => `- ${l}`) : []),
   ];
   if (p.rules.length) {
