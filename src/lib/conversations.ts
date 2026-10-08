@@ -8,6 +8,7 @@ import type { AgentSnapshot, TurnContext } from "@/lib/flow/types";
 import type { FlowDefinition, HitlPolicy, LeadFields, LeadSchema } from "@/lib/flow/types";
 import { looksLikePhoneNumber } from "@/lib/flow/booking-collect";
 import { hasRelevantRequest } from "@/lib/requests";
+import { normalizePersona } from "@/lib/persona/validate";
 import {
   clearBookingSessionFields,
   mergeLeadAndSession,
@@ -317,6 +318,7 @@ export async function loadTurnContext(
               catalogId: true,
               systemPrompt: true,
               knowledgeText: true,
+              persona: true,
               flow: true,
               flowVersion: true,
               leadSchema: true,
@@ -372,6 +374,7 @@ export async function loadTurnContext(
     leadSchema: (conversation.agent.leadSchema as LeadSchema) ?? defaultLeadSchema,
     hitlPolicy: (conversation.agent.hitlPolicy as HitlPolicy) ?? defaultHitlPolicy,
     calcomEventTypeId: conversation.agent.calcomEventTypeId,
+    persona: normalizePersona(conversation.agent.persona),
   };
 
   const leadFieldsRaw = { ...((conversation.lead.fields as LeadFields) ?? {}) };
