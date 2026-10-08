@@ -52,6 +52,7 @@ export type UiCopy = {
     admin: string;
     team: string;
     digest: string;
+    agent: string;
   };
   langToggle: { he: string; en: string; uiLanguage: string };
   themeToggle: { appearance: string; system: string; light: string; dark: string };
@@ -442,4 +443,57 @@ export type UiCopy = {
     inviteClaimOnSignIn: string;
   };
   crm: CrmCopy;
+  persona: {
+    title: string;
+    blurb: string;
+    stepStyle: string;
+    stepTune: string;
+    stepPreview: string;
+    presets: Record<
+      "warm_concierge" | "precise_short" | "premium_formal" | "upbeat_sales",
+      { name: string; tagline: string }
+    >;
+    customBadge: string;
+    identity: string;
+    style: string;
+    agentName: string;
+    agentNameHint: string;
+    agentNamePlaceholder: string;
+    gender: string;
+    genderHint: string;
+    genderOptions: Record<"female" | "male" | "neutral", string>;
+    tone: string;
+    toneOptions: Record<"friendly" | "professional" | "cheerful" | "direct", string>;
+    length: string;
+    lengthOptions: Record<"short" | "medium" | "detailed", string>;
+    lengthExample: Record<"short" | "medium" | "detailed", string>;
+    formality: string;
+    formalityOptions: Record<"casual" | "formal", string>;
+    emoji: string;
+    emojiOptions: Record<"none" | "light", string>;
+    questions: string;
+    questionOptions: Record<"one_at_a_time" | "bundled", string>;
+    rules: string;
+    rulesHint: string;
+    rulePlaceholder: string;
+    addRule: string;
+    removeRule: string;
+    rulesLeft: string;
+    previewTitle: string;
+    previewHint: string;
+    previewRun: string;
+    previewRunning: string;
+    previewStale: string;
+    previewNoLlm: string;
+    previewSlowDown: string;
+    previewFailed: string;
+    previewSamples: Record<"pricing" | "vague" | "complaint", string>;
+    previewLangToggle: string;
+    unsaved: string;
+    discard: string;
+    save: string;
+    saving: string;
+    saved: string;
+    saveFailed: string;
+  };
 };

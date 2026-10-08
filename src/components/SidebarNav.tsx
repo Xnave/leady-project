@@ -14,6 +14,7 @@ const OWNER_ITEMS: { href: string; key: NavKey; countKey?: "leads" }[] = [
   { href: "/", key: "home" },
   { href: "/leads", key: "leads", countKey: "leads" },
   { href: "/onboard", key: "setup" },
+  { href: "/settings/agent", key: "agent" },
   { href: "/channels", key: "channels" },
   { href: "/demo", key: "chat" },
   { href: "/settings/team", key: "team" },
@@ -44,6 +45,7 @@ const ICONS: Partial<Record<NavKey, ReactNode>> = {
   admin: <Icon d="M12 3 4 7v5c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V7z" />,
   team: <Icon d="M16 11a3 3 0 1 0-2-5.2M8 11a3 3 0 1 0-2-5.2M4 20a6 6 0 0 1 8 0M12 20a6 6 0 0 1 8 0" />,
   digest: <Icon d="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5" />,
+  agent: <Icon d="M12 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8M4 21a8 8 0 0 1 16 0M18 3l1.5 1.5M20 7h1.5" />,
 };
 
 const THEME_OPTIONS: { id: UiTheme; key: "system" | "light" | "dark"; icon: ReactNode }[] = [
