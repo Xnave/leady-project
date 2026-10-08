@@ -520,6 +520,7 @@ export type UiCopy = {
     previewSlowDown: string;
     previewFailed: string;
     previewHandoff: string;
+    previewQuota: string;
     previewFixRules: string;
     issue: Record<"too_long" | "too_many" | "override" | "unknown_value", string>;
     nameOverride: string;

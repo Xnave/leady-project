@@ -101,6 +101,8 @@ export function PersonaStudio({
       });
       if (res.status === 409) return setPreview({ kind: "no_llm" });
       if (res.status === 429) return setPreview({ kind: "error", message: ui.previewSlowDown, previous });
+      // 503 = the model call failed (usually provider quota), not a bug in the page.
+      if (res.status === 503) return setPreview({ kind: "error", message: ui.previewQuota, previous });
       if (res.status === 400) {
         showIssues(p, await res.json().catch(() => null));
         return setPreview({ kind: "error", message: ui.previewFixRules, previous });
