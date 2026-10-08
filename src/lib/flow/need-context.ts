@@ -3,11 +3,35 @@
  * Rails only — the talk LLM captures interest via tools in the same turn (no extra extract call).
  */
 
-import type { LeadFields } from "./types";
+import type { LeadFields, MessageSnapshot } from "./types";
 
 /** CRM field: concrete context from early chat, before booking session `need` is filled. */
 export function gatheredInterest(fields: LeadFields): string {
   return String(fields.interest ?? "").trim();
+}
+
+/** Skip short booking answers when mining the transcript for interest. */
+const SHORT_LEAD_RE =
+  /^(כן|לא|ok|okay|yes|no|yep|yeah|טוב|סבבה|יאללה|בסדר)[!?.]*$/iu;
+
+/**
+ * First substantial lead message — fallback when save_interest never ran.
+ * No LLM; skips short affirmations and very short time-only replies.
+ */
+export function interestFromTranscript(
+  messages: readonly MessageSnapshot[],
+  opts?: { minLength?: number },
+): string {
+  const minLength = opts?.minLength ?? 40;
+  for (const m of messages) {
+    if (m.role !== "lead") continue;
+    const t = m.text.trim();
+    if (t.length < minLength) continue;
+    if (SHORT_LEAD_RE.test(t)) continue;
+    if (looksLikeNeedDeixis(t) || looksLikeNothingToAdd(t)) continue;
+    return t;
+  }
+  return "";
 }
 
 /** Pointer phrases that must not be stored as meeting details. */

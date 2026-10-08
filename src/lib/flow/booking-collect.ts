@@ -99,9 +99,8 @@ export function bookingRequiredFields(ctx: TurnContext): string[] {
   return [...defaultBookingCollect];
 }
 
-export function looksLikePhoneNumber(value: string): boolean {
-  return /^\+?\d[\d\s-]{7,}\d$/.test(value.trim());
-}
+export { looksLikePhoneNumber } from "./phone";
+import { looksLikePhoneNumber } from "./phone";
 
 /** Basic email shape — rejects incomplete values like "nave@". */
 export function looksLikeEmail(value: string): boolean {
@@ -111,6 +110,8 @@ export function looksLikeEmail(value: string): boolean {
 export function callbackPhone(ctx: TurnContext): string | undefined {
   const stored = String(ctx.lead.fields.phone ?? "").trim();
   if (stored) return stored;
+  // Only WhatsApp carries a real MSISDN as the channel identity.
+  if (ctx.channel?.provider !== "whatsapp") return undefined;
   const fromChannel = ctx.channel?.customerPhone?.trim();
   if (fromChannel && looksLikePhoneNumber(fromChannel)) return fromChannel;
   const fromId = ctx.lead.externalUserId?.trim() ?? "";

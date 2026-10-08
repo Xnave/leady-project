@@ -150,10 +150,13 @@ describe("gateBookOnGaps", () => {
   it("asks for time and includes opening hours", () => {
     expect(askBookingField("he", "time_preference", { hours: "א-ה 9-19" })).toMatch(/א-ה 9-19/);
     expect(askBookingField("he", "time_preference", { hours: "א-ה 9-19" })).toMatch(
-      /באיזה יום ושעה נוח לך/,
+      /מתי יהיה לך נוח להיפגש/,
     );
     expect(askBookingField("en", "time_preference", { hours: "Sun–Thu 09:00–19:00" })).toMatch(
-      /We're open Sun–Thu 09:00–19:00/,
+      /Sun–Thu 09:00–19:00/,
+    );
+    expect(askBookingField("en", "time_preference", { hours: "Sun–Thu 09:00–19:00" })).toMatch(
+      /good day and time/i,
     );
   });
 });

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { tenantRoleOr403 } from "@/lib/tenant-role";
 import { flowForCatalog, normalizeCatalogId, type CatalogId } from "@/lib/flow/catalog";
-import { validateFlow } from "@/lib/flow/validate";
+import { mergeLeadSchemaWithDefaults, validateFlow } from "@/lib/flow/validate";
 import { bookingCollectFromFlow } from "@/lib/flow/booking-collect";
 import type { FlowDefinition, HitlPolicy, LeadSchema } from "@/lib/flow/types";
 import { FlowConfigError } from "@/lib/flow/types";
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     allowedIntents: form.getAll("allowedIntents").map(String),
     minConfidence: Number(form.get("minConfidence") || 0.4),
   };
-  const leadSchema = agent.leadSchema as LeadSchema;
+  const leadSchema = mergeLeadSchemaWithDefaults(agent.leadSchema as LeadSchema);
   const knowledgeText = String(form.get("knowledgeText") ?? "");
 
   try {
@@ -66,6 +66,7 @@ export async function POST(req: Request) {
         flowChangedAt: new Date(),
         hitlPolicy,
         knowledgeText,
+        leadSchema,
       },
     }),
   ]);

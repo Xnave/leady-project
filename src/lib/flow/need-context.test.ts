@@ -1,16 +1,32 @@
 import { describe, expect, it } from "vitest";
 import {
   gatheredInterest,
+  interestFromTranscript,
   looksLikeNeedDeixis,
   looksLikeNothingToAdd,
   resolveNeedFromReply,
 } from "./need-context";
 import { askBookingField } from "./booking";
+import { normalizeSlot } from "./slot";
 
 describe("need-context", () => {
   it("reads CRM interest", () => {
     expect(gatheredInterest({})).toBe("");
     expect(gatheredInterest({ interest: "  hours gap  " })).toBe("hours gap");
+  });
+
+  it("mines first substantial lead message from transcript", () => {
+    const opener =
+      "היי Zapidly, סיימתי את מפת ההזדמנויות. עסק: קליניקה. המענה לא מכסה את כל שעות הפניות.";
+    expect(
+      interestFromTranscript([
+        { role: "lead", text: opener },
+        { role: "agent", text: "אשמח לעזור" },
+        { role: "lead", text: "כן" },
+        { role: "lead", text: "מחר ב7" },
+      ]),
+    ).toBe(opener);
+    expect(interestFromTranscript([{ role: "lead", text: "כן" }])).toBe("");
   });
 
   it("detects deixis and soft nothing-to-add", () => {
@@ -38,9 +54,22 @@ describe("need-context", () => {
     const he = askBookingField("he", "need", {
       gatheredNeed: "המענה לא מכסה את כל שעות הפניות",
     });
-    expect(he).toMatch(/מה שכבר הבנתי מהשיחה/);
+    expect(he).toMatch(/ככה הבנתי עד עכשיו|מה שכבר הבנתי/);
     expect(he).toMatch(/המענה לא מכסה/);
     expect(he).toMatch(/יש משהו נוסף/);
-    expect(askBookingField("he", "need")).toMatch(/ספר לי בקצרה/);
+    expect(askBookingField("he", "need")).toMatch(/אשמח להכין את הפגישה/);
+  });
+});
+
+describe("normalizeSlot display for booking confirm", () => {
+  it("turns relative Hebrew time into calendar date + clock", () => {
+    const out = normalizeSlot("מחר ב-17:00", {
+      now: new Date("2026-10-07T12:00:00"),
+      lang: "he",
+    });
+    expect(out.timeLabel).toBe("17:00");
+    expect(out.dateIso).toBe("2026-10-08");
+    expect(out.display).toMatch(/17:00/);
+    expect(out.display).not.toMatch(/^מחר/);
   });
 });

@@ -17,36 +17,38 @@ export const chat: ChatCopy = {
   faqUnresolved: "I will get a teammate to help with that.",
   faqNoKnowledge: "I do not have an answer in the knowledge base.",
   whyCollect: "Only if it helps me actually help you. What can I do for you right now?",
-  askName: "To put this in the system — what's your full name?",
-  askEmail: "What email should we use for the visit?",
-  askPhone: "What phone number should we use to call you back?",
+  askName: "Nice to meet you — what's your full name so we can book this in?",
+  askEmail: "Where should we send the visit confirmation? Drop an email here.",
+  askPhone: "What's the best number to call you back on?",
   askPhoneConfirm: (phone) =>
-    `I'll use ${phone} for the callback - does that work, or send a different number?`,
+    `Just checking — I'll use ${phone} to reach you. Does that work, or send a different number?`,
   askPhoneAgain:
     "I still need a callback number to put the visit request through. Reply with a number.",
   askFieldAgain: (field) =>
     `I still need ${field} before I can send the visit request.`,
   waitingHumanHold: "We've got this - a teammate will take over.",
-  askNeed: "In a few words — what should we know ahead of the visit?",
+  askNeed: "I'd love to prep a useful meeting — what should we know about you or what you'd like to see?",
   askNeedWithGathered: (gathered) =>
     [
-      "From what you already shared:",
+      "Great — here's what I've got from our chat so far:",
       gathered,
       "",
-      "Anything else we should know ahead of the visit? You can add details or say you're good.",
+      "Anything else we should add ahead of the visit? Feel free to add details, or say you're all set.",
     ].join("\n"),
+  bookingConfirmIntro: "Perfect — here's the visit request I have:",
+  bookingConfirmAsk: "Do these details look right, and shall I save the request?",
   askVisitKind: "What kind of visit works for you?",
   askTime: (hours) =>
     hours
-      ? `We're open ${hours}. What day and time works for you?`
-      : "What day and time works for you?",
+      ? `We're around ${hours}. When would be a good day and time for you?`
+      : "When would be a good day and time for you?",
   askFieldFallback: (field) => `I still need ${field.replaceAll("_", " ")} to request the visit.`,
   askFieldWithOptions: (field, options) =>
     `Which ${field.replaceAll("_", " ")} works for you? Options: ${options}`,
   availability: (hours) =>
     hours
-      ? `We're open ${hours}. What day and time works for you?`
-      : "What day and time works for you?",
+      ? `We're around ${hours}. When would be a good day and time for you?`
+      : "When would be a good day and time for you?",
   hoursLine: (hours) => `Hours: ${hours}`,
   askTimeOutsideHours: (hours) =>
     hours

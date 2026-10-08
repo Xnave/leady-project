@@ -2,6 +2,7 @@
 import { copyFor } from "@/lib/copy";
 import { formatPhoneDisplay, isCustomerNameSatisfied } from "@/lib/leads";
 import { zonedToday } from "../clock";
+import { looksLikePhoneNumber } from "../phone";
 import { resolveCalendarDate } from "../slot";
 import {
   evaluateTimePreference,
@@ -24,6 +25,8 @@ import type {
   PhoneFieldSpec,
   TextFieldSpec,
 } from "./types";
+
+export { looksLikePhoneNumber };
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -53,10 +56,6 @@ export function normalizeDateValue(raw: string, now: Date = zonedToday()): strin
 export function isDateRangeValid(start: string, end: string): boolean {
   if (!ISO_DATE.test(start) || !ISO_DATE.test(end)) return false;
   return start < end;
-}
-
-export function looksLikePhoneNumber(value: string): boolean {
-  return /^\+?\d[\d\s-]{7,}\d$/.test(value.trim());
 }
 
 /** Basic email shape — rejects incomplete values like "nave@". */

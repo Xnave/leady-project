@@ -28,11 +28,12 @@ import {
 import { looksLikeShortAffirmation } from "../affirm";
 import {
   gatheredInterest,
+  interestFromTranscript,
   looksLikeNeedDeixis,
   looksLikeNothingToAdd,
   resolveNeedFromReply,
 } from "../need-context";
-import { proposesDifferentSlot } from "../slot";
+import { normalizeSlot, proposesDifferentSlot } from "../slot";
 import {
   bookingNoun,
   bookingConfigFromCtx,
@@ -48,19 +49,33 @@ import {
   formatPhoneDisplay,
   isCustomerNameSatisfied,
   looksLikeIncompleteCustomerName,
-  rewritePhonesInText,
 } from "@/lib/leads";
 
-/** Ask the next booking gap; when asking need, present CRM interest if we have it. */
+/**
+ * Ask the next booking gap. When asking need: seed interest from CRM or first
+ * substantial lead message, then present it with an invite for extras.
+ */
 function askNextBookingGap(
   lang: "en" | "he",
   field: string,
   fields: LeadFields,
   extras: { hours?: string; deducedPhone?: string },
+  opts?: { ctx?: TurnContext; collected?: TalkCollected },
 ): string {
+  let bag = fields;
+  if (field === "need" && opts?.collected) {
+    let interest = gatheredInterest(bag);
+    if (!interest && opts.ctx) {
+      interest = interestFromTranscript(opts.ctx.messages);
+      if (interest) {
+        opts.collected.fields = { ...opts.collected.fields, interest };
+        bag = { ...bag, interest };
+      }
+    }
+  }
   return askBookingField(lang, field, {
     ...extras,
-    gatheredNeed: field === "need" ? gatheredInterest(fields) : undefined,
+    gatheredNeed: field === "need" ? gatheredInterest(bag) : undefined,
   });
 }
 
@@ -68,6 +83,45 @@ function markNeedPrompted(collected: TalkCollected, field: string): void {
   if (field === "need") {
     collected.fields = { ...collected.fields, need_prompted: "1" };
   }
+}
+
+/** Calendar date + clock for customer-facing confirm (never raw "מחר ב-17:00"). */
+function displayTimePreference(
+  raw: string,
+  lang: "en" | "he",
+  now?: Date,
+): string {
+  const text = raw.trim();
+  if (!text) return "";
+  const slot = normalizeSlot(text, { lang, now });
+  if (slot.dateIso && slot.timeLabel) return slot.display;
+  if (slot.dateLabel && slot.timeLabel && slot.display !== text) return slot.display;
+  return text;
+}
+
+function buildBookingConfirmText(
+  lang: "en" | "he",
+  fields: LeadFields,
+  phoneDisplay: string,
+): string {
+  const chat = copyFor(lang).chat;
+  const name = String(fields.name ?? "").trim();
+  const need = String(fields.need ?? "").trim();
+  const slot = displayTimePreference(String(fields.time_preference ?? ""), lang);
+  const email = String(fields.email ?? "").trim();
+  const labelName = lang === "he" ? "שם" : "Name";
+  const labelNeed = lang === "he" ? "פרטי הפגישה" : "Visit details";
+  const labelWhen = lang === "he" ? "מועד" : "When";
+  const labelPhone = lang === "he" ? "טלפון" : "Phone";
+  const labelEmail = lang === "he" ? "אימייל" : "Email";
+  const body: string[] = [chat.bookingConfirmIntro];
+  if (name) body.push(`${labelName}: ${name}`);
+  if (need) body.push(`${labelNeed}: ${need}`);
+  if (slot) body.push(`${labelWhen}: ${slot}`);
+  if (phoneDisplay) body.push(`${labelPhone}: ${phoneDisplay}`);
+  if (email) body.push(`${labelEmail}: ${email}`);
+  body.push("", chat.bookingConfirmAsk);
+  return body.join("\n");
 }
 
 export type TalkCollected = TalkOutcome & {
@@ -166,12 +220,13 @@ export function reconcileBooking(
 
   // Affirmed while gaps remain: never keep a free-text "I saved your request".
   if (confirm === "pending" && affirmed && gapsAfter.length > 0) {
-    reply = askNextBookingGap(replyLang(ctx, lastLeadText(ctx)), gapsAfter[0], {
-      ...fields,
-      ...nextFields,
-    }, {
-      hours: venueHoursFromCtx(ctx),
-    });
+    reply = askNextBookingGap(
+      replyLang(ctx, lastLeadText(ctx)),
+      gapsAfter[0],
+      { ...fields, ...nextFields },
+      { hours: venueHoursFromCtx(ctx) },
+      { ctx },
+    );
   }
 
   // Never mark the talk goal complete while booking is still in progress.
@@ -312,8 +367,9 @@ export function registerBookingCapability(): void {
           "CRITICAL: After save_fields accepts a time_preference, do NOT re-confirm the slot — immediately ask_field for the next gap only.",
           "If outside bookable hours (including at/after closing), do not save and do not ask other fields until time is valid.",
           "need / פרטי הפגישה: ask_field presents any saved interest and invites extras. Never save pointer phrases (מה שכתבתי למעלה / as above) as need — save_fields resolves them. Soft 'no / nothing else' keeps the gathered interest as need.",
-          "Before book_meeting: confirm_details (only when Gaps is none), then save_fields booking_confirm=confirmed after they agree, then book_meeting.",
-          `confirm_details text: use label פרטי הפגישה / ${noun} details for the need field — never צורך or Need.`,
+          "Before book_meeting: confirm_details ONCE (only when Gaps is none and booking_confirm is not already pending). Rails write the confirm text — do not invent a second summary. Then after they agree: save_fields booking_confirm=confirmed, then book_meeting.",
+          "Never call confirm_details again while booking_confirm=pending — wait for yes/no.",
+          `confirm_details labels: פרטי הפגישה / ${noun} details for need — never צורך or Need.`,
           `CRITICAL: Never tell the customer you recorded/submitted a ${noun} request unless you called book_meeting and it returned ok. A plain reply claiming that is a bug.`,
           `After a teammate declines a ${noun}, collect a new time_preference and call book_meeting again — do not invent a confirmation.`,
           "Do not transition to on_complete/done while booking is in progress.",
@@ -513,10 +569,16 @@ export function registerBookingCapability(): void {
               collected.askFieldUsed = true;
               collected.replyLocked = true;
               const merged = { ...fieldsForTurn, ...collected.fields };
-              collected.reply = askNextBookingGap(lang, first, merged, {
-                hours,
-                deducedPhone: first === "phone" ? callbackPhone(ctx) : undefined,
-              });
+              collected.reply = askNextBookingGap(
+                lang,
+                first,
+                merged,
+                {
+                  hours,
+                  deducedPhone: first === "phone" ? callbackPhone(ctx) : undefined,
+                },
+                { ctx, collected },
+              );
               markNeedPrompted(collected, first);
               return JSON.stringify({
                 ok: true,
@@ -596,7 +658,13 @@ export function registerBookingCapability(): void {
                   const gathered = gatheredInterest(mergedForNeed);
                   collected.askFieldUsed = true;
                   collected.replyLocked = true;
-                  collected.reply = askNextBookingGap(lang, "need", mergedForNeed, { hours });
+                  collected.reply = askNextBookingGap(
+                    lang,
+                    "need",
+                    mergedForNeed,
+                    { hours },
+                    { ctx, collected },
+                  );
                   markNeedPrompted(collected, "need");
                   return JSON.stringify({
                     ok: false,
@@ -608,6 +676,10 @@ export function registerBookingCapability(): void {
                 }
                 fields.need = resolved.need;
                 fields.need_prompted = "";
+                continue;
+              }
+              if (key === "time_preference") {
+                fields.time_preference = displayTimePreference(value, lang);
                 continue;
               }
               fields[key] = value.trim();
@@ -628,10 +700,16 @@ export function registerBookingCapability(): void {
                 const next = gaps[0];
                 collected.askFieldUsed = true;
                 collected.replyLocked = true;
-                collected.reply = askNextBookingGap(lang, next, merged, {
-                  hours,
-                  deducedPhone: next === "phone" ? callbackPhone(ctx) : undefined,
-                });
+                collected.reply = askNextBookingGap(
+                  lang,
+                  next,
+                  merged,
+                  {
+                    hours,
+                    deducedPhone: next === "phone" ? callbackPhone(ctx) : undefined,
+                  },
+                  { ctx, collected },
+                );
                 markNeedPrompted(collected, next);
                 return JSON.stringify({ ok: true, next_field: next });
               }
@@ -672,16 +750,23 @@ export function registerBookingCapability(): void {
             const next = gaps[0];
             collected.askFieldUsed = true;
             collected.replyLocked = true;
-            collected.reply = askNextBookingGap(lang, next, merged, {
-              hours,
-              deducedPhone: next === "phone" ? callbackPhone(ctx) : undefined,
-            });
+            collected.reply = askNextBookingGap(
+              lang,
+              next,
+              merged,
+              {
+                hours,
+                deducedPhone: next === "phone" ? callbackPhone(ctx) : undefined,
+              },
+              { ctx, collected },
+            );
             markNeedPrompted(collected, next);
+            const withInterest = { ...merged, ...collected.fields };
             return JSON.stringify({
               ok: true,
               asked: next,
               ...(next !== field ? { redirected_from: field } : {}),
-              ...(next === "need" && gatheredInterest(merged)
+              ...(next === "need" && gatheredInterest(withInterest)
                 ? { presented_interest: true }
                 : {}),
             });
@@ -689,19 +774,37 @@ export function registerBookingCapability(): void {
         }),
         confirm_details: tool({
           description:
-            "Present the visit details for the customer to confirm before book_meeting. Only call when booking gaps are none. Label the need field as פרטי הפגישה (he) or Visit details (en) — never צורך or Need. Then save_fields booking_confirm=pending until they agree. Always write the phone using the display form from the system (local 0XX-XXX-XXXX), never +972.",
-          inputSchema: z.object({ text: z.string() }),
-          execute: async ({ text }: { text: string }) => {
+            "Present the visit details for the customer to confirm before book_meeting. Only call when booking gaps are none and booking_confirm is not already pending. Rails write the confirm text (ignore inventing a duplicate summary). Then booking_confirm=pending until they agree.",
+          inputSchema: z.object({
+            text: z
+              .string()
+              .optional()
+              .describe("Ignored — confirm text is built by the system"),
+          }),
+          execute: async () => {
             const merged = { ...fieldsForTurn, ...collected.fields };
+            if (bookingConfirmStatus(merged) === "pending") {
+              return JSON.stringify({
+                ok: false,
+                skip: true,
+                hint: "Already awaiting yes — do not resend confirm_details.",
+              });
+            }
             const gaps = bookingFieldGaps(merged, required);
             if (gaps.length > 0) {
               const next = gaps[0];
               collected.askFieldUsed = true;
               collected.replyLocked = true;
-              collected.reply = askNextBookingGap(lang, next, merged, {
-                hours,
-                deducedPhone: next === "phone" ? callbackPhone(ctx) : undefined,
-              });
+              collected.reply = askNextBookingGap(
+                lang,
+                next,
+                merged,
+                {
+                  hours,
+                  deducedPhone: next === "phone" ? callbackPhone(ctx) : undefined,
+                },
+                { ctx, collected },
+              );
               markNeedPrompted(collected, next);
               return JSON.stringify({
                 ok: false,
@@ -711,11 +814,25 @@ export function registerBookingCapability(): void {
             }
             const phoneRaw = savedPhone(merged) || callbackPhone(ctx) || "";
             const displayPhone = formatPhoneDisplay(phoneRaw) || phoneRaw;
-            collected.reply = rewritePhonesInText(text.trim(), [
-              phoneRaw,
-              displayPhone,
-              callbackPhone(ctx),
-            ]);
+            const slotNormalized = displayTimePreference(
+              String(merged.time_preference ?? ""),
+              lang,
+            );
+            if (
+              slotNormalized &&
+              slotNormalized !== String(merged.time_preference ?? "").trim()
+            ) {
+              collected.fields = {
+                ...collected.fields,
+                time_preference: slotNormalized,
+              };
+            }
+            const forConfirm = {
+              ...merged,
+              ...collected.fields,
+              ...(slotNormalized ? { time_preference: slotNormalized } : {}),
+            };
+            collected.reply = buildBookingConfirmText(lang, forConfirm, displayPhone);
             collected.replyLocked = true;
             const name = String(merged.name ?? "").trim();
             collected.fields = {

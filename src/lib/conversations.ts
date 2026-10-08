@@ -395,9 +395,10 @@ export async function loadTurnContext(
   }
 
   const fromId = conversation.lead.externalUserId?.trim() ?? "";
+  const isWhatsApp = conversation.channel.provider === "whatsapp";
   const leadPhone =
     (typeof fields.phone === "string" && fields.phone.trim()) ||
-    (looksLikePhoneNumber(fromId) ? fromId : "") ||
+    (isWhatsApp && looksLikePhoneNumber(fromId) ? fromId : "") ||
     undefined;
 
   const capabilityState: Record<string, unknown> = {};

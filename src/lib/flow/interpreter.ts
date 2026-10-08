@@ -9,6 +9,7 @@ import {
 import { talkTransitionTargets } from "./prompt-builder";
 import { copyFor, replyLang } from "@/lib/copy";
 import { hitlReasonKey } from "./effects";
+import { allowedLeadFieldKeys } from "./validate";
 import type {
   ActionStage,
   CollectStage,
@@ -163,7 +164,7 @@ export async function interpretTurn(
       const intent = await ports.classify(ctx, stage);
       const next = stage.transitions[intent] ?? stage.transitions[stage.intents[0]];
       ctx.lead.fields = mergeAllowedFields(
-        Object.keys(ctx.agent.leadSchema.fields),
+        allowedLeadFieldKeys(ctx.agent.leadSchema),
         ctx.lead.fields,
         { intent },
       );
@@ -193,7 +194,7 @@ export async function interpretTurn(
     if (stage.type === "collect") {
       const extracted = await ports.extract(ctx, stage);
       ctx.lead.fields = mergeAllowedFields(
-        Object.keys(ctx.agent.leadSchema.fields),
+        allowedLeadFieldKeys(ctx.agent.leadSchema),
         ctx.lead.fields,
         extracted,
       );
@@ -220,10 +221,10 @@ export async function interpretTurn(
         stage,
         outcome: normalizeTalkOutcome(raw, stage),
       });
-      const schemaKeys = [
-        ...Object.keys(ctx.agent.leadSchema.fields),
-        ...sessionFieldKeysForStage(stage, ctx),
-      ];
+      const schemaKeys = allowedLeadFieldKeys(
+        ctx.agent.leadSchema,
+        sessionFieldKeysForStage(stage, ctx),
+      );
       const incoming: LeadFields = { ...(out.fields ?? {}) };
       if (out.intent) incoming.intent = out.intent;
       ctx.lead.fields = mergeAllowedFields(schemaKeys, ctx.lead.fields, incoming);

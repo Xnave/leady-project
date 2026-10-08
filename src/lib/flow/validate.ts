@@ -127,6 +127,30 @@ export const defaultLeadSchema: LeadSchema = {
   },
 };
 
+/** Union agent schema with defaults so new CRM keys (e.g. interest) persist without a DB rewrite. */
+export function mergeLeadSchemaWithDefaults(stored: LeadSchema): LeadSchema {
+  return {
+    fields: {
+      ...defaultLeadSchema.fields,
+      ...stored.fields,
+    },
+  };
+}
+
+/** Allowlist for mergeAllowedFields: defaults ∪ agent ∪ session keys. */
+export function allowedLeadFieldKeys(
+  agentSchema: LeadSchema,
+  extraSessionKeys: readonly string[] = [],
+): string[] {
+  return [
+    ...new Set([
+      ...Object.keys(defaultLeadSchema.fields),
+      ...Object.keys(agentSchema.fields),
+      ...extraSessionKeys,
+    ]),
+  ];
+}
+
 export const defaultHitlPolicy: HitlPolicy = {
   allowRequestHuman: true,
   allowedFromStages: ["talk", "escalate"],
