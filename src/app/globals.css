@@ -3962,3 +3962,109 @@ button.crm-stage { cursor: pointer; }
   .card { break-inside: avoid; box-shadow: none; }
   .thread { background: none; }
 }
+
+/* Legal pages (privacy policy, service agreement) and the consent line under auth forms. */
+.auth-legal {
+  margin: 4px 0 0;
+  max-width: 26rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.auth-legal a,
+.sidebar-legal a,
+.legal-nav a,
+.legal-doc a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.sidebar-legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding-top: 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.legal-page {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4) 64px;
+}
+.legal-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.legal-header .auth-brand {
+  text-decoration: none;
+}
+.legal-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.legal-note {
+  margin: 16px 0 0;
+  color: var(--muted);
+}
+.legal-title {
+  margin: 28px 0 8px;
+  font-size: 1.8rem;
+  text-align: start;
+}
+.legal-doc {
+  color: var(--text);
+  line-height: 1.75;
+  text-align: start;
+}
+.legal-doc h2 {
+  margin: 36px 0 12px;
+  padding-bottom: 6px;
+  font-size: 1.35rem;
+  border-bottom: 1px solid var(--line);
+}
+.legal-doc h3 {
+  margin: 24px 0 6px;
+  font-size: 1.05rem;
+}
+.legal-doc p,
+.legal-doc li {
+  max-width: 70ch;
+}
+.legal-doc ol,
+.legal-doc ul {
+  padding-inline-start: 1.4rem;
+}
+.legal-doc blockquote {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-inline-start: 3px solid var(--line);
+  color: var(--muted);
+}
+.legal-table {
+  overflow-x: auto;
+  margin: 12px 0;
+}
+.legal-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.legal-table th,
+.legal-table td {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  text-align: start;
+  vertical-align: top;
+}
+.legal-table th {
+  background: var(--card);
+}

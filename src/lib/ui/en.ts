@@ -686,4 +686,13 @@ export const en: UiCopy = {
     digestFeatureOff: "The WhatsApp digest isn't enabled for this account yet.",
     saved: "Saved",
   },
+  legal: {
+    privacy: "Privacy policy",
+    terms: "Service agreement",
+    consentBefore: "By signing in or signing up you agree to the ",
+    consentMiddle: " and the ",
+    consentAfter: ".",
+    hebrewOnly: "This document is published in Hebrew, which is the binding version.",
+    backToApp: "Back to the app",
+  },
 };
