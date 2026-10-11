@@ -121,7 +121,7 @@ export function SidebarNav({
           {ui.product}
         </Link>
         {showAccount ? (
-          <AccountMenu accountLabel={ui.common.account} signOutLabel={ui.common.signOut} />
+          <AccountMenu accountLabel={ui.common.account} signOutLabel={ui.common.signOut} legalLabel={ui.legal.card.title} />
         ) : null}
         {tenantName ? <div className="sidebar-tenant">{tenantName}</div> : null}
         <nav className="sidebar-nav">

@@ -4173,19 +4173,17 @@ button.crm-stage { cursor: pointer; }
   font-size: var(--fs-xs);
 }
 
-/* Legal documents card at the bottom of /settings/team. */
+/* Legal documents card on /legal (avatar menu). */
 .legal-card {
-  margin-top: var(--space-6, 32px);
-}
-.legal-card-title {
-  margin: 0;
-  font-size: 1rem;
+  max-width: 46rem;
 }
 .legal-card-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+.legal-card-row + .legal-card-row {
   padding-top: 10px;
   border-top: 1px solid var(--line);
 }

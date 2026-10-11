@@ -464,7 +464,7 @@ export type UiCopy = {
       expand: string;
       collapse: string;
     };
-    /** Owner's agreement card on /settings/team. */
+    /** Legal documents page (/legal), linked from the avatar menu. */
     card: {
       title: string;
       version: string;

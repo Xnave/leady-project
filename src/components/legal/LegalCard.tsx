@@ -3,8 +3,8 @@ import { currentAgreementAcceptance } from "@/lib/legal/agreement";
 import type { UiCopy, UiLang } from "@/lib/ui/types";
 
 /**
- * Legal documents card at the bottom of /settings/team. Everyone who can open the page sees the
- * privacy policy; only the owner sees the signed agreement: version, date and who accepted it.
+ * Legal documents card on /legal, reached from the avatar menu. Everyone sees the privacy policy;
+ * only the owner sees the signed agreement: version, date and who accepted it.
  */
 export async function LegalCard({
   tenantId,
@@ -23,7 +23,6 @@ export async function LegalCard({
 
   return (
     <section className="card stack legal-card">
-      <h2 className="legal-card-title">{c.title}</h2>
       {owner ? (
         <div className="legal-card-row">
           <div>
