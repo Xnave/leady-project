@@ -4123,3 +4123,52 @@ button.crm-stage { cursor: pointer; }
 .legal-table th {
   background: var(--card);
 }
+
+/* Owner acceptance screen (/accept-agreement): the full agreement in a scroll box above the checkbox. */
+.accept-card {
+  width: 100%;
+  max-width: 46rem;
+}
+.accept-doc {
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 4px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md, 12px);
+  background: var(--bg-elevated);
+}
+.accept-doc:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.accept-doc .legal-doc h2:first-child {
+  margin-top: 12px;
+}
+.accept-full {
+  align-self: flex-start;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.accept-check {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  font-size: var(--fs-sm, 0.9rem);
+  font-weight: 500;
+  color: var(--text);
+  gap: 10px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.accept-check input {
+  margin-top: 4px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+.accept-error {
+  margin: 0;
+  color: var(--danger, #e5484d);
+  font-size: var(--fs-xs);
+}

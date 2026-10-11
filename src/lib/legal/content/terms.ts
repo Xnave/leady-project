@@ -1,5 +1,5 @@
 /** Service agreement + Annex A (AI) + Annex B (data processing). Hebrew is the binding version. */
-const text = `## הסכם שירות Zapidly
+const text = `## הסכם התקשרות לשירותי Zapidly
 
 עדכון אחרון: 1.10.2026
 

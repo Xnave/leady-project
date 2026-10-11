@@ -411,3 +411,21 @@ model DigestLog {
 
   @@unique([tenantId, date])
 }
+
+/**
+ * The tenant owner's acceptance of the service agreement (הסכם ההתקשרות), one row per
+ * tenant per agreement version. No FK on purpose: the record is contract evidence and
+ * must outlive the tenant row (kept 7 years, annex B ב.11).
+ */
+model AgreementAcceptance {
+  id          String   @id @default(cuid())
+  tenantId    String
+  version     String
+  clerkUserId String
+  email       String   @default("")
+  ip          String   @default("")
+  userAgent   String   @default("")
+  acceptedAt  DateTime @default(now())
+
+  @@unique([tenantId, version])
+}

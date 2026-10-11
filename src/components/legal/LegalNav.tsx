@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type Props = { terms: string; privacy: string; back: string };
+type Props = { agreement: string | null; privacy: string; back: string };
 
 /** Switch between the two legal documents; the current one is marked like the sidebar's active item. */
-export function LegalNav({ terms, privacy, back }: Props) {
+export function LegalNav({ agreement, privacy, back }: Props) {
   const pathname = usePathname();
   const tabs = [
-    { href: "/terms", label: terms },
+    ...(agreement ? [{ href: "/agreement", label: agreement }] : []),
     { href: "/privacy", label: privacy },
   ];
   return (

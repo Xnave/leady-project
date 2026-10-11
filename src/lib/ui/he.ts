@@ -687,11 +687,19 @@ export const he: UiCopy = {
   },
   legal: {
     privacy: "מדיניות פרטיות",
-    terms: "הסכם שירות",
-    consentBefore: "בהתחברות או בהרשמה את/ה מסכים/ה ל",
-    consentMiddle: " ול",
-    consentAfter: ".",
+    agreement: "הסכם התקשרות",
+    consentBefore: "השימוש במערכת כפוף ל",
+    consentAfter: " של Zapidly.",
     hebrewOnly: "",
     backToApp: "חזרה למערכת",
+    accept: {
+      title: "אישור הסכם ההתקשרות",
+      blurb: "לפני הכניסה למערכת יש לאשר את הסכם ההתקשרות עם Zapidly ונספחיו. האישור ניתן פעם אחת, בשם העסק.",
+      checkbox: "קראתי את הסכם ההתקשרות ונספחיו, ואני מאשר/ת אותם בשם העסק ומוסמך/ת לעשות כן.",
+      submit: "אישור והמשך",
+      signOut: "יציאה",
+      error: "כדי להמשיך יש לסמן את תיבת האישור.",
+      openFull: "פתיחת ההסכם בעמוד מלא",
+    },
   },
 };

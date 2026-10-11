@@ -444,13 +444,23 @@ export type UiCopy = {
   crm: CrmCopy;
   legal: {
     privacy: string;
-    terms: string;
-    /** Shown under sign-in / sign-up: "{before}<terms>{middle}<privacy>{after}". */
+    /** The service agreement (הסכם התקשרות), signed by the tenant owner. */
+    agreement: string;
+    /** Shown under sign-in / sign-up: "{before}<privacy>{after}". */
     consentBefore: string;
-    consentMiddle: string;
     consentAfter: string;
     /** Shown above the Hebrew-only legal texts when the UI is in English. */
     hebrewOnly: string;
     backToApp: string;
+    /** Owner-only acceptance screen before the CRM (/accept-agreement). */
+    accept: {
+      title: string;
+      blurb: string;
+      checkbox: string;
+      submit: string;
+      signOut: string;
+      error: string;
+      openFull: string;
+    };
   };
 };
