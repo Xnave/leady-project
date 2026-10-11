@@ -58,3 +58,11 @@ export const pendingAgreement = cache(async (): Promise<PendingAgreement | null>
   if (!mustAcceptAgreement({ platformAdmin, role, accepted: false })) return null;
   return { tenantId, userId, email };
 });
+
+/** The owner's acceptance of the current version, for the account card. */
+export async function currentAgreementAcceptance(tenantId: string) {
+  return prisma.agreementAcceptance.findUnique({
+    where: { tenantId_version: { tenantId, version: AGREEMENT_VERSION } },
+    select: { version: true, email: true, acceptedAt: true },
+  });
+}

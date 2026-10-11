@@ -704,5 +704,13 @@ export const en: UiCopy = {
       expand: "Enlarge",
       collapse: "Close",
     },
+    card: {
+      title: "Legal documents",
+      version: "Version",
+      acceptedOn: "accepted on",
+      by: "by",
+      view: "View",
+      notAccepted: "The business owner hasn't accepted the agreement yet.",
+    },
   },
 };

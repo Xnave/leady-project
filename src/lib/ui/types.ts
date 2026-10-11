@@ -464,5 +464,14 @@ export type UiCopy = {
       expand: string;
       collapse: string;
     };
+    /** Legal documents page (/legal), linked from the avatar menu. */
+    card: {
+      title: string;
+      version: string;
+      acceptedOn: string;
+      by: string;
+      view: string;
+      notAccepted: string;
+    };
   };
 };
