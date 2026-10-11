@@ -3972,20 +3972,40 @@ button.crm-stage { cursor: pointer; }
   color: var(--muted);
 }
 .auth-legal a,
-.sidebar-legal a,
-.legal-nav a,
 .legal-doc a {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+/* Quiet legal line at the bottom of the sidebar: muted, no underline until hover. */
 .sidebar-legal {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
-  padding-top: 6px;
-  font-size: 0.75rem;
+  align-items: center;
+  gap: 2px 0;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-2xs);
   color: var(--muted);
+}
+.sidebar-legal a {
+  color: inherit;
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+.sidebar-legal a:hover,
+.sidebar-legal a:focus-visible {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.sidebar-legal a + a::before {
+  content: "·";
+  margin-inline: 8px;
+  color: var(--muted);
+  display: inline-block;
+  text-decoration: none;
 }
 .legal-page {
   max-width: 52rem;
@@ -4007,10 +4027,44 @@ button.crm-stage { cursor: pointer; }
 .legal-nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  font-size: 0.9rem;
-  color: var(--muted);
+  align-items: center;
+  gap: 12px;
 }
+/* Same pill as the sidebar language switcher; the open document is the active segment. */
+.legal-tabs {
+  display: flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-pill);
+}
+.legal-tabs a {
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-decoration: none;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.legal-tabs a:hover { color: var(--text); }
+.legal-tabs a.active {
+  background: var(--card);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+.legal-back {
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-decoration: none;
+  transition: background var(--transition-fast);
+}
+.legal-back:hover { background: var(--bg-elevated); }
 .legal-note {
   margin: 16px 0 0;
   color: var(--muted);
