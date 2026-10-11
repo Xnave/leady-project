@@ -686,4 +686,23 @@ export const en: UiCopy = {
     digestFeatureOff: "The WhatsApp digest isn't enabled for this account yet.",
     saved: "Saved",
   },
+  legal: {
+    privacy: "Privacy policy",
+    agreement: "Service agreement",
+    consentBefore: "Use of the system is subject to Zapidly's ",
+    consentAfter: ".",
+    hebrewOnly: "This document is published in Hebrew, which is the binding version.",
+    backToApp: "Back to the app",
+    accept: {
+      title: "Approve the service agreement",
+      blurb: "Before entering the system, please approve the service agreement with Zapidly and its annexes. You approve it once, on behalf of the business.",
+      checkbox: "I have read the service agreement and its annexes, and I approve them on behalf of the business and am authorized to do so.",
+      submit: "Approve and continue",
+      signOut: "Sign out",
+      error: "To continue, tick the approval box.",
+      scrollHint: "Scroll to the end of the agreement to approve it.",
+      expand: "Enlarge",
+      collapse: "Close",
+    },
+  },
 };

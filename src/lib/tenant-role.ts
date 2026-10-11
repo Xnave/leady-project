@@ -83,6 +83,15 @@ export async function requireTenantRoleForPage(level: TenantAccessLevel): Promis
   return access;
 }
 
+/** Nav/UI flag: the tenant owner (platform admins resolve as owner). Never throws. */
+export async function isTenantOwner(): Promise<boolean> {
+  try {
+    return (await resolveTenantAccess()).role === "owner";
+  } catch {
+    return false;
+  }
+}
+
 /** Nav/UI flag; never throws. */
 export async function canManageTenant(): Promise<boolean> {
   try {

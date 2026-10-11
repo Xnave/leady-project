@@ -76,6 +76,7 @@ export function SidebarNav({
   showTeam = false,
   showSettings = false,
   showAccount = false,
+  showAgreement = false,
 }: {
   ui: UiCopy;
   admin: boolean;
@@ -87,6 +88,8 @@ export function SidebarNav({
   /** Setup + Channels: tenant owner/admin or platform admin. */
   showSettings?: boolean;
   showAccount?: boolean;
+  /** The signed service agreement: tenant owner (and platform staff) only. */
+  showAgreement?: boolean;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -193,6 +196,17 @@ export function SidebarNav({
               </button>
             ))}
           </form>
+
+          <nav className="sidebar-legal">
+            {showAgreement ? (
+              <Link href="/agreement" onClick={() => setOpen(false)}>
+                {ui.legal.agreement}
+              </Link>
+            ) : null}
+            <Link href="/privacy" onClick={() => setOpen(false)}>
+              {ui.legal.privacy}
+            </Link>
+          </nav>
         </div>
       </aside>
     </>

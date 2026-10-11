@@ -442,4 +442,27 @@ export type UiCopy = {
     inviteClaimOnSignIn: string;
   };
   crm: CrmCopy;
+  legal: {
+    privacy: string;
+    /** The service agreement (הסכם התקשרות), signed by the tenant owner. */
+    agreement: string;
+    /** Shown under sign-in / sign-up: "{before}<privacy>{after}". */
+    consentBefore: string;
+    consentAfter: string;
+    /** Shown above the Hebrew-only legal texts when the UI is in English. */
+    hebrewOnly: string;
+    backToApp: string;
+    /** Owner-only acceptance screen before the CRM (/accept-agreement). */
+    accept: {
+      title: string;
+      blurb: string;
+      checkbox: string;
+      submit: string;
+      signOut: string;
+      error: string;
+      scrollHint: string;
+      expand: string;
+      collapse: string;
+    };
+  };
 };

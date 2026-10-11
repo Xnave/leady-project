@@ -6,6 +6,7 @@ import { devAuthBypassEnabled } from "@/lib/dev-auth-bypass";
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
+  "/privacy",
   "/no-access(.*)",
   "/activating(.*)",
   "/api/webhooks(.*)",
