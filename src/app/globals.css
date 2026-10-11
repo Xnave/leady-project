@@ -4144,10 +4144,40 @@ button.crm-stage { cursor: pointer; }
 .accept-doc .legal-doc h2:first-child {
   margin-top: 12px;
 }
-.accept-full {
-  align-self: flex-start;
-  font-size: var(--fs-xs);
+.accept-doc-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -4px;
+}
+/* Enlarged view: the same scroll box, fixed over the page. */
+.accept-doc.expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0 max(16px, calc((100vw - 52rem) / 2)) 48px;
+  background: var(--bg);
+}
+.accept-doc-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.accept-hint {
+  margin: 0;
   color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.accept-check.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .accept-check {
   display: flex;

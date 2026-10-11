@@ -700,7 +700,9 @@ export const en: UiCopy = {
       submit: "Approve and continue",
       signOut: "Sign out",
       error: "To continue, tick the approval box.",
-      openFull: "Open the agreement in a full page",
+      scrollHint: "Scroll to the end of the agreement to approve it.",
+      expand: "Enlarge",
+      collapse: "Close",
     },
   },
 };

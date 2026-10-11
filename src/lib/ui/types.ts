@@ -460,7 +460,9 @@ export type UiCopy = {
       submit: string;
       signOut: string;
       error: string;
-      openFull: string;
+      scrollHint: string;
+      expand: string;
+      collapse: string;
     };
   };
 };
