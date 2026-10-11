@@ -32,7 +32,18 @@ export type PendingAgreement = { tenantId: string; userId: string; email: string
  * Sign-in / activation problems return null and are left to the existing page guards.
  */
 export const pendingAgreement = cache(async (): Promise<PendingAgreement | null> => {
-  if (adminBypass() || !isClerkReady()) return null;
+  // Local only: DEV_AUTH_BYPASS + DEV_AGREEMENT_GATE=true treats the bypass session as the
+  // dev tenant's owner, so the gate can be tried without Clerk. adminBypass() is never on in production.
+  if (adminBypass()) {
+    if (process.env.DEV_AGREEMENT_GATE !== "true") return null;
+    const tenantId = await requireTenantId();
+    const accepted = await prisma.agreementAcceptance.findUnique({
+      where: { tenantId_version: { tenantId, version: AGREEMENT_VERSION } },
+      select: { id: true },
+    });
+    return accepted ? null : { tenantId, userId: "dev-bypass", email: null };
+  }
+  if (!isClerkReady()) return null;
 
   let tenantId: string;
   try {
