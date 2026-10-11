@@ -3,7 +3,6 @@ import { BrandMark } from "@/components/BrandMark";
 import { AgreementAcceptForm } from "@/components/legal/AgreementAcceptForm";
 import { LegalDoc } from "@/components/legal/LegalDoc";
 import { SwitchAccountActions } from "@/components/SwitchAccountActions";
-import { adminBypass } from "@/lib/admin";
 import { isClerkConfigured } from "@/lib/clerk";
 import { getUiLang } from "@/lib/cookies";
 import { AGREEMENT_VERSION, pendingAgreement } from "@/lib/legal/agreement";
@@ -14,8 +13,7 @@ export const metadata = { title: "אישור הסכם ההתקשרות | Zapidly
 
 /** Owner-only gate before the CRM: the full agreement (read to the end, can be enlarged), an unticked checkbox, approve or sign out. */
 export default async function AcceptAgreementPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  // Dev bypass has no signed-in owner; render the screen as a preview instead of redirecting.
-  if (!(await pendingAgreement()) && !adminBypass()) redirect("/");
+  if (!(await pendingAgreement())) redirect("/");
 
   const ui = uiCopy(await getUiLang());
   const a = ui.legal.accept;
