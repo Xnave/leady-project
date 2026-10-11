@@ -703,5 +703,13 @@ export const he: UiCopy = {
       expand: "הגדלת התצוגה",
       collapse: "סגירה",
     },
+    card: {
+      title: "מסמכים משפטיים",
+      version: "גרסה",
+      acceptedOn: "אושר בתאריך",
+      by: "על ידי",
+      view: "צפייה",
+      notAccepted: "ההסכם טרם אושר על ידי בעל העסק.",
+    },
   },
 };

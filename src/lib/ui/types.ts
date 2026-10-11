@@ -464,5 +464,14 @@ export type UiCopy = {
       expand: string;
       collapse: string;
     };
+    /** Owner's agreement card on /settings/team. */
+    card: {
+      title: string;
+      version: string;
+      acceptedOn: string;
+      by: string;
+      view: string;
+      notAccepted: string;
+    };
   };
 };
