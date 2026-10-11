@@ -19,6 +19,13 @@ function inline(parts: Inline[]): ReactNode {
   });
 }
 
+/** "4. Title" → "section-4", so other pages can link straight to a section. */
+function sectionId(parts: Inline[]): string | undefined {
+  const first = parts[0];
+  const n = first?.kind === "text" ? first.text.match(/^(\d+)\.\s/)?.[1] : undefined;
+  return n ? `section-${n}` : undefined;
+}
+
 /** Renders a Hebrew legal document. Always RTL: Hebrew is the binding text in every UI language. */
 export function LegalDoc({ source }: { source: string }) {
   return (
@@ -26,7 +33,12 @@ export function LegalDoc({ source }: { source: string }) {
       {parseMarkdown(source).map((b, i) => {
         switch (b.kind) {
           case "heading":
-            return b.level === 2 ? <h2 key={i}>{inline(b.text)}</h2> : <h3 key={i}>{inline(b.text)}</h3>;
+            if (b.level === 2) return <h2 key={i}>{inline(b.text)}</h2>;
+            return (
+              <h3 key={i} id={sectionId(b.text)}>
+                {inline(b.text)}
+              </h3>
+            );
           case "paragraph":
             return <p key={i}>{inline(b.text)}</p>;
           case "quote":

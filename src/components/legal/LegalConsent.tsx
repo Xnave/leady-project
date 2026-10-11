@@ -9,7 +9,7 @@ export function LegalConsent({ ui }: { ui: UiCopy }) {
       {l.consentBefore}
       <Link href="/terms">{l.terms}</Link>
       {l.consentMiddle}
-      <Link href="/privacy">{l.privacy}</Link>
+      <Link href="/privacy#section-4">{l.privacy}</Link>
       {l.consentAfter}
     </p>
   );

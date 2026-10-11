@@ -4034,6 +4034,7 @@ button.crm-stage { cursor: pointer; }
 .legal-doc h3 {
   margin: 24px 0 6px;
   font-size: 1.05rem;
+  scroll-margin-top: 24px;
 }
 .legal-doc p,
 .legal-doc li {
