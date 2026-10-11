@@ -15,7 +15,7 @@ Zapidly is not a chat app with a streaming sidebar. It is **async, multi-channel
 - Minutes or hours may pass between turns. There is no live WebSocket to the lead.
 - The same conversation may pause for a human (approve a quote, read a photo, fill a missing field).
 - Each business owner (tenant) has their own channels, leads, and one or more agents. Data must never leak across tenants.
-- Most agents are simple: collect info, answer from FAQs, book a meeting. Complexity is **JSON flow data** on the agent (`agents.flow` + `conversations.flow_state`), interpreted by one Inngest function — not LangGraph. See [agent-flow-as-data.md](./agent-flow-as-data.md). Optional n8n is a side-effect after the flow, not the messenger. Zapidly ops edits JSON; owners do not get a workflow builder.
+- Most agents are simple: collect info, answer from FAQs, book a meeting. Complexity is **JSON flow data** on the agent (`agents.flow` + `conversations.flow_state`), interpreted by one Inngest function - not LangGraph. See [agent-flow-as-data.md](./agent-flow-as-data.md). Optional n8n is a side-effect after the flow, not the messenger. Zapidly ops edits JSON; owners do not get a workflow builder.
 
 That last point drives the stack. We need a **durable conversation plus a small JSON state machine**, not a compiled graph framework.
 
@@ -167,7 +167,7 @@ export const runAgentTurn = inngest.createFunction(
   {
     id: "run-agent-turn",
 // Consistency under concurrency
-// If the same customer sends two messages in quick succession (e.g., double-tap on WhatsApp), you // need to guarantee the second run sees the first run's result, not a stale read. This is where // Inngest's per-key concurrency comes in (see point 3) — you'd set concurrency limit 1 keyed by // conversation_id, so message-processing steps for the same conversation are serialized even 
+// If the same customer sends two messages in quick succession (e.g., double-tap on WhatsApp), you // need to guarantee the second run sees the first run's result, not a stale read. This is where // Inngest's per-key concurrency comes in (see point 3) - you'd set concurrency limit 1 keyed by // conversation_id, so message-processing steps for the same conversation are serialized even 
 // though the platform is otherwise fully parallel.
 
     // One in-flight turn per conversation; later messages wait.
@@ -217,7 +217,7 @@ Load the last ~30 messages plus a compact snapshot of `leads.fields` in the syst
 - Clerk **organization** = Zapidly **tenant**.
 - Every table has `tenant_id`. Postgres **RLS** using the org id from the session (or a worker role that sets `SET LOCAL app.tenant_id`).
 - HookMyApp: **one customer workspace per tenant**. Owners connect WhatsApp/IG via an onboarding link. Store channel id, phone/IG ids, encrypted gateway token, HMAC secret on `channel_connections`.
-- One public webhook URL. Tenant is resolved from the channel identifiers in the payload, then HMAC is verified with **that row’s** secret — never a global secret.
+- One public webhook URL. Tenant is resolved from the channel identifiers in the payload, then HMAC is verified with **that row’s** secret - never a global secret.
 
 ```ts
 async function resolveChannel(payload: MetaWebhook): Promise<ChannelConnection | null> {
@@ -486,7 +486,7 @@ async function completeHitlTask(args: {
 }
 ```
 
-On resume, the model sees the `human` message in history and continues (thank the lead, send the approved quote, ask the next question). Optional later: WhatsApp template to the *owner* when a task is created — not required for v1.
+On resume, the model sees the `human` message in history and continues (thank the lead, send the approved quote, ask the next question). Optional later: WhatsApp template to the *owner* when a task is created - not required for v1.
 
 This maps cleanly to LangGraph-style interrupts **at the product level** (pause, wait for human, resume) without storing graph checkpoints. The “checkpoint” is the conversation.
 

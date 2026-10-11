@@ -73,7 +73,7 @@ Supporting a new flow type means annotating its JSON in the catalog template. `v
 - The owner can set any of the 7 stages from the list row, the peek panel or the lead page. This sets `stageSource = manual`.
 - A manual stage holds until a **strong event**, after which the lead returns to `auto`. As implemented in `src/lib/crm/stage.ts` (`deriveLeadStage`, ruling R4):
   - a request changes (is created or decided) after the manual choice;
-  - for a manual **ranked** stage (`new` to `won`): an automatic signal ranked `pending` or `won`, **and** ranked above the current manual stage, **and** new evidence after the manual choice: the lead wrote after it (a request change already counts on its own, above). Signals carry no time, so a request approved or opened before the owner's choice never snaps the stage back by itself. A `talking` or `qualified` signal never overrides a manual stage, however low that manual stage ranks — only a `pending`/`won` signal that also outranks it does;
+  - for a manual **ranked** stage (`new` to `won`): an automatic signal ranked `pending` or `won`, **and** ranked above the current manual stage, **and** new evidence after the manual choice: the lead wrote after it (a request change already counts on its own, above). Signals carry no time, so a request approved or opened before the owner's choice never snaps the stage back by itself. A `talking` or `qualified` signal never overrides a manual stage, however low that manual stage ranks - only a `pending`/`won` signal that also outranks it does;
   - for a manual `lost` or `not_relevant`: the lead writes again (the timeline records this as "revived"), or a request changes. A signal can never override these two on its own.
 - A manual `won` survives new inbound messages (for example, a past customer asking a question).
 - Nothing sets a lead to `lost` automatically in phase 1.
@@ -104,14 +104,14 @@ All of these must be true:
 
 ### 4.3 No cron needed for the list
 
-`refreshLeadState` stores `followUpAt` in advance. For example, when the bot replies it stores `cold` due at reply time + 20h. The "Needs you" tab is then a plain query — `needsWhere()` in `src/lib/crm/needs.ts`:
+`refreshLeadState` stores `followUpAt` in advance. For example, when the bot replies it stores `cold` due at reply time + 20h. The "Needs you" tab is then a plain query - `needsWhere()` in `src/lib/crm/needs.ts`:
 
 ```
 followUpReason IS NOT NULL AND followUpAt <= now()
 AND (snoozedUntil IS NULL OR snoozedUntil <= now())
 ```
 
-There is no `stage IN (...)` filter. `handoff` and `approval` apply at any stage — a past `won` customer can still open a new handoff and needs a reply — so filtering the query by stage would hide them. Only `cold` is limited to the active stages (`new`, `talking`, `qualified`, `pending`); that limit is enforced when `cold` is set (§4.2), not by filtering the query.
+There is no `stage IN (...)` filter. `handoff` and `approval` apply at any stage - a past `won` customer can still open a new handoff and needs a reply - so filtering the query by stage would hide them. Only `cold` is limited to the active stages (`new`, `talking`, `qualified`, `pending`); that limit is enforced when `cold` is set (§4.2), not by filtering the query.
 
 Leads appear in the tab as time passes, with no scheduled job. A cron runs only for the digest (section 6).
 
@@ -311,7 +311,7 @@ Every relation cascades on tenant and lead delete. Every query filters on `tenan
 | `src/lib/crm/timeline.ts` | **Pure** `buildLeadTimeline(sources)` | Types only |
 | `src/lib/crm/digest.ts` | Builds template parameters and the full list; sends through Zernio; writes `DigestLog` | Prisma, Zernio |
 | `src/inngest/functions.ts` | New cron `crmDigest` (hourly) | digest |
-| `src/lib/flow/types.ts`, `validate.ts` | `pipeline` and `pipelineByIntent` fields plus validation | — |
+| `src/lib/flow/types.ts`, `validate.ts` | `pipeline` and `pipelineByIntent` fields plus validation | - |
 | Capabilities `booking`, `reservations` | Implement `pipelineSignals` | requests |
 | Call sites | Call `refreshLeadState` from: `run-turn.ts` after a turn; `requests.ts` on create and decide; HITL open and resolve; `staff-message` route; the new CRM API routes | refresh |
 | API | `PATCH /api/leads/[id]/stage`, `PUT /api/leads/[id]/next-step`, `POST /api/leads/[id]/snooze`, `POST/PATCH/DELETE /api/leads/[id]/notes`, `PATCH /api/leads/bulk` | refresh, tenant |
@@ -352,12 +352,12 @@ Every relation cascades on tenant and lead delete. Every query filters on `tenan
 | # | Workstream | Output | Depends on |
 |---|---|---|---|
 | 0 | Submit the Meta utility template (He + En) | Template approval started | Platform number from the product owner |
-| 1 | Schema + backfill | Migration, backfill script | — |
+| 1 | Schema + backfill | Migration, backfill script | - |
 | 2 | Pure core | `derive.ts`, `timeline.ts` + tests | 1 |
 | 3 | Signals + flow annotations | `signals.ts`, types, validation, booking and reservations hooks, catalog annotations | 2 |
 | 4 | Single writer + call sites | `refresh.ts` wired into turn, requests, HITL, staff message | 3 |
 | 5 | CRM API routes | stage, next step, snooze, notes, bulk | 4 |
-| 6 | Type scale + UI primitives | `--fs-*` bump; chips, avatar, stepper, toast/undo, peek shell, popover menu | — (can run alongside 1–5) |
+| 6 | Type scale + UI primitives | `--fs-*` bump; chips, avatar, stepper, toast/undo, peek shell, popover menu | - (can run alongside 1–5) |
 | 7 | List screen | Strip, tabs, filters, rows, bulk bar, keyboard, mobile cards (behind `CRM_V2`) | 5, 6 |
 | 8 | Peek panel + lead page | Header, follow-up bar, next step, notes, tabs, timeline | 5, 6 |
 | 9 | Sidebar count + tab title | Needs you count | 4 |

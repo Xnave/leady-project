@@ -48,6 +48,7 @@ export function bookingVars(
     slot: input.slot,
     date: input.date ?? input.slot,
     time: input.time ?? "",
+    weekday: input.weekday ?? "",
     address: input.address ?? "",
     hours: input.hours ?? "",
     name: input.name ?? "",

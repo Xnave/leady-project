@@ -9,7 +9,7 @@ import { LeadView } from "./LeadView";
 /**
  * The full `/leads/[id]` page: a breadcrumb back to the list, then the
  * `page` variant of `LeadView`. There is no list here to absorb row patches, so an
- * action just asks the server component to refresh once it lands — the view itself
+ * action just asks the server component to refresh once it lands - the view itself
  * already shows the optimistic and rolled-back state.
  */
 export function LeadPage({

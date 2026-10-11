@@ -63,7 +63,7 @@ async function main() {
   console.log("  url:", webhook.url);
   console.log("  id:", webhook._id);
   if (!secret) {
-    console.log("  (no ZERNIO_WEBHOOK_SECRET — signature verification disabled locally)");
+    console.log("  (no ZERNIO_WEBHOOK_SECRET - signature verification disabled locally)");
   }
 }
 

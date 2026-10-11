@@ -1,4 +1,4 @@
-# Conversation simulations — agent review
+# Conversation simulations - agent review
 
 Five scripted conversations were pushed through the live app on **2026-09-03** using `POST /api/demo/message` (persist inbound → `runTurnNow` → LLM turn → reply saved). Each used a fresh `demo-sim-*` sender, so outbound delivery is skipped but everything else is the real production path.
 
@@ -25,7 +25,7 @@ Five scripted conversations were pushed through the live app on **2026-09-03** u
 | First customer message interpreted | **0 of 5** |
 | `name` captured | 3 of 5 |
 | `time_preference` captured | 2 of 5 (missed in the one conversation that stated it first) |
-| `intent` captured | 1 of 5 — and it was wrong (`sales` for a warranty claim) |
+| `intent` captured | 1 of 5 - and it was wrong (`sales` for a warranty claim) |
 | English-in → Hebrew-out | 4 of 5 conversations |
 
 Two conversations reached "every booking fact known except one" and then stalled on that one. Nothing reached the CRM as a booking.
@@ -40,7 +40,7 @@ Four mechanics explain almost every reply below.
 
 2. **A booking attempt with any gap deletes the model's reply.** In `talkTurn`, if `book_meeting` was called and `bookingFieldGaps` is non-empty, `collected.reply` is *overwritten* with the canned `askBookingField(gap[0])` string. The customer loses the acknowledgement the model wrote, and two consecutive attempts produce two byte-identical messages.
 
-3. **Opening hours get appended to any question while `time_preference` is unknown.** The condition is `reply.includes("?") && askingTime`, not "the reply is asking about time" — so hours were pasted under "?למה אתה זקוק".
+3. **Opening hours get appended to any question while `time_preference` is unknown.** The condition is `reply.includes("?") && askingTime`, not "the reply is asking about time" - so hours were pasted under "?למה אתה זקוק".
 
 4. **`waiting_human` silences the thread.** `interpretTurn` returns early, so follow-up messages are stored with no reply and no acknowledgement.
 
@@ -50,19 +50,19 @@ Four mechanics explain almost every reply below.
 
 ### P1 · The opening message is thrown away, and sometimes never recovered
 
-Every conversation opened with the same welcome regardless of what was said — including "I want a quote for a new kitchen", "Your installer never showed up. This is the third time.", and "Book me tomorrow 9am".
+Every conversation opened with the same welcome regardless of what was said - including "I want a quote for a new kitchen", "Your installer never showed up. This is the third time.", and "Book me tomorrow 9am".
 
 Worse than a wasted turn: in simulation 5 the customer's "tomorrow 9am" was never saved. The model even repeated it back in prose two turns later ("...מחר בשעה 9:00") while `time_preference` stayed empty, so the last reply asked for a day and time again.
 
-**Fix** — in `interpretTurn`, stop returning early. Run the talk stage always, and when no agent has replied yet, prefix `cannedIntroText(ctx)` to the model's reply. Remove the duplicate guard in `talkTurn`. Extraction then covers turn 1 like any other turn.
+**Fix** - in `interpretTurn`, stop returning early. Run the talk stage always, and when no agent has replied yet, prefix `cannedIntroText(ctx)` to the model's reply. Remove the duplicate guard in `talkTurn`. Extraction then covers turn 1 like any other turn.
 
 ### P1 · Booking never completes because `phone` can never be filled
 
-`phone` is required for this tenant. `callbackPhone()` reads `lead.fields.phone`, falling back to `ctx.channel.customerPhone` — but `loadTurnContext` sets `customerPhone` *from* `lead.fields.phone`. The fallback is circular and can never contribute a number. The only writer is `persistInboundIfNew`, which fills `fields.phone` only when the WhatsApp sender id looks numeric.
+`phone` is required for this tenant. `callbackPhone()` reads `lead.fields.phone`, falling back to `ctx.channel.customerPhone` - but `loadTurnContext` sets `customerPhone` *from* `lead.fields.phone`. The fallback is circular and can never contribute a number. The only writer is `persistInboundIfNew`, which fills `fields.phone` only when the WhatsApp sender id looks numeric.
 
-So demo leads (`demo-…`) and Instagram leads can never satisfy `phone`, and both booking conversations died there — twice each, with the identical canned sentence.
+So demo leads (`demo-…`) and Instagram leads can never satisfy `phone`, and both booking conversations died there - twice each, with the identical canned sentence.
 
-**Fix** — three separate changes:
+**Fix** - three separate changes:
 - Fall back to `lead.externalUserId` in `callbackPhone` when it looks like a phone number, instead of re-reading the same field.
 - Drop `phone` from the gap list when the channel cannot produce one (demo lead, or Instagram where the handle is the identity).
 - Never send the same `askBookingField` text twice in a row; if the previous agent message already asked for that field, say why it's needed or offer to proceed without it.
@@ -71,19 +71,19 @@ So demo leads (`demo-…`) and Instagram leads can never satisfy `phone`, and bo
 
 Simulation 2, turn 4: customer gives the time. Turn 5: "Yes please request that visit". Both replies are the same canned phone question, because mechanic #2 replaced whatever the model wrote. From the customer's side the agent looks stuck in a loop and deaf to "yes".
 
-**Fix** — keep the model's reply and append the single missing ask, rather than substituting it.
+**Fix** - keep the model's reply and append the single missing ask, rather than substituting it.
 
 ### P2 · The agent invites people to the workshop, contradicting its own knowledge
 
-The customer said "I need someone to come measure". The agent answered "מתי נוח לך להגיע" and "לבקר אצלנו למדידה", and in simulation 5 gave the industrial-zone address with "אנשי הצוות יהיו שם". The knowledge base says the business installs at the customer's home and serves specific regions — so the agent is steering people the wrong direction and implying a staffed showroom.
+The customer said "I need someone to come measure". The agent answered "מתי נוח לך להגיע" and "לבקר אצלנו למדידה", and in simulation 5 gave the industrial-zone address with "אנשי הצוות יהיו שם". The knowledge base says the business installs at the customer's home and serves specific regions - so the agent is steering people the wrong direction and implying a staffed showroom.
 
-**Fix** — make the visit direction explicit data, not prose: enable `visit_kind` for this tenant (home measurement vs showroom), and change the time question to a neutral "?באיזה יום ושעה נוח לך" until direction is known. Only quote the address once direction is `showroom`.
+**Fix** - make the visit direction explicit data, not prose: enable `visit_kind` for this tenant (home measurement vs showroom), and change the time question to a neutral "?באיזה יום ושעה נוח לך" until direction is known. Only quote the address once direction is `showroom`.
 
 ### P2 · The escalation loses the complaint and then goes silent
 
-The hand-off itself worked. But the HITL task reason is the hardcoded English string `"Customer asked for a person"` ([run-turn.ts](../src/lib/flow/run-turn.ts)); `ui.inbox.reasons` only maps `support_unresolved`, so `hitlReasonLabel` falls through and a Hebrew-speaking operator sees raw English. The actual grievance — a third missed installation — is nowhere in the task. The customer's next message got no response at all.
+The hand-off itself worked. But the HITL task reason is the hardcoded English string `"Customer asked for a person"` ([run-turn.ts](../src/lib/flow/run-turn.ts)); `ui.inbox.reasons` only maps `support_unresolved`, so `hitlReasonLabel` falls through and a Hebrew-speaking operator sees raw English. The actual grievance - a third missed installation - is nowhere in the task. The customer's next message got no response at all.
 
-**Fix** — pass a short summary of the customer's issue as the reason, add the reason keys to `ui.inbox.reasons`, and send one holding line the first time an inbound arrives while `waiting_human` ("קיבלנו, נציג חוזר אליך").
+**Fix** - pass a short summary of the customer's issue as the reason, add the reason keys to `ui.inbox.reasons`, and send one holding line the first time an inbound arrives while `waiting_human` ("קיבלנו, נציג חוזר אליך").
 
 ### P2 · Extracted values are translated, and the leads list can't find them
 
@@ -91,31 +91,31 @@ The hand-off itself worked. But the HITL task reason is the hardcoded English st
 
 On top of that, `displayName` is written once at lead creation and never updated from `fields.name`, and `/leads` search only queries `displayName` and `externalUserId`. Searching **דנה** against this database returns **0 rows** even though the lead exists.
 
-**Fix** — instruct extraction to preserve the customer's original wording (names especially), update `lead.displayName` when a name is extracted, and add `fields.name` to the leads search filter.
+**Fix** - instruct extraction to preserve the customer's original wording (names especially), update `lead.displayName` when a name is extracted, and add `fields.name` to the leads search filter.
 
 ### P3 · Hours are repeated to the point of noise, sometimes irrelevantly
 
 Hours appeared in three consecutive replies in simulation 3, and were appended to a question about *need* in simulation 5.
 
-**Fix** — tie the append to the field actually being asked, and suppress it if the previous agent message already contained the hours string.
+**Fix** - tie the append to the field actually being asked, and suppress it if the previous agent message already contained the hours string.
 
 ### P3 · Knowledge gaps produce polite non-answers with no exit
 
-Warranty, pricing, and measurement policy are genuinely absent from the knowledge base, so the vague answers were honest — but the agent never offered the public phone (`03-9876543`, already in its system prompt) and never escalated. A four-turn conversation ended with zero lead data captured.
+Warranty, pricing, and measurement policy are genuinely absent from the knowledge base, so the vague answers were honest - but the agent never offered the public phone (`03-9876543`, already in its system prompt) and never escalated. A four-turn conversation ended with zero lead data captured.
 
-**Fix** — add an explicit rule: when the answer isn't in knowledge, say so, offer the public phone or a callback, and log the unanswered question so ops can see which gaps cost leads.
+**Fix** - add an explicit rule: when the answer isn't in knowledge, say so, offer the public phone or a callback, and log the unanswered question so ops can see which gaps cost leads.
 
 ### P3 · Intent is nearly never captured, and was wrong when it was
 
 `set_intent` is an optional tool the model mostly skips: 1 of 5 conversations. That one labelled "warranty claim visit" as `sales`. The CRM intent column stays empty and the HITL policy's intent filter has nothing to work with.
 
-**Fix** — derive intent from the turn instead of relying on an optional tool call, and treat warranty/complaint wording as `support`.
+**Fix** - derive intent from the turn instead of relying on an optional tool call, and treat warranty/complaint wording as `support`.
 
 ### P3 · Language policy is working as configured, but the default hurts
 
-Hebrew-only is the tenant's setting, so English customers getting Hebrew is correct behaviour — not a bug. It's still four of five conversations answered in a language the customer didn't use. Separately, an Arabic word (`לزيارة`) leaked into a Hebrew reply in simulation 5, which the "never mix languages" rule is supposed to prevent.
+Hebrew-only is the tenant's setting, so English customers getting Hebrew is correct behaviour - not a bug. It's still four of five conversations answered in a language the customer didn't use. Separately, an Arabic word (`לزيارة`) leaked into a Hebrew reply in simulation 5, which the "never mix languages" rule is supposed to prevent.
 
-**Fix** — default new tenants to `multi` (match the customer) and describe the `he` option as "always Hebrew, even to English speakers". Add a cheap script check on the outgoing reply when the policy is `he` and log violations.
+**Fix** - default new tenants to `multi` (match the customer) and describe the `he` option as "always Hebrew, even to English speakers". Add a cheap script check on the outgoing reply when the policy is `he` and log violations.
 
 ---
 
@@ -138,7 +138,7 @@ Items 1–4 alone should take booking completion from 0 of 2 to 2 of 2 on these 
 
 ---
 
-## Simulation 1 — Greeting, then two knowledge questions
+## Simulation 1 - Greeting, then two knowledge questions
 
 Lead `cmtlegshd000zcgld6nydat0a` · ended `talk` / `open` · fields `{}` · no meeting
 
@@ -153,9 +153,9 @@ Lead `cmtlegshd000zcgld6nydat0a` · ended `talk` / `open` · fields `{}` · no m
 | lead | Thanks that's all I needed |
 | agent | אני שמח שיכולתי לעזור! אם תזדקק למידע נוסף או תרצה לקבוע פגישה בעתיד, אל תהסס לפנות אלינו. יום נעים! |
 
-**Verdict.** Deflecting the filter question is right — it's a kitchen company and there's nothing about filters in knowledge. The warranty answer is honest hedging for the same reason, but it should have offered `03-9876543` or a callback rather than trailing off. Four turns, zero fields, no intent, no next step. This is the "polite dead end" pattern.
+**Verdict.** Deflecting the filter question is right - it's a kitchen company and there's nothing about filters in knowledge. The warranty answer is honest hedging for the same reason, but it should have offered `03-9876543` or a callback rather than trailing off. Four turns, zero fields, no intent, no next step. This is the "polite dead end" pattern.
 
-## Simulation 2 — English sales enquiry, wants an on-site measurement
+## Simulation 2 - English sales enquiry, wants an on-site measurement
 
 Lead `cmtleh51m001pcgldpre22tod` · ended `talk` / `open` · `{ name: "דנה לוי", need: "הצעת מחיר למטבח", time_preference: "יום שלישי בשעה 10:00" }` · **no meeting**
 
@@ -172,9 +172,9 @@ Lead `cmtleh51m001pcgldpre22tod` · ended `talk` / `open` · `{ name: "דנה ל
 | lead | Yes please request that visit |
 | agent | מה מספר הטלפון שלך לחזרה? אם תרצה מספר אחר מזה שבצ'אט, כתוב אותו. |
 
-**Verdict.** The worst outcome of the five: a fully qualified lead — name, need, time, explicit "yes, book it" — and nothing was written to the CRM. Two identical phone requests are mechanic #2 firing twice. "לבקר אצלנו למדידה" also inverts the request: she asked for someone to come to her.
+**Verdict.** The worst outcome of the five: a fully qualified lead - name, need, time, explicit "yes, book it" - and nothing was written to the CRM. Two identical phone requests are mechanic #2 firing twice. "לבקר אצלנו למדידה" also inverts the request: she asked for someone to come to her.
 
-## Simulation 3 — Hebrew, price question into a booking
+## Simulation 3 - Hebrew, price question into a booking
 
 Lead `cmtlehil0002lcgldlw1mtr99` · ended `talk` / `open` · `{ name: "נועה כהן", need: "מדידה", time_preference: "מחר בבוקר ב־10:00" }` · **no meeting**
 
@@ -193,7 +193,7 @@ Lead `cmtlehil0002lcgldlw1mtr99` · ended `talk` / `open` · `{ name: "נועה 
 
 **Verdict.** Linguistically the strongest run, and the price answer is well handled without a price list to lean on. Then the identical phone deadlock again, this time ignoring an explicit "close it for me". Hours appear in three consecutive replies. Same showroom-vs-home ambiguity.
 
-## Simulation 4 — Angry customer demanding a person
+## Simulation 4 - Angry customer demanding a person
 
 Lead `cmtlehrs5003hcgld3aq9wlx7` · ended `talk` / **`waiting_human`** · fields `{}` · no meeting
 
@@ -204,11 +204,11 @@ Lead `cmtlehrs5003hcgld3aq9wlx7` · ended `talk` / **`waiting_human`** · fields
 | lead | I don't want a bot. Transfer me to a real person now. |
 | agent | אני מעביר את הבקשה שלך לאדם ואתה תתבקש לדבר בהקדם. תודה על הסבלנות! |
 | lead | Hello? I need a manager on the phone. |
-| agent | *(no reply — the turn is skipped while `waiting_human`)* |
+| agent | *(no reply - the turn is skipped while `waiting_human`)* |
 
 **Verdict.** Greeting a third missed installation with "שמח שאתה כאן" is the most damaging single line in the set. The hand-off works, but the wording is clumsy ("תתבקש לדבר"), gives no timeframe, doesn't offer the phone number the agent already has, and the follow-up is met with silence. The operator's inbox task says only "Customer asked for a person" in English.
 
-## Simulation 5 — Pressure to confirm, details withheld
+## Simulation 5 - Pressure to confirm, details withheld
 
 Lead `cmtlehum70041cgldid1875cg` · ended `talk` / `open` · `{ name: "Avi", need: "warranty claim visit", intent: "sales" }` · **no `time_preference`** · no meeting
 
@@ -235,7 +235,7 @@ curl -s localhost:3000/api/demo/message \
   -d '{"from":"demo-sim-1","text":"hi"}'
 ```
 
-The response is `{ leadId, conversationId }`; pass `leadId` on subsequent calls to stay in the same thread. Requires `pnpm dev` and `DEV_AUTH_BYPASS=true`. Replies come from the tenant in `DEV_TENANT_ID`, which is not necessarily the first tenant row — check which one you are actually testing before reading anything into the wording.
+The response is `{ leadId, conversationId }`; pass `leadId` on subsequent calls to stay in the same thread. Requires `pnpm dev` and `DEV_AUTH_BYPASS=true`. Replies come from the tenant in `DEV_TENANT_ID`, which is not necessarily the first tenant row - check which one you are actually testing before reading anything into the wording.
 
 ---
 
@@ -250,10 +250,10 @@ Same five scripts, fresh `demo-sim2-*` senders, same tenant. Every inbound got a
 | Meetings created | 0 | **0** |
 | First message interpreted | 0 / 5 | **5 / 5** |
 | `name` captured | 3 / 5 | 3 / 5 (original Latin preserved: Dana Levi, Avi) |
-| `time_preference` captured | 2 / 5 | **1 / 5** (worse — missed the two booking scripts) |
+| `time_preference` captured | 2 / 5 | **1 / 5** (worse - missed the two booking scripts) |
 | `intent` captured | 1 / 5, and wrong | **5 / 5** (warranty → `support`) |
 | Phone deadlock | 2 conversations, identical ask twice | **Gone** on the two booking scripts |
-| Escalations | 1 correct | 2 (`asked_for_person` key) — one is a false positive |
+| Escalations | 1 correct | 2 (`asked_for_person` key) - one is a false positive |
 | English-in → Hebrew-out | 4 / 5 | 4 / 5 (unchanged; tenant is `he`) |
 
 Items 1–4 were supposed to take booking from 0/2 to 2/2. They did not. The stall moved: phone is no longer the blocker; `time_preference` is not saved even when the customer and the model both say the time, so `book_meeting` is rejected and the follow-up ask leaks the English field id (`עדיין חסר לי time preference`).
@@ -271,7 +271,7 @@ Items 1–4 were supposed to take booking from 0/2 to 2/2. They did not. The sta
 
 ### What still fails (empirical)
 
-**Booking still 0/3.** The two kitchen scripts never wrote `time_preference` (`Tuesday at 10` / `מחר בבוקר ב־10:00`). The model quoted the slot in Hebrew, then `finalizeTalkReply` asked for time again, then `askFieldAgain` printed the raw field id. Simulation 5 *did* save `מחר ב-9:00` plus name and need — every required field except phone, which demo skips — and still asked for a phone number instead of calling `book_meeting`. So completion is still blocked by extraction + tool choice, not by the old phone circularity.
+**Booking still 0/3.** The two kitchen scripts never wrote `time_preference` (`Tuesday at 10` / `מחר בבוקר ב־10:00`). The model quoted the slot in Hebrew, then `finalizeTalkReply` asked for time again, then `askFieldAgain` printed the raw field id. Simulation 5 *did* save `מחר ב-9:00` plus name and need - every required field except phone, which demo skips - and still asked for a phone number instead of calling `book_meeting`. So completion is still blocked by extraction + tool choice, not by the old phone circularity.
 
 **HITL is sloppy.** Simulation 1 (`Thanks that's all I needed`) opened an `asked_for_person` task. Simulation 4 still prefixes `שמח שאתה כאן` onto a no-show complaint; the task reason is still the generic key, not “installer never showed”; the *third* inbound after hand-off is silent again (hold is sent once).
 
@@ -279,13 +279,13 @@ Items 1–4 were supposed to take booking from 0/2 to 2/2. They did not. The sta
 
 **Hours still double-print** when the model writes a slightly different hours phrase than `venueHours`, so the appender thinks hours are missing.
 
-**Hebrew-only + English “Tentative” / “time preference”** still leak. Canned intro is still masculine. Knowledge still has no prices/warranty — the new honesty + phone offer is the right behaviour given that gap.
+**Hebrew-only + English “Tentative” / “time preference”** still leak. Canned intro is still masculine. Knowledge still has no prices/warranty - the new honesty + phone offer is the right behaviour given that gap.
 
 ### Per-simulation notes
 
-1. **FAQ** — Lead `cmtllo7hh005zcgldwk8oidww`. Intro + model on “hi”. Honest “no info” + `03-9876543` twice. Then “thanks” → goodbye **and** a false HITL (`waiting_human`, reason `asked_for_person`). Intent `other`.
-2. **Book kitchen** — Lead `cmtllom7j006rcgld4yrdmv4w`. `{ name: "Dana Levi", need: "הצעת מחיר עבור מטבח חדש", intent: "sales" }`. No `time_preference`, no meeting. Last line: `עדיין חסר לי time preference כדי לשלוח את בקשת הביקור.`
-3. **Hebrew booking** — Lead `cmtllp4fn007ncgldnuqfnp6j`. Same pattern: name/need/intent saved, time spoken and acknowledged, then English field-id ask. Price turn correctly offered the phone.
-4. **Escalate** — Lead `cmtllplqa008jcgld3c3ffw0v`. Intent `support`. Turn 1: intro + apology + hand-off. Turn 2: holding line. Turn 3: no reply. Task reason `asked_for_person`.
-5. **Pressure** — Lead `cmtllpqp10093cgldi4njxesa`. `{ name: "Avi", need: "warranty claim", intent: "support", time_preference: "מחר ב-9:00" }`. Refused to confirm. Then asked for phone on a demo lead that should not need it. No meeting.
+1. **FAQ** - Lead `cmtllo7hh005zcgldwk8oidww`. Intro + model on “hi”. Honest “no info” + `03-9876543` twice. Then “thanks” → goodbye **and** a false HITL (`waiting_human`, reason `asked_for_person`). Intent `other`.
+2. **Book kitchen** - Lead `cmtllom7j006rcgld4yrdmv4w`. `{ name: "Dana Levi", need: "הצעת מחיר עבור מטבח חדש", intent: "sales" }`. No `time_preference`, no meeting. Last line: `עדיין חסר לי time preference כדי לשלוח את בקשת הביקור.`
+3. **Hebrew booking** - Lead `cmtllp4fn007ncgldnuqfnp6j`. Same pattern: name/need/intent saved, time spoken and acknowledged, then English field-id ask. Price turn correctly offered the phone.
+4. **Escalate** - Lead `cmtllplqa008jcgld3c3ffw0v`. Intent `support`. Turn 1: intro + apology + hand-off. Turn 2: holding line. Turn 3: no reply. Task reason `asked_for_person`.
+5. **Pressure** - Lead `cmtllpqp10093cgldi4njxesa`. `{ name: "Avi", need: "warranty claim", intent: "support", time_preference: "מחר ב-9:00" }`. Refused to confirm. Then asked for phone on a demo lead that should not need it. No meeting.
 

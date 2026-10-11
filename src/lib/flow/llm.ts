@@ -138,14 +138,14 @@ export { hasAgentReplied } from "./intro";
 export { introGreeting } from "@/lib/copy";
 
 /**
- * Safe degrade when the LLM is unavailable — never invent booking decisions.
+ * Safe degrade when the LLM is unavailable - never invent booking decisions.
  */
 export function degradeTalk(ctx: TurnContext, _stage: TalkStage): TalkOutcome {
   const last = lastLeadText(ctx);
   const lang = replyLang(ctx, last);
   const chat = copyFor(lang).chat;
   if (!hasAgentReplied(ctx)) {
-    // Presentation-only fallback when LLM is down — not dialogue policy.
+    // Presentation-only fallback when LLM is down - not dialogue policy.
     return { reply: cannedIntroText(ctx) };
   }
   return {
@@ -155,7 +155,7 @@ export function degradeTalk(ctx: TurnContext, _stage: TalkStage): TalkOutcome {
   };
 }
 
-/** @deprecated Use degradeTalk — kept for preview/tests name stability. */
+/** @deprecated Use degradeTalk - kept for preview/tests name stability. */
 export function heuristicTalk(ctx: TurnContext, stage: TalkStage): TalkOutcome {
   return degradeTalk(ctx, stage);
 }
@@ -203,7 +203,7 @@ export async function draftNudgeReply(
         `Transcript so far (you are ${business}, writing the next business message only):`,
         formatTranscriptForNudge(ctx),
         "",
-        "Write the next WhatsApp message from the business to the customer. Plain text only — no role labels, not as the customer.",
+        "Write the next WhatsApp message from the business to the customer. Plain text only - no role labels, not as the customer.",
       ].join("\n"),
       maxRetries: 2,
     });
@@ -278,7 +278,7 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
     }),
     request_human: tool({
       description:
-        "Hand off to a person only when the customer asks for a human, or knowledge cannot help after you tried to answer. Do NOT call for ordinary product interest or booking — answer with reply / start_booking instead.",
+        "Hand off to a person only when the customer asks for a human, or knowledge cannot help after you tried to answer. Do NOT call for ordinary product interest or booking - answer with reply / start_booking instead.",
       inputSchema: z.object({ reason: z.string() }),
       execute: async ({ reason }: { reason: string }) => {
         collected.effects = [
@@ -298,7 +298,7 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
     ? {
         start_new_conversation: tool({
           description:
-            "Start a brand-new conversation thread with a fresh intro. ONLY after the customer clearly agrees to start a new chat (not for ordinary follow-ups). Pass the full intro+first reply as intro. Do NOT call this just because a prior visit was approved or the previous topic ended — ask first with reply, then call this only on yes.",
+            "Start a brand-new conversation thread with a fresh intro. ONLY after the customer clearly agrees to start a new chat (not for ordinary follow-ups). Pass the full intro+first reply as intro. Do NOT call this just because a prior visit was approved or the previous topic ended - ask first with reply, then call this only on yes.",
           inputSchema: z.object({
             intro: z
               .string()

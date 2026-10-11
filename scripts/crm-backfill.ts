@@ -5,7 +5,7 @@
  *
  * Re-running is safe:
  * - The legacy mapping touches only leads that are still `auto` and have no
- *   MANUAL LeadStageEvent (an owner action, or a prior migration — migrated
+ *   MANUAL LeadStageEvent (an owner action, or a prior migration - migrated
  *   events are `source: "manual"`). Auto events written by ordinary chat
  *   traffic before the backfill do not block the mapping.
  * - The refresh pass writes only what changed (refreshLeadState).

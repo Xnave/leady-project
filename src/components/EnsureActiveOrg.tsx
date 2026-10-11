@@ -6,7 +6,7 @@ import { useEffect, useRef } from "react";
 
 /**
  * Activates the Zapidly tenant org when the server provides `organizationId`.
- * Platform admins with no org stay on /admin — never bounce them to /activating.
+ * Platform admins with no org stay on /admin - never bounce them to /activating.
  */
 export function EnsureActiveOrg({
   isPlatformAdmin,
@@ -53,7 +53,7 @@ export function EnsureActiveOrg({
       return;
     }
 
-    // Already in some org — leave it; pages that need a Zapidly tenant redirect themselves.
+    // Already in some org - leave it; pages that need a Zapidly tenant redirect themselves.
     if (orgId) return;
 
     if (

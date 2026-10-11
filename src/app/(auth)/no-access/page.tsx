@@ -17,7 +17,7 @@ export default async function NoAccessPage() {
 
   const user = await getClerkUser();
   const email = await primaryEmailFromClerkUser(user);
-  // Owners who already have (or just got) membership must activate — not stay here.
+  // Owners who already have (or just got) membership must activate - not stay here.
   const orgIds = await resolveAccessibleOrgIds(userId, email);
   if (orgIds.length > 0) redirect("/activating");
 

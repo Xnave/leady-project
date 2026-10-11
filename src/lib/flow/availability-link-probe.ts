@@ -71,7 +71,7 @@ export type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
 
 /**
  * HTTP GET a configured booking calendar URL and classify availability from body text.
- * Config (URL template + matchers) is the source of truth — not a vendor SDK.
+ * Config (URL template + matchers) is the source of truth - not a vendor SDK.
  */
 export async function probeAvailabilityLink(opts: {
   config: LinkProbeConfig;

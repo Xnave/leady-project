@@ -39,6 +39,14 @@ function logTurn(phase: "enter" | "exit", extra: Record<string, unknown>) {
   console.log(JSON.stringify({ msg: "runAgentTurn", phase, ...extra }));
 }
 
+/** One agent outbound per inbound trigger - no text hash (retries must not double-send). */
+export function primaryOutboundIdempotencyKey(
+  conversationId: string,
+  triggerMessageId: string,
+): string {
+  return `out-${conversationId}-${triggerMessageId}`;
+}
+
 export async function sendAndSave(
   ctx: Awaited<ReturnType<typeof loadTurnContext>>,
   text: string,
@@ -205,7 +213,7 @@ type RunTurnOpts = {
   conversationId: string;
   resume?: boolean;
   triggerMessageId?: string;
-  /** Epoch ms stamped at enqueue — worker start minus this is queue_ms. */
+  /** Epoch ms stamped at enqueue - worker start minus this is queue_ms. */
   inboundAt?: number;
 };
 
@@ -256,7 +264,7 @@ async function runTurn(opts: RunTurnOpts) {
   try {
     ctx = await loadTurnContext(opts.tenantId, opts.conversationId);
   } catch (err) {
-    // Conversation deleted between enqueue and worker — same skip as the old load-context step.
+    // Conversation deleted between enqueue and worker - same skip as the old load-context step.
     const code =
       err && typeof err === "object" && "code" in err
         ? String((err as { code: unknown }).code)
@@ -284,7 +292,7 @@ async function runTurn(opts: RunTurnOpts) {
   }
 
   const outboundKey = opts.triggerMessageId
-    ? `out-${opts.conversationId}-${opts.triggerMessageId}`
+    ? primaryOutboundIdempotencyKey(opts.conversationId, opts.triggerMessageId)
     : undefined;
 
   let nudgeEvent: NudgeRequestedEvent | null = null;
@@ -351,9 +359,8 @@ async function runTurn(opts: RunTurnOpts) {
       },
       sendAndSave: (c, text) =>
         sendAndSave(c as Awaited<ReturnType<typeof loadTurnContext>>, text, {
-          idempotencyKey: outboundKey
-            ? `${outboundKey}-${Buffer.from(text).toString("base64url").slice(0, 24)}`
-            : undefined,
+          // Stable per inbound - retries with different LLM wording must not double-send.
+          idempotencyKey: outboundKey,
         }),
       scheduleNudge: async (c, stageId, stage) => {
         nudgeEvent = buildNudgeRequestedEvent(c, stageId, stage, opts.triggerMessageId);
@@ -374,9 +381,7 @@ async function runTurn(opts: RunTurnOpts) {
     if (intro) {
       const fresh = await loadTurnContext(opts.tenantId, rotated.conversationId);
       await sendAndSave(fresh, intro, {
-        idempotencyKey: outboundKey
-          ? `${outboundKey}-new-${Buffer.from(intro).toString("base64url").slice(0, 24)}`
-          : undefined,
+        idempotencyKey: outboundKey ? `${outboundKey}-new` : undefined,
       });
     }
     await safeRefreshLeadState(opts.tenantId, ctx.lead.id);

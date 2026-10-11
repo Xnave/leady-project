@@ -21,7 +21,7 @@ import {
   savedPhone,
 } from "@/lib/flow/booking-collect";
 import { isChatLanguage, resolveReplyLanguage } from "@/lib/flow/locale";
-import { normalizeSlot } from "@/lib/flow/slot";
+import { normalizeSlot, weekdayLabelForSlot } from "@/lib/flow/slot";
 import { summarizeConversation } from "@/lib/flow/summarize";
 import type { TurnContext } from "@/lib/flow/types";
 import { persistTurnFields } from "@/lib/conversations";
@@ -82,6 +82,7 @@ function meetingMessageVars(opts: {
       slot: normalized.display,
       date: normalized.dateLabel,
       time: normalized.timeLabel || normalized.time || "",
+      weekday: weekdayLabelForSlot(opts.slotRaw, { lang: opts.lang }),
       address: opts.address,
       hours: opts.hours,
       name: opts.name,
@@ -200,7 +201,7 @@ export async function requestTentativeMeeting(
   return { ok: true, reply: requestText() };
 }
 
-/** Latest still-relevant visit on the lead — for post-approval follow-ups in talk. */
+/** Latest still-relevant visit on the lead - for post-approval follow-ups in talk. */
 export type RecentMeetingSnapshot = {
   id: string;
   status: string;
@@ -269,7 +270,7 @@ export async function markMeetingDecision(opts: {
   decision: MeetingDecision;
   note?: string;
   customReply?: string;
-  /** Required when decision is reschedule — shown to the customer as the offered slot */
+  /** Required when decision is reschedule - shown to the customer as the offered slot */
   alternativeSlot?: string;
   /** When the customer accepted a staff-offered slot */
   customerConfirmed?: boolean;

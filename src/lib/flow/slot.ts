@@ -115,7 +115,7 @@ function parseTime(text: string): string | undefined {
     if (!ap && h === 12) h = 0;
     if (h >= 0 && h <= 23 && m >= 0 && m <= 59) return `${pad2(h)}:${pad2(m)}`;
   }
-  // Colon only — never treat dotted dates (11.11) as a clock time.
+  // Colon only - never treat dotted dates (11.11) as a clock time.
   const colon = forTime.match(/\b(\d{1,2}):(\d{2})\b/);
   if (colon) {
     const h = Number(colon[1]);
@@ -128,7 +128,7 @@ function parseTime(text: string): string | undefined {
   if (bare) {
     let h = Number(bare[1]);
     const hasMeridian = /ערב|בוקר|צהריים|a\.?m\.?|p\.?m\.?/i.test(text);
-    // Bare 1–12 without morning/evening is ambiguous — do not invent AM.
+    // Bare 1–12 without morning/evening is ambiguous - do not invent AM.
     if (!hasMeridian && h >= 1 && h <= 12) return undefined;
     if (/ערב|pm/i.test(text) && h < 12) h += 12;
     if (/בוקר|am/i.test(text) && h === 12) h = 0;
@@ -271,7 +271,7 @@ export function resolveCalendarDate(
   return day ? toDateIso(day) : null;
 }
 
-const RANGE_SPLIT = /\s*(?:\u2013|\u2014|–|—|until|\bto\b|עד)\s*/iu;
+const RANGE_SPLIT = /\s*(?:\u2013|\u2014|–|-|until|\bto\b|עד)\s*/iu;
 
 /**
  * Start/end ISO dates from "next Thursday until Saturday" / "בחמישי הבא עד שבת".
@@ -300,10 +300,27 @@ export function resolveCalendarDateRange(
 }
 
 function formatDateLabel(d: Date, lang: "en" | "he"): string {
+  // Year is omitted in customer-facing copy - current year is obvious.
   if (lang === "he") {
-    return `${d.getDate()} ב${HE_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+    return `${d.getDate()} ב${HE_MONTHS[d.getMonth()]}`;
   }
-  return `${EN_MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  return `${EN_MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
+function formatWeekdayLabel(d: Date, lang: "en" | "he"): string {
+  return lang === "he" ? HE_WEEKDAYS[d.getDay()] : EN_WEEKDAYS[d.getDay()];
+}
+
+/** Bare hour digit from "ב12" / "at 6" when colon time is absent. */
+function bareHourDigit(text: string): number | undefined {
+  const forTime = stripDateFragments(text);
+  const bare = forTime.match(
+    /(?:ב־|ב-|at\s+|בשעה\s+|ב\s*)(\d{1,2})(?!\d)(?!\s*:)/i,
+  );
+  if (!bare) return undefined;
+  const h = Number(bare[1]);
+  if (!Number.isFinite(h) || h < 0 || h > 23) return undefined;
+  return h;
 }
 
 /** Split an already-normalized display string back into date + time. */
@@ -332,24 +349,31 @@ export function normalizeSlot(
   const existing = splitExistingDisplay(text, lang);
   if (existing) {
     const day = resolveDay(existing.dateLabel, now, lang);
+    const dateLabel = day ? formatDateLabel(day, lang) : existing.dateLabel;
     const display =
-      existing.dateLabel && existing.timeLabel
+      dateLabel && existing.timeLabel
         ? lang === "he"
-          ? `${existing.dateLabel} בשעה ${existing.timeLabel}`
-          : `${existing.dateLabel} at ${existing.timeLabel}`
+          ? `${dateLabel} בשעה ${existing.timeLabel}`
+          : `${dateLabel} at ${existing.timeLabel}`
         : text;
     return {
       raw: text,
       dateIso: day ? toDateIso(day) : undefined,
       time: existing.timeLabel,
-      dateLabel: existing.dateLabel,
+      dateLabel,
       timeLabel: existing.timeLabel,
       display,
     };
   }
 
   const day = resolveDay(text, now, lang);
-  const time = parseTime(text);
+  // Bare "ב12" stays ambiguous for the hours gate (isAmbiguousBareHour), but
+  // customer-facing display still needs a clock hour so templates are not blank.
+  let time = parseTime(text);
+  if (!time) {
+    const bare = bareHourDigit(text);
+    if (bare !== undefined) time = `${pad2(bare)}:00`;
+  }
 
   if (!day && !time) {
     return {
@@ -386,6 +410,60 @@ export function normalizeSlot(
 }
 
 /**
+ * Confirm / CRM-facing slot line. Relative wording ("מחר ב12") becomes a
+ * calendar date + HH:MM. Bare 1–12 hours are shown as that clock hour (:00);
+ * the hours gate still asks morning/evening before save when configured.
+ */
+export function formatSlotForDisplay(
+  raw: string,
+  opts?: { now?: Date; lang?: "en" | "he" },
+): string {
+  const text = raw.trim();
+  if (!text) return "";
+  const slot = normalizeSlot(text, opts);
+  if (slot.dateIso && slot.timeLabel) return slot.display;
+  if (slot.dateLabel && slot.timeLabel && slot.display !== text) return slot.display;
+  if (slot.dateIso && slot.display !== text) return slot.display;
+  return text;
+}
+
+/** Weekday name for approval copy ("חמישי" / "Thursday"). */
+export function weekdayLabelForSlot(
+  raw: string,
+  opts?: { now?: Date; lang?: "en" | "he" },
+): string {
+  const lang = opts?.lang ?? "he";
+  const slot = normalizeSlot(raw, opts);
+  if (!slot.dateIso) return "";
+  const day = new Date(`${slot.dateIso}T12:00:00`);
+  if (Number.isNaN(day.getTime())) return "";
+  return formatWeekdayLabel(day, lang);
+}
+
+/**
+ * Confirm מועד line: "יום שישי בשעה 12:00 בתאריך 9 באוקטובר".
+ * Falls back to formatSlotForDisplay when weekday/time/date cannot all be resolved.
+ */
+export function formatSlotPhrase(
+  raw: string,
+  opts?: { now?: Date; lang?: "en" | "he" },
+): string {
+  const text = raw.trim();
+  if (!text) return "";
+  const lang = opts?.lang ?? "he";
+  const slot = normalizeSlot(text, opts);
+  const weekday = weekdayLabelForSlot(text, opts);
+  const time = slot.timeLabel || slot.time || "";
+  const date = slot.dateLabel || "";
+  if (weekday && time && date) {
+    return lang === "he"
+      ? `יום ${weekday} בשעה ${time} בתאריך ${date}`
+      : `${weekday}, ${date} at ${time}`;
+  }
+  return formatSlotForDisplay(text, opts);
+}
+
+/**
  * True when the customer named a day and/or clock time that conflicts with a
  * staff-offered slot. Used to block false "accept" on a fresh booking ask
  * (e.g. "Sunday at 11" while the offer is Nov 11 at 10:00).
@@ -406,7 +484,7 @@ export function proposesDifferentSlot(
   if (proposed.time && offered.time && proposed.time !== offered.time) {
     return true;
   }
-  // They named a day/time but the offer could not be parsed the same way —
+  // They named a day/time but the offer could not be parsed the same way -
   // treat as a different proposal rather than silently approving.
   if ((proposed.dateIso || proposed.time) && !offered.dateIso && !offered.time) {
     return true;

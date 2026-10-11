@@ -17,7 +17,7 @@ export type FollowUp = { reason: FollowUpReason; at: Date } | null;
 /**
  * The single highest-priority reason and when it is (or becomes) due.
  * Future `at` values are stored ahead of time, so leads surface in the
- * "Needs you" query as time passes — no cron.
+ * "Needs you" query as time passes - no cron.
  */
 export function deriveFollowUp(i: FollowUpInput): FollowUp {
   if (i.openHandoffSince) return { reason: "handoff", at: i.openHandoffSince };

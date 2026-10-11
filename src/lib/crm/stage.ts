@@ -41,7 +41,7 @@ function after(d: Date | null, ref: Date): boolean {
  * Auto mode follows signals. A manual stage holds until a strong event:
  * a request changed after it was set; or, for a manual ranked (non-closed)
  * stage, an auto signal that ranks higher AND is at least `pending`, together
- * with a lead message newer than the manual choice — a `talking`/`qualified`
+ * with a lead message newer than the manual choice - a `talking`/`qualified`
  * auto signal never overrides a manual stage, however highly ranked the
  * manual stage is. For lost / not_relevant, the lead
  * writing again also returns it to auto ("revived").

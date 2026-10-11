@@ -2,6 +2,7 @@
 import { copyFor } from "@/lib/copy";
 import { formatPhoneDisplay, isCustomerNameSatisfied } from "@/lib/leads";
 import { zonedToday } from "../clock";
+import { looksLikePhoneNumber } from "../phone";
 import { resolveCalendarDate } from "../slot";
 import {
   evaluateTimePreference,
@@ -24,6 +25,8 @@ import type {
   PhoneFieldSpec,
   TextFieldSpec,
 } from "./types";
+
+export { looksLikePhoneNumber };
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -55,11 +58,7 @@ export function isDateRangeValid(start: string, end: string): boolean {
   return start < end;
 }
 
-export function looksLikePhoneNumber(value: string): boolean {
-  return /^\+?\d[\d\s-]{7,}\d$/.test(value.trim());
-}
-
-/** Basic email shape — rejects incomplete values like "nave@". */
+/** Basic email shape - rejects incomplete values like "nave@". */
 export function looksLikeEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
@@ -154,7 +153,7 @@ const dateRangeHandler: FieldHandler<DateRangeFieldSpec> = {
     const out: string[] = [];
     if (!start || !ISO_DATE.test(start)) out.push(spec.startId);
     if (!end || !ISO_DATE.test(end)) out.push(spec.endId);
-    // Both parse but the span is inverted — re-ask the end.
+    // Both parse but the span is inverted - re-ask the end.
     if (out.length === 0 && !isDateRangeValid(start, end)) out.push(spec.endId);
     return out;
   },

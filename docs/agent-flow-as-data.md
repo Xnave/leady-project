@@ -2,7 +2,7 @@
 
 We **do not** use LangGraph. We **do** use an explicit flow: a JSON graph stored on the agent, plus `flow_state` on the conversation. **One generic Inngest function** reads that JSON and walks it.
 
-That is the same *idea* as LangGraph (stages, transitions, required fields) without a graph library, compiled graphs, or a checkpointer. Perplexity’s pattern is the intended design — this doc makes it concrete.
+That is the same *idea* as LangGraph (stages, transitions, required fields) without a graph library, compiled graphs, or a checkpointer. Perplexity’s pattern is the intended design - this doc makes it concrete.
 
 Related: [agent-runtime.md](./agent-runtime.md) (jobs, tools, HITL), [agent-state-flow-concurrency.md](./agent-state-flow-concurrency.md) (why state/concurrency still sit in Postgres).
 
@@ -50,7 +50,7 @@ hitl_policy: HitlPolicy;
 
 Rollback: keep `agent_config_revisions` (agent_id, kind: flow | lead_schema, version, json, saved_by, saved_at). Saving a flow inserts a revision and bumps `flow_version`. Ops can restore version N by copying JSON back and bumping again (never mutate old revision rows).
 
-`leads.fields` remains the bag of extracted facts. The flow only names which keys are required in which stage — those keys **must** exist in `lead_schema` (enforced on save).
+`leads.fields` remains the bag of extracted facts. The flow only names which keys are required in which stage - those keys **must** exist in `lead_schema` (enforced on save).
 
 ---
 
@@ -149,7 +149,7 @@ export const salesOrSupportFlow: FlowDefinition = {
       on_complete: "schedule",
       nudge: {
         after: "PT24H",
-        template: "Still happy to help — want to finish booking?",
+        template: "Still happy to help - want to finish booking?",
         maxTimes: 1,
       },
     },
@@ -382,7 +382,7 @@ Lead: “Hi, I want a kitchen quote”
 
 1. `flow_state` empty → `classify_intent`.
 2. LLM step → `sales` → persist `collect_lead`.
-3. Extract: no name/email/service yet. Ask: “What service — remodel or repair?” Schedule nudge from this stage’s `nudge` JSON.
+3. Extract: no name/email/service yet. Ask: “What service - remodel or repair?” Schedule nudge from this stage’s `nudge` JSON.
 4. (Next webhook, hours later) “Full remodel. I’m Dana, dana@x.com”
 5. Extract merges `{ service, name, email }`. `missing` is `[]`. Transition `schedule`.
 6. `book_meeting` step. If Cal.com needs a slot, `on_fail` back to `collect_lead` and ask time preference.
@@ -473,7 +473,7 @@ Enable-on-channel is gated on a last-green preview (ops checkbox). Cheaper than 
 
 ## HITL policy is the single source of truth
 
-`agents.hitl_policy` decides whether `request_human` may run — not the LLM. The flow JSON may point at an escalate stage; save-time validation plus `assertHitlAllowed` at runtime both consult the same object.
+`agents.hitl_policy` decides whether `request_human` may run - not the LLM. The flow JSON may point at an escalate stage; save-time validation plus `assertHitlAllowed` at runtime both consult the same object.
 
 ```json
 {
@@ -501,11 +501,11 @@ Log `{ tenantId, conversationId, flowState, stage.type, flowVersion }` at enter/
 
 Not a visual LangGraph editor. Internal pages:
 
-1. **Agent config** — form for stages, transitions, required fields, per-stage nudge, restart policy; raw JSON as advanced.
-2. **Schema** — `lead_schema` keys; save runs `validateFlow`.
-3. **Versions** — revisions, diff, restore.
-4. **Preview** — canned transcripts; enable-on-channel after green.
-5. **HITL policy** — allowed stages / document types.
+1. **Agent config** - form for stages, transitions, required fields, per-stage nudge, restart policy; raw JSON as advanced.
+2. **Schema** - `lead_schema` keys; save runs `validateFlow`.
+3. **Versions** - revisions, diff, restore.
+4. **Preview** - canned transcripts; enable-on-channel after green.
+5. **HITL policy** - allowed stages / document types.
 
 Owners never see this. Ops should not paste JSON into psql after v1.
 
@@ -514,8 +514,8 @@ Owners never see this. Ops should not paste JSON into psql after v1.
 ## What the LLM is *not* allowed to do
 
 - Pick the next stage (except classify, whose output is mapped by `transitions` in JSON).
-- Call `book_meeting` while `missing.length > 0` — the interpreter never enters `action` until then.
-- Use another tenant’s flow — `agent.flow` is loaded with `tenantId`.
+- Call `book_meeting` while `missing.length > 0` - the interpreter never enters `action` until then.
+- Use another tenant’s flow - `agent.flow` is loaded with `tenantId`.
 
 The LLM: classify, extract, FAQ wording, next question. The JSON + Inngest function: rails.
 
@@ -545,8 +545,8 @@ We copy the **data model** of a graph (nodes and edges). We do not copy the **fr
 
 ## vs “prompt only” and vs n8n
 
-- **Prompt + tools alone** — fine for a demo; not the v1 control plane. Flow JSON is.
-- **n8n as the messenger** — still not. Optional `action` type later (`n8n_webhook`) for side effects after `done`. Do not put “ask name” in n8n.
+- **Prompt + tools alone** - fine for a demo; not the v1 control plane. Flow JSON is.
+- **n8n as the messenger** - still not. Optional `action` type later (`n8n_webhook`) for side effects after `done`. Do not put “ask name” in n8n.
 
 ---
 

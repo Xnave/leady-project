@@ -143,7 +143,7 @@ export type TenantSnapshot = {
   agentRepliesEnabled?: boolean;
   /**
    * Everything a tenant configures per capability. The snapshot never grows a
-   * field when a capability is added — the capability parses its own instance.
+   * field when a capability is added - the capability parses its own instance.
    */
   capabilityInstances?: CapabilityInstanceSnapshot[];
 };
@@ -195,7 +195,7 @@ export type TurnContext = {
   channel?: ChannelSnapshot;
   /**
    * Durable per-capability state, keyed by capability id and populated by each
-   * capability's `loadState` hook. The kernel never names a domain here — read it
+   * capability's `loadState` hook. The kernel never names a domain here - read it
    * with `capabilityState<T>(ctx, id)` from the registry.
    */
   capabilityState?: Record<string, unknown>;

@@ -1,7 +1,7 @@
 /**
  * `whereItStands`, the DTO shapes, and the small pieces shared by the two
  * loaders. Loading itself needs Prisma and lives in `view-rows.ts` (list rows)
- * and `view-lead.ts` (one lead's full view) — this file was pushing 300 lines
+ * and `view-lead.ts` (one lead's full view) - this file was pushing 300 lines
  * once both were inline, so they were split out and are re-exported here to
  * keep `loadLeadRows` / `loadLeadView` importable from `@/lib/crm/view`.
  */
@@ -19,12 +19,18 @@ export function whereItStands(i: {
   nextStepText: string | null;
   requestLine: string | null;
   summary: string | null;
+  /** Early chat context captured before / during booking (CRM `interest`). */
+  interest?: string | null;
   intentLabel: string | null;
   lastLeadText: string | null;
 }): string {
   if (i.nextStepText?.trim()) return i.nextStepText.trim();
   if (i.requestLine?.trim()) return i.requestLine.trim();
   if (i.summary?.trim()) return i.summary.trim();
+  if (i.interest?.trim()) {
+    const t = i.interest.trim();
+    return t.length > 120 ? `${t.slice(0, 120)}…` : t;
+  }
   const msg = i.lastLeadText?.trim() ?? "";
   const cut = msg.length > 60 ? `${msg.slice(0, 60)}…` : msg;
   return [i.intentLabel, cut].filter(Boolean).join(" · ");
@@ -173,6 +179,7 @@ export type LeadRowInput = {
   channelProvider: string;
   requestLine: string | null;
   summary: string | null;
+  interest?: string | null;
   lastLeadText: string | null;
 };
 
@@ -212,6 +219,7 @@ export function buildLeadRowDTO(i: LeadRowInput, ui: UiCopy, now: Date): LeadRow
       nextStepText: i.nextStepText,
       requestLine: i.requestLine,
       summary: i.summary,
+      interest: i.interest,
       intentLabel: intent,
       lastLeadText: i.lastLeadText,
     }),

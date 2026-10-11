@@ -70,7 +70,7 @@ export class PromptBuilder {
         );
       } else {
         this.parts.push(
-          "Channel: WhatsApp. No callback number yet — ask_field phone when phone is required for booking.",
+          "Channel: WhatsApp. No callback number yet - ask_field phone when phone is required for booking.",
         );
       }
     } else {
@@ -128,11 +128,11 @@ export class PromptBuilder {
     this.parts.push(calendarClockLine());
     if (ctx.conversation.lifecycleReason === "inbound_reopen") {
       this.parts.push(
-        "This thread was just reopened after a prior request was resolved (approved or closed). Keep the SAME conversation. A thank-you or a follow-up about that request is NOT a new matter — reply in context. Only call start_new_conversation if the customer is clearly starting a brand-new unrelated topic and a clean start is better; otherwise stay on this thread.",
+        "This thread was just reopened after a prior request was resolved (approved or closed). Keep the SAME conversation. A thank-you or a follow-up about that request is NOT a new matter - reply in context. Only call start_new_conversation if the customer is clearly starting a brand-new unrelated topic and a clean start is better; otherwise stay on this thread.",
       );
     } else if (isIdleConversationReset(ctx)) {
       this.parts.push(
-        "There was a long gap since the previous message. Continue in this same conversation by default. If a clean start seems better, ask whether they want a new conversation — only call start_new_conversation after they clearly agree.",
+        "There was a long gap since the previous message. Continue in this same conversation by default. If a clean start seems better, ask whether they want a new conversation - only call start_new_conversation after they clearly agree.",
       );
     }
     return this;
@@ -142,7 +142,7 @@ export class PromptBuilder {
     const hint =
       instruction.trim() || copyFor(lang).prompts.nudgeDefaultInstruction;
     this.parts.push(
-      "IGNORE tool instructions above (reply, ask_field, etc.) — this turn is plain text generation only.",
+      "IGNORE tool instructions above (reply, ask_field, etc.) - this turn is plain text generation only.",
       copyFor(lang).prompts.nudgeTurn(hint),
     );
     return this;
@@ -154,7 +154,7 @@ export class PromptBuilder {
       "Call reply unless a tool already set the outbound text.",
       "Use transition when the goal is complete (on_complete) or you must hand off (on_escalate).",
       "Conversation continuity: keep the SAME thread for follow-ups. Never invent a fresh welcome mid-thread.",
-      "Only if the topic is clearly a brand-new matter AND a long gap / customer wants a clean start: first ask with reply whether to open a new conversation. Call start_new_conversation(intro=...) ONLY after they clearly say yes — the intro becomes the first message on the new thread.",
+      "Only if the topic is clearly a brand-new matter AND a long gap / customer wants a clean start: first ask with reply whether to open a new conversation. Call start_new_conversation(intro=...) ONLY after they clearly say yes - the intro becomes the first message on the new thread.",
     );
     if (stage) {
       this.parts.push(...capabilityClosingLines(stage));

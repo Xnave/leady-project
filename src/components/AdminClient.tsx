@@ -117,7 +117,7 @@ export function AdminClient({
             {filtered.map((t) => (
               <tr key={t.id}>
                 <td>{t.name}</td>
-                <td className="muted">{t.ownerEmail || "—"}</td>
+                <td className="muted">{t.ownerEmail || "-"}</td>
                 <td className="muted">{t.phone || t.id}</td>
                 <td className="table-actions">
                   <form action="/api/admin/impersonate" method="post">

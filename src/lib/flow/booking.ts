@@ -30,8 +30,12 @@ export function bookingFieldLabel(lang: "en" | "he", field: string): string {
 export function askBookingField(
   lang: "en" | "he",
   field: string,
-  extras?: { hours?: string; deducedPhone?: string },
+  extras?: { hours?: string; deducedPhone?: string; gatheredNeed?: string },
 ): string {
+  if (field === "need") {
+    const gathered = extras?.gatheredNeed?.trim();
+    if (gathered) return copyFor(lang).chat.askNeedWithGathered(gathered);
+  }
   const fctx = bookingFieldContext({
     lang,
     hours: extras?.hours?.trim() ?? "",
@@ -75,7 +79,7 @@ export function isBookingCollectActive(
   return false;
 }
 
-/** Fields that belong to an in-progress booking — live on Conversation.session. */
+/** Fields that belong to an in-progress booking - live on Conversation.session. */
 export const BOOKING_SESSION_FIELD_KEYS = [
   "booking_flow",
   "booking_confirm",
@@ -84,6 +88,8 @@ export const BOOKING_SESSION_FIELD_KEYS = [
   "staff_slot_offer",
   "need",
   "visit_kind",
+  /** Set when we asked for need (with or without gathered interest). */
+  "need_prompted",
   /** Keeps single-token names from re-entering gaps after the agent collected them. */
   "name_collected_by_agent",
 ] as const;

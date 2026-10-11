@@ -74,7 +74,7 @@ export async function createTenant(opts: {
     }
     clerkOrgId = org.id;
 
-    // Prefer direct membership when the owner already has a Clerk account —
+    // Prefer direct membership when the owner already has a Clerk account -
     // invite emails are easy to miss in local/dev and still leave them on /no-access.
     // On *.vercel.app without a custom domain, Clerk rejects org invitations entirely;
     // leave ownerClerkUserId null and claimOwnerOrganizations attaches them on first sign-in.
@@ -119,7 +119,7 @@ export async function createTenant(opts: {
       throw new Error(clerkErrorMessage(e));
     }
 
-    // Platform admins must not remain org members — they use impersonation.
+    // Platform admins must not remain org members - they use impersonation.
     if (opts.createdByUserId) {
       try {
         await client.organizations.deleteOrganizationMembership({

@@ -129,7 +129,7 @@ describe("reservation-config", () => {
 
 describe("availability-link-probe", () => {
   it("classifies unavailable from matcher text", () => {
-    const html = "<html><body>תאריכים תפוסים — נסו תאריכים אחרים</body></html>";
+    const html = "<html><body>תאריכים תפוסים - נסו תאריכים אחרים</body></html>";
     expect(
       classifyProbeBody(html, {
         unavailableMatchers: [{ type: "contains", value: "תאריכים תפוסים" }],

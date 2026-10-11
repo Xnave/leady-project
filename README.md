@@ -31,17 +31,17 @@ Gemini/Anthropic still work if those keys are set and OpenAI is not. Without any
 
 Set `zerino_api_key` (or `ZERNIO_API_KEY`) and `zerino_sandbox_number` (or `ZERNIO_SANDBOX_NUMBER`). Seed / Channels binds that sandbox number to the dev tenant.
 
-Inbound: `POST /api/webhooks/zernio` (`message.received`). The URL must be public HTTPS. Set `ZERNIO_WEBHOOK_SECRET` (and the same secret on the Zernio webhook) for `X-Zernio-Signature` — required in production; optional only for local dev.
+Inbound: `POST /api/webhooks/zernio` (`message.received`). The URL must be public HTTPS. Set `ZERNIO_WEBHOOK_SECRET` (and the same secret on the Zernio webhook) for `X-Zernio-Signature` - required in production; optional only for local dev.
 
 Outbound replies use the Zernio inbox API once a WhatsApp conversation id is stored from the inbound webhook. Chat preview does not send to WhatsApp.
 
 Inngest is only required for delayed nudges (`npx inngest-cli@latest dev`). Full behavior: [docs/nudges.md](docs/nudges.md).
 
-Nudge timing is **`NUDGE_AFTER_OVERRIDE` or `PT1H` after the lead’s last message** (not after the agent reply). With a second Zernio webhook to production, nudges may run on **Inngest Cloud** while you watch **local :8288** — use one webhook + local stack when debugging, or open the [Inngest Cloud dashboard](https://app.inngest.com) for production.
+Nudge timing is **`NUDGE_AFTER_OVERRIDE` or `PT1H` after the lead’s last message** (not after the agent reply). With a second Zernio webhook to production, nudges may run on **Inngest Cloud** while you watch **local :8288** - use one webhook + local stack when debugging, or open the [Inngest Cloud dashboard](https://app.inngest.com) for production.
 
 For local testing, set `NUDGE_AFTER_OVERRIDE=PT5M` in `.env`. Talk stages already include a catalog nudge; you do not need to re-seed unless the agent flow was built without one.
 
-Register a **second** Zernio webhook for ngrok (production webhook can stay — you may get duplicate replies while both are active):
+Register a **second** Zernio webhook for ngrok (production webhook can stay - you may get duplicate replies while both are active):
 
 ```bash
 pnpm proxy   # set NEXT_PUBLIC_APP_URL from banner, restart pnpm dev
@@ -50,11 +50,11 @@ pnpm zernio:webhook:dev
 
 `npm test` covers flow validation and the interpreter.
 
-### Public HTTPS (Zernio / any device) — ngrok
+### Public HTTPS (Zernio / any device) - ngrok
 
 ```bash
 pnpm dev      # terminal 1
-pnpm proxy    # terminal 2 — ngrok tunnel, prints NEXT_PUBLIC_APP_URL banner
+pnpm proxy    # terminal 2 - ngrok tunnel, prints NEXT_PUBLIC_APP_URL banner
 ```
 
 1. Install ngrok: `brew install ngrok/ngrok/ngrok`

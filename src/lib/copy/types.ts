@@ -2,6 +2,8 @@ export type BookingVars = {
   slot: string;
   date: string;
   time: string;
+  /** Weekday name for approval copy (e.g. חמישי / Thursday). */
+  weekday: string;
   address: string;
   hours: string;
   name: string;
@@ -35,11 +37,17 @@ export type ChatCopy = {
   askFieldAgain: (field: string) => string;
   waitingHumanHold: string;
   askNeed: string;
+  /** Present gathered context and invite optional extras in one message. */
+  askNeedWithGathered: (gathered: string) => string;
+  /** Lead-in before the deterministic booking confirm fact block. */
+  bookingConfirmIntro: string;
+  /** Closing ask after the booking confirm fact block. */
+  bookingConfirmAsk: string;
   askVisitKind: string;
   askTime: (hours: string) => string;
   /** When a proposed time is outside venue hours. */
   askTimeOutsideHours: (hours: string) => string;
-  /** Bare hour without morning/evening — ask which they meant. */
+  /** Bare hour without morning/evening - ask which they meant. */
   askTimeAmbiguous: string;
   /** Day/time wording had no clear clock. */
   askTimeUnclear: string;
@@ -57,14 +65,14 @@ export type ChatCopy = {
   /** Decline + offer an alternative slot ({{alt_slot}}) */
   bookingReschedule: string;
   notePrefix: string;
-  /** Span-request mechanics (dates, availability, approvals) — nouns come from config. */
+  /** Span-request mechanics (dates, availability, approvals) - nouns come from config. */
   request: RequestChatCopy;
 };
 
 /**
  * Sentence mechanics for a date-span request. Every place the business's own
  * word would appear takes a `noun` argument, which the capability reads from its
- * `CapabilityInstance` config — so a villa says "stay" and a dress shop says
+ * `CapabilityInstance` config - so a villa says "stay" and a dress shop says
  * "rental" with no copy change.
  */
 export type RequestChatCopy = {

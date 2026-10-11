@@ -2,9 +2,9 @@
  * Typed field kit.
  *
  * A capability describes what it collects as a list of {@link FieldSpec}, and every
- * behavior that used to be written per field id — how to ask for it, how to coerce the
+ * behavior that used to be written per field id - how to ask for it, how to coerce the
  * customer's wording, whether it is satisfied, how it reads in a confirmation summary
- * and in the CRM — is implemented once per *type* in `handlers.ts`.
+ * and in the CRM - is implemented once per *type* in `handlers.ts`.
  *
  * Adding a vertical is then a config change: a JSON array of specs, no new code.
  */

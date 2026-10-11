@@ -1,5 +1,5 @@
 /**
- * Booking instance configuration — what used to be the `venue*` and
+ * Booking instance configuration - what used to be the `venue*` and
  * `booking*Template` columns on Tenant, now the `config` JSON of a
  * `CapabilityInstance` with `capabilityId: "booking"`.
  */

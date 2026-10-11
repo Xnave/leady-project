@@ -78,7 +78,7 @@ Simulator: [http://localhost:3000/demo](http://localhost:3000/demo)
 
 With `DEV_AUTH_BYPASS=true` in `.env`, Clerk is skipped for local CRM work (uses `DEV_TENANT_ID` or the first tenant from seed).
 
-**Demo chat does not need Inngest or ngrok** — `/api/demo/message` can run the turn synchronously. Start those only when you care about delayed nudges or public webhooks (WhatsApp).
+**Demo chat does not need Inngest or ngrok** - `/api/demo/message` can run the turn synchronously. Start those only when you care about delayed nudges or public webhooks (WhatsApp).
 
 ---
 
@@ -130,7 +130,7 @@ Add to `.env` ([ngrok dashboard](https://dashboard.ngrok.com/get-started/your-au
 
 ```env
 NGROK_AUTHTOKEN="…"
-# Optional paid reserved domain — same URL every restart:
+# Optional paid reserved domain - same URL every restart:
 # NGROK_DOMAIN="your-name.ngrok.app"
 ```
 
@@ -140,7 +140,7 @@ NGROK_AUTHTOKEN="…"
 # Terminal 1
 pnpm dev
 
-# Terminal 2 — requires Next already answering on :3000
+# Terminal 2 - requires Next already answering on :3000
 pnpm proxy
 ```
 
@@ -193,7 +193,7 @@ ngrok ──https──► localhost:3000
 2. **Restart** `pnpm dev`. Next.js reads `NEXT_PUBLIC_*` when the process starts (and can inline them for the client). A running server will keep the old value until restart.
 
 3. Code that needs the public origin reads that env (locally), for example:
-   - `appOrigin()` / `requestOrigin()` in `src/lib/request-url.ts` — redirects, OAuth/connect callbacks, invites
+   - `appOrigin()` / `requestOrigin()` in `src/lib/request-url.ts` - redirects, OAuth/connect callbacks, invites
    - Zernio connect / webhook registration (`pnpm zernio:webhook:dev` builds `{NEXT_PUBLIC_APP_URL}/api/webhooks/zernio`)
    - HookMyApp helpers that fall back to `NEXT_PUBLIC_APP_URL`
 
@@ -214,7 +214,7 @@ After `NEXT_PUBLIC_APP_URL` is set and Next restarted:
 pnpm zernio:webhook:dev
 ```
 
-That registers a webhook at `{NEXT_PUBLIC_APP_URL}/api/webhooks/zernio`. Keep a production webhook if you want — you may see duplicate replies while both are active.
+That registers a webhook at `{NEXT_PUBLIC_APP_URL}/api/webhooks/zernio`. Keep a production webhook if you want - you may see duplicate replies while both are active.
 
 ---
 

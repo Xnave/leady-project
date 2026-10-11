@@ -139,7 +139,7 @@ async function refreshCrm(tenantId: string, leadId: string): Promise<void> {
 }
 
 /**
- * Resume the same conversation after a non-booking HITL task — no new thread.
+ * Resume the same conversation after a non-booking HITL task - no new thread.
  */
 export async function resumeConversationAfterHitl(opts: {
   tenantId: string;

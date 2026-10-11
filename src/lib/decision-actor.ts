@@ -1,7 +1,7 @@
 /** System actor when a self-serve booking link is sent (no human decision). */
 export const AUTOMATIC_ACTOR = "automatic";
 
-/** Local DEV_AUTH_BYPASS / unsigned staff identity — not “automatic”. */
+/** Local DEV_AUTH_BYPASS / unsigned staff identity - not “automatic”. */
 export const GLOBAL_ADMIN_ACTOR = "global_admin";
 
 export function resolveActorLabel(actorUserId: string, explicit?: string): string {
@@ -17,7 +17,7 @@ export type DecisionActorLabels = {
   admin: string;
   automatic: string;
   globalAdmin: string;
-  /** Omit or leave empty — customer is not a “who approved” option in the inbox. */
+  /** Omit or leave empty - customer is not a “who approved” option in the inbox. */
   customer?: string;
 };
 

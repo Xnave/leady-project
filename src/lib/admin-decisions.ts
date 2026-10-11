@@ -56,7 +56,7 @@ export async function resolveStaffActor(): Promise<{
   return { actorUserId: GLOBAL_ADMIN_ACTOR, actorLabel: GLOBAL_ADMIN_ACTOR };
 }
 
-/** Append-only admin decision row — use for every staff decision, not only meetings. */
+/** Append-only admin decision row - use for every staff decision, not only meetings. */
 export function appendAdminDecision(opts: AppendAdminDecisionOpts) {
   return prisma.adminDecisionLog.create({
     data: {

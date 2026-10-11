@@ -7,7 +7,7 @@ export function isClerkSecretConfigured(): boolean {
   return Boolean(process.env.CLERK_SECRET_KEY?.trim());
 }
 
-/** Both keys present — clerkMiddleware can run and auth() is safe to call. */
+/** Both keys present - clerkMiddleware can run and auth() is safe to call. */
 export function isClerkReady(): boolean {
   return isClerkConfigured() && isClerkSecretConfigured();
 }
@@ -18,7 +18,7 @@ function hostnameWithoutPort(hostname: string | undefined): string {
 
 /**
  * Relative FAPI proxy path for hosts that cannot CNAME Clerk (*.vercel.app).
- * Custom domains (e.g. app.zapidly.com) must NOT proxy — they use clerk.<domain>
+ * Custom domains (e.g. app.zapidly.com) must NOT proxy - they use clerk.<domain>
  * DNS. Never infer proxy from `VERCEL` alone: middleware on a custom domain
  * still runs on Vercel and would break handshake with host_invalid.
  */

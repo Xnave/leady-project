@@ -8,9 +8,9 @@ Related deep-dives: [nudges.md](./nudges.md), [conversation-lifecycle.md](./conv
 
 ## Mental model (three layers)
 
-1. **Ingress** — webhooks that authenticate, persist, enqueue; never call the LLM.
-2. **State** — Postgres: what was said, what we know (`Lead.fields` + `Conversation.session`), where we are (`flowState`), whether a human owns it (`waiting_human`).
-3. **Interpretation** — one function (`interpretTurn`) reads JSON + state, calls the LLM *inside* stage/capability guardrails, runs registered effects, sends a reply.
+1. **Ingress** - webhooks that authenticate, persist, enqueue; never call the LLM.
+2. **State** - Postgres: what was said, what we know (`Lead.fields` + `Conversation.session`), where we are (`flowState`), whether a human owns it (`waiting_human`).
+3. **Interpretation** - one function (`interpretTurn`) reads JSON + state, calls the LLM *inside* stage/capability guardrails, runs registered effects, sends a reply.
 
 The LLM is a **worker inside stages** (wording, tool choice, extraction). The JSON flow + interpreter + capability hooks are the **rails**. HITL and restart policy are product controls, not graph interrupts.
 
@@ -106,7 +106,7 @@ flowchart TB
 | `src/lib/flow/effects.ts` | Generic `registerApprovalEffect`, kernel talk effects |
 | `src/app/api/requests/[id]/decide/route.ts` | One decide route for all verticals |
 | `src/app/api/hitl/[id]/complete/route.ts` | HITL completion → decide or resume turn |
-| `src/lib/tenant.ts` | `requireTenantId()` — every query scopes on this |
+| `src/lib/tenant.ts` | `requireTenantId()` - every query scopes on this |
 | `src/lib/copy/`, `src/lib/ui/` | Lead-facing vs operator i18n (do not mix) |
 | `src/lib/flow/architecture.test.ts` | Guards kernel purity, one Request, instances |
 
@@ -137,25 +137,25 @@ flowchart LR
   Req --> HITL[HitlTask request_approval]
 ```
 
-- **Capability** (code): registered pack — prompt lines, tools, reconcile, decide, session keys.
-- **CapabilityInstance** (data): per-tenant config — field list, nouns, hours, templates, availability. One tenant can have several kinds (`visit`, `rental`, …).
-- **Request** (data): one pending/approved commitment — `capabilityId`, `kind`, `startAt`/`endAt`/`timeText`, `data` JSON. HITL type is always `request_approval`.
+- **Capability** (code): registered pack - prompt lines, tools, reconcile, decide, session keys.
+- **CapabilityInstance** (data): per-tenant config - field list, nouns, hours, templates, availability. One tenant can have several kinds (`visit`, `rental`, …).
+- **Request** (data): one pending/approved commitment - `capabilityId`, `kind`, `startAt`/`endAt`/`timeText`, `data` JSON. HITL type is always `request_approval`.
 
 A barber vs villa vs dress shop is mostly **instance config**, not a new table.
 
 ### Typed field kit
 
-`src/lib/flow/fields/` — each *type* implements ask / normalize / gaps / render once. Capabilities describe collect lists as `FieldSpec[]`. New verticals should add specs, not per-field `if (id === "guests")` branches.
+`src/lib/flow/fields/` - each *type* implements ask / normalize / gaps / render once. Capabilities describe collect lists as `FieldSpec[]`. New verticals should add specs, not per-field `if (id === "guests")` branches.
 
 ### CRM: pipeline + follow-ups (`src/lib/crm/`)
 
-A `Lead` carries a pipeline stage (`new … won / lost / not_relevant`) and a follow-up reason (`handoff` > `approval` > `reminder` > `cold`), derived from turn/request/HITL activity rather than tracked by hand. The pure modules — `types.ts`, `stage.ts`, `followup.ts`, `signals.ts`, `plan.ts`, `timeline.ts`, `digest.ts` — take a snapshot and return a decision; they name no business domain, same rule as the interpreter, and `architecture.test.ts` ("crm purity") fails if one creeps in.
+A `Lead` carries a pipeline stage (`new … won / lost / not_relevant`) and a follow-up reason (`handoff` > `approval` > `reminder` > `cold`), derived from turn/request/HITL activity rather than tracked by hand. The pure modules - `types.ts`, `stage.ts`, `followup.ts`, `signals.ts`, `plan.ts`, `timeline.ts`, `digest.ts` - take a snapshot and return a decision; they name no business domain, same rule as the interpreter, and `architecture.test.ts` ("crm purity") fails if one creeps in.
 
-`refreshLeadState()` (`src/lib/crm/refresh.ts`) is the **single writer** of these Lead columns: it loads a snapshot, calls the pure `planLeadState`, and applies the patch (plus a `LeadStageEvent` when the stage changes) in one transaction. Every call site that isn't an explicit owner action uses `safeRefreshLeadState`, which logs and swallows errors — CRM bookkeeping must never fail a turn or a webhook. Deliberate owner changes (set stage, snooze, mark done) go through `src/lib/crm/actions.ts` instead, which writes directly and records its own `LeadStageEvent`.
+`refreshLeadState()` (`src/lib/crm/refresh.ts`) is the **single writer** of these Lead columns: it loads a snapshot, calls the pure `planLeadState`, and applies the patch (plus a `LeadStageEvent` when the stage changes) in one transaction. Every call site that isn't an explicit owner action uses `safeRefreshLeadState`, which logs and swallows errors - CRM bookkeeping must never fail a turn or a webhook. Deliberate owner changes (set stage, snooze, mark done) go through `src/lib/crm/actions.ts` instead, which writes directly and records its own `LeadStageEvent`.
 
-Read paths: `view.ts` holds `whereItStands()` and shared DTOs; `view-rows.ts` loads the `/leads` list; `view-lead.ts` loads one lead's full page. The "needs you" predicate — the one `WHERE` clause behind the follow-up queue — lives in `crm/needs.ts` so the list and the digest can't drift apart.
+Read paths: `view.ts` holds `whereItStands()` and shared DTOs; `view-rows.ts` loads the `/leads` list; `view-lead.ts` loads one lead's full page. The "needs you" predicate - the one `WHERE` clause behind the follow-up queue - lives in `crm/needs.ts` so the list and the digest can't drift apart.
 
-The WhatsApp daily digest is gated by `DIGEST_WHATSAPP_ENABLED=true` (env) plus `Tenant.digestEnabled`. The digest content builder (`crm/digest.ts`) is pure — given due items it returns counts and Meta-safe template params; `crm/digest-send.ts` does the Prisma/Zernio work and idempotency (`DigestLog`); the `crmDigest` Inngest cron (`src/inngest/functions.ts`) runs hourly and calls it for tenants whose local hour matches `digestHour`.
+The WhatsApp daily digest is gated by `DIGEST_WHATSAPP_ENABLED=true` (env) plus `Tenant.digestEnabled`. The digest content builder (`crm/digest.ts`) is pure - given due items it returns counts and Meta-safe template params; `crm/digest-send.ts` does the Prisma/Zernio work and idempotency (`DigestLog`); the `crmDigest` Inngest cron (`src/inngest/functions.ts`) runs hourly and calls it for tenants whose local hour matches `digestHour`.
 
 **Rollout order:** run `npm run crm:backfill` (`scripts/crm-backfill.ts`) right after the schema push, before users open `/leads`. It maps legacy `Lead.status` won/lost/closed to a manual stage (keeping the lead's `updatedAt` as `stageChangedAt`, plus a `migrated` `LeadStageEvent`) and derives every lead's stage and follow-up. It is safe to re-run: it skips leads that already have a stage event.
 
@@ -164,7 +164,7 @@ The WhatsApp daily digest is gated by `DIGEST_WHATSAPP_ENABLED=true` (env) plus 
 ## How a turn runs
 
 1. Ingress: `persistInboundIfNew` (idempotent) → `enqueueAgentTurn` **or** demo calls `runTurnNow` directly.
-2. `loadTurnContext` — tenant, agent, conversation, messages, fields, `capabilityInstances`, capability `loadState` into `ctx.capabilityState`.
+2. `loadTurnContext` - tenant, agent, conversation, messages, fields, `capabilityInstances`, capability `loadState` into `ctx.capabilityState`.
 3. If `waiting_human` and not `resume` → hold message; stop.
 4. If on terminal → `restartPolicy` (usually fall back to `talk`).
 5. Interpreter loop (max 8 hops) on `stage.type`:
@@ -175,7 +175,7 @@ The WhatsApp daily digest is gated by `DIGEST_WHATSAPP_ENABLED=true` (env) plus 
 | `collect` | Persist extract; if gaps → ask + nudge; else → `on_complete` | Extract fields; draft question wording |
 | `faq` | Branch `on_resolved` / `on_unresolved` | Answer from knowledge (or UNRESOLVED) |
 | `talk` | Persist fields; run effects; enforce allowed transitions; HITL / complete / nudge | Tool loop: reply, capability tools, transition |
-| `action` | Run action → `on_complete` / `on_fail` | None (except if action itself calls LLM — none today) |
+| `action` | Run action → `on_complete` / `on_fail` | None (except if action itself calls LLM - none today) |
 | `terminal` | Return | None |
 
 6. Outbound via `sendAndSave` (DB + channel). Optional nudge event (Inngest or `dispatchNudgeEvent`).
@@ -189,15 +189,15 @@ Concurrency: Inngest `concurrency: [{ key: conversationId, limit: 1 }]`.
 ### Deterministic (code always wins)
 
 - Which **stage** runs next from classify/collect/faq/action edges.
-- **Illegal talk transitions** — dropped if not in `talkTransitionTargets(stage)`.
-- **HITL policy** — `assertHitlAllowed` before escalate.
-- **Capability reconcile** — e.g. booking injects `book_meeting` after customer affirmation when gaps are empty; blocks complete-while-booking.
-- **Tool execute bodies** — validation (hours, email, gaps), pushing effects, locking reply text from `ask_field`.
-- **Talk effects** — `book_meeting` / `create_reservation_hold` create Request + HITL and park on `waiting_human`; `send_reservation_link` (reservations `submitMode: "send_link"`) renders `bookingLinkTemplate`, sends it, and stays on talk with **no** Request; `request_human` sets escalate reason.
-- **Action stage** — registry/`request_human` only; no free-form LLM branch.
-- **waiting_human** without resume — no agent turn beyond hold.
-- **Stale nudge** — skip if `flowVersion` changed.
-- **Tenant isolation** — every query filtered by `requireTenantId()`.
+- **Illegal talk transitions** - dropped if not in `talkTransitionTargets(stage)`.
+- **HITL policy** - `assertHitlAllowed` before escalate.
+- **Capability reconcile** - e.g. booking injects `book_meeting` after customer affirmation when gaps are empty; blocks complete-while-booking.
+- **Tool execute bodies** - validation (hours, email, gaps), pushing effects, locking reply text from `ask_field`.
+- **Talk effects** - `book_meeting` / `create_reservation_hold` create Request + HITL and park on `waiting_human`; `send_reservation_link` (reservations `submitMode: "send_link"`) renders `bookingLinkTemplate`, sends it, and stays on talk with **no** Request; `request_human` sets escalate reason.
+- **Action stage** - registry/`request_human` only; no free-form LLM branch.
+- **waiting_human** without resume - no agent turn beyond hold.
+- **Stale nudge** - skip if `flowVersion` changed.
+- **Tenant isolation** - every query filtered by `requireTenantId()`.
 
 ### LLM (advisory / wording / tool choice)
 
@@ -226,20 +226,20 @@ Prefer **config** (new `CapabilityInstance` with field specs + nouns) when the s
 
 1. Enable an existing capability on the talk stage (`booking` and/or `reservations`) via onboard / `flowForCapabilities`.
 2. Upsert `CapabilityInstance` (`src/lib/capability-instances.ts` or `/api/tenant/capability-instances`) with `kind`, `config` (collect, nouns, templates, hours, availability, and for reservations optionally `submitMode: "send_link"` + `bookingLinkTemplate`).
-3. No interpreter change. Dress shop with fitting + rental = two instances. Reservation link mode skips HITL entirely — no `Request` row.
+3. No interpreter change. Dress shop with fitting + rental = two instances. Reservation link mode skips HITL entirely - no `Request` row.
 
 ### New capability pack (code)
 
 Checklist (see also `src/lib/flow/capabilities/README.md`):
 
-1. **`src/lib/flow/capabilities/<id>.ts`** — `registerCapability({ id, promptSection, tools?, reconcile?, loadState?, decide?, sessionFieldKeys?, … })`.
-2. **`capabilities/index.ts`** — call register; for HITL submit use `registerAction` + `registerApprovalEffect`; for self-serve (no Request) use `registerAction` + `registerSelfServeEffect`.
-3. **`catalog.ts`** — add to `CapabilityId` / `isCapabilityId` if onboard should list it.
-4. **Collect** — build `FieldSpec[]` via `fields/`; config parser module if needed.
-5. **Persistence** — use `@/lib/requests` (`createRequestWithApprovalTask`, `decideRequest`). Thin wrapper in `src/lib/<vertical>.ts` for wording only. **Do not** add `Meeting`-style tables or decide routes.
-6. **UI** — the CRM task card (`components/crm/TaskCard.tsx`) decides `request_approval` tasks; extend labels via instance/`request-view` if needed.
-7. **Copy** — mechanics in `copy/`; nouns in instance config.
-8. **Tests** — capability registration + `architecture.test.ts` still green (no domain leak into interpreter; no second decide form).
+1. **`src/lib/flow/capabilities/<id>.ts`** - `registerCapability({ id, promptSection, tools?, reconcile?, loadState?, decide?, sessionFieldKeys?, … })`.
+2. **`capabilities/index.ts`** - call register; for HITL submit use `registerAction` + `registerApprovalEffect`; for self-serve (no Request) use `registerAction` + `registerSelfServeEffect`.
+3. **`catalog.ts`** - add to `CapabilityId` / `isCapabilityId` if onboard should list it.
+4. **Collect** - build `FieldSpec[]` via `fields/`; config parser module if needed.
+5. **Persistence** - use `@/lib/requests` (`createRequestWithApprovalTask`, `decideRequest`). Thin wrapper in `src/lib/<vertical>.ts` for wording only. **Do not** add `Meeting`-style tables or decide routes.
+6. **UI** - the CRM task card (`components/crm/TaskCard.tsx`) decides `request_approval` tasks; extend labels via instance/`request-view` if needed.
+7. **Copy** - mechanics in `copy/`; nouns in instance config.
+8. **Tests** - capability registration + `architecture.test.ts` still green (no domain leak into interpreter; no second decide form).
 
 **Do not:** edit `interpreter.ts` for domain rules; import `prisma` from a capability file; add a per-capability port on `InterpreterPorts`.
 

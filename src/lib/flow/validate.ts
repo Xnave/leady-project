@@ -110,6 +110,8 @@ export const defaultLeadSchema: LeadSchema = {
     time_preference: { type: "string" },
     visit_kind: { type: "string" },
     need: { type: "string" },
+    /** Early chat context (CRM) - copied into booking need after the need step. */
+    interest: { type: "string" },
     booking: { type: "string" },
     booking_confirm: { type: "string" },
     booking_flow: { type: "string" },
@@ -124,6 +126,30 @@ export const defaultLeadSchema: LeadSchema = {
     availability_url: { type: "string" },
   },
 };
+
+/** Union agent schema with defaults so new CRM keys (e.g. interest) persist without a DB rewrite. */
+export function mergeLeadSchemaWithDefaults(stored: LeadSchema): LeadSchema {
+  return {
+    fields: {
+      ...defaultLeadSchema.fields,
+      ...stored.fields,
+    },
+  };
+}
+
+/** Allowlist for mergeAllowedFields: defaults ∪ agent ∪ session keys. */
+export function allowedLeadFieldKeys(
+  agentSchema: LeadSchema,
+  extraSessionKeys: readonly string[] = [],
+): string[] {
+  return [
+    ...new Set([
+      ...Object.keys(defaultLeadSchema.fields),
+      ...Object.keys(agentSchema.fields),
+      ...extraSessionKeys,
+    ]),
+  ];
+}
 
 export const defaultHitlPolicy: HitlPolicy = {
   allowRequestHuman: true,

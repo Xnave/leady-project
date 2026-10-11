@@ -68,7 +68,7 @@ export function Select({
   /**
    * Fixed-position the list so it is always fully on screen: pick whichever
    * side has more room, cap the height to the room actually available, and
-   * clamp horizontally. Re-run on scroll, resize and after layout settles —
+   * clamp horizontally. Re-run on scroll, resize and after layout settles -
    * measuring only once left the list stranded when the page reflowed.
    */
   const place = useCallback(() => {

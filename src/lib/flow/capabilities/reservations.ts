@@ -200,7 +200,7 @@ function policyLines(config: ReservationConfig): string[] {
   ];
 }
 
-/** Stay reservations capability — behavior driven by its CapabilityInstance config. */
+/** Stay reservations capability - behavior driven by its CapabilityInstance config. */
 export function registerReservationsCapability(): void {
   registerCapability({
     id: "reservations",
@@ -222,7 +222,7 @@ export function registerReservationsCapability(): void {
       }),
     closingLines: () => [
       "Prefer reply for informational turns. Call ask_field only while a date-span request is in progress.",
-      "Never say a request is confirmed or booked — create_reservation_hold only stores a tentative request for a human; send_reservation_link only shares a self-serve URL.",
+      "Never say a request is confirmed or booked - create_reservation_hold only stores a tentative request for a human; send_reservation_link only shares a self-serve URL.",
       "Call reply unless ask_field already set the outbound text.",
     ],
     promptSection: ({ ctx, fields }) => {
@@ -257,26 +257,26 @@ export function registerReservationsCapability(): void {
           `${noun} request is in progress. Collect fields: ${collectList}. Gaps: ${gaps.join(", ") || "none"}. reservation_confirm=${confirm || "(none)"}.`,
           "Save dates as YYYY-MM-DD (check_in / check_out). check_out must be after check_in.",
           linkMode
-            ? "Do not call check_availability — this tenant finishes by sending a booking link."
+            ? "Do not call check_availability - this tenant finishes by sending a booking link."
             : "After dates are saved, call check_availability before finishing the hold when possible.",
-          `When Gaps is none, call ${finishTool} in the SAME turn — do not wait for the customer to say OK. confirm_details is optional.`,
+          `When Gaps is none, call ${finishTool} in the SAME turn - do not wait for the customer to say OK. confirm_details is optional.`,
           linkMode
             ? `CRITICAL: Never tell the customer you booked a ${noun}. Call send_reservation_link so they complete it on the website. Never claim the ${noun} is confirmed.`
-            : `CRITICAL: Never tell the customer you submitted a ${noun} request unless create_reservation_hold returned ok.\nNever say the ${noun} is confirmed — only a human can approve.`,
+            : `CRITICAL: Never tell the customer you submitted a ${noun} request unless create_reservation_hold returned ok.\nNever say the ${noun} is confirmed - only a human can approve.`,
           ...policyLines(config),
         ];
         if (!hasRates(config)) {
           lines.push(
-            "No rate table is configured — do NOT invent prices. Answer amenity/policy questions from knowledge, or escalate discount/price asks to a human / send the booking link if configured.",
+            "No rate table is configured - do NOT invent prices. Answer amenity/policy questions from knowledge, or escalate discount/price asks to a human / send the booking link if configured.",
           );
         } else {
           lines.push(
-            "A rate table is configured — only state prices that clearly follow it; otherwise say a teammate will confirm the total.",
+            "A rate table is configured - only state prices that clearly follow it; otherwise say a teammate will confirm the total.",
           );
         }
         if (config.bookingLinkTemplate && !linkMode) {
           lines.push(
-            "A bookingLinkTemplate is configured — you may share the filled link after availability check or when the customer wants to self-serve.",
+            "A bookingLinkTemplate is configured - you may share the filled link after availability check or when the customer wants to self-serve.",
           );
         }
         return lines;
@@ -289,7 +289,7 @@ export function registerReservationsCapability(): void {
         "Do not invent prices unless a rate table is configured on this tenant.",
         ...policyLines(config),
         linkMode
-          ? "When collection finishes the agent sends a self-serve booking link — never claim the reservation is confirmed."
+          ? "When collection finishes the agent sends a self-serve booking link - never claim the reservation is confirmed."
           : "Price questions without a configured rate table → do not invent amounts; offer availability check / human / booking link.",
       ];
     },

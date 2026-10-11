@@ -262,6 +262,10 @@ export async function loadLeadView(
       channelProvider: lead.channel.provider,
       requestLine,
       summary: latestConversation?.summary?.trim() || null,
+      interest:
+        typeof (lead.fields as Record<string, unknown> | null)?.interest === "string"
+          ? String((lead.fields as Record<string, unknown>).interest).trim() || null
+          : null,
       lastLeadText,
     },
     ui,

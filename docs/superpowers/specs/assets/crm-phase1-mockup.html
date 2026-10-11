@@ -710,7 +710,7 @@ function fuChip(l) {
   if (l.snoozed) return `<span class="fu fu-cold">${ic("clock", "sm")}${t().snooze} · ${t().inDays(1)}</span>`;
   if (!needs(l)) {
     if (l.next) return `<span class="fu-none">${ic("bell", "sm")} ${t().inDays(l.nextDays)}</span>`;
-    return `<span class="fu-none">—</span>`;
+    return `<span class="fu-none">-</span>`;
   }
   const age = l.fu === "reminder" ? t().due : t().ago(l.fuMin);
   return `<span class="fu fu-${l.fu}">${ic(FU_IC[l.fu], "sm")}${t().fu[l.fu]}<span class="age">· ${age}</span></span>`;
@@ -920,7 +920,7 @@ function timeline(l) {
 function detailsView(l) {
   const he = S.lang === "he";
   return `<section class="sec" style="border-top:0"><div class="sec-h">${t().details}</div>
-    <dl class="dl"><dt>${he ? "שם" : "Name"}</dt><dd>${nm(l)}</dd><dt>${he ? "טלפון" : "Phone"}</dt><dd class="ltr">${l.ch === "wa" ? l.h : "—"}</dd><dt>${t().intent}</dt><dd>${tx(l.intent)}</dd>${l.req ? `<dt>${he ? "אורחים" : "Guests"}</dt><dd class="num">4</dd>` : ""}</dl></section>
+    <dl class="dl"><dt>${he ? "שם" : "Name"}</dt><dd>${nm(l)}</dd><dt>${he ? "טלפון" : "Phone"}</dt><dd class="ltr">${l.ch === "wa" ? l.h : "-"}</dd><dt>${t().intent}</dt><dd>${tx(l.intent)}</dd>${l.req ? `<dt>${he ? "אורחים" : "Guests"}</dt><dd class="num">4</dd>` : ""}</dl></section>
     ${l.req ? `<section class="sec"><div class="sec-h">${t().requests}</div><div class="req"><b>${tx(l.stand)}</b><span class="muted">${t().stages.pending} · ${t().ago(l.fuMin || 120)}</span></div></section>` : ""}`;
 }
 

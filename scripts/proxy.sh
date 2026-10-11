@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ngrok tunnel to Next.js — stable public HTTPS for Zernio / admin redirects.
+# ngrok tunnel to Next.js - stable public HTTPS for Zernio / admin redirects.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -116,7 +116,7 @@ start_proxy() {
       echo ""
     fi
   else
-    echo "WARN: could not read tunnel URL from http://127.0.0.1:4040 — check ngrok output"
+    echo "WARN: could not read tunnel URL from http://127.0.0.1:4040 - check ngrok output"
     echo ""
   fi
 

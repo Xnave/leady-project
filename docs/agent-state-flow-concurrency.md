@@ -2,9 +2,9 @@
 
 Companion to [agent-runtime.md](./agent-runtime.md) (runtime) and [agent-flow-as-data.md](./agent-flow-as-data.md) (**JSON flow + Inngest interpreter**, not LangGraph). This doc answers three product questions, then what we would add **if that design is not enough**.
 
-1. **State** — the LLM stays consistent for one conversation.
-2. **Flow** — gather the right details, maybe book a meeting, maybe support-first.
-3. **Concurrency** — many leads, many tenants, same per-tenant agent, at the same time.
+1. **State** - the LLM stays consistent for one conversation.
+2. **Flow** - gather the right details, maybe book a meeting, maybe support-first.
+3. **Concurrency** - many leads, many tenants, same per-tenant agent, at the same time.
 
 ---
 
@@ -99,11 +99,11 @@ A sales agent should not jump to Cal.com before email exists. A support agent sh
 
 Flow is **JSON on the agent + `flow_state` on the conversation + one Inngest interpreter**. Not a prompt-only agent, not LangGraph. Full example: [agent-flow-as-data.md](./agent-flow-as-data.md).
 
-1. **`agents.flow`** — stages (`classify`, `collect`, `faq`, `action`, `terminal`), required fields, transitions. Simple tenant: 2 stages. Complex: longer graph. Same function.
-2. **`conversations.flow_state`** — which node we are on. Code moves this; the LLM does not pick the next stage except via a classify step whose output is mapped by `transitions`.
-3. **`leads.fields`** — extracted facts. Collect stages refuse to complete until `required_fields` are set. Actions like `book_meeting` only run when the interpreter enters that stage.
-4. **LLM inside `step.run`** — classify intent, extract fields, draft the next question, answer FAQ. Rails stay in the interpreter.
-5. **Nudges** — `step.sleepUntil` in a *separate* reminder function, not while waiting for the next WhatsApp (that is a new event).
+1. **`agents.flow`** - stages (`classify`, `collect`, `faq`, `action`, `terminal`), required fields, transitions. Simple tenant: 2 stages. Complex: longer graph. Same function.
+2. **`conversations.flow_state`** - which node we are on. Code moves this; the LLM does not pick the next stage except via a classify step whose output is mapped by `transitions`.
+3. **`leads.fields`** - extracted facts. Collect stages refuse to complete until `required_fields` are set. Actions like `book_meeting` only run when the interpreter enters that stage.
+4. **LLM inside `step.run`** - classify intent, extract fields, draft the next question, answer FAQ. Rails stay in the interpreter.
+5. **Nudges** - `step.sleepUntil` in a *separate* reminder function, not while waiting for the next WhatsApp (that is a new event).
 
 n8n is for *after* the flow (`done` → create a deal), not for “ask name, then email.”
 
@@ -114,7 +114,7 @@ Symptoms: JSON cannot express a stage type (e.g. document OCR then branch), or t
 **Escalate in this order:**
 
 1. Add a new `stage.type` to the **same** interpreter (still data + one function).
-2. Inngest `sleepUntil` reminder function for “no reply in 24h” — already in the flow doc; not Temporal.
+2. Inngest `sleepUntil` reminder function for “no reply in 24h” - already in the flow doc; not Temporal.
 3. Temporal only if you have many competing timers/sagas per lead. Still no LangGraph.
 
 ---
@@ -190,7 +190,7 @@ await db.$executeRaw`
 
 Hold the lock only around load → LLM → persist → send, or keep it short: lock around persist+send if the LLM is slow (then you need a `turn_in_progress` flag so a second worker exits). Prefer Inngest’s key; `FOR UPDATE` is the fallback.
 
-3. **Per-tenant outbound rate limits** (WhatsApp/HookMyApp quotas). A Redis/Inngest throttle keyed by `channel_id`, not by agent, so one viral tenant cannot starve others on a shared Meta limit — actually Meta limits are per WABA, so throttle **per channel connection**.
+3. **Per-tenant outbound rate limits** (WhatsApp/HookMyApp quotas). A Redis/Inngest throttle keyed by `channel_id`, not by agent, so one viral tenant cannot starve others on a shared Meta limit - actually Meta limits are per WABA, so throttle **per channel connection**.
 
 4. **Per-tenant LLM budget.** Same idea: Inngest concurrency `{ key: event.data.tenantId, limit: N }` *in addition to* per-conversation `limit: 1`, so one tenant cannot occupy every worker.
 
@@ -215,8 +215,8 @@ We do **not** run one LangGraph thread server per tenant or a sticky websocket p
 
 ## Short answers
 
-1. **State** — The LLM has no memory. Consistency is **reload this conversation’s messages + lead JSON + this tenant’s agent config** every turn, and **write new facts into JSON** via tools. If that drifts, tighten the schema and missing-fields list before adding a graph.
+1. **State** - The LLM has no memory. Consistency is **reload this conversation’s messages + lead JSON + this tenant’s agent config** every turn, and **write new facts into JSON** via tools. If that drifts, tighten the schema and missing-fields list before adding a graph.
 
-2. **Flow** — Sequence is **JSON stages** interpreted by Inngest. The LLM extracts and talks; code transitions and runs `book_meeting` / HITL only when the graph says so. See [agent-flow-as-data.md](./agent-flow-as-data.md).
+2. **Flow** - Sequence is **JSON stages** interpreted by Inngest. The LLM extracts and talks; code transitions and runs `book_meeting` / HITL only when the graph says so. See [agent-flow-as-data.md](./agent-flow-as-data.md).
 
-3. **Concurrency** — There is no shared agent session. Parallelism is **one Inngest job per conversation**, many jobs per agent row, strict `tenantId` on reads/writes/sends. Serialize only where double-send would hurt: the same `conversationId`.
+3. **Concurrency** - There is no shared agent session. Parallelism is **one Inngest job per conversation**, many jobs per agent row, strict `tenantId` on reads/writes/sends. Serialize only where double-send would hurt: the same `conversationId`.
