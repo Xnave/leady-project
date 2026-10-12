@@ -32,7 +32,7 @@ Plain-language summary: [`2026-10-12-booking-scheduling-summary.md`](2026-10-12-
 | Overall approach | LLM understands, code decides, template speaks. The LLM turns customer wording into a typed constraint and classifies replies. A pure solver picks the slot. Replies come from templates filled by code |
 | Confirm step | Removed. Save on acceptance, allow edits after |
 | "Anything else?" step | Removed |
-| Meeting details (`need`) | Auto summary of the conversation at save time. Not asked unless the owner opts in |
+| Meeting details (`need`) | Auto summary at save time, seeded from the interest already gathered by `need-context.ts`. Not asked unless the owner opts in |
 | Scheduling policy | Owner setting: soonest available / at least X hours or days ahead / ask the customer |
 | Meeting length | Owner setting: 15, 30, 45, 60 or 90 minutes. Default 30 |
 | No hours and no calendar | Fall back to "ask the customer", still require a concrete time |
@@ -56,6 +56,18 @@ Plain-language summary: [`2026-10-12-booking-scheduling-summary.md`](2026-10-12-
 | "יתאים לך? ." | The reschedule template ends with `{{hours}}.`; an empty value leaves an orphan period |
 | Bare "לא" taken as approval | The confirm step treats short replies loosely; there is no deterministic guard |
 | Tone drops when booking starts | Fixed, long templates (`bookingConfirmIntro`, `bookingConfirmAsk`, request template) |
+
+### 3.1 Recent booking fixes on main (2026-10-02 to 2026-10-08)
+
+This design is written against `main` at `e7eff2e`, which includes all of them. How each one is treated:
+
+| Commit(s) | What it fixed | In this design |
+|---|---|---|
+| `57fed7b` fix hour handling | Normalized `venueSchedule` saved on write, tenant timezone, `evaluateTimePreference` hours gate | **Kept and built on.** The solver reads `venueSchedule` and `timezone`; the hours gate stays for customer-named exact times |
+| `1476e40`, `9865b3a` intent gather from prior messages | `need-context.ts`: `gatheredInterest`, `interestFromTranscript`, `save_interest`, deixis rejection | **Reused.** The auto meeting summary at save is seeded from gathered interest; `save_interest` stays in the idle (not booking) state |
+| `9865b3a`, `0d2b53a`, `13f01ff` confirm step: amendments ("תוסיף…") while pending, duplicate confirm suppression, timeout | Robustness of the `confirm_details` → affirm loop | **Replaced.** The confirm step is removed, so these paths go away. Their scenarios move to after saving: an addition updates meeting details, a time change re-runs the solver. Their tests are rewritten for the new flow, not dropped |
+| `cc16bd6`, `a7f985d` date formatting, short post-confirmation message | `formatSlotForDisplay` / `formatSlotPhrase`, short single-line ack and approval templates | **Reused.** Slot labels in messages A and B use the existing formatters; message B builds on the short ack |
+| `da5e088` multiple replies bug | Idempotency in `run-turn.ts` and the demo route | **Untouched** |
 
 ## 4. Conversation flow
 

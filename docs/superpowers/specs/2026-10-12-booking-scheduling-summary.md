@@ -72,6 +72,7 @@ If the owner set no opening hours and no calendar, the agent asks the customer f
 - A person from the business still approves every meeting request, as today.
 - Approve, decline and "offer another time" from the inbox work as before.
 - No database changes. Existing businesses get sensible defaults with nothing to set up.
+- The recent booking fixes on main (opening hours handling, gathering what the customer wants from earlier messages, date formatting, short confirmation messages, duplicate replies) are kept and reused. Only the fixes to the old "is everything correct?" step go away, because that step is removed. Section 3.1 of the full design lists each one.
 
 ## Questions for the reviewer
 
