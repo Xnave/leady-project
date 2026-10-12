@@ -532,5 +532,14 @@ export type UiCopy = {
     saving: string;
     saved: string;
     saveFailed: string;
+    /** Settings → demo: try the saved persona in a real chat. */
+    tryTitle: string;
+    tryHint: string;
+    tryInChat: string;
+    saveAndTry: string;
+    tryNow: string;
+    /** Demo → settings: strip showing which persona is live. */
+    liveStyle: string;
+    changeStyle: string;
   };
 };

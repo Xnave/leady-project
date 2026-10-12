@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PERSONA } from "@/lib/persona/presets";
+import { DEFAULT_PERSONA, applyPreset } from "@/lib/persona/presets";
+import { uiCopy } from "@/lib/ui";
 import type { Persona } from "@/lib/persona/types";
-import { draftReducer, isDirty, issuesToFieldErrors, previewWait } from "./persona-draft";
+import { draftReducer, isDirty, issuesToFieldErrors, personaSummary, previewWait } from "./persona-draft";
 
 describe("persona draft", () => {
   it("picking a preset keeps name, gender, rules", () => {
@@ -64,5 +65,19 @@ describe("issuesToFieldErrors", () => {
     ]);
     expect(out.rules).toEqual({ 3: "override" });
     expect(out.name).toBe("override");
+  });
+});
+
+describe("personaSummary", () => {
+  const ui = uiCopy("he").persona;
+
+  it("names the preset, the agent and its gender", () => {
+    const p = { ...applyPreset("warm_concierge", { agentName: "עדי", gender: "female", rules: [] }) };
+    expect(personaSummary(p, ui)).toEqual(["חם ואישי", "עדי", "נקבה"]);
+  });
+
+  it("custom styles and nameless agents still read well", () => {
+    const p = { ...DEFAULT_PERSONA, presetId: "custom" as const, tone: "direct" as const };
+    expect(personaSummary(p, ui)).toEqual([ui.customBadge, ui.genderOptions.neutral]);
   });
 });

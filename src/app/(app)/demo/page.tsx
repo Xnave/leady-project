@@ -19,6 +19,8 @@ import {
 import { requireTenantIdForPage } from "@/lib/tenant";
 import { canManageTenant } from "@/lib/tenant-role";
 import { convoStatusLabel } from "@/lib/ui/labels";
+import { normalizePersona } from "@/lib/persona/validate";
+import { personaSummary } from "@/components/persona/persona-draft";
 import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
@@ -104,6 +106,7 @@ export default async function DemoPage({
   const languageTitle = ui.chatLanguage[languageId]?.title ?? languageId;
   const setupIncomplete = !(tenant?.intro ?? "").trim();
   const manager = await canManageTenant();
+  const personaChips = agent ? personaSummary(normalizePersona(agent.persona), ui.persona) : [];
 
   const chatLabels = {
     placeholder: ui.chat.placeholder,
@@ -180,6 +183,17 @@ export default async function DemoPage({
               {lead?.channel ? <ChannelBadge lang={lang} channel={lead.channel} /> : null}
             </div>
           </div>
+          {manager && personaChips.length ? (
+            <div className="demo-persona">
+              <span>{ui.persona.liveStyle}:</span>
+              {personaChips.map((c) => (
+                <span key={c} className="demo-persona-chip">
+                  {c}
+                </span>
+              ))}
+              <Link href="/settings/agent">{ui.persona.changeStyle}</Link>
+            </div>
+          ) : null}
           {lead && convo ? (
             <>
               <DemoChat

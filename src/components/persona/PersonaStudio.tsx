@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { BuiltinPresetId } from "@/lib/persona/presets";
 import { PREVIEW_SAMPLES, type SampleId } from "@/lib/persona/samples";
@@ -40,6 +42,7 @@ export function PersonaStudio({
   const [previewLang, setPreviewLang] = useState(defaultPreviewLang);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
+  const router = useRouter();
   const [ruleErrors, setRuleErrors] = useState<Record<number, IssueCode>>({});
   const [nameError, setNameError] = useState<IssueCode | undefined>();
   const lastPreviewed = useRef("");
@@ -122,7 +125,8 @@ export function PersonaStudio({
     if (preview.kind !== "loading" && preview.kind !== "no_llm") void runPreview(next);
   }
 
-  async function save() {
+  /** Returns true when the draft is now the saved persona. */
+  async function save(): Promise<boolean> {
     setSaving(true);
     setRuleErrors({});
     setNameError(undefined);
@@ -135,21 +139,28 @@ export function PersonaStudio({
       if (res.status === 400) {
         showIssues(draft, await res.json().catch(() => null));
         setToast({ text: ui.saveFailed, ok: false });
-        return;
+        return false;
       }
       if (!res.ok) {
         setToast({ text: ui.saveFailed, ok: false });
-        return;
+        return false;
       }
       const { persona } = (await res.json()) as { persona: Persona };
       setSaved(persona);
       dispatch({ type: "reset", persona });
       setToast({ text: ui.saved, ok: true });
+      return true;
     } catch {
       setToast({ text: ui.saveFailed, ok: false });
+      return false;
     } finally {
       setSaving(false);
     }
+  }
+
+  // A new demo chat, so the agent opens with the saved greeting.
+  async function saveAndTry() {
+    if (await save()) router.push("/demo");
   }
 
   return (
@@ -187,12 +198,30 @@ export function PersonaStudio({
           onLang={setPreviewLang}
           sampleCustomer={sampleCustomer}
         />
+        <div className="persona-try">
+          <div>
+            <strong>{ui.tryTitle}</strong>
+            <small className="persona-hint">{ui.tryHint}</small>
+          </div>
+          {dirty ? (
+            <button type="button" className="btn-secondary" disabled={saving} onClick={() => void saveAndTry()}>
+              {ui.saveAndTry}
+            </button>
+          ) : (
+            <Link href="/demo" className="btn-secondary">
+              {ui.tryInChat}
+            </Link>
+          )}
+        </div>
       </section>
 
       <div className={`persona-savebar${dirty ? " show" : ""}`} aria-hidden={!dirty} inert={!dirty || undefined}>
         <span>{ui.unsaved}</span>
         <button type="button" className="btn-ghost" onClick={() => edit({ type: "reset", persona: saved })}>
           {ui.discard}
+        </button>
+        <button type="button" className="btn-secondary" disabled={saving} onClick={() => void saveAndTry()}>
+          {ui.saveAndTry}
         </button>
         <button type="button" className="btn" disabled={saving} onClick={() => void save()}>
           {saving ? ui.saving : ui.save}
@@ -201,6 +230,11 @@ export function PersonaStudio({
       {toast ? (
         <div className={`persona-toast${toast.ok ? "" : " bad"}`} role="status">
           {toast.text}
+          {toast.ok ? (
+            <Link href="/demo" className="persona-toast-link">
+              {ui.tryNow}
+            </Link>
+          ) : null}
         </div>
       ) : null}
     </div>

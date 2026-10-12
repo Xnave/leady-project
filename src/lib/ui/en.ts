@@ -778,5 +778,12 @@ export const en: UiCopy = {
     saving: "Saving…",
     saved: "Saved — your agent sounds like this now",
     saveFailed: "Couldn't save",
+    tryTitle: "Try it in a real chat",
+    tryHint: "Chat with your agent as a customer, from the first hello to a booking.",
+    tryInChat: "Open a test chat →",
+    saveAndTry: "Save and try →",
+    tryNow: "Try it now →",
+    liveStyle: "Agent style",
+    changeStyle: "Change style",
   },
 };

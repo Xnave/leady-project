@@ -777,5 +777,12 @@ export const he: UiCopy = {
     saving: "שומר…",
     saved: "נשמר — כך הסוכן נשמע עכשיו",
     saveFailed: "השמירה נכשלה",
+    tryTitle: "נסו בשיחה אמיתית",
+    tryHint: "שוחחו עם הסוכן כמו לקוח, מה״היי״ הראשון ועד קביעת פגישה.",
+    tryInChat: "פתיחת שיחת בדיקה ←",
+    saveAndTry: "שמירה ונסיון ←",
+    tryNow: "נסו עכשיו ←",
+    liveStyle: "סגנון הסוכן",
+    changeStyle: "שינוי סגנון",
   },
 };

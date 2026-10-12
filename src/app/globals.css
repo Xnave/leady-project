@@ -4461,3 +4461,39 @@ button.crm-stage { cursor: pointer; }
 .persona-onboard-identity > div { display: grid; gap: 6px; font-size: var(--fs-sm); color: var(--text-soft); }
 .persona-handoff { align-self: center; margin: 4px 0 0; font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
 .persona-row-control input.persona-invalid { border-color: var(--danger); background: var(--danger-soft); }
+
+/* Settings ↔ demo: try the persona in a real chat, and see which persona is live there. */
+.persona-try {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+.persona-try > div { display: grid; gap: 2px; min-width: 0; flex: 1 1 180px; }
+.persona-toast { display: flex; align-items: center; gap: 12px; }
+.persona-toast-link { color: inherit; font-weight: 600; text-decoration: underline; }
+.demo-persona {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  border-radius: var(--radius);
+  background: var(--bg);
+  font-size: var(--fs-sm);
+  color: var(--text-soft);
+}
+.demo-persona-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+.demo-persona a { margin-inline-start: auto; font-weight: 600; }

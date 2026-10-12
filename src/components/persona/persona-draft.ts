@@ -1,5 +1,6 @@
 import { applyPreset, matchPreset, type BuiltinPresetId } from "@/lib/persona/presets";
 import { PERSONA_LIMITS, type Persona, type StyleKnobs } from "@/lib/persona/types";
+import type { UiCopy } from "@/lib/ui";
 
 export type DraftAction =
   | { type: "preset"; id: BuiltinPresetId }
@@ -62,4 +63,10 @@ export function issuesToFieldErrors(draft: Persona, issues: Issue[]) {
     if (it.field === "agentName") name = it.code;
   }
   return { rules, name };
+}
+
+/** Short "style · name · gender" chips for places that show which persona is live. */
+export function personaSummary(p: Persona, ui: UiCopy["persona"]): string[] {
+  const style = p.presetId === "custom" ? ui.customBadge : ui.presets[p.presetId].name;
+  return [style, p.agentName.trim(), ui.genderOptions[p.gender]].filter(Boolean);
 }
