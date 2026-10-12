@@ -6,19 +6,19 @@ export type PresetDef = { id: BuiltinPresetId; persona: StyleKnobs };
 export const PRESETS: Record<BuiltinPresetId, PresetDef> = {
   warm_concierge: {
     id: "warm_concierge",
-    persona: { tone: "friendly", length: "medium", formality: "casual", emoji: "light", questionStyle: "one_at_a_time" },
+    persona: { tone: "friendly", length: "auto", formality: "casual", emoji: "light" },
   },
   precise_short: {
     id: "precise_short",
-    persona: { tone: "direct", length: "short", formality: "casual", emoji: "none", questionStyle: "one_at_a_time" },
+    persona: { tone: "direct", length: "short", formality: "casual", emoji: "none" },
   },
   premium_formal: {
     id: "premium_formal",
-    persona: { tone: "professional", length: "medium", formality: "formal", emoji: "none", questionStyle: "one_at_a_time" },
+    persona: { tone: "professional", length: "medium", formality: "formal", emoji: "none" },
   },
   upbeat_sales: {
     id: "upbeat_sales",
-    persona: { tone: "cheerful", length: "medium", formality: "casual", emoji: "light", questionStyle: "one_at_a_time" },
+    persona: { tone: "cheerful", length: "medium", formality: "casual", emoji: "light" },
   },
 };
 
@@ -31,7 +31,7 @@ export function applyPreset(
 
 export const DEFAULT_PERSONA: Persona = applyPreset("warm_concierge", {
   agentName: "",
-  gender: "neutral",
+  gender: "female",
   rules: [],
 });
 
@@ -43,8 +43,7 @@ export function matchPreset(p: StyleKnobs): PresetId {
       k.tone === p.tone &&
       k.length === p.length &&
       k.formality === p.formality &&
-      k.emoji === p.emoji &&
-      k.questionStyle === p.questionStyle
+      k.emoji === p.emoji
     ) {
       return def.id;
     }

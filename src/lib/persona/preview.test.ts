@@ -32,6 +32,21 @@ describe("runPersonaPreview", () => {
   });
 });
 
+describe("runPersonaPreview one sample", () => {
+  it("runs only the requested sample (one LLM turn per click)", async () => {
+    let calls = 0;
+    const out = await runPersonaPreview(
+      { persona: DEFAULT_PERSONA, lang: "en", agent, tenant, sample: "complaint" },
+      async () => {
+        calls++;
+        return { reply: "sorry" };
+      },
+    );
+    expect(calls).toBe(1);
+    expect(out.map((s) => s.id)).toEqual(["complaint"]);
+  });
+});
+
 describe("runPersonaPreview degrade", () => {
   it("throws instead of showing the LLM-down fallback as the agent's voice", async () => {
     await expect(

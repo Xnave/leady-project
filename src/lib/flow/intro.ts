@@ -51,7 +51,7 @@ export function shouldSendCannedIntro(
 
 export function looksLikeBareHello(text: string): boolean {
   const t = text.trim().toLowerCase().replace(/[!?.,]+$/g, "").trim();
-  return /^(hi|hello|hey|yo|שלום|היי|הי)$/.test(t);
+  return /^(hi|hello|hey|hiya|yo|good (morning|evening)|שלום|היי|הי|אהלן|הלו|היוש|בוקר טוב|ערב טוב)$/.test(t);
 }
 
 /** @deprecated Prefer cannedIntroText + extract-on-first-turn; kept for tests. */

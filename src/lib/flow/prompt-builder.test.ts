@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { DEFAULT_PERSONA } from "@/lib/persona/presets";
 import { bookingInstance } from "./booking-config";
 import { normalizeTalkOutcome } from "./interpreter";
@@ -104,10 +104,6 @@ describe("persona prompt order", () => {
   }
   const talkStage = (ctx: TurnContext) => ctx.agent.flow.stages.talk as TalkStage;
 
-  afterEach(() => {
-    delete process.env.PROMPT_PIPELINE;
-  });
-
   it("identity → persona → craft → boundaries → closing", () => {
     const ctx = makeCtx({ persona: { ...DEFAULT_PERSONA, agentName: "Noa" } });
     const s = buildTalkSystemPrompt(ctx, talkStage(ctx));
@@ -143,34 +139,30 @@ describe("persona prompt order", () => {
     expect(buildNudgeSystemPrompt(ctx, talkStage(ctx), "")).toMatch(/1–2 short sentences/);
   });
 
-  it("PROMPT_PIPELINE=legacy reproduces the old prompt", () => {
-    process.env.PROMPT_PIPELINE = "legacy";
+  it("boundaries always open with BOUNDARIES and allow one question", () => {
     const ctx = makeCtx({});
     const s = buildTalkSystemPrompt(ctx, talkStage(ctx));
-    expect(s).toMatch(/ROLE: Front-desk chat assistant/);
-    expect(s).not.toMatch(/PERSONA/);
+    expect(s).toMatch(/BOUNDARIES \(always apply/);
+    expect(s).toMatch(/ask at most one clarifying question/);
   });
-});
 
-describe("question style vs boundaries", () => {
-  it("bundled persona is not contradicted by a one-question boundary", () => {
-    ensureFlowRegistry();
-    const flow = flowForCatalog("inbox");
-    const ctx = {
-      tenantId: "t1",
-      tenant: { name: "Demo", phone: "", intro: "Hi", chatLanguage: "en" },
-      agent: {
-        id: "a1", tenantId: "t1", systemPrompt: "", knowledgeText: "", flow, flowVersion: 1,
-        leadSchema: defaultLeadSchema, hitlPolicy: defaultHitlPolicy,
-        persona: { ...DEFAULT_PERSONA, questionStyle: "bundled" },
-      },
-      conversation: { id: "c1", status: "open", flowState: "talk", flowVersion: 1, nudgeCountByStage: {} },
-      lead: { id: "l1", externalUserId: "u1", fields: {} },
-      messages: [{ role: "agent", text: "Hi" }, { role: "lead", text: "hello" }],
-    } as TurnContext;
-    const s = buildTalkSystemPrompt(ctx, flow.stages.talk as TalkStage);
-    expect(s).not.toMatch(/ask at most one clarifying question/);
-    expect(s).toMatch(/up to 3 related clarifying questions/);
+  it("next-step rule lives in the base talk instructions, not the persona", () => {
+    const ctx = makeCtx({});
+    const s = buildTalkSystemPrompt(ctx, talkStage(ctx));
+    expect(s).toMatch(/one clear next step/);
+    expect(s.indexOf("one clear next step")).toBeGreaterThan(s.indexOf("CONVERSATION CRAFT"));
+  });
+
+  it("later replies don't greet again", () => {
+    const ctx = makeCtx({});
+    expect(buildTalkSystemPrompt(ctx, talkStage(ctx))).toMatch(/already greeted/);
+  });
+
+  it("meeting frequency is a booking rule, not persona", () => {
+    const ctx = makeCtx({});
+    const s = buildTalkSystemPrompt(ctx, talkStage(ctx));
+    expect(s).toMatch(/Suggest a meeting at most once/);
+    expect(s.indexOf("Suggest a meeting at most once")).toBeGreaterThan(s.indexOf("CONVERSATION CRAFT"));
   });
 });
 
@@ -190,10 +182,6 @@ describe("first message", () => {
       messages: [{ role: "lead", text: "How much for a kitchen?" }],
     } as TurnContext;
   }
-  afterEach(() => {
-    delete process.env.PROMPT_PIPELINE;
-  });
-
   it("uses the intro as inspiration, answers first, no 'how can I help' after a real question", () => {
     const ctx = firstCtx();
     const s = buildTalkSystemPrompt(ctx, ctx.agent.flow.stages.talk as TalkStage);
@@ -201,14 +189,6 @@ describe("first message", () => {
     expect(s).toMatch(/FIRST MESSAGE:[^\n]*persona's voice/);
     expect(s).toMatch(/do not ask how you can help/i);
     expect(s).toMatch(/FIRST MESSAGE:[^\n]*AI/);
-  });
-
-  it("legacy pipeline keeps the verbatim-intro instruction", () => {
-    process.env.PROMPT_PIPELINE = "legacy";
-    const ctx = firstCtx();
-    expect(buildTalkSystemPrompt(ctx, ctx.agent.flow.stages.talk as TalkStage)).toMatch(
-      /do not invent a different welcome/,
-    );
   });
 });
 

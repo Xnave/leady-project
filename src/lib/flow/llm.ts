@@ -1,5 +1,6 @@
 import { generateObject, generateText, stepCountIs, tool } from "ai";
 import { stripLegacyRole } from "@/lib/persona/prompt";
+import { greetingOnlyReply, personaGreeting } from "@/lib/persona/greeting";
 import { faqSystemPrompt, voicePreamble } from "@/lib/persona/system";
 import { z } from "zod";
 import { copyFor, replyLang } from "@/lib/copy";
@@ -11,7 +12,7 @@ import { ensureFlowRegistry } from "./capabilities";
 import { getCapability, resolveTalkCapabilities } from "./registry";
 import { buildNudgeSystemPrompt, buildTalkSystemPrompt, talkTransitionTargets } from "./prompt-builder";
 import { canCallStartNewConversation } from "./affirm";
-import { hasAgentReplied, cannedIntroText } from "./intro";
+import { hasAgentReplied } from "./intro";
 import { chatModel, llmConfigured } from "./model";
 import { addTurnPerf } from "@/lib/perf";
 import type {
@@ -148,7 +149,7 @@ export function degradeTalk(ctx: TurnContext, _stage: TalkStage): TalkOutcome {
   const chat = copyFor(lang).chat;
   if (!hasAgentReplied(ctx)) {
     // Presentation-only fallback when LLM is down - not dialogue policy.
-    return { reply: cannedIntroText(ctx) };
+    return { reply: personaGreeting(ctx, lang) };
   }
   return {
     reply: chat.waitingHumanHold,
@@ -218,6 +219,10 @@ export async function draftNudgeReply(
 
 export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<TalkOutcome> {
   ensureFlowRegistry();
+
+  // A bare first "hi" needs no model: the persona greeting answers it.
+  const greeting = greetingOnlyReply(ctx);
+  if (greeting) return { reply: greeting };
 
   if (!llmConfigured()) {
     return degradeTalk(ctx, stage);

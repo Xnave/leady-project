@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import type { SampleId } from "@/lib/persona/samples";
 import type { UiCopy } from "@/lib/ui";
 import { SegmentedControl } from "./SegmentedControl";
@@ -25,6 +24,8 @@ export function PersonaPreview({
   lang,
   onLang,
   sampleCustomer,
+  tab,
+  onTab,
 }: {
   state: PreviewState;
   onRun: () => void;
@@ -34,8 +35,9 @@ export function PersonaPreview({
   lang: "en" | "he";
   onLang: (l: "en" | "he") => void;
   sampleCustomer: Record<SampleId, string>;
+  tab: SampleId;
+  onTab: (id: SampleId) => void;
 }) {
-  const [tab, setTab] = useState<SampleId>("pricing");
   const loading = state.kind === "loading";
   const samples =
     state.kind === "ready"
@@ -73,7 +75,7 @@ export function PersonaPreview({
             type="button"
             aria-selected={tab === id}
             className={`persona-tab${tab === id ? " on" : ""}`}
-            onClick={() => setTab(id)}
+            onClick={() => onTab(id)}
           >
             {ui.previewSamples[id]}
           </button>

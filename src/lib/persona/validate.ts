@@ -26,7 +26,7 @@ const isOverride = (s: string) => OVERRIDE_RE.test(s) || OVERRIDE_HE_RE.test(s);
 /** One line per value: newlines would let a rule fake a prompt section header. */
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 
-const KNOBS = ["gender", "tone", "length", "formality", "emoji", "questionStyle"] as const;
+const KNOBS = ["gender", "tone", "length", "formality", "emoji"] as const;
 
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -57,7 +57,6 @@ export function normalizePersona(raw: unknown): Persona {
     length: inEnum("length", raw.length) ? raw.length : d.length,
     formality: inEnum("formality", raw.formality) ? raw.formality : d.formality,
     emoji: inEnum("emoji", raw.emoji) ? raw.emoji : d.emoji,
-    questionStyle: inEnum("questionStyle", raw.questionStyle) ? raw.questionStyle : d.questionStyle,
     rules: cleanRules(raw.rules)
       .slice(0, PERSONA_LIMITS.rules)
       .map((r) => r.slice(0, PERSONA_LIMITS.ruleChars)),

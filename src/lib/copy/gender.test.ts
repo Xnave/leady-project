@@ -20,13 +20,21 @@ describe("hebrew chat copy", () => {
   it("self-reference follows persona gender", () => {
     expect(copyFor("he", { gender: "female" }).chat.savingVisit).toMatch(/קולטת/);
     expect(copyFor("he", { gender: "male" }).chat.savingVisit).toMatch(/קולט /);
-    expect(copyFor("he", { gender: "neutral" }).chat.savingVisit).toMatch(/קולטים/);
     expect(copyFor("he").chat.savingVisit).toMatch(/קולטים/);
   });
 
   it("asks for a name without greeting someone whose name we don't know yet", () => {
     expect(copyFor("he").chat.askName).not.toMatch(/נעים להכיר/);
     expect(copyFor("en").chat.askName).not.toMatch(/Nice to meet you/);
+  });
+
+  it("assistant intro follows name and gender, without an (AI) tag in Hebrew", () => {
+    const he = copyFor("he").chat.assistantIntro;
+    expect(he({ agentName: "עדי", business: "דמו", gender: "female" })).toBe("היי! אני עדי, העוזרת הדיגיטלית של דמו.");
+    expect(he({ agentName: "", business: "דמו", gender: "male" })).toBe("היי! כאן העוזר הדיגיטלי של דמו.");
+    expect(copyFor("en").chat.assistantIntro({ agentName: "Noa", business: "Acme", gender: "female" })).toBe(
+      "Hi! I'm Noa, Acme's AI assistant.",
+    );
   });
 
   it("english unaffected by gender", () => {

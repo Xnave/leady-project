@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_PERSONA, applyPreset } from "./presets";
 import { firstMessageLine, identitySection, personaSection, stripLegacyRole, voiceCraftSection } from "./prompt";
 
-const base = { agentName: "", gender: "neutral" as const, rules: [] };
+const base = { agentName: "", gender: "female" as const, rules: [] };
 
 describe("identitySection", () => {
   it("uses agent name when set, business voice otherwise", () => {
@@ -30,15 +30,15 @@ describe("AI disclosure", () => {
   });
 
   it("first message introduces the agent as an AI, matching name and gender", () => {
-    const he = (agentName: string, gender: "female" | "male" | "neutral") =>
+    const he = (agentName: string, gender: "female" | "male") =>
       firstMessageLine({ business: "מטבחי דמו", agentName, gender, intro: "", lang: "he" });
     expect(he("עדי", "female")).toMatch(/אני עדי, העוזרת הדיגיטלית של מטבחי דמו/);
     expect(he("דני", "male")).toMatch(/אני דני, העוזר הדיגיטלי של מטבחי דמו/);
-    expect(he("", "neutral")).toMatch(/כאן העוזר הדיגיטלי של מטבחי דמו/);
-    for (const g of ["female", "male", "neutral"] as const) {
-      const line = he(g === "neutral" ? "" : "עדי", g);
-      expect(line, g).not.toMatch(/\(AI\)|מבוסס AI/);
-      expect(line, g).toMatch(/don't add "AI"/);
+    expect(he("", "female")).toMatch(/כאן העוזרת הדיגיטלית של מטבחי דמו/);
+    expect(he("", "male")).toMatch(/כאן העוזר הדיגיטלי של מטבחי דמו/);
+    for (const line of [he("עדי", "female"), he("", "male")]) {
+      expect(line).not.toMatch(/\(AI\)|מבוסס AI/);
+      expect(line).toMatch(/don't add "AI"/);
     }
     expect(
       firstMessageLine({ business: "Acme", agentName: "Noa", gender: "female", intro: "", lang: "en" }),
@@ -46,7 +46,7 @@ describe("AI disclosure", () => {
   });
 
   it("first message uses the intro only as background and answers a real question", () => {
-    const s = firstMessageLine({ business: "X", agentName: "", gender: "neutral", intro: "Welcome to X!", lang: "en" });
+    const s = firstMessageLine({ business: "X", agentName: "", gender: "female", intro: "Welcome to X!", lang: "en" });
     expect(s).toMatch(/background/);
     expect(s).toMatch(/Welcome to X!/);
     expect(s).toMatch(/do not ask how you can help/i);
@@ -54,15 +54,15 @@ describe("AI disclosure", () => {
 });
 
 describe("personaSection", () => {
-  it("maps length knobs to concrete limits", () => {
+  it("maps length knobs to concrete limits; auto adds no length rule", () => {
     expect(personaSection(applyPreset("precise_short", base), "en")).toMatch(/1–2 short sentences/);
-    expect(personaSection({ ...DEFAULT_PERSONA, length: "detailed" }, "en")).toMatch(/up to ~5 sentences/i);
+    expect(personaSection({ ...DEFAULT_PERSONA, length: "medium" }, "en")).toMatch(/2–3 sentences/);
+    expect(personaSection({ ...DEFAULT_PERSONA, length: "auto" }, "en")).not.toMatch(/Length:/);
   });
 
   it("Hebrew gender lines", () => {
     expect(personaSection({ ...DEFAULT_PERSONA, gender: "female" }, "he")).toMatch(/feminine.*בודקת/);
     expect(personaSection({ ...DEFAULT_PERSONA, gender: "male" }, "he")).toMatch(/masculine.*בודק/);
-    expect(personaSection({ ...DEFAULT_PERSONA, gender: "neutral" }, "he")).toMatch(/אנחנו/);
     expect(personaSection(DEFAULT_PERSONA, "he")).toMatch(/don't know the customer's gender/);
     expect(personaSection(DEFAULT_PERSONA, "he")).toMatch(/addresses you .* says nothing about their own gender/);
   });
@@ -71,12 +71,17 @@ describe("personaSection", () => {
     expect(personaSection({ ...DEFAULT_PERSONA, gender: "female" }, "en")).not.toMatch(/בודקת/);
   });
 
-  it("emoji, formality, questions, rules", () => {
+  it("formal gives examples of the register; casual lists what to avoid", () => {
+    const formal = personaSection({ ...DEFAULT_PERSONA, formality: "formal" }, "he");
+    expect(formal).toMatch(/תודה על פנייתך/);
+    expect(formal).not.toMatch(/avoid/i);
+    const casual = personaSection({ ...DEFAULT_PERSONA, formality: "casual" }, "he");
+    expect(casual).toMatch(/avoid[^\n]*הנכם/i);
+  });
+
+  it("emoji and owner rules; no question-style knob", () => {
     expect(personaSection({ ...DEFAULT_PERSONA, emoji: "none" }, "en")).toMatch(/No emoji/);
-    expect(personaSection({ ...DEFAULT_PERSONA, formality: "formal" }, "he")).toMatch(/סבבה/);
-    expect(personaSection({ ...DEFAULT_PERSONA, questionStyle: "bundled" }, "en")).toMatch(
-      /up to 3 related questions/,
-    );
+    expect(personaSection(DEFAULT_PERSONA, "en")).not.toMatch(/Questions:/);
     expect(personaSection({ ...DEFAULT_PERSONA, rules: ["Never discuss competitors"] }, "en")).toMatch(
       /Owner's rules[\s\S]*- Never discuss competitors/,
     );
@@ -85,14 +90,14 @@ describe("personaSection", () => {
 });
 
 describe("voiceCraftSection", () => {
-  it("bans canned openers and asks for one next step", () => {
-    const s = voiceCraftSection(DEFAULT_PERSONA);
+  it("is about how replies sound, not what the conversation does next", () => {
+    const s = voiceCraftSection();
     expect(s).toMatch(/Great question/);
-    expect(s).toMatch(/one clear next step/);
-  });
-
-  it("does not push a meeting in every reply", () => {
-    expect(voiceCraftSection(DEFAULT_PERSONA)).toMatch(/Suggest a meeting at most once/);
+    expect(s).toMatch(/no headings/);
+    expect(s).not.toMatch(/next step/);
+    expect(s).not.toMatch(/meeting/);
+    expect(s).not.toMatch(/short paragraphs/);
+    expect(s).not.toMatch(/knowledge doesn't cover/);
   });
 });
 

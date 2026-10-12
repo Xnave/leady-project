@@ -4,6 +4,11 @@ import { prompts as enPrompts } from "./en";
 export const chat: ChatCopy = {
   fallbackTeamName: "הצוות שלנו",
   hello: (name) => `היי, כאן ${name}.`,
+  assistantIntro: ({ agentName, business, gender }) => {
+    const role = gender === "female" ? "העוזרת הדיגיטלית" : "העוזר הדיגיטלי";
+    return agentName ? `היי! אני ${agentName}, ${role} של ${business}.` : `היי! כאן ${role} של ${business}.`;
+  },
+  askHowToHelp: "במה אפשר לעזור?",
   helloHelp: (name) => `היי, כאן ${name}. במה אוכל לעזור?`,
   howCanIHelp: "במה אוכל לעזור?",
   howCanIHelpRe: /במה אוכל לעזור|איך אפשר לעזור/i,

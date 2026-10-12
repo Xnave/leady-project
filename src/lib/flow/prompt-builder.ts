@@ -20,11 +20,6 @@ import {
   voiceCraftSection,
 } from "@/lib/persona/prompt";
 
-/** Eval-only switch: reproduce the pre-persona prompt as a baseline. */
-export function legacyPromptPipeline(): boolean {
-  return process.env["PROMPT_PIPELINE"] === "legacy";
-}
-
 function lastLeadText(ctx: TurnContext): string {
   return [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
 }
@@ -43,20 +38,20 @@ export class PromptBuilder {
 
   withBase(ctx: TurnContext, lang: "en" | "he"): this {
     this.parts.push(
-      legacyPromptPipeline() ? ctx.agent.systemPrompt : stripLegacyRole(ctx.agent.systemPrompt),
+      stripLegacyRole(ctx.agent.systemPrompt),
+      "End each reply with one clear next step (a question, an offer, or what happens now), not a menu of options.",
     );
-    const intro = ctx.tenant?.intro?.trim() || "";
-    if (!hasAgentReplied(ctx)) {
+    if (hasAgentReplied(ctx)) {
+      this.parts.push("You already greeted the customer: don't open with a hello again.");
+    } else {
       this.parts.push(
-        legacyPromptPipeline()
-          ? `FIRST MESSAGE: Greet using this business intro (do not invent a different welcome): ${intro || "(short hello)"}. Then address their message.`
-          : firstMessageLine({
-              business: ctx.tenant?.name?.trim() || "this business",
-              agentName: personaOf(ctx).agentName,
-              gender: personaOf(ctx).gender,
-              intro,
-              lang,
-            }),
+        firstMessageLine({
+          business: ctx.tenant?.name?.trim() || "this business",
+          agentName: personaOf(ctx).agentName,
+          gender: personaOf(ctx).gender,
+          intro: ctx.tenant?.intro?.trim() || "",
+          lang,
+        }),
       );
     }
     return this;
@@ -78,8 +73,8 @@ export class PromptBuilder {
     return this;
   }
 
-  withVoiceCraft(ctx: TurnContext): this {
-    this.parts.push(voiceCraftSection(personaOf(ctx)));
+  withVoiceCraft(): this {
+    this.parts.push(voiceCraftSection());
     return this;
   }
 
@@ -140,8 +135,6 @@ export class PromptBuilder {
         hours: booking.venueHours,
         whatsappPhone: !saved && deduced ? deduced : undefined,
         lang,
-        voiceLayer: !legacyPromptPipeline(),
-        bundledQuestions: !legacyPromptPipeline() && personaOf(ctx).questionStyle === "bundled",
       }),
     );
     return this;
@@ -217,22 +210,11 @@ export function buildTalkSystemPrompt(
   fields: LeadFields = ctx.lead.fields,
 ): string {
   const lang = replyLang(ctx, lastLeadText(ctx));
-  if (legacyPromptPipeline()) {
-    return new PromptBuilder()
-      .withBase(ctx, lang)
-      .withStage(stage)
-      .withGuardrails(ctx, stage, lang)
-      .withChannel(ctx, fields)
-      .withTalkContext(ctx, stage, fields, lang)
-      .withCapabilities(ctx, stage, fields)
-      .withClosing(stage)
-      .build();
-  }
   // Voice first, safety rules last so style never outranks them.
   return new PromptBuilder()
     .withIdentity(ctx)
     .withPersona(ctx, lang)
-    .withVoiceCraft(ctx)
+    .withVoiceCraft()
     .withBase(ctx, lang)
     .withStage(stage)
     .withChannel(ctx, fields)
@@ -251,18 +233,19 @@ export function buildNudgeSystemPrompt(
   fields: LeadFields = ctx.lead.fields,
 ): string {
   const lang = replyLang(ctx, lastLeadText(ctx));
-  const legacy = legacyPromptPipeline();
-  const builder = new PromptBuilder();
-  if (!legacy) builder.withIdentity(ctx).withPersona(ctx, lang).withVoiceCraft(ctx);
-  builder.withBase(ctx, lang).withStage(stage);
+  const builder = new PromptBuilder()
+    .withIdentity(ctx)
+    .withPersona(ctx, lang)
+    .withVoiceCraft()
+    .withBase(ctx, lang)
+    .withStage(stage);
 
   if (stage.type === "talk") {
-    if (legacy) builder.withGuardrails(ctx, stage, lang);
     builder
       .withChannel(ctx, fields)
       .withTalkContext(ctx, stage, fields, lang)
-      .withCapabilities(ctx, stage, fields);
-    if (!legacy) builder.withGuardrails(ctx, stage, lang);
+      .withCapabilities(ctx, stage, fields)
+      .withGuardrails(ctx, stage, lang);
   } else {
     builder.withChannel(ctx, fields);
   }

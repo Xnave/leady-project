@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { TurnContext } from "@/lib/flow/types";
 import { DEFAULT_PERSONA } from "./presets";
 import { faqSystemPrompt, voicePreamble } from "./system";
@@ -10,10 +10,6 @@ const ctx = {
 } as unknown as TurnContext;
 
 describe("voicePreamble", () => {
-  afterEach(() => {
-    delete process.env.PROMPT_PIPELINE;
-  });
-
   it("includes identity, persona and craft", () => {
     const s = voicePreamble(ctx, "en");
     expect(s).toMatch(/You are Dana, the AI assistant of Acme/);
@@ -21,16 +17,14 @@ describe("voicePreamble", () => {
     expect(s).toMatch(/CONVERSATION CRAFT/);
   });
 
-  it("empty in legacy pipeline", () => {
-    process.env.PROMPT_PIPELINE = "legacy";
-    expect(voicePreamble(ctx, "en")).toBe("");
+  it("has no escalation advice of its own (talk/FAQ flows own hand-off)", () => {
+    expect(voicePreamble(ctx, "en")).not.toMatch(/offer the concrete alternative/);
   });
 });
 
 describe("faqSystemPrompt", () => {
   it("keeps the UNRESOLVED contract above the style guidance", () => {
     const s = faqSystemPrompt(ctx, "en", "Knowledge:\nWe sell widgets.\nIf the knowledge does not answer, reply with exactly UNRESOLVED.");
-    expect(s).not.toMatch(/offer the concrete alternative/);
     expect(s).toMatch(/output exactly UNRESOLVED/);
     expect(s.indexOf("output exactly UNRESOLVED")).toBeGreaterThan(s.indexOf("PERSONA"));
   });

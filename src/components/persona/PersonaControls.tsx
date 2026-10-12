@@ -83,14 +83,6 @@ export function PersonaControls({
         <Row label={ui.emoji}>
           <SegmentedControl label={ui.emoji} value={p.emoji} options={opts(ui.emojiOptions)} onChange={set("emoji")} />
         </Row>
-        <Row label={ui.questions}>
-          <SegmentedControl
-            label={ui.questions}
-            value={p.questionStyle}
-            options={opts(ui.questionOptions)}
-            onChange={set("questionStyle")}
-          />
-        </Row>
       </fieldset>
 
       <fieldset className="persona-group">

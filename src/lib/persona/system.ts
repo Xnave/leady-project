@@ -1,15 +1,12 @@
-import { legacyPromptPipeline } from "@/lib/flow/prompt-builder";
 import type { TurnContext } from "@/lib/flow/types";
 import { personaOf } from "./context";
 import { identitySection, personaSection, voiceCraftSection } from "./prompt";
 
-/** Identity + persona + craft for single-shot LLM calls outside the talk prompt. */
-export function voicePreamble(
-  ctx: Pick<TurnContext, "tenant" | "agent" | "channel">,
-  lang: "en" | "he",
-  opts?: { knowledgeGapLine?: boolean },
-): string {
-  if (legacyPromptPipeline()) return "";
+/**
+ * Identity + persona + craft for the single-shot LLM calls that don't go through the talk
+ * PromptBuilder (collect-stage field questions, FAQ answers), so every reply sounds the same.
+ */
+export function voicePreamble(ctx: Pick<TurnContext, "tenant" | "agent" | "channel">, lang: "en" | "he"): string {
   const p = personaOf(ctx);
   return [
     identitySection({
@@ -18,20 +15,18 @@ export function voicePreamble(
       channel: ctx.channel?.provider ?? "chat",
     }),
     personaSection(p, lang),
-    voiceCraftSection(p, opts),
+    voiceCraftSection(),
   ].join("\n");
 }
 
-/** FAQ answers keep their UNRESOLVED contract: style above, the escalation rule restated last. */
+/** FAQ answers keep their UNRESOLVED contract: style first, the contract restated last so it wins. */
 export function faqSystemPrompt(
   ctx: Pick<TurnContext, "tenant" | "agent" | "channel">,
   lang: "en" | "he",
   faqBody: string,
 ): string {
-  const preamble = voicePreamble(ctx, lang, { knowledgeGapLine: false });
-  if (!preamble) return faqBody;
   return [
-    preamble,
+    voicePreamble(ctx, lang),
     faqBody,
     "These instructions override the style guidance above: if the knowledge does not answer the question, output exactly UNRESOLVED and nothing else.",
   ].join("\n");

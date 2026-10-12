@@ -3,12 +3,13 @@ import { DEFAULT_PERSONA, PRESETS, applyPreset } from "./presets";
 import { PersonaConfigError, normalizePersona, tryValidatePersona, validatePersona } from "./validate";
 
 describe("normalizePersona", () => {
-  it("empty / garbage → warm concierge, neutral gender", () => {
+  it("empty / garbage → warm concierge, female, auto length", () => {
     for (const raw of [{}, null, undefined, "x", 42, []]) {
       expect(normalizePersona(raw)).toEqual(DEFAULT_PERSONA);
     }
     expect(DEFAULT_PERSONA.presetId).toBe("warm_concierge");
-    expect(DEFAULT_PERSONA.gender).toBe("neutral");
+    expect(DEFAULT_PERSONA.gender).toBe("female");
+    expect(DEFAULT_PERSONA.length).toBe("auto");
   });
 
   it("drops invalid enum values but keeps valid ones", () => {
@@ -24,11 +25,21 @@ describe("normalizePersona", () => {
   });
 });
 
+describe("removed options", () => {
+  it("stored neutral gender, detailed length and question style fall back to defaults", () => {
+    const p = normalizePersona({ gender: "neutral", length: "detailed", questionStyle: "bundled", tone: "direct" });
+    expect(p.gender).toBe("female");
+    expect(p.length).toBe(DEFAULT_PERSONA.length);
+    expect(p).not.toHaveProperty("questionStyle");
+    expect(p.tone).toBe("direct");
+  });
+});
+
 describe("validatePersona", () => {
   it("accepts every preset", () => {
     for (const id of Object.keys(PRESETS) as (keyof typeof PRESETS)[]) {
       expect(() =>
-        validatePersona(applyPreset(id, { agentName: "", gender: "neutral", rules: [] })),
+        validatePersona(applyPreset(id, { agentName: "", gender: "female", rules: [] })),
       ).not.toThrow();
     }
   });
@@ -56,7 +67,7 @@ describe("validatePersona", () => {
     const p = validatePersona({
       ...PRESETS.precise_short.persona,
       agentName: "",
-      gender: "neutral",
+      gender: "female",
       rules: [],
       tone: "cheerful",
     });

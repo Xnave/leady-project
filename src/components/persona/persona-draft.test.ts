@@ -78,6 +78,6 @@ describe("personaSummary", () => {
 
   it("custom styles and nameless agents still read well", () => {
     const p = { ...DEFAULT_PERSONA, presetId: "custom" as const, tone: "direct" as const };
-    expect(personaSummary(p, ui)).toEqual([ui.customBadge, ui.genderOptions.neutral]);
+    expect(personaSummary(p, ui)).toEqual([ui.customBadge, ui.genderOptions.female]);
   });
 });

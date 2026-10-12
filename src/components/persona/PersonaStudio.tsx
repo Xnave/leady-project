@@ -45,7 +45,9 @@ export function PersonaStudio({
   const router = useRouter();
   const [ruleErrors, setRuleErrors] = useState<Record<number, IssueCode>>({});
   const [nameError, setNameError] = useState<IssueCode | undefined>();
-  const lastPreviewed = useRef("");
+  const [tab, setTab] = useState<SampleId>("pricing");
+  // Which draft+language each sample's shown reply was generated for.
+  const sampleKeys = useRef<Partial<Record<SampleId, string>>>({});
   const lastPreviewStart = useRef<number | undefined>(undefined);
   const dirty = isDirty(saved, draft);
 
@@ -55,10 +57,12 @@ export function PersonaStudio({
     [previewLang],
   );
 
-  // Fade the preview once the draft moves away from what was last heard.
+  // Fade the preview once the draft moves away from what the open sample was generated for.
   useEffect(() => {
-    setPreview((p) => (p.kind === "ready" ? { ...p, stale: previewKey(draft, previewLang) !== lastPreviewed.current } : p));
-  }, [draft, previewLang]);
+    setPreview((p) =>
+      p.kind === "ready" ? { ...p, stale: previewKey(draft, previewLang) !== sampleKeys.current[tab] } : p,
+    );
+  }, [draft, previewLang, tab]);
 
   useEffect(() => {
     if (!toast) return;
@@ -89,7 +93,8 @@ export function PersonaStudio({
     dispatch(a);
   }
 
-  async function runPreview(p: Persona = draft) {
+  /** One sample per call (one LLM turn); results for other samples are kept. */
+  async function runPreview(p: Persona = draft, sample: SampleId = tab) {
     const previous =
       preview.kind === "ready" ? preview.samples : preview.kind === "error" ? preview.previous : undefined;
     setPreview({ kind: "loading", previous });
@@ -100,7 +105,7 @@ export function PersonaStudio({
       const res = await fetch("/api/agent/persona/preview", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ persona: cleanDraft(p), lang: previewLang }),
+        body: JSON.stringify({ persona: cleanDraft(p), lang: previewLang, sample }),
       });
       if (res.status === 409) return setPreview({ kind: "no_llm" });
       if (res.status === 429) return setPreview({ kind: "error", message: ui.previewSlowDown, previous });
@@ -112,11 +117,21 @@ export function PersonaStudio({
       }
       if (!res.ok) return setPreview({ kind: "error", message: ui.previewFailed, previous });
       const body = (await res.json()) as { samples: PreviewSample[] };
-      lastPreviewed.current = previewKey(p, previewLang);
-      setPreview({ kind: "ready", samples: body.samples, stale: false });
+      const key = previewKey(p, previewLang);
+      for (const s of body.samples) sampleKeys.current[s.id] = key;
+      const fresh = new Set(body.samples.map((s) => s.id));
+      const kept = (previous ?? []).filter((s) => !fresh.has(s.id));
+      setPreview({ kind: "ready", samples: [...kept, ...body.samples], stale: false });
     } catch {
       setPreview({ kind: "error", message: ui.previewFailed, previous });
     }
+  }
+
+  // Opening a sample that has no reply for the current draft runs just that one.
+  function openSample(id: SampleId) {
+    setTab(id);
+    const busy = preview.kind === "loading" || preview.kind === "no_llm" || preview.kind === "idle";
+    if (!busy && sampleKeys.current[id] !== previewKey(draft, previewLang)) void runPreview(draft, id);
   }
 
   function pickPreset(id: BuiltinPresetId) {
@@ -197,6 +212,8 @@ export function PersonaStudio({
           lang={previewLang}
           onLang={setPreviewLang}
           sampleCustomer={sampleCustomer}
+          tab={tab}
+          onTab={openSample}
         />
         <div className="persona-try">
           <div>

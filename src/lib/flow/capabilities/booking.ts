@@ -519,6 +519,7 @@ export function registerBookingCapability(): void {
         `${noun} booking is NOT started. Use reply to answer product/sales questions from knowledge.`,
         'Examples that must NOT trigger booking: "I want a WhatsApp agent", "how much is it", "tell me more", "I need something for Instagram".',
         `Only call start_booking if they explicitly ask to schedule a ${noun}/meeting/demo/call, or clearly accept an offer to book.`,
+        "Suggest a meeting at most once until the customer responds to it; don't end consecutive replies with the same invitation. If they haven't taken it up, keep helping and ask about their needs instead.",
         "When they already shared concrete context (pain, business type, goals - e.g. a mini-app dump), call save_interest with their wording in the SAME turn as reply. Do not invent. Do not start booking for that alone.",
         "Past/expired meetings are irrelevant - do not mention them, do not say בהמשך לפגישה, and do not reuse their need text unless the customer explicitly brings that meeting up.",
       ];

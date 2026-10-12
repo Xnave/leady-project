@@ -19,6 +19,9 @@ export type BookingVars = {
 export type ChatCopy = {
   fallbackTeamName: string;
   hello: (name: string) => string;
+  /** First line of a conversation: who the agent is and that it's the business's digital/AI assistant. */
+  assistantIntro: (o: { agentName: string; business: string; gender: "female" | "male" }) => string;
+  askHowToHelp: string;
   helloHelp: (name: string) => string;
   howCanIHelp: string;
   howCanIHelpRe: RegExp;
@@ -115,10 +118,6 @@ export type PromptCopy = {
     fields: string;
     hours: string;
     whatsappPhone: string;
-    /** New prompt pipeline: identity lives above, so open with BOUNDARIES instead of ROLE. */
-    voiceLayer?: boolean;
-    /** Persona allows several related questions per message. */
-    bundledQuestions?: boolean;
   }) => string;
   extractFields: (nextField: string) => string;
   draftQuestion: (nextField: string) => string;

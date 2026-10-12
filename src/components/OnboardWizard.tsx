@@ -501,7 +501,7 @@ export function OnboardWizard(props: Props) {
                   <SegmentedControl
                     label={ui.persona.gender}
                     value={persona.gender}
-                    options={(["female", "male", "neutral"] as const).map((g) => ({
+                    options={(["female", "male"] as const).map((g) => ({
                       value: g,
                       label: ui.persona.genderOptions[g],
                     }))}

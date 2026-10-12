@@ -1,14 +1,20 @@
 /**
- * Persona eval: runs scripted customer conversations through the real interpreter + LLM
- * for a baseline (legacy prompt) and each persona preset, then grades every agent reply
- * with an LLM judge. Local only — costs LLM calls; never part of `npm test`.
+ * Persona eval (dev only, costs LLM calls, never part of `npm test`).
  *
- *   npx tsx scripts/persona-eval.ts [--arms legacy,warm_concierge,...] [--only he-price,en-book]
+ * How it works:
+ *   1. For each persona preset ("arm") and each scripted scenario (persona-eval/scenarios.ts),
+ *      play the customer's lines one by one through the real interpreter + LLM (`playTurn`).
+ *   2. Grade every agent reply with an LLM judge (persona-eval/judge.ts): sounds human,
+ *      matches the persona, helpful, length, Hebrew gender, owner rules respected.
+ *   3. Write eval-out/<timestamp>/{scorecard.md, transcripts.md, raw.json}.
+ *
+ * Turns the LLM couldn't serve (quota, rate limit) are reported as "not graded", never as a score.
+ *
+ *   npx tsx scripts/persona-eval.ts [--arms warm_concierge,precise_short] [--only he-price,en-book] [--pace 4000]
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
-import { cannedIntroText, hasAgentReplied } from "@/lib/flow/intro";
 import { interpretTurn } from "@/lib/flow/interpreter";
 import { answerFaq, classifyIntent, draftQuestion, extractFields, talkTurn } from "@/lib/flow/llm";
 import { llmConfigured } from "@/lib/flow/model";
@@ -19,7 +25,7 @@ import { KNOWLEDGE, fixtureAgent, fixtureTenant } from "./persona-eval/fixture";
 import { judge, type Score } from "./persona-eval/judge";
 import { SCENARIOS, type Scenario } from "./persona-eval/scenarios";
 
-type Arm = "legacy" | BuiltinPresetId;
+type Arm = BuiltinPresetId;
 type Turn = { customer: string; reply: string; score: Score | null; error?: string };
 type Result = { arm: Arm; scenario: string; lang: string; turns: Turn[] };
 
@@ -28,10 +34,10 @@ function arg(name: string): string[] | undefined {
   return i >= 0 ? process.argv[i + 1]?.split(",").filter(Boolean) : undefined;
 }
 
-const ARMS = (arg("arms") ?? ["legacy", "warm_concierge", "precise_short", "premium_formal"]) as Arm[];
+const ARMS = (arg("arms") ?? ["warm_concierge", "precise_short", "premium_formal"]) as Arm[];
 for (const a of ARMS) {
-  if (a !== "legacy" && !(a in PRESETS)) {
-    console.error(`Unknown arm "${a}". Use legacy or one of: ${Object.keys(PRESETS).join(", ")}`);
+  if (!(a in PRESETS)) {
+    console.error(`Unknown arm "${a}". Use one of: ${Object.keys(PRESETS).join(", ")}`);
     process.exit(1);
   }
 }
@@ -40,12 +46,11 @@ const ONLY = arg("only");
 const PACE_MS = Number(arg("pace")?.[0] ?? 4000);
 
 /**
- * legacy and warm_concierge both use DEFAULT_PERSONA (what every existing tenant gets: no name,
- * neutral gender), so the headline before/after compares like with like. The other presets
- * exercise named female and male agents so Hebrew gender is measured in all three forms.
+ * warm_concierge uses DEFAULT_PERSONA (what every existing tenant gets: no name, female).
+ * The other presets use a named female or male agent so both Hebrew genders are measured.
  */
 function personaFor(arm: Arm): Persona {
-  if (arm === "legacy" || arm === "warm_concierge") return DEFAULT_PERSONA;
+  if (arm === "warm_concierge") return DEFAULT_PERSONA;
   if (arm === "premium_formal") return applyPreset(arm, { agentName: "דניאל", gender: "male", rules: [] });
   return applyPreset(arm, { agentName: "נועה", gender: "female", rules: [] });
 }
@@ -78,57 +83,56 @@ function freshCtx(persona: Persona): TurnContext {
   };
 }
 
+/** Plays one customer line through the real interpreter. Returns what the agent sent. */
+async function playTurn(ctx: TurnContext, line: string): Promise<{ sent: string[]; degraded: boolean }> {
+  ctx.messages.push({ role: "lead", text: line });
+  // A retry must replay the same turn, not continue from a half-applied one.
+  const snapshot = structuredClone({ conversation: ctx.conversation, lead: ctx.lead, messages: ctx.messages });
+  let sent: string[] = [];
+  let degraded = false;
+  await withRetry(() => {
+    Object.assign(ctx, structuredClone(snapshot));
+    sent = [];
+    degraded = false;
+    return interpretTurn(ctx, {}, {
+      classify: classifyIntent,
+      extract: extractFields,
+      draftQuestion,
+      answerFaq,
+      talk: async (c, stage) => {
+        const out = await talkTurn(c, stage);
+        if (out.effects?.some((e) => e.args?.reason === "llm_unavailable")) degraded = true;
+        return out;
+      },
+      runEffect: async (_c, effectId) => ({ ok: true, reply: `${effectId} recorded` }),
+      requestHuman: async () => {
+        ctx.conversation.status = "waiting_human";
+      },
+      persistStage: async (_c, id) => {
+        ctx.conversation.flowState = id;
+      },
+      persistFields: async (_c, fields) => {
+        ctx.lead.fields = fields;
+      },
+      sendAndSave: async (_c, text) => {
+        sent.push(text);
+        ctx.messages.push({ role: "agent", text });
+      },
+      scheduleNudge: async () => undefined,
+      log: () => undefined,
+    });
+  }, line);
+  return { sent, degraded };
+}
+
+/** Plays a whole scenario for one arm and grades each agent reply. */
 async function runScenario(arm: Arm, sc: Scenario): Promise<Result> {
-  if (arm === "legacy") process.env.PROMPT_PIPELINE = "legacy";
-  else delete process.env.PROMPT_PIPELINE;
   const persona = personaFor(arm);
   const ctx = freshCtx(persona);
   const turns: Turn[] = [];
 
   for (const line of sc.customer) {
-    ctx.messages.push({ role: "lead", text: line });
-    const snapshot = structuredClone({ conversation: ctx.conversation, lead: ctx.lead, messages: ctx.messages });
-    let sent: string[] = [];
-    let degraded = false;
-    await withRetry(
-      () => {
-        // A retry must replay the same turn, not continue from a half-applied one.
-        Object.assign(ctx, structuredClone(snapshot));
-        sent = [];
-        degraded = false;
-        return interpretTurn(ctx, {}, {
-          classify: classifyIntent,
-          extract: extractFields,
-          draftQuestion,
-          answerFaq,
-          talk: async (c, stage) => {
-            const first = !hasAgentReplied(c);
-            const out = await talkTurn(c, stage);
-            if (out.effects?.some((e) => e.args?.reason === "llm_unavailable")) degraded = true;
-            // On a first turn the LLM-down fallback is the bare canned intro, with no marker.
-            if (first && out.reply?.trim() === cannedIntroText(c).trim()) degraded = true;
-            return out;
-          },
-          runEffect: async (_c, effectId) => ({ ok: true, reply: `${effectId} recorded` }),
-          requestHuman: async () => {
-            ctx.conversation.status = "waiting_human";
-          },
-          persistStage: async (_c, id) => {
-            ctx.conversation.flowState = id;
-          },
-          persistFields: async (_c, fields) => {
-            ctx.lead.fields = fields;
-          },
-          sendAndSave: async (_c, text) => {
-            sent.push(text);
-            ctx.messages.push({ role: "agent", text });
-          },
-          scheduleNudge: async () => undefined,
-          log: () => undefined,
-        });
-      },
-      `${arm}/${sc.id}`,
-    );
+    const { sent, degraded } = await playTurn(ctx, line);
     await sleep(PACE_MS);
     const reply = sent.join("\n");
     if (degraded) {
@@ -187,18 +191,10 @@ function scorecard(sum: ReturnType<typeof summarize>): string {
     `| graded / not graded | ${ARMS.map((a) => `${sum[a]?.graded ?? 0} / ${sum[a]?.failed ?? 0}`).join(" | ")} |`,
   ];
   const checks: string[] = [];
-  const L = sum.legacy;
-  const W = sum.warm_concierge;
   const pass = (ok: boolean | null) => (ok == null ? "N/A" : ok ? "PASS" : "FAIL");
-  if (L && W) {
-    for (const m of ["human", "helpful"] as const) {
-      const ok = L[m] != null && W[m] != null ? (W[m] as number) - (L[m] as number) >= 0.5 : null;
-      checks.push(`- warm_concierge − legacy on ${m} ≥ +0.5: ${fmt(W[m] != null && L[m] != null ? (W[m] as number) - (L[m] as number) : null)} → ${pass(ok)}`);
-    }
-    checks.push(`- rulesRespected ≥ legacy: ${fmt(W.rulesPct, 0)}% vs ${fmt(L.rulesPct, 0)}% → ${pass(W.rulesPct != null && L.rulesPct != null ? W.rulesPct >= L.rulesPct : null)}`);
-  }
-  for (const a of ARMS.filter((x) => x !== "legacy")) {
+  for (const a of ARMS) {
     const s = sum[a];
+    checks.push(`- ${a} human ≥ 4.0 (${fmt(s.human)}) → ${pass(s.human == null ? null : (s.human as number) >= 4)}; rules respected ${fmt(s.rulesPct, 0)}%`);
     checks.push(`- ${a} personaMatch ≥ 4.0 (${fmt(s.personaMatch)}) → ${pass(s.personaMatch == null ? null : (s.personaMatch as number) >= 4)}; length ≥ 4.0 (${fmt(s.length)}) → ${pass(s.length == null ? null : (s.length as number) >= 4)}; hebrewGender ≥ 4.5 (${fmt(s.hebrewGender)}) → ${pass(s.hebrewGender == null ? null : (s.hebrewGender as number) >= 4.5)}`);
   }
   return `${head}\n${rows.join("\n")}\n\n**Acceptance**\n${checks.join("\n")}\n`;

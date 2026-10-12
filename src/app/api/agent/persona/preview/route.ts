@@ -4,6 +4,7 @@ import { llmConfigured } from "@/lib/flow/model";
 import type { ChatLanguage } from "@/lib/flow/locale";
 import type { FlowDefinition, HitlPolicy, LeadSchema } from "@/lib/flow/types";
 import { PreviewUnavailableError, previewThrottle, runPersonaPreview } from "@/lib/persona/preview";
+import { PREVIEW_SAMPLES, type SampleId } from "@/lib/persona/samples";
 import { PersonaConfigError, validatePersona } from "@/lib/persona/validate";
 import { tenantRoleOr403 } from "@/lib/tenant-role";
 
@@ -11,7 +12,9 @@ export async function POST(req: Request) {
   const access = await tenantRoleOr403("manager");
   if (access instanceof Response) return access;
   if (!llmConfigured()) return NextResponse.json({ error: "no_llm" }, { status: 409 });
-  const body = (await req.json().catch(() => null)) as { persona?: unknown; lang?: string } | null;
+  const body = (await req.json().catch(() => null)) as { persona?: unknown; lang?: string; sample?: string } | null;
+  const lang = body?.lang === "he" ? "he" : "en";
+  const sample = PREVIEW_SAMPLES[lang].find((s) => s.id === body?.sample)?.id as SampleId | undefined;
   let persona;
   try {
     persona = validatePersona(body?.persona);
@@ -33,7 +36,8 @@ export async function POST(req: Request) {
   try {
     const samples = await runPersonaPreview({
       persona,
-      lang: body?.lang === "he" ? "he" : "en",
+      lang,
+      sample,
       agent: {
         systemPrompt: agent.systemPrompt,
         knowledgeText: agent.knowledgeText,

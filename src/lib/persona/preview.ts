@@ -26,7 +26,7 @@ function isLlmDegrade(out: Pick<TalkOutcome, "effects">): boolean {
 const PREVIEW_GAP_MS = 4000;
 const lastCall = new Map<string, number>();
 
-/** true = allowed. One live preview per tenant every 4s (each call is 3 LLM turns). */
+/** true = allowed. One live preview per tenant every 4s; guards the LLM quota when the client doesn't wait. */
 export function previewThrottle(tenantId: string, now = Date.now()): boolean {
   const prev = lastCall.get(tenantId);
   if (prev !== undefined && now - prev < PREVIEW_GAP_MS) return false;
@@ -34,16 +34,20 @@ export function previewThrottle(tenantId: string, now = Date.now()): boolean {
   return true;
 }
 
-/** Runs the real talk turn on fixed sample messages. No DB, no effects — talk tools only collect output. */
+/**
+ * Runs the real talk turn on fixed sample messages (only `sample` when given, so a click costs
+ * one turn). No DB, no effects — talk tools only collect output.
+ */
 export async function runPersonaPreview(
-  input: { persona: Persona; lang: "en" | "he"; agent: AgentForPreview; tenant: TenantSnapshot },
+  input: { persona: Persona; lang: "en" | "he"; agent: AgentForPreview; tenant: TenantSnapshot; sample?: SampleId },
   talk: TalkFn = talkTurn,
 ): Promise<{ id: SampleId; customer: string; reply: string; handoff: boolean }[]> {
   const entry = Object.entries(input.agent.flow.stages).find(([, s]) => s.type === "talk");
   if (!entry) throw new Error("agent has no talk stage");
   const [stageKey, stage] = entry as [string, TalkStage];
+  const samples = PREVIEW_SAMPLES[input.lang].filter((s) => !input.sample || s.id === input.sample);
   return Promise.all(
-    PREVIEW_SAMPLES[input.lang].map(async (sample) => {
+    samples.map(async (sample) => {
       const ctx: TurnContext = {
         tenantId: "preview",
         tenant: { ...input.tenant, chatLanguage: input.lang },
