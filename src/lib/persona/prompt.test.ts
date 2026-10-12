@@ -34,7 +34,12 @@ describe("AI disclosure", () => {
       firstMessageLine({ business: "מטבחי דמו", agentName, gender, intro: "", lang: "he" });
     expect(he("עדי", "female")).toMatch(/אני עדי, העוזרת הדיגיטלית של מטבחי דמו/);
     expect(he("דני", "male")).toMatch(/אני דני, העוזר הדיגיטלי של מטבחי דמו/);
-    expect(he("", "neutral")).toMatch(/AI/);
+    expect(he("", "neutral")).toMatch(/כאן העוזר הדיגיטלי של מטבחי דמו/);
+    for (const g of ["female", "male", "neutral"] as const) {
+      const line = he(g === "neutral" ? "" : "עדי", g);
+      expect(line, g).not.toMatch(/\(AI\)|מבוסס AI/);
+      expect(line, g).toMatch(/don't add "AI"/);
+    }
     expect(
       firstMessageLine({ business: "Acme", agentName: "Noa", gender: "female", intro: "", lang: "en" }),
     ).toMatch(/I'm Noa, Acme's AI assistant/);

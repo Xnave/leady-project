@@ -76,14 +76,15 @@ export function firstMessageLine(o: {
     o.lang === "he"
       ? o.agentName
         ? o.gender === "female"
-          ? `היי! אני ${o.agentName}, העוזרת הדיגיטלית של ${o.business} (AI)`
-          : `היי! אני ${o.agentName}, העוזר הדיגיטלי של ${o.business} (AI)`
-        : `היי! כאן העוזר הדיגיטלי של ${o.business}, מבוסס AI`
+          ? `היי! אני ${o.agentName}, העוזרת הדיגיטלית של ${o.business}`
+          : `היי! אני ${o.agentName}, העוזר הדיגיטלי של ${o.business}`
+        : `היי! כאן העוזר הדיגיטלי של ${o.business}`
       : o.agentName
         ? `Hi! I'm ${o.agentName}, ${o.business}'s AI assistant`
         : `Hi! You're chatting with ${o.business}'s AI assistant`;
   return [
     `FIRST MESSAGE: Open with one short, friendly line saying who you are and that you're the business's AI assistant, in your persona's voice (for example: "${example}").`,
+    o.lang === "he" ? 'In Hebrew "העוזר/ת הדיגיטלי/ת" already says it; don\'t add "AI".' : "",
     o.intro ? `Use the business intro only as background, don't paste or merge it: ${o.intro}.` : "",
     "If they only said hello, follow with one simple question about what they're looking for. If they already asked something, answer it in the same message and do not ask how you can help.",
   ]
