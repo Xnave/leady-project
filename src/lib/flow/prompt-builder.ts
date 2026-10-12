@@ -13,6 +13,7 @@ import {
 import { formatPhoneDisplay } from "@/lib/leads";
 import { personaOf } from "@/lib/persona/context";
 import {
+  firstMessageLine,
   identitySection,
   personaSection,
   stripLegacyRole,
@@ -49,7 +50,13 @@ export class PromptBuilder {
       this.parts.push(
         legacyPromptPipeline()
           ? `FIRST MESSAGE: Greet using this business intro (do not invent a different welcome): ${intro || "(short hello)"}. Then address their message.`
-          : `FIRST MESSAGE: Open with a short welcome in the spirit of this business intro, in the customer's language and your persona's voice: ${intro || "(short hello)"}. If they only said hello, you may use the intro as written. If they already asked something, keep the welcome to a few words, answer it in the same message, and do not ask how you can help.`,
+          : firstMessageLine({
+              business: ctx.tenant?.name?.trim() || "this business",
+              agentName: personaOf(ctx).agentName,
+              gender: personaOf(ctx).gender,
+              intro,
+              lang,
+            }),
       );
     }
     return this;

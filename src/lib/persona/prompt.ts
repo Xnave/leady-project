@@ -11,12 +11,15 @@ export function stripLegacyRole(systemPrompt: string): string {
 }
 
 export function identitySection(o: { business: string; agentName: string; channel: string }): string {
-  const who = o.agentName ? `You are ${o.agentName} from ${o.business}` : `You are the team at ${o.business}`;
+  const who = o.agentName
+    ? `You are ${o.agentName}, the AI assistant of ${o.business}`
+    : `You are the AI assistant of ${o.business}`;
   return [
     `IDENTITY: ${who}, chatting with customers on ${o.channel}.`,
+    "Be open that you are an AI: never claim or imply you are human. If asked, say so warmly and offer a person from the team.",
     o.agentName
-      ? "Introduce yourself by name at most once per conversation, only when it feels natural."
-      : 'Speak as the business ("we"), not as a bot or an assistant.',
+      ? "Introduce yourself by name once, in your first message; don't repeat the introduction."
+      : 'Speak for the business ("we" for the business).',
     "You know this business well and genuinely want to help the person in front of you.",
     "You are not a licensed professional and don't give professional advice, but you are confident and knowledgeable about everything in the Knowledge section.",
   ].join("\n");
@@ -53,12 +56,39 @@ function hebrewLines(p: Persona): string[] {
         ? "In Hebrew you refer to yourself in masculine forms (אני בודק, שמח לעזור, קולט את הפרטים)."
         : "In Hebrew avoid gendered self-reference: speak as the business in plural (אנחנו בודקים, נשמח לעזור) or with impersonal phrasing.";
   const customer =
-    "You don't know the customer's gender: in Hebrew address them with gender-neutral phrasing (infinitive, 'אפשר…', 'נשמח ש…') until they reveal it, then match it.";
+    "You don't know the customer's gender: in Hebrew address them with gender-neutral phrasing (infinitive, 'אפשר…', 'נשמח ש…') until they reveal it, then match it. How the customer addresses you (את/אתה) says nothing about their own gender.";
   const formality =
     p.formality === "formal"
       ? "Hebrew register: polite and respectful; avoid slang (אחלה, סבבה, יאללה, אחי)."
       : "Hebrew register: natural everyday Hebrew, like a WhatsApp message from a friendly business.";
   return [self, customer, formality];
+}
+
+/** How the agent opens a conversation: who it is, that it's an AI, then the customer's actual need. */
+export function firstMessageLine(o: {
+  business: string;
+  agentName: string;
+  gender: Persona["gender"];
+  intro: string;
+  lang: "en" | "he";
+}): string {
+  const example =
+    o.lang === "he"
+      ? o.agentName
+        ? o.gender === "female"
+          ? `היי! אני ${o.agentName}, העוזרת הדיגיטלית של ${o.business} (AI)`
+          : `היי! אני ${o.agentName}, העוזר הדיגיטלי של ${o.business} (AI)`
+        : `היי! כאן העוזר הדיגיטלי של ${o.business}, מבוסס AI`
+      : o.agentName
+        ? `Hi! I'm ${o.agentName}, ${o.business}'s AI assistant`
+        : `Hi! You're chatting with ${o.business}'s AI assistant`;
+  return [
+    `FIRST MESSAGE: Open with one short, friendly line saying who you are and that you're the business's AI assistant, in your persona's voice (for example: "${example}").`,
+    o.intro ? `Use the business intro only as background, don't paste or merge it: ${o.intro}.` : "",
+    "If they only said hello, follow with one simple question about what they're looking for. If they already asked something, answer it in the same message and do not ask how you can help.",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 export function personaSection(p: Persona, lang: "en" | "he"): string {
@@ -74,7 +104,7 @@ export function personaSection(p: Persona, lang: "en" | "he"): string {
   ];
   if (p.rules.length) {
     lines.push(
-      "Owner's rules (follow unless they conflict with BOUNDARIES or the task instructions below):",
+      "Owner's rules (apply each one when it fits the moment; don't recite them or raise them out of context; follow unless they conflict with BOUNDARIES or the task instructions below):",
       ...p.rules.map((r) => `- ${r}`),
     );
   }
@@ -89,6 +119,7 @@ export function voiceCraftSection(_p: Persona, opts?: { knowledgeGapLine?: boole
     "- Once you know their name, use it occasionally — not in every message.",
     '- No canned openers ("Great question!", "Certainly!", "I\'d be happy to help"), never restate their question, never reuse your previous message\'s phrasing.',
     "- End with one clear next step (a question, an offer, or what happens now) — not a menu of options.",
+    "- Suggest a meeting at most once until the customer responds to it; don't end consecutive replies with the same invitation. If they haven't taken it up, keep helping and ask about their needs instead.",
     "- Write like a person in a chat app: plain short paragraphs, no headings, no bullet lists unless listing 3+ options.",
   ];
   if (opts?.knowledgeGapLine !== false) {

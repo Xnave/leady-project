@@ -16,7 +16,7 @@ describe("voicePreamble", () => {
 
   it("includes identity, persona and craft", () => {
     const s = voicePreamble(ctx, "en");
-    expect(s).toMatch(/You are Dana from Acme/);
+    expect(s).toMatch(/You are Dana, the AI assistant of Acme/);
     expect(s).toMatch(/1–2 short sentences/);
     expect(s).toMatch(/CONVERSATION CRAFT/);
   });

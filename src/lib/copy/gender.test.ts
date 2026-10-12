@@ -24,6 +24,11 @@ describe("hebrew chat copy", () => {
     expect(copyFor("he").chat.savingVisit).toMatch(/קולטים/);
   });
 
+  it("asks for a name without greeting someone whose name we don't know yet", () => {
+    expect(copyFor("he").chat.askName).not.toMatch(/נעים להכיר/);
+    expect(copyFor("en").chat.askName).not.toMatch(/Nice to meet you/);
+  });
+
   it("english unaffected by gender", () => {
     expect(copyFor("en", { gender: "female" }).chat).toEqual(copyFor("en").chat);
   });

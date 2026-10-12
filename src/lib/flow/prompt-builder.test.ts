@@ -198,8 +198,9 @@ describe("first message", () => {
     const ctx = firstCtx();
     const s = buildTalkSystemPrompt(ctx, ctx.agent.flow.stages.talk as TalkStage);
     expect(s).not.toMatch(/do not invent a different welcome/);
-    expect(s).toMatch(/FIRST MESSAGE:[^\n]*customer's language/);
+    expect(s).toMatch(/FIRST MESSAGE:[^\n]*persona's voice/);
     expect(s).toMatch(/do not ask how you can help/i);
+    expect(s).toMatch(/FIRST MESSAGE:[^\n]*AI/);
   });
 
   it("legacy pipeline keeps the verbatim-intro instruction", () => {
