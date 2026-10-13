@@ -62,6 +62,9 @@ export function ChatComposer({
         placeholder={disabled ? labels.waitingHuman : labels.placeholder}
         disabled={pending || disabled}
         aria-label={labels.placeholder}
+        dir="auto"
+        enterKeyHint="send"
+        autoComplete="off"
       />
       <button type="submit" disabled={pending || disabled}>
         {pending ? labels.sending : labels.send}
@@ -122,6 +125,9 @@ export function StaffChatComposer({
         placeholder={disabled ? labels.waitingHuman : labels.placeholder}
         disabled={pending || disabled}
         aria-label={labels.placeholder}
+        dir="auto"
+        enterKeyHint="send"
+        autoComplete="off"
       />
       <button type="submit" disabled={pending || disabled}>
         {pending ? labels.sending : labels.send}

@@ -143,7 +143,7 @@ export function ChatThread({
         ) : (
           <div key={item.key} className={`bubble ${item.message.role}`}>
             <div className="bubble-role">{roleName(item.message.role)}</div>
-            <div className="bubble-text">{renderMessageText(item.message.text)}</div>
+            <div className="bubble-text" dir="auto">{renderMessageText(item.message.text)}</div>
             {item.at ? (
               <div className="bubble-time">{formatMessageTime(item.at, lang)}</div>
             ) : null}

@@ -33,6 +33,8 @@ export function LeadsHeader({
               placeholder={ui.crm.search}
               aria-label={ui.crm.search}
               aria-keyshortcuts="/"
+              enterKeyHint="search"
+              autoComplete="off"
             />
             <kbd className="crm-kbd" aria-hidden="true">
               /
