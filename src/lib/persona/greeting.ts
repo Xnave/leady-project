@@ -2,20 +2,24 @@ import { copyFor, replyLang } from "@/lib/copy";
 import { hasAgentReplied, looksLikeBareHello } from "@/lib/flow/intro";
 import type { TurnContext } from "@/lib/flow/types";
 import { personaOf } from "./context";
+import { introIntroducesAgent } from "./prompt";
 
 type GreetCtx = Pick<TurnContext, "tenant" | "agent" | "messages">;
 
 const LEADING_HELLO = /^(שלום|היי|הי|אהלן|hello|hi|hey)[\s!,.]*/i;
 
 /**
- * Fixed opening built from the persona and the owner's intro, with no LLM call:
- * "היי! אני עדי, העוזרת הדיגיטלית של X." + intro (its own hello dropped) + a question if it has none.
+ * Fixed opening with no LLM call. An owner intro that already introduces the agent is used exactly
+ * as written; otherwise: "היי! אני עדי, העוזרת הדיגיטלית של X." + the intro (its hello dropped) + a
+ * question if it has none.
  */
 export function personaGreeting(ctx: GreetCtx, lang: "en" | "he"): string {
+  const raw = (ctx.tenant?.intro ?? "").trim();
+  if (raw && introIntroducesAgent(raw)) return raw;
   const p = personaOf(ctx);
   const chat = copyFor(lang).chat;
   const business = ctx.tenant?.name?.trim() || (lang === "he" ? "העסק" : "the business");
-  const intro = (ctx.tenant?.intro ?? "").trim().replace(LEADING_HELLO, "").trim();
+  const intro = raw.replace(LEADING_HELLO, "").trim();
   return [
     chat.assistantIntro({ agentName: p.agentName, business, gender: p.gender }),
     intro,

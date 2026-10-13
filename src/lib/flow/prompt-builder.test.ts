@@ -172,7 +172,7 @@ describe("first message", () => {
     const flow = flowForCatalog("inbox");
     return {
       tenantId: "t1",
-      tenant: { name: "Demo", phone: "", intro: "שלום, הגעתם לדמו. במה אפשר לעזור?", chatLanguage: "multi" },
+      tenant: { name: "Demo", phone: "", intro: "שלום, אני נועה מדמו. במה אפשר לעזור?", chatLanguage: "multi" },
       agent: {
         id: "a1", tenantId: "t1", systemPrompt: "", knowledgeText: "", flow, flowVersion: 1,
         leadSchema: defaultLeadSchema, hitlPolicy: defaultHitlPolicy, persona: DEFAULT_PERSONA,
@@ -182,13 +182,13 @@ describe("first message", () => {
       messages: [{ role: "lead", text: "How much for a kitchen?" }],
     } as TurnContext;
   }
-  it("uses the intro as inspiration, answers first, no 'how can I help' after a real question", () => {
+  it("starts from the owner's opening, answers first, no 'how can I help' after a real question", () => {
     const ctx = firstCtx();
     const s = buildTalkSystemPrompt(ctx, ctx.agent.flow.stages.talk as TalkStage);
-    expect(s).not.toMatch(/do not invent a different welcome/);
-    expect(s).toMatch(/FIRST MESSAGE:[^\n]*persona's voice/);
+    expect(s).toMatch(/FIRST MESSAGE: The owner's opening is[^\n]*שלום, אני נועה מדמו/);
+    expect(s).toMatch(/keep only its introduction[^\n]*then answer/);
+    expect(s).toMatch(/don't add a second introduction/);
     expect(s).toMatch(/do not ask how you can help/i);
-    expect(s).toMatch(/FIRST MESSAGE:[^\n]*AI/);
   });
 });
 

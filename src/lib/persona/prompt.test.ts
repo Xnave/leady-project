@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PERSONA, applyPreset } from "./presets";
-import { firstMessageLine, identitySection, personaSection, stripLegacyRole, voiceCraftSection } from "./prompt";
+import { firstMessageLine, identitySection, introIntroducesAgent, personaSection, stripLegacyRole, voiceCraftSection } from "./prompt";
 
 const base = { agentName: "", gender: "female" as const, rules: [] };
 
@@ -45,10 +45,25 @@ describe("AI disclosure", () => {
     ).toMatch(/I'm Noa, Acme's AI assistant/);
   });
 
-  it("first message uses the intro only as background and answers a real question", () => {
+  it("detects an intro that already introduces the agent", () => {
+    expect(introIntroducesAgent("היי! אני בקי, העוזרת הווירטואלית של Taxtica")).toBe(true);
+    expect(introIntroducesAgent("שלום, כאן נועה מהצוות")).toBe(true);
+    expect(introIntroducesAgent("Hi! I'm Becky from X.")).toBe(true);
+    expect(introIntroducesAgent("אנחנו מתכננים ומתקינים מטבחים.")).toBe(false);
+    expect(introIntroducesAgent("Welcome to X, we build kitchens.")).toBe(false);
+  });
+
+  it("with an intro that doesn't introduce, still says who it is and uses the intro as background", () => {
     const s = firstMessageLine({ business: "X", agentName: "", gender: "female", intro: "Welcome to X!", lang: "en" });
-    expect(s).toMatch(/background/);
-    expect(s).toMatch(/Welcome to X!/);
+    expect(s).toMatch(/AI assistant/);
+    expect(s).toMatch(/background[^\n]*Welcome to X!/);
+  });
+
+  it("with an owner opening, starts from it and never introduces itself twice", () => {
+    const s = firstMessageLine({ business: "X", agentName: "Tamar", gender: "female", intro: "Hi! I'm Becky from X.", lang: "en" });
+    expect(s).toMatch(/Hi! I'm Becky from X\./);
+    expect(s).toMatch(/don't add a second introduction/i);
+    expect(s).not.toMatch(/I'm Tamar, X's AI assistant/);
     expect(s).toMatch(/do not ask how you can help/i);
   });
 });

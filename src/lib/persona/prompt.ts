@@ -56,6 +56,11 @@ function hebrewLines(p: Persona): string[] {
   return [self, customer, formality];
 }
 
+/** The owner's intro already says who is talking ("אני בקי…", "כאן נועה", "I'm Becky"). */
+export function introIntroducesAgent(intro: string): boolean {
+  return /(^|[\s,.!?])(אני|כאן)\s/.test(intro) || /\b(I'm|I am|my name is|this is)\b/i.test(intro);
+}
+
 /** How the agent opens a conversation: who it is, that it's an AI, then the customer's actual need. */
 export function firstMessageLine(o: {
   business: string;
@@ -64,12 +69,22 @@ export function firstMessageLine(o: {
   intro: string;
   lang: "en" | "he";
 }): string {
+  const answer =
+    "If they only said hello, follow with one simple question about what they're looking for. If they already asked something, answer it in the same message and do not ask how you can help.";
+  if (o.intro && introIntroducesAgent(o.intro)) {
+    return [
+      `FIRST MESSAGE: The owner's opening is: «${o.intro}».`,
+      "If they only said hello, send it as written.",
+      "If they already asked something, keep only its introduction (who you are), then answer their message in the same reply and do not ask how you can help.",
+      "It already introduces you, so don't add a second introduction.",
+    ].join(" ");
+  }
   const example = copyFor(o.lang).chat.assistantIntro(o);
   return [
     `FIRST MESSAGE: Open with one short, friendly line saying who you are and that you're the business's AI assistant, in your persona's voice (for example: "${example}").`,
     o.lang === "he" ? 'In Hebrew "העוזר/ת הדיגיטלי/ת" already says it; don\'t add "AI".' : "",
     o.intro ? `Use the business intro only as background, don't paste or merge it: ${o.intro}.` : "",
-    "If they only said hello, follow with one simple question about what they're looking for. If they already asked something, answer it in the same message and do not ask how you can help.",
+    answer,
   ]
     .filter(Boolean)
     .join(" ");

@@ -22,13 +22,15 @@ describe("personaGreeting", () => {
     expect(personaGreeting(ctx({}), "he")).toBe("היי! אני עדי, העוזרת הדיגיטלית של מטבחי דמו. במה אפשר לעזור?");
   });
 
-  it("uses the owner's intro without a second hello, and keeps its own question", () => {
-    expect(personaGreeting(ctx({ intro: "שלום, הגעתם למטבחי דמו. במה אפשר לעזור?" }), "he")).toBe(
-      "היי! אני עדי, העוזרת הדיגיטלית של מטבחי דמו. הגעתם למטבחי דמו. במה אפשר לעזור?",
-    );
-    expect(personaGreeting(ctx({ intro: "אנחנו מתכננים ומתקינים מטבחים." }), "he")).toBe(
+  it("adds the agent line before an intro that doesn't introduce anyone, without a second hello", () => {
+    expect(personaGreeting(ctx({ intro: "שלום, אנחנו מתכננים ומתקינים מטבחים." }), "he")).toBe(
       "היי! אני עדי, העוזרת הדיגיטלית של מטבחי דמו. אנחנו מתכננים ומתקינים מטבחים. במה אפשר לעזור?",
     );
+  });
+
+  it("uses the owner's opening exactly as written, with no second self-introduction", () => {
+    const intro = "היי! אני בקי, העוזרת הווירטואלית של Taxtica - החזרי מס.\nאיך אוכל לעזור?";
+    expect(personaGreeting(ctx({ intro }), "he")).toBe(intro);
   });
 });
 
