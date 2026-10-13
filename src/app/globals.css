@@ -2023,91 +2023,308 @@ td .muted { font-size: var(--fs-xs); }
 }
 
 /* --------------------------------------------------------------------------
-   16. Dashboard
+   16. Home - the owner's command center
+   One greeting, then the work in priority order: who needs you, what is
+   coming up, where the pipeline stands, what the agent did this week.
    -------------------------------------------------------------------------- */
 
-.work-strip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-  gap: var(--space-3);
-  align-items: stretch;
-  margin-bottom: var(--space-4);
-}
-.dashboard-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: var(--space-3);
-}
-.stat-card {
+.home { display: flex; flex-direction: column; gap: var(--space-4); }
+
+.home-hero {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: var(--space-1);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: 0;
-  text-decoration: none;
-  color: inherit;
-  position: relative;
-  overflow: hidden;
-  transition: border-color var(--transition), box-shadow var(--transition),
-    transform var(--transition);
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding-block: var(--space-2) var(--space-1);
 }
-.stat-card::after {
-  content: "";
-  position: absolute;
-  inset-inline-end: -30px;
-  top: -30px;
-  width: 90px;
-  height: 90px;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  opacity: 0;
-  transition: opacity var(--transition);
-}
-.stat-card:hover {
-  text-decoration: none;
-  color: inherit;
-  border-color: var(--accent-line);
-  box-shadow: var(--shadow);
-  transform: translateY(-1px);
-}
-.stat-card:hover::after { opacity: 1; }
-.stat-card .stat-value {
-  position: relative;
-  font-size: var(--fs-2xl);
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-  color: var(--accent);
-  line-height: 1.15;
-}
-.stat-card .stat-label {
-  position: relative;
+.home-hero-text { min-width: 0; }
+.home-date {
+  margin: 0 0 var(--space-1);
   font-size: var(--fs-xs);
   font-weight: 500;
   color: var(--muted);
 }
-.work-strip .btn { align-self: center; min-height: 44px; }
+.home-hero h1 {
+  margin: 0;
+  font-size: var(--fs-2xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+.home-summary {
+  margin: var(--space-1) 0 0;
+  max-width: 60ch;
+  font-size: var(--fs-md);
+  color: var(--text-soft);
+}
+.home-hero-actions { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.home-hero-actions .btn { min-height: 40px; }
 
-.dashboard-card h3 { margin: 0 0 6px; font-size: var(--fs-md); font-weight: 600; }
-.dashboard-card p { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
-
-.stat-pill {
+/* Channel connection: a real live/off state, so the dot is semantic. */
+.home-status {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px var(--space-3);
+  gap: var(--space-2);
+  min-height: 32px;
+  padding: 0 var(--space-3);
   border-radius: var(--radius-pill);
   border: 1px solid var(--line);
   background: var(--card);
-  box-shadow: var(--shadow-sm);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--text-soft);
+  text-decoration: none;
+  transition: border-color var(--transition), color var(--transition);
+}
+a.home-status:hover { border-color: var(--line-strong); color: var(--text); text-decoration: none; }
+.home-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line-control);
+}
+.home-status-dot.on { background: var(--wa-green); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+.home .setup-journey { margin-bottom: 0; padding: var(--space-3) var(--space-4); }
+.home .setup-journey > h2 { margin-bottom: 0; font-size: var(--fs-sm); }
+/* The steps already say it; the arrow blurb is for the standalone card. */
+.home .setup-journey > .muted { display: none; }
+.home .journey-steps {
+  flex-direction: row;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.home .journey-step { padding: var(--space-1) var(--space-2); }
+.home .journey-link { font-size: var(--fs-sm); min-height: 30px; }
+.home .journey-index { width: 22px; height: 22px; font-size: var(--fs-2xs); }
+/* The first open step is the next thing to do. */
+.home .journey-step:not(.done) { border-color: var(--line-control); background: var(--card); }
+.home .journey-step:not(.done) ~ .journey-step:not(.done) { border-color: var(--line); background: var(--bg-elevated); }
+
+/* Grids: the wide column alternates sides between the two rows. */
+.home-grid { display: grid; gap: var(--space-4); align-items: stretch; }
+.home-grid-lead { grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); }
+.home-grid-tail { grid-template-columns: minmax(0, 1fr) minmax(0, 1.65fr); }
+
+.home-panel { margin: 0; padding: var(--space-4) 0 var(--space-2); }
+.home-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-3);
+}
+.home-panel-head h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.home-count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--wa-green);
+  color: var(--on-wa-green);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.home-more { font-size: var(--fs-xs); font-weight: 500; color: var(--accent); white-space: nowrap; }
+
+.home-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-3);
+}
+.home-reasons .crm-fu { text-decoration: none; transition: filter var(--transition-fast); }
+.home-reasons .crm-fu:hover { filter: brightness(0.96); text-decoration: none; }
+
+/* Rows: one shape for the queue, upcoming requests and recent conversations. */
+.home-list { list-style: none; margin: 0; padding: 0; }
+.home-list li + li .home-row { border-top: 1px solid var(--line); }
+.home-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 60px;
+  padding: var(--space-2) var(--space-4);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--transition-fast);
+}
+.home-row:hover { background: var(--card-hover); color: inherit; text-decoration: none; }
+.home-row:focus-visible { outline: none; box-shadow: inset var(--ring); }
+.home-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.home-row-name {
   font-size: var(--fs-sm);
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.stat-pill strong {
+.home-row-sub {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-row.unread .home-row-name { font-weight: 700; }
+.home-row.unread .home-row-sub { color: var(--text-soft); }
+.home-row-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+  flex: none;
+}
+.home-row-time { font-size: var(--fs-2xs); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.home-unread { width: 10px; height: 10px; border-radius: 50%; background: var(--wa-green); }
+
+/* Upcoming: a small calendar tile instead of an avatar. */
+.home-date-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 46px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  line-height: 1.1;
+}
+.home-date-dow { font-size: var(--fs-2xs); font-weight: 500; color: var(--accent); }
+.home-date-day { font-size: var(--fs-lg); font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.home-tag {
+  flex: none;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.home-tag.ok { background: var(--accent-soft); color: var(--accent); }
+.home-tag.wait { background: var(--warning-soft); color: var(--warning); }
+
+/* Pipeline: one proportional bar, then every stage as a link. */
+.home-pipeline { padding-bottom: var(--space-4); }
+.home-bar {
+  display: flex;
+  gap: 3px;
+  height: 10px;
+  margin: 0 var(--space-4) var(--space-4);
+}
+.home-bar-seg { min-width: 8px; border-radius: var(--radius-pill); }
+.home-stages {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-3);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--space-1);
+}
+.home-stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--transition-fast);
+}
+.home-stage:hover { background: var(--card-hover); color: inherit; text-decoration: none; }
+.home-stage-label { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--muted); }
+.home-stage-swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.home-stage-n { font-size: var(--fs-xl); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.tone-new { background: var(--line-strong); }
+.tone-talking { background: var(--accent-line); }
+.tone-qualified { background: var(--accent-bright); }
+.tone-link { background: var(--tick); }
+.tone-pending { background: var(--warning); }
+.tone-won { background: var(--accent); }
+
+/* Last 7 days: four numbers, no chart chrome. */
+.home-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-1);
+  padding: 0 var(--space-3) var(--space-2);
+}
+.home-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  text-decoration: none;
+}
+a.home-metric { transition: background var(--transition-fast); }
+a.home-metric:hover { background: var(--card-hover); color: inherit; text-decoration: none; }
+.home-metric-n { font-size: var(--fs-2xl); font-weight: 700; letter-spacing: -0.03em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.home-metric-n.strong { color: var(--accent); }
+.home-metric-label { font-size: var(--fs-xs); color: var(--muted); }
+
+/* Empty states say what will show up, and how to get it there. */
+.home-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+}
+.home-empty-mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent-soft);
   color: var(--accent);
-  font-variant-numeric: tabular-nums;
-  margin-inline-end: 2px;
+}
+.home-empty-mark.muted-mark { background: var(--bg-sunken); color: var(--muted); }
+.home-empty-title { margin: 0 0 2px; font-size: var(--fs-sm); font-weight: 600; }
+.home-empty-body { margin: 0; font-size: var(--fs-xs); color: var(--muted); max-width: 52ch; }
+.home-empty-cta { margin-top: var(--space-3); }
+.home-pad { padding: 0 var(--space-4) var(--space-2); }
+
+/* Entry: panels settle in once, in reading order. Off under reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .home-hero,
+  .home-reveal {
+    animation: home-in 420ms var(--ease-out) both;
+    animation-delay: calc(var(--i, 0) * 50ms);
+  }
+}
+@keyframes home-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 900px) {
+  .home .journey-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .home-grid-lead,
+  .home-grid-tail { grid-template-columns: minmax(0, 1fr); }
+  /* Recent conversations read before the weekly numbers on one column. */
+  .home-grid-tail .home-recent { order: -1; }
+}
+@media (max-width: 560px) {
+  .home-hero { align-items: stretch; }
+  .home-hero h1 { font-size: var(--fs-xl); }
+  .home-hero-actions { width: 100%; }
+  .home-hero-actions .btn { flex: 1; }
+  .home-row-side .crm-fu { display: none; }
 }
 
 /* --------------------------------------------------------------------------
@@ -2722,8 +2939,6 @@ td .muted { font-size: var(--fs-xs); }
   .lead-main.chat-panel { min-height: 0; }
 }
 @media (max-width: 900px) {
-  .work-strip { grid-template-columns: 1fr 1fr; }
-  .work-strip .btn { grid-column: 1 / -1; }
   .inbox-split { grid-template-columns: 1fr; }
 }
 @media (max-width: 800px) {
@@ -2768,7 +2983,6 @@ td .muted { font-size: var(--fs-xs); }
   .wizard-step { min-width: 96px; }
 }
 @media (max-width: 480px) {
-  .work-strip { grid-template-columns: 1fr; }
   .page-header h1 { font-size: var(--fs-xl); }
 }
 
@@ -3929,8 +4143,7 @@ button.crm-stage { cursor: pointer; }
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  .card-interactive:hover,
-  .stat-card:hover { transform: none; }
+  .card-interactive:hover { transform: none; }
 
   /* CRM: nothing slides or scales; the peek, popovers, toasts and leaving rows
      cross-fade instead. */
