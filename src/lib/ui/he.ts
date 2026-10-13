@@ -71,7 +71,7 @@ export const he: UiCopy = {
     allClearTitle: "אין משהו שמחכה לך",
     allClearBody: "העברות, אישורים ותזכורות יופיעו כאן ברגע שהם מגיעים.",
     coldLink: "{n} התקררו",
-    upcomingTitle: "בקרוב",
+    upcomingTitle: "הזמנות קרובות",
     upcomingEmpty: "עדיין אין הזמנות קרובות. בקשות מאושרות וממתינות יופיעו כאן.",
     upcomingPending: "ממתין לאישור",
     upcomingApproved: "מאושר",

@@ -71,7 +71,7 @@ export const en: UiCopy = {
     allClearTitle: "Nothing waiting on you",
     allClearBody: "Handoffs, approvals and reminders land here the moment they come in.",
     coldLink: "{n} gone cold",
-    upcomingTitle: "Coming up",
+    upcomingTitle: "Upcoming bookings",
     upcomingEmpty: "No upcoming bookings yet. Confirmed and pending requests show up here.",
     upcomingPending: "Awaiting approval",
     upcomingApproved: "Confirmed",

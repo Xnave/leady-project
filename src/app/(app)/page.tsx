@@ -70,14 +70,13 @@ export default async function HomePage() {
     { href: "/leads", label: ui.home.stepLeads, done: counts.all > 0, count: counts.needs },
   ];
 
+  // Only a setup step earns a hero button; the panels below already link to the leads.
   const cta =
-    counts.needs > 0
-      ? { href: "/leads?tab=needs", label: ui.crm.tabs.needs }
-      : manager && !hasChannel
-        ? { href: "/channels", label: ui.home.ctaConnect }
-        : manager && needsSetup
-          ? { href: "/onboard", label: ui.nav.setup }
-          : { href: "/leads", label: ui.home.quickLeads };
+    manager && !hasChannel
+      ? { href: "/channels", label: ui.home.ctaConnect }
+      : manager && needsSetup
+        ? { href: "/onboard", label: ui.nav.setup }
+        : null;
 
   const summary =
     counts.needs === 0
@@ -112,16 +111,18 @@ export default async function HomePage() {
           <p className="home-summary">{summary}</p>
         </div>
         <div className="home-hero-actions">
-          {manager ? (
+          {cta?.href === "/channels" ? null : manager ? (
             <Link href="/channels" className="home-status">
               {channelPill}
             </Link>
           ) : (
             <span className="home-status">{channelPill}</span>
           )}
-          <Link href={cta.href} className="btn">
-            {cta.label}
-          </Link>
+          {cta ? (
+            <Link href={cta.href} className="btn">
+              {cta.label}
+            </Link>
+          ) : null}
         </div>
       </header>
 
