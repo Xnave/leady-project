@@ -168,6 +168,8 @@ export type UiCopy = {
     allClearBody: string;
     coldLink: string;
     upcomingTitle: string;
+    /** Panel title by the tenant's one enabled capability; `upcomingTitle` when it runs several. */
+    upcomingByCapability: Record<string, string>;
     upcomingEmpty: string;
     upcomingPending: string;
     upcomingApproved: string;

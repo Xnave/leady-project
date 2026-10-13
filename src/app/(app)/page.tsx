@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { SetupJourney } from "@/components/SetupJourney";
+import { loadCapabilityInstances } from "@/lib/capability-instances";
 import { initials, relTime } from "@/components/crm/format";
 import { Icon, type IconName } from "@/components/crm/Icon";
 import { avatarDotClass } from "@/components/crm/rows";
@@ -43,7 +44,7 @@ export default async function HomePage() {
   const lang = await getUiLang();
   const ui = uiCopy(lang);
   const now = new Date();
-  const [tenant, liveChannel, manager, data, wonLabel] = await Promise.all([
+  const [tenant, liveChannel, manager, data, wonLabel, instances] = await Promise.all([
     prisma.tenant.findFirst({ where: { id: tenantId }, select: { name: true, intro: true, timezone: true } }),
     prisma.channelConnection.findFirst({
       where: {
@@ -56,12 +57,18 @@ export default async function HomePage() {
     canManageTenant(),
     loadHomeData({ tenantId, ui, lang, now }),
     loadWonLabel(tenantId, ui),
+    loadCapabilityInstances(tenantId),
   ]);
   const tz = tenant?.timezone || "Asia/Jerusalem";
   const needsSetup = !(tenant?.intro ?? "").trim();
   const hasChannel = Boolean(liveChannel);
   const setupIncomplete = needsSetup || !hasChannel;
   const { counts } = data;
+  // Requests only exist for capabilities like booking / reservations. A business without
+  // one (FAQ / inbox only) has nothing to schedule, so the panel is hidden.
+  const caps = [...new Set(instances.filter((i) => i.enabled).map((i) => i.capabilityId))];
+  const showUpcoming = caps.length > 0 || data.upcoming.length > 0;
+  const upcomingTitle = (caps.length === 1 && ui.home.upcomingByCapability[caps[0]]) || ui.home.upcomingTitle;
 
   const journey = [
     { href: "/onboard", label: ui.home.stepSetup, done: !needsSetup },
@@ -132,10 +139,14 @@ export default async function HomePage() {
         </div>
       ) : null}
 
-      <div className="home-grid home-grid-lead">
+      {showUpcoming ? (
+        <div className="home-grid home-grid-lead">
+          <NeedsPanel data={data} ui={ui} lang={lang} now={now} />
+          <UpcomingPanel data={data} ui={ui} lang={lang} tz={tz} title={upcomingTitle} />
+        </div>
+      ) : (
         <NeedsPanel data={data} ui={ui} lang={lang} now={now} />
-        <UpcomingPanel data={data} ui={ui} lang={lang} tz={tz} />
-      </div>
+      )}
 
       <PipelinePanel counts={counts} ui={ui} wonLabel={wonLabel} />
 
@@ -237,7 +248,7 @@ function NeedsPanel({ data, ui, lang, now }: { data: HomeData; ui: UiCopy; lang:
   );
 }
 
-function UpcomingPanel({ data, ui, lang, tz }: { data: HomeData; ui: UiCopy; lang: UiLang; tz: string }) {
+function UpcomingPanel({ data, ui, lang, tz, title }: { data: HomeData; ui: UiCopy; lang: UiLang; tz: string; title: string }) {
   const fmt = (iso: string, opts: Intl.DateTimeFormatOptions) =>
     new Intl.DateTimeFormat(locale(lang), { ...opts, timeZone: tz }).format(new Date(iso));
   return (
@@ -246,7 +257,7 @@ function UpcomingPanel({ data, ui, lang, tz }: { data: HomeData; ui: UiCopy; lan
       aria-labelledby="home-upcoming-title"
       style={{ "--i": 3 } as CSSProperties}
     >
-      <PanelHead id="home-upcoming-title" title={ui.home.upcomingTitle} ui={ui} />
+      <PanelHead id="home-upcoming-title" title={title} ui={ui} />
       {data.upcoming.length > 0 ? (
         <ul className="home-list">
           {data.upcoming.map((u) => {
