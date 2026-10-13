@@ -11,6 +11,7 @@ export const Score = z.object({
   length: z.number().int().min(1).max(5),
   hebrewGender: z.number().int().min(1).max(5).nullable(),
   rulesRespected: z.boolean(),
+  repeats: z.boolean(),
   note: z.string(),
 });
 export type Score = z.infer<typeof Score>;
@@ -37,6 +38,7 @@ export async function judge(o: {
       "length (1-5): 5 = respects the persona's length rule exactly.",
       "hebrewGender (1-5 or null): only for Hebrew replies, else null. Agent self-reference matches the persona's gender; the customer is addressed gender-neutrally until they reveal their gender, then matched. 5 = perfect.",
       "rulesRespected (bool): false if it invents prices/terms/facts not in knowledge, says a meeting is confirmed, or starts collecting booking details when the customer only showed interest.",
+      "repeats (bool): one introduction in the agent's FIRST message is expected and is NOT a repeat. true only if the reply introduces the agent twice in the same message, greets or introduces itself again when the transcript already has an agent message, repeats a sentence the agent already sent, or asks how it can help right after the customer asked a real question.",
       `Scenario expectation: ${o.expect}`,
       `Knowledge:\n${o.knowledge}`,
     ].join("\n"),

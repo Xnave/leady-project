@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PERSONA, applyPreset } from "./presets";
-import { firstMessageLine, identitySection, personaSection, stripLegacyRole, voiceCraftSection } from "./prompt";
+import { firstMessageLine, identitySection, introIntroducesAgent, personaSection, stripLegacyRole, voiceCraftSection } from "./prompt";
 
 const base = { agentName: "", gender: "female" as const, rules: [] };
 
@@ -29,27 +29,20 @@ describe("AI disclosure", () => {
     expect(identitySection({ business: "X", agentName: "", channel: "chat" })).not.toMatch(/not as a bot/);
   });
 
-  it("first message introduces the agent as an AI, matching name and gender", () => {
-    const he = (agentName: string, gender: "female" | "male") =>
-      firstMessageLine({ business: "מטבחי דמו", agentName, gender, intro: "", lang: "he" });
-    expect(he("עדי", "female")).toMatch(/אני עדי, העוזרת הדיגיטלית של מטבחי דמו/);
-    expect(he("דני", "male")).toMatch(/אני דני, העוזר הדיגיטלי של מטבחי דמו/);
-    expect(he("", "female")).toMatch(/כאן העוזרת הדיגיטלית של מטבחי דמו/);
-    expect(he("", "male")).toMatch(/כאן העוזר הדיגיטלי של מטבחי דמו/);
-    for (const line of [he("עדי", "female"), he("", "male")]) {
-      expect(line).not.toMatch(/\(AI\)|מבוסס AI/);
-      expect(line).toMatch(/don't add "AI"/);
-    }
-    expect(
-      firstMessageLine({ business: "Acme", agentName: "Noa", gender: "female", intro: "", lang: "en" }),
-    ).toMatch(/I'm Noa, Acme's AI assistant/);
+  it("first message: the introduction is added by code, the model only answers", () => {
+    const s = firstMessageLine({ opening: "היי! אני עדי, העוזרת הדיגיטלית של מטבחי דמו." });
+    expect(s).toMatch(/היי! אני עדי, העוזרת הדיגיטלית של מטבחי דמו\./);
+    expect(s).toMatch(/added in front of your reply/);
+    expect(s).toMatch(/don't greet or introduce yourself/i);
+    expect(s).toMatch(/do not ask how you can help/i);
   });
 
-  it("first message uses the intro only as background and answers a real question", () => {
-    const s = firstMessageLine({ business: "X", agentName: "", gender: "female", intro: "Welcome to X!", lang: "en" });
-    expect(s).toMatch(/background/);
-    expect(s).toMatch(/Welcome to X!/);
-    expect(s).toMatch(/do not ask how you can help/i);
+  it("detects an intro that already introduces the agent", () => {
+    expect(introIntroducesAgent("היי! אני בקי, העוזרת הווירטואלית של Taxtica")).toBe(true);
+    expect(introIntroducesAgent("שלום, כאן נועה מהצוות")).toBe(true);
+    expect(introIntroducesAgent("Hi! I'm Becky from X.")).toBe(true);
+    expect(introIntroducesAgent("אנחנו מתכננים ומתקינים מטבחים.")).toBe(false);
+    expect(introIntroducesAgent("Welcome to X, we build kitchens.")).toBe(false);
   });
 });
 

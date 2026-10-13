@@ -1,4 +1,3 @@
-import { copyFor } from "@/lib/copy";
 import type { Persona } from "./types";
 
 /** Onboarding used to freeze a role line into agent.systemPrompt; identitySection replaces it. */
@@ -56,23 +55,18 @@ function hebrewLines(p: Persona): string[] {
   return [self, customer, formality];
 }
 
-/** How the agent opens a conversation: who it is, that it's an AI, then the customer's actual need. */
-export function firstMessageLine(o: {
-  business: string;
-  agentName: string;
-  gender: Persona["gender"];
-  intro: string;
-  lang: "en" | "he";
-}): string {
-  const example = copyFor(o.lang).chat.assistantIntro(o);
+/** The owner's intro already says who is talking ("אני בקי…", "כאן נועה", "I'm Becky"). */
+export function introIntroducesAgent(intro: string): boolean {
+  return /(^|[\s,.!?])(אני|כאן)\s/.test(intro) || /\b(I'm|I am|my name is|this is)\b/i.test(intro);
+}
+
+/** First reply: code puts `opening` in front of it, so the model only answers. */
+export function firstMessageLine(o: { opening: string }): string {
   return [
-    `FIRST MESSAGE: Open with one short, friendly line saying who you are and that you're the business's AI assistant, in your persona's voice (for example: "${example}").`,
-    o.lang === "he" ? 'In Hebrew "העוזר/ת הדיגיטלי/ת" already says it; don\'t add "AI".' : "",
-    o.intro ? `Use the business intro only as background, don't paste or merge it: ${o.intro}.` : "",
-    "If they only said hello, follow with one simple question about what they're looking for. If they already asked something, answer it in the same message and do not ask how you can help.",
-  ]
-    .filter(Boolean)
-    .join(" ");
+    `FIRST MESSAGE: Your introduction («${o.opening}») is added in front of your reply automatically.`,
+    "Don't greet or introduce yourself; reply directly to their message.",
+    "If they only said hello or made small talk, reply briefly and ask what they're looking for. If they asked something, answer it and do not ask how you can help.",
+  ].join(" ");
 }
 
 export function personaSection(p: Persona, lang: "en" | "he"): string {
