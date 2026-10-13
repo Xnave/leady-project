@@ -12,6 +12,7 @@ import {
 } from "./booking-collect";
 import { formatPhoneDisplay } from "@/lib/leads";
 import { personaOf } from "@/lib/persona/context";
+import { openingLine } from "@/lib/persona/greeting";
 import {
   firstMessageLine,
   identitySection,
@@ -45,13 +46,7 @@ export class PromptBuilder {
       this.parts.push("You already greeted the customer: don't open with a hello again.");
     } else {
       this.parts.push(
-        firstMessageLine({
-          business: ctx.tenant?.name?.trim() || "this business",
-          agentName: personaOf(ctx).agentName,
-          gender: personaOf(ctx).gender,
-          intro: ctx.tenant?.intro?.trim() || "",
-          lang,
-        }),
+        firstMessageLine({ opening: openingLine(ctx, lang) }),
       );
     }
     return this;

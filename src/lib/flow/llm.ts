@@ -1,6 +1,6 @@
 import { generateObject, generateText, stepCountIs, tool } from "ai";
 import { stripLegacyRole } from "@/lib/persona/prompt";
-import { greetingOnlyReply, personaGreeting } from "@/lib/persona/greeting";
+import { greetingOnlyReply, personaGreeting, withFirstMessageIntro } from "@/lib/persona/greeting";
 import { faqSystemPrompt, voicePreamble } from "@/lib/persona/system";
 import { z } from "zod";
 import { copyFor, replyLang } from "@/lib/copy";
@@ -378,5 +378,6 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
     return degradeTalk(ctx, stage);
   }
 
+  collected.reply = withFirstMessageIntro(ctx, replyLang(ctx, lastLeadText(ctx)), collected.reply);
   return collected;
 }

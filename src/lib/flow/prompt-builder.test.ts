@@ -179,15 +179,14 @@ describe("first message", () => {
       },
       conversation: { id: "c1", status: "open", flowState: "talk", flowVersion: 1, nudgeCountByStage: {} },
       lead: { id: "l1", externalUserId: "u1", fields: {} },
-      messages: [{ role: "lead", text: "How much for a kitchen?" }],
+      messages: [{ role: "lead", text: "כמה עולה מטבח?" }],
     } as TurnContext;
   }
   it("starts from the owner's opening, answers first, no 'how can I help' after a real question", () => {
     const ctx = firstCtx();
     const s = buildTalkSystemPrompt(ctx, ctx.agent.flow.stages.talk as TalkStage);
-    expect(s).toMatch(/FIRST MESSAGE: The owner's opening is[^\n]*שלום, אני נועה מדמו/);
-    expect(s).toMatch(/keep only its introduction[^\n]*then answer/);
-    expect(s).toMatch(/don't add a second introduction/);
+    expect(s).toMatch(/FIRST MESSAGE:[^\n]*«שלום, אני נועה מדמו\.»[^\n]*added in front of your reply/);
+    expect(s).not.toMatch(/FIRST MESSAGE:[^\n]*במה אפשר לעזור/);
     expect(s).toMatch(/do not ask how you can help/i);
   });
 });

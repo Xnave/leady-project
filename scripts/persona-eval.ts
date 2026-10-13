@@ -14,12 +14,15 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { replyLang } from "@/lib/copy";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
+import { hasAgentReplied, looksLikeBareHello } from "@/lib/flow/intro";
 import { interpretTurn } from "@/lib/flow/interpreter";
 import { answerFaq, classifyIntent, draftQuestion, extractFields, talkTurn } from "@/lib/flow/llm";
 import { llmConfigured } from "@/lib/flow/model";
 import type { TurnContext } from "@/lib/flow/types";
 import { DEFAULT_PERSONA, PRESETS, applyPreset, type BuiltinPresetId } from "@/lib/persona/presets";
+import { personaGreeting } from "@/lib/persona/greeting";
 import type { Persona } from "@/lib/persona/types";
 import { KNOWLEDGE, fixtureAgent, fixtureTenant } from "./persona-eval/fixture";
 import { judge, type Score } from "./persona-eval/judge";
@@ -70,11 +73,11 @@ async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
   }
 }
 
-function freshCtx(persona: Persona): TurnContext {
+function freshCtx(persona: Persona, sc: Scenario): TurnContext {
   const agent = fixtureAgent(persona);
   return {
     tenantId: "eval",
-    tenant: fixtureTenant,
+    tenant: sc.intro ? { ...fixtureTenant, intro: sc.intro(persona) } : fixtureTenant,
     agent,
     conversation: { id: "eval", status: "open", flowState: agent.flow.start, flowVersion: 1, nudgeCountByStage: {} },
     lead: { id: "eval-lead", externalUserId: "eval-user", fields: {} },
@@ -102,6 +105,9 @@ async function playTurn(ctx: TurnContext, line: string): Promise<{ sent: string[
       talk: async (c, stage) => {
         const out = await talkTurn(c, stage);
         if (out.effects?.some((e) => e.args?.reason === "llm_unavailable")) degraded = true;
+        // On a first turn the LLM-down fallback is the fixed greeting, with no marker.
+        const lang = replyLang(c, line);
+        if (!looksLikeBareHello(line) && !hasAgentReplied(c) && out.reply === personaGreeting(c, lang)) degraded = true;
         return out;
       },
       runEffect: async (_c, effectId) => ({ ok: true, reply: `${effectId} recorded` }),
@@ -128,7 +134,7 @@ async function playTurn(ctx: TurnContext, line: string): Promise<{ sent: string[
 /** Plays a whole scenario for one arm and grades each agent reply. */
 async function runScenario(arm: Arm, sc: Scenario): Promise<Result> {
   const persona = personaFor(arm);
-  const ctx = freshCtx(persona);
+  const ctx = freshCtx(persona, sc);
   const turns: Turn[] = [];
 
   for (const line of sc.customer) {
@@ -163,7 +169,10 @@ function avg(xs: number[]): number | null {
 }
 
 function summarize(results: Result[]) {
-  const byArm: Record<string, Record<string, number | null> & { rulesPct: number | null; graded: number; failed: number }> = {};
+  const byArm: Record<
+    string,
+    Record<string, number | null> & { rulesPct: number | null; noRepeatPct: number | null; graded: number; failed: number }
+  > = {};
   for (const arm of ARMS) {
     const turns = results.filter((r) => r.arm === arm).flatMap((r) => r.turns);
     const scored = turns.map((t) => t.score).filter((s): s is Score => Boolean(s));
@@ -174,6 +183,7 @@ function summarize(results: Result[]) {
     byArm[arm] = {
       ...row,
       rulesPct: scored.length ? (100 * scored.filter((s) => s.rulesRespected).length) / scored.length : null,
+      noRepeatPct: scored.length ? (100 * scored.filter((s) => !s.repeats).length) / scored.length : null,
       graded: scored.length,
       failed: turns.length - scored.length,
     };
@@ -188,13 +198,14 @@ function scorecard(sum: ReturnType<typeof summarize>): string {
   const rows = [
     ...METRICS.map((m) => `| ${m} | ${ARMS.map((a) => fmt(sum[a]?.[m])).join(" | ")} |`),
     `| rulesRespected % | ${ARMS.map((a) => fmt(sum[a]?.rulesPct, 0)).join(" | ")} |`,
+    `| no repetition % | ${ARMS.map((a) => fmt(sum[a]?.noRepeatPct, 0)).join(" | ")} |`,
     `| graded / not graded | ${ARMS.map((a) => `${sum[a]?.graded ?? 0} / ${sum[a]?.failed ?? 0}`).join(" | ")} |`,
   ];
   const checks: string[] = [];
   const pass = (ok: boolean | null) => (ok == null ? "N/A" : ok ? "PASS" : "FAIL");
   for (const a of ARMS) {
     const s = sum[a];
-    checks.push(`- ${a} human ≥ 4.0 (${fmt(s.human)}) → ${pass(s.human == null ? null : (s.human as number) >= 4)}; rules respected ${fmt(s.rulesPct, 0)}%`);
+    checks.push(`- ${a} human ≥ 4.0 (${fmt(s.human)}) → ${pass(s.human == null ? null : (s.human as number) >= 4)}; rules respected ${fmt(s.rulesPct, 0)}%; no repetition ≥ 95% (${fmt(s.noRepeatPct, 0)}%) → ${pass(s.noRepeatPct == null ? null : s.noRepeatPct >= 95)}`);
     checks.push(`- ${a} personaMatch ≥ 4.0 (${fmt(s.personaMatch)}) → ${pass(s.personaMatch == null ? null : (s.personaMatch as number) >= 4)}; length ≥ 4.0 (${fmt(s.length)}) → ${pass(s.length == null ? null : (s.length as number) >= 4)}; hebrewGender ≥ 4.5 (${fmt(s.hebrewGender)}) → ${pass(s.hebrewGender == null ? null : (s.hebrewGender as number) >= 4.5)}`);
   }
   return `${head}\n${rows.join("\n")}\n\n**Acceptance**\n${checks.join("\n")}\n`;
@@ -213,7 +224,7 @@ function transcripts(results: Result[]): string {
         out.push(
           `> **customer:** ${t.customer}\n>\n> **agent:** ${t.reply.replace(/\n/g, "\n> ")}\n`,
           s
-            ? `\`human ${s.human} · persona ${s.personaMatch} · helpful ${s.helpful} · length ${s.length} · gender ${s.hebrewGender ?? "—"} · rules ${s.rulesRespected ? "ok" : "VIOLATION"}\` ${s.note}\n`
+            ? `\`human ${s.human} · persona ${s.personaMatch} · helpful ${s.helpful} · length ${s.length} · gender ${s.hebrewGender ?? "—"} · rules ${s.rulesRespected ? "ok" : "VIOLATION"} · ${s.repeats ? "REPEATS" : "no repeat"}\` ${s.note}\n`
             : `\`not graded: ${t.error}\`\n`,
         );
       }

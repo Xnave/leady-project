@@ -1,4 +1,3 @@
-import { copyFor } from "@/lib/copy";
 import type { Persona } from "./types";
 
 /** Onboarding used to freeze a role line into agent.systemPrompt; identitySection replaces it. */
@@ -61,33 +60,13 @@ export function introIntroducesAgent(intro: string): boolean {
   return /(^|[\s,.!?])(אני|כאן)\s/.test(intro) || /\b(I'm|I am|my name is|this is)\b/i.test(intro);
 }
 
-/** How the agent opens a conversation: who it is, that it's an AI, then the customer's actual need. */
-export function firstMessageLine(o: {
-  business: string;
-  agentName: string;
-  gender: Persona["gender"];
-  intro: string;
-  lang: "en" | "he";
-}): string {
-  const answer =
-    "If they only said hello, follow with one simple question about what they're looking for. If they already asked something, answer it in the same message and do not ask how you can help.";
-  if (o.intro && introIntroducesAgent(o.intro)) {
-    return [
-      `FIRST MESSAGE: The owner's opening is: «${o.intro}».`,
-      "If they only said hello, send it as written.",
-      "If they already asked something, keep only its introduction (who you are), then answer their message in the same reply and do not ask how you can help.",
-      "It already introduces you, so don't add a second introduction.",
-    ].join(" ");
-  }
-  const example = copyFor(o.lang).chat.assistantIntro(o);
+/** First reply: code puts `opening` in front of it, so the model only answers. */
+export function firstMessageLine(o: { opening: string }): string {
   return [
-    `FIRST MESSAGE: Open with one short, friendly line saying who you are and that you're the business's AI assistant, in your persona's voice (for example: "${example}").`,
-    o.lang === "he" ? 'In Hebrew "העוזר/ת הדיגיטלי/ת" already says it; don\'t add "AI".' : "",
-    o.intro ? `Use the business intro only as background, don't paste or merge it: ${o.intro}.` : "",
-    answer,
-  ]
-    .filter(Boolean)
-    .join(" ");
+    `FIRST MESSAGE: Your introduction («${o.opening}») is added in front of your reply automatically.`,
+    "Don't greet or introduce yourself; reply directly to their message.",
+    "If they only said hello or made small talk, reply briefly and ask what they're looking for. If they asked something, answer it and do not ask how you can help.",
+  ].join(" ");
 }
 
 export function personaSection(p: Persona, lang: "en" | "he"): string {

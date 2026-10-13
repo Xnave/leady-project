@@ -377,7 +377,8 @@ describe("talkTurn with mocked LLM", () => {
     const ctx = baseCtx(flow);
     const out = await talkTurn(ctx, talkStage(flow));
 
-    expect(out.reply).toBe("Happy to help with widgets.");
+    // First turn: code adds the one introduction in front of the model's answer.
+    expect(out.reply).toMatch(/^Hi! You're chatting with Demo Co's AI assistant\. Happy to help with widgets\.$/);
     expect(out.intent).toBe("sales");
     expect(seenTools).toEqual(
       expect.arrayContaining([
@@ -410,7 +411,7 @@ describe("talkTurn with mocked LLM", () => {
     const flow = flowForCapabilities({ capabilities: [] });
     const out = await talkTurn(baseCtx(flow), talkStage(flow));
 
-    expect(out.reply).toBe("Here is what we offer.");
+    expect(out.reply).toMatch(/AI assistant\. Here is what we offer\.$/);
     expect(out.intent).toBe("other");
     expect(seenTools).toEqual(
       expect.arrayContaining(["reply", "transition", "request_human"]),
@@ -475,7 +476,7 @@ describe("talkTurn with mocked LLM", () => {
     generateTextMock.mockResolvedValue({ text: "Plain model reply" });
     const flow = flowForCapabilities({ capabilities: ["booking"] });
     const out = await talkTurn(baseCtx(flow), talkStage(flow));
-    expect(out.reply).toBe("Plain model reply");
+    expect(out.reply).toMatch(/AI assistant\. Plain model reply$/);
   });
 });
 
