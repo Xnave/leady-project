@@ -11,6 +11,14 @@ import {
   savedPhone,
 } from "./booking-collect";
 import { formatPhoneDisplay } from "@/lib/leads";
+import { personaOf } from "@/lib/persona/context";
+import {
+  firstMessageLine,
+  identitySection,
+  personaSection,
+  stripLegacyRole,
+  voiceCraftSection,
+} from "@/lib/persona/prompt";
 
 function lastLeadText(ctx: TurnContext): string {
   return [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
@@ -29,15 +37,44 @@ export class PromptBuilder {
   private parts: string[] = [];
 
   withBase(ctx: TurnContext, lang: "en" | "he"): this {
-    this.parts.push(ctx.agent.systemPrompt);
-    const intro = ctx.tenant?.intro?.trim() || "";
-    if (!hasAgentReplied(ctx)) {
+    this.parts.push(
+      stripLegacyRole(ctx.agent.systemPrompt),
+      "End each reply with one clear next step (a question, an offer, or what happens now), not a menu of options.",
+    );
+    if (hasAgentReplied(ctx)) {
+      this.parts.push("You already greeted the customer: don't open with a hello again.");
+    } else {
       this.parts.push(
-        lang === "he"
-          ? `FIRST MESSAGE: Greet using this business intro (do not invent a different welcome): ${intro || "(short hello)"}. Then address their message.`
-          : `FIRST MESSAGE: Greet using this business intro (do not invent a different welcome): ${intro || "(short hello)"}. Then address their message.`,
+        firstMessageLine({
+          business: ctx.tenant?.name?.trim() || "this business",
+          agentName: personaOf(ctx).agentName,
+          gender: personaOf(ctx).gender,
+          intro: ctx.tenant?.intro?.trim() || "",
+          lang,
+        }),
       );
     }
+    return this;
+  }
+
+  withIdentity(ctx: TurnContext): this {
+    this.parts.push(
+      identitySection({
+        business: ctx.tenant?.name?.trim() || "this business",
+        agentName: personaOf(ctx).agentName,
+        channel: ctx.channel?.provider ?? "chat",
+      }),
+    );
+    return this;
+  }
+
+  withPersona(ctx: TurnContext, lang: "en" | "he"): this {
+    this.parts.push(personaSection(personaOf(ctx), lang));
+    return this;
+  }
+
+  withVoiceCraft(): this {
+    this.parts.push(voiceCraftSection());
     return this;
   }
 
@@ -173,13 +210,17 @@ export function buildTalkSystemPrompt(
   fields: LeadFields = ctx.lead.fields,
 ): string {
   const lang = replyLang(ctx, lastLeadText(ctx));
+  // Voice first, safety rules last so style never outranks them.
   return new PromptBuilder()
+    .withIdentity(ctx)
+    .withPersona(ctx, lang)
+    .withVoiceCraft()
     .withBase(ctx, lang)
     .withStage(stage)
-    .withGuardrails(ctx, stage, lang)
     .withChannel(ctx, fields)
     .withTalkContext(ctx, stage, fields, lang)
     .withCapabilities(ctx, stage, fields)
+    .withGuardrails(ctx, stage, lang)
     .withClosing(stage)
     .build();
 }
@@ -192,14 +233,19 @@ export function buildNudgeSystemPrompt(
   fields: LeadFields = ctx.lead.fields,
 ): string {
   const lang = replyLang(ctx, lastLeadText(ctx));
-  const builder = new PromptBuilder().withBase(ctx, lang).withStage(stage);
+  const builder = new PromptBuilder()
+    .withIdentity(ctx)
+    .withPersona(ctx, lang)
+    .withVoiceCraft()
+    .withBase(ctx, lang)
+    .withStage(stage);
 
   if (stage.type === "talk") {
     builder
-      .withGuardrails(ctx, stage, lang)
       .withChannel(ctx, fields)
       .withTalkContext(ctx, stage, fields, lang)
-      .withCapabilities(ctx, stage, fields);
+      .withCapabilities(ctx, stage, fields)
+      .withGuardrails(ctx, stage, lang);
   } else {
     builder.withChannel(ctx, fields);
   }

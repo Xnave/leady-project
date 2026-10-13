@@ -122,6 +122,8 @@ export type AgentSnapshot = {
   leadSchema: LeadSchema;
   hitlPolicy: HitlPolicy;
   calcomEventTypeId?: string | null;
+  /** Owner-chosen voice. Optional: absent = DEFAULT_PERSONA. */
+  persona?: import("@/lib/persona/types").Persona;
 };
 
 /** One configured request type on the turn context (a `CapabilityInstance` row). */

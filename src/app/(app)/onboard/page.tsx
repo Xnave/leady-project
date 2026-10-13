@@ -57,6 +57,7 @@ export default async function OnboardPage() {
         bookingRejectedTemplate={booking.messageTemplates.rejected ?? ""}
         reservationConfig={reservationConfig}
         bookingCollect={bookingCollectFromFlow(flow)}
+        persona={agent?.persona}
       />
     </div>
   );

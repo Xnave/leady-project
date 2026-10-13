@@ -19,6 +19,9 @@ export type BookingVars = {
 export type ChatCopy = {
   fallbackTeamName: string;
   hello: (name: string) => string;
+  /** First line of a conversation: who the agent is and that it's the business's digital/AI assistant. */
+  assistantIntro: (o: { agentName: string; business: string; gender: "female" | "male" }) => string;
+  askHowToHelp: string;
   helloHelp: (name: string) => string;
   howCanIHelp: string;
   howCanIHelpRe: RegExp;

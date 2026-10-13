@@ -17,3 +17,4 @@ nginx/certs/
 marketing-materials/
 .vercel
 .env*
+eval-out/

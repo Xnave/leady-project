@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChatThread } from "@/components/ChatThread";
+import { shouldResetThread, threadKey } from "@/components/demo-chat-state";
 
 type Msg = {
   id: string;
@@ -50,26 +51,31 @@ export function DemoChat({
   threadLabels: ThreadLabels;
 }) {
   const router = useRouter();
-  const serverKey = useMemo(
-    () => `${leadId ?? ""}:${initialMessages.map((m) => m.id).join(",")}`,
-    [leadId, initialMessages],
-  );
+  const serverKey = threadKey(leadId, initialMessages);
+  const shownKey = useRef(serverKey);
   const [messages, setMessages] = useState(initialMessages);
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
   const [typing, setTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Until hydration the form would submit natively and drop the message.
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
 
   useEffect(() => {
+    if (!shouldResetThread(shownKey.current, serverKey)) return;
+    shownKey.current = serverKey;
     setMessages(initialMessages);
     setPending(false);
     setTyping(false);
-  }, [serverKey, initialMessages]);
+    // initialMessages is read only when its identity key changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverKey]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed || pending || disabled) return;
+    if (!trimmed || pending || disabled || !ready) return;
 
     const optimistic: Msg = {
       id: `local-${Date.now()}`,
@@ -121,10 +127,10 @@ export function DemoChat({
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={disabled ? composerLabels.waitingHuman : composerLabels.placeholder}
-          disabled={pending || disabled}
+          disabled={pending || disabled || !ready}
           aria-label={composerLabels.placeholder}
         />
-        <button type="submit" disabled={pending || disabled}>
+        <button type="submit" disabled={pending || disabled || !ready}>
           {pending ? composerLabels.sending : composerLabels.send}
         </button>
         {error ? <p className="muted">{error}</p> : null}

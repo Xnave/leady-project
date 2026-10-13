@@ -159,6 +159,14 @@ The WhatsApp daily digest is gated by `DIGEST_WHATSAPP_ENABLED=true` (env) plus 
 
 **Rollout order:** run `npm run crm:backfill` (`scripts/crm-backfill.ts`) right after the schema push, before users open `/leads`. It maps legacy `Lead.status` won/lost/closed to a manual stage (keeping the lead's `updatedAt` as `stageChangedAt`, plus a `migrated` `LeadStageEvent`) and derives every lead's stage and follow-up. It is safe to re-run: it skips leads that already have a stage event.
 
+
+### Persona: how the agent sounds (`src/lib/persona/`)
+
+`Agent.persona` (JSON) is the owner's voice config: preset, agent name, gender (female/male), tone, length (short/medium/auto, where auto adds no length rule), formality, emoji and up to 5 house rules. It is **style only** — it never changes what the agent may do. `normalizePersona()` makes any stored value safe at turn time (`{}` = Warm concierge, female, no name); `validatePersona()` is the strict write-time check and rejects rules that try to override instructions or carry links.
+
+Every LLM reply path opens with the same voice preamble — `identitySection` → `personaSection` → `voiceCraftSection` (`persona/prompt.ts`) — and the talk prompt ends with **BOUNDARIES** (the guardrails) and tool instructions, so style never outranks safety. `draftQuestion` and `answerFaq` get the same preamble via `voicePreamble()`. The persona section holds only what the owner controls; conversation behavior (next step, meeting frequency, escalation) lives in the talk and capability prompts. A bare first "hi" is answered with a fixed greeting (`persona/greeting.ts`: name + "digital assistant" + the owner's intro), with no LLM call. Hebrew fixed copy addresses the customer gender-neutrally; strings where the agent refers to itself get per-gender variants through `copyFor(lang, { gender })`.
+
+Owners edit it at **Settings → Your agent** (`/settings/agent`, `PUT /api/agent/persona`), with a live preview (`POST /api/agent/persona/preview`, one real talk turn for the selected sample, no DB writes, 1 call / 4s per tenant). Saves write an `AgentConfigRevision { kind: "persona" }` and **do not** bump `flowVersion`. Quality is measured with `npx tsx scripts/persona-eval.ts` (LLM-judged scorecard per preset).
 ---
 
 ## How a turn runs

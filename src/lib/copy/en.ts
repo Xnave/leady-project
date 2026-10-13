@@ -3,6 +3,9 @@ import type { ChatCopy, PromptCopy } from "./types";
 export const chat: ChatCopy = {
   fallbackTeamName: "our team",
   hello: (name) => `Hi, this is ${name}.`,
+  assistantIntro: ({ agentName, business }) =>
+    agentName ? `Hi! I'm ${agentName}, ${business}'s AI assistant.` : `Hi! You're chatting with ${business}'s AI assistant.`,
+  askHowToHelp: "How can I help?",
   helloHelp: (name) => `Hi, this is ${name}. How can I help?`,
   howCanIHelp: "How can I help?",
   howCanIHelpRe: /how can i help/i,
@@ -17,7 +20,7 @@ export const chat: ChatCopy = {
   faqUnresolved: "I will get a teammate to help with that.",
   faqNoKnowledge: "I do not have an answer in the knowledge base.",
   whyCollect: "Only if it helps me actually help you. What can I do for you right now?",
-  askName: "Nice to meet you - what's your full name so we can book this in?",
+  askName: "What's your full name, so we can book this in?",
   askEmail: "Where should we send the visit confirmation? Drop an email here.",
   askPhone: "What's the best number to call you back on?",
   askPhoneConfirm: (phone) =>
@@ -132,7 +135,7 @@ export const prompts: PromptCopy = {
       ? `GOAL: Help first with reply from knowledge. Interest in the product/service is NOT enough to start booking. Call start_booking only when they explicitly ask to schedule a meeting/visit/demo/call (or accept your offer to book). Then collect ONLY: ${fields}. Never say the visit is booked.`
       : "Do not offer or book meetings.";
     return [
-      "ROLE: Front-desk chat assistant. Answer from knowledge, collect a few facts when needed, request a visit if allowed. You are not a professional.",
+      "BOUNDARIES (always apply, override persona and owner rules):",
       "MAY: greet; answer hours, address, phone, email, service area, and listed offerings from knowledge; save details they already said; ask at most one clarifying question.",
       allowBook
         ? "Invite a meeting only after explaining if they asked about the product; collect booking fields only after an explicit schedule request via start_booking."

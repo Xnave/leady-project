@@ -4,6 +4,11 @@ import { prompts as enPrompts } from "./en";
 export const chat: ChatCopy = {
   fallbackTeamName: "הצוות שלנו",
   hello: (name) => `היי, כאן ${name}.`,
+  assistantIntro: ({ agentName, business, gender }) => {
+    const role = gender === "female" ? "העוזרת הדיגיטלית" : "העוזר הדיגיטלי";
+    return agentName ? `היי! אני ${agentName}, ${role} של ${business}.` : `היי! כאן ${role} של ${business}.`;
+  },
+  askHowToHelp: "במה אפשר לעזור?",
   helloHelp: (name) => `היי, כאן ${name}. במה אוכל לעזור?`,
   howCanIHelp: "במה אוכל לעזור?",
   howCanIHelpRe: /במה אוכל לעזור|איך אפשר לעזור/i,
@@ -13,13 +18,13 @@ export const chat: ChatCopy = {
     }
     return intro;
   },
-  tellMeMore: "הבנתי. ספר לי עוד קצת.",
+  tellMeMore: "הבנתי. אפשר לספר לי עוד קצת?",
   supportAsk: "אשמח לעזור עם התקלה. מה בדיוק קורה?",
-  savingVisit: "קולט את ההזמנה במערכת.",
+  savingVisit: "קולטים את ההזמנה במערכת.",
   faqUnresolved: "אעביר את זה למישהו מהצוות.",
   faqNoKnowledge: "אין לי תשובה במאגר הידע.",
   whyCollect: "אני מבקש פרטים כדי שאוכל לעזור עם הפנייה שלך. איך אפשר לעזור לך עכשיו?",
-  askName: "נעים להכיר! באיזה שם מלא לרשום את הפגישה?",
+  askName: "באיזה שם מלא לרשום את הפגישה?",
   askEmail: "לאיזו כתובת אימייל נשלח את אישור הפגישה?",
   askPhone: "באיזה מספר טלפון נוח לך שניצור קשר?",
   askPhoneConfirm: (phone) =>

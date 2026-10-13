@@ -43,11 +43,12 @@ function talkCtx(text: string, extra?: Partial<TurnContext>): TurnContext {
 }
 
 describe("degradeTalk", () => {
-  it("returns intro on first turn when LLM is down", () => {
+  it("returns the persona greeting on first turn when LLM is down", () => {
     const ctx = talkCtx("Hello");
     const stage = ctx.agent.flow.stages.talk as TalkStage;
     const out = degradeTalk(ctx, stage);
-    expect(out.reply).toMatch(/book a visit|Demo Co/i);
+    expect(out.reply).toMatch(/Demo Co's AI assistant/);
+    expect(out.reply).toMatch(/book a visit/);
     expect(out.effects).toBeUndefined();
   });
 
