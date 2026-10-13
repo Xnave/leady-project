@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import type { CrmCounts, CrmTab } from "@/lib/crm/view";
 import type { UiCopy } from "@/lib/ui";
 
@@ -25,9 +26,17 @@ export function ListBar({
   onTab: (t: CrmTab) => void;
   onChannel: (c: string | undefined) => void;
 }) {
+  const tabsRef = useRef<HTMLDivElement>(null);
+  // On a phone the tabs are a swipe row: keep the selected one in view (e.g. "All" from a link).
+  useEffect(() => {
+    const row = tabsRef.current;
+    if (!row || row.scrollWidth <= row.clientWidth) return;
+    row.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [tab]);
+
   return (
     <div className="crm-bar">
-      <div className="crm-tabs" role="tablist" aria-label={ui.page.leadsTitle}>
+      <div ref={tabsRef} className="crm-tabs" role="tablist" aria-label={ui.page.leadsTitle}>
         {TABS.map((t) => (
           <button
             key={t}

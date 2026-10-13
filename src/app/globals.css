@@ -293,7 +293,17 @@ html {
      - skill: "Focus Not Obscured". */
   scroll-behavior: smooth;
   scroll-padding-block-start: calc(var(--topbar-h) + var(--space-2));
+  /* Touch: no grey flash on tap (components carry their own :active), no font
+     inflation in landscape. */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
+/* No double-tap-zoom wait on controls. */
+button,
+a,
+[role="button"],
+[role="tab"] { touch-action: manipulation; }
 
 html,
 body {
@@ -886,6 +896,13 @@ select {
     background var(--transition-fast);
 }
 textarea { line-height: 1.5; resize: vertical; }
+/* iOS zooms into any field under 16px and never zooms back out. Component rules set
+   smaller sizes, so this one has to win. */
+@media (pointer: coarse) {
+  textarea,
+  select,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) { font-size: 16px !important; }
+}
 input::placeholder,
 textarea::placeholder { color: var(--muted); opacity: 1; }
 
@@ -2953,19 +2970,21 @@ a.home-metric:hover { background: var(--card-hover); color: inherit; text-decora
     position: fixed;
     inset-inline-start: 0;
     top: 0;
+    height: 100dvh;
+    padding-block: env(safe-area-inset-top, 0px) env(safe-area-inset-bottom, 0px);
     transform: translateX(-100%);
-    transition: transform var(--transition);
-    box-shadow: var(--shadow-lg);
+    transition: transform var(--transition), box-shadow var(--transition);
   }
   [dir="rtl"] .sidebar { transform: translateX(100%); }
-  .sidebar.open { transform: translateX(0); }
+  /* Shadow only when open: closed, it bled onto the page's inline-end edge. */
+  .sidebar.open { transform: translateX(0); box-shadow: var(--shadow-lg); }
 
   .btn-secondary.mobile-nav-toggle,
   .mobile-nav-toggle {
     display: inline-flex;
     position: fixed;
-    inset-inline-start: var(--space-3);
-    top: var(--space-3);
+    inset-inline-start: calc(var(--space-3) + env(safe-area-inset-left, 0px));
+    top: calc(var(--space-3) + env(safe-area-inset-top, 0px));
     z-index: 40;
     width: 44px;
     height: 44px;
@@ -2975,7 +2994,10 @@ a.home-metric:hover { background: var(--card-hover); color: inherit; text-decora
     background: var(--card);
     box-shadow: var(--shadow);
   }
-  .main { padding: 64px var(--space-4) var(--space-5); }
+  .main {
+    padding: calc(64px + env(safe-area-inset-top, 0px)) max(var(--space-4), env(safe-area-inset-right, 0px))
+      calc(var(--space-5) + env(safe-area-inset-bottom, 0px)) max(var(--space-4), env(safe-area-inset-left, 0px));
+  }
   .topbar { padding-inline-start: 68px; }
   .thread { padding: var(--space-3) var(--space-4); }
   .bubble { max-width: 88%; }
@@ -4064,6 +4086,14 @@ button.crm-stage { cursor: pointer; }
   .crm-ibtn[data-tip]::after { display: none; }
   .crm-note-pin { opacity: 1; }
   .crm-keys { display: none; }
+  /* Keyboard-only hints mean nothing on a phone. */
+  .crm-kbd,
+  .crm-note-foot > span { display: none; }
+  .crm-note-foot { justify-content: flex-end; }
+  /* The keyboard cursor means nothing without a keyboard: it only marked row one as "selected". */
+  .crm-row.kb:not(:focus-visible):not(.active):not(.checked) { background: transparent; box-shadow: none; }
+  /* Press feedback on the row itself (the tap highlight is off). */
+  .crm-row:active { background: var(--card-hover); }
 }
 @media (pointer: coarse) {
   .crm-fchip,
@@ -4074,6 +4104,9 @@ button.crm-stage { cursor: pointer; }
   .crm-pop-item { min-height: var(--hit); }
   .crm-ibtn { width: var(--hit); height: var(--hit); }
   .crm-tab { min-height: 48px; }
+  /* The stage chip stays compact but its hit area reaches 44px. */
+  button.crm-stage { position: relative; }
+  button.crm-stage::before { content: ""; position: absolute; inset: -8px -4px; }
 }
 
 /* List width breakpoints */
@@ -4086,8 +4119,8 @@ button.crm-stage { cursor: pointer; }
 @container crm-list (max-width: 600px) {
   .crm-lhead { display: none; }
   .crm-row {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    grid-template-areas: "who stage more" "stand stand stand" "fu last last";
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "who who stage more" "stand stand stand stand" "fu last last last";
     gap: var(--space-2);
     padding: var(--space-3) var(--space-4);
   }
@@ -4096,7 +4129,16 @@ button.crm-stage { cursor: pointer; }
   .crm-row > .crm-col-stage { grid-area: stage; }
   .crm-row > .crm-stand { grid-area: stand; white-space: normal; }
   .crm-row > .crm-col-fu { grid-area: fu; }
-  .crm-row > .crm-last { grid-area: last; display: flex; text-align: end; }
+  .crm-row > .crm-last {
+    grid-area: last;
+    display: flex;
+    flex-flow: row wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 2px var(--space-2);
+    min-width: 0;
+    text-align: end;
+  }
   /* Cards: the "more" button sits top-end; the icon cluster is hidden. */
   .crm-row > .crm-row-actions {
     grid-area: more;
@@ -4126,7 +4168,51 @@ button.crm-stage { cursor: pointer; }
   .crm-lv-tabs { padding-inline: var(--space-4); }
   .crm-page .page-header-actions,
   .crm-tools { inline-size: 100%; }
-  .crm-search { flex: 1; min-width: 0; }
+  .crm-tools { gap: 0 var(--space-3); }
+  /* Search gets the full row; the demo toggle wraps under it. */
+  .crm-search { flex: 1 1 100%; min-width: 0; }
+
+  /* Tabs: one edge-to-edge swipe row; channel chips wrap to their own row. */
+  .crm-bar { gap: 0 var(--space-2); }
+  .crm-tabs {
+    flex: 1 1 100%;
+    margin-inline: calc(-1 * var(--space-4));
+    padding-inline: var(--space-4);
+    scroll-padding-inline: var(--space-4);
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+  }
+  .crm-tab { padding: 0 var(--space-2); font-size: var(--fs-md); scroll-snap-align: start; }
+  .crm-filters { padding-block: var(--space-2); }
+  /* Sub-filters: one swipe row instead of wrapping into two or three. */
+  .crm-subbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin-inline: calc(-1 * var(--space-4));
+    padding-inline: var(--space-4);
+    overscroll-behavior-x: contain;
+  }
+  .crm-subbar::-webkit-scrollbar,
+  .crm-tabs::-webkit-scrollbar { display: none; }
+  .crm-subbar .crm-fchip { flex: none; white-space: nowrap; }
+}
+
+/* Full-screen peek (it is `min(560px, 100%)` wide): clear the notch and home bar, and
+   put the conversation right under the lead's status, as the full page does on phones. */
+@media (max-width: 560px) {
+  .crm-peek { border-inline-start: 0; }
+  .crm-peek-top { padding-block-start: calc(var(--space-2) + env(safe-area-inset-top, 0px)); }
+  .crm-peek-body { padding-block-end: env(safe-area-inset-bottom, 0px); }
+  .crm-lv { display: flex; flex-direction: column; }
+  .crm-lv > .crm-lv-tabwrap { order: 1; }
+  .crm-lv > .crm-sec { order: 2; }
+}
+
+/* Single-column full page: the chat is a bounded box, so the composer stays in reach
+   instead of sitting under the whole thread. */
+@media (max-width: 900px) {
+  .crm-full-main .crm-lv-chat { flex: none; height: min(640px, 75dvh); min-height: 0; }
 }
 
 /* --------------------------------------------------------------------------

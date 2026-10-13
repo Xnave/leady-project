@@ -1,3 +1,4 @@
+import type { Viewport } from "next";
 import type { ReactNode } from "react";
 import { enUS, heIL } from "@clerk/localizations";
 import { ClerkProvider } from "@clerk/nextjs";
@@ -7,6 +8,18 @@ import { getUiLang, getUiTheme } from "@/lib/cookies";
 import "./globals.css";
 
 export const metadata = { title: "Zapidly" };
+
+/** `viewportFit: cover` makes `env(safe-area-inset-*)` non-zero; theme colours match `--bg`. */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f0f2f5" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b141a" },
+  ],
+};
 
 /** Prefer London (near Neon eu-west-2); vercel.json also pins regions. */
 export const preferredRegion = "lhr1";
