@@ -158,6 +158,33 @@ export type UiCopy = {
     ctaConnect: string;
     whatsappOk: string;
     whatsappOff: string;
+    greetMorning: string;
+    greetAfternoon: string;
+    greetEvening: string;
+    summaryNeeds: string;
+    summaryOne: string;
+    summaryClear: string;
+    viewAll: string;
+    allClearTitle: string;
+    allClearBody: string;
+    coldLink: string;
+    upcomingTitle: string;
+    /** Panel title by the tenant's one enabled capability; `upcomingTitle` when it runs several. */
+    upcomingByCapability: Record<string, string>;
+    upcomingEmpty: string;
+    upcomingPending: string;
+    upcomingApproved: string;
+    pipelineTitle: string;
+    pipelineEmpty: string;
+    weekTitle: string;
+    metricNewLeads: string;
+    metricAgentReplies: string;
+    metricHandoffs: string;
+    recentTitle: string;
+    recentEmpty: string;
+    tryChat: string;
+    youWrote: string;
+    agentWrote: string;
   };
   common: {
     save: string;
