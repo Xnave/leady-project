@@ -189,7 +189,7 @@ describe("runDigestForTenant", () => {
     expect(await runDigestForTenant("t1", NOW, approved)).toMatchObject({ sent: 1 });
     const call = sendTemplate.mock.calls[0][0];
     expect(call.template.name).toBe(DIGEST_TEMPLATES.hospitality.name);
-    expect(call.params).toEqual(["Snir", "2", "0", "0", "Dana"]);
+    expect(call.params).toEqual(["Villa Nofim", "2", "0", "0", "Dana"]);
     expect(recipients[0].conversationId).toBe("conv-new");
     expect(sentLog).toEqual(["u1"]);
   });

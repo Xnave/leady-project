@@ -35,7 +35,7 @@ const FOOTER = "להפסקת הסיכום השיבו: הסר";
 const BUTTON = "הצג רשימה מלאה";
 
 /**
- * Variables, same order in every sector: {{1}} owner name, {{2}} awaiting
+ * Variables, same order in every sector: {{1}} business name, {{2}} awaiting
  * approval, {{3}} handed to the owner, {{4}} follow-ups (reminders + cold),
  * {{5}} the most urgent lead.
  */
@@ -58,7 +58,7 @@ export const DIGEST_TEMPLATES: Record<DigestSector, DigestTemplate> = {
     ].join("\n"),
     footer: FOOTER,
     button: BUTTON,
-    example: ["דנה", "2", "1", "3", "יוסי כהן · מחכה לאישור"],
+    example: ["סטודיו נועה", "2", "1", "3", "יוסי כהן · מחכה לאישור"],
   },
   hospitality: {
     sector: "hospitality",
@@ -78,7 +78,7 @@ export const DIGEST_TEMPLATES: Record<DigestSector, DigestTemplate> = {
     ].join("\n"),
     footer: FOOTER,
     button: BUTTON,
-    example: ["דנה", "2", "1", "3", "יוסי כהן · 12-14/11, 2 לילות"],
+    example: ["צימרי הגליל", "2", "1", "3", "יוסי כהן · 12-14/11, 2 לילות"],
   },
   appointments: {
     sector: "appointments",
@@ -98,7 +98,7 @@ export const DIGEST_TEMPLATES: Record<DigestSector, DigestTemplate> = {
     ].join("\n"),
     footer: FOOTER,
     button: BUTTON,
-    example: ["דנה", "2", "1", "3", "יוסי כהן · יום ג׳ 10:00"],
+    example: ["קליניקת שקד", "2", "1", "3", "יוסי כהן · יום ג׳ 10:00"],
   },
 };
 
@@ -122,9 +122,9 @@ export function resolveDigestSector(
 }
 
 /** Params in the order every sector's body uses them. */
-export function digestTemplateParams(d: Digest, ownerName: string): string[] {
+export function digestTemplateParams(d: Digest, businessName: string): string[] {
   return [
-    sanitizeTemplateParam(ownerName, 40),
+    sanitizeTemplateParam(businessName, 40),
     String(d.counts.approval),
     String(d.counts.handoff),
     String(d.counts.reminder + d.counts.cold),

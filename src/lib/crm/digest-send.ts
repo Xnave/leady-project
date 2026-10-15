@@ -170,7 +170,9 @@ export async function runDigestForTenant(
           accountId,
           phone: r.phone,
           template: { name: template.name, language: template.language },
-          params: digestTemplateParams(digest, r.label || tenant.name),
+          // The recipient label is the staff email or role, never a first
+          // name, so the greeting addresses the business.
+          params: digestTemplateParams(digest, tenant.name),
         });
         if (opened.conversationId && opened.conversationId !== r.conversationId) {
           await prisma.digestRecipient.update({ where: { id: r.id }, data: { conversationId: opened.conversationId } });
