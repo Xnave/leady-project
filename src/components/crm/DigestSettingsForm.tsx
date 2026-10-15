@@ -1,9 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Select } from "@/components/Select";
+import { Icon } from "@/components/crm/Icon";
 
 type Sector = "general" | "hospitality" | "appointments";
+
+export type DigestPreview = { body: string; footer: string; button: string };
 
 type Labels = {
   digestEnabled: string;
@@ -13,11 +16,22 @@ type Labels = {
   digestSectorAuto: string;
   digestSectorNames: Record<Sector, string>;
   digestConnect: string;
-  digestConnectHint: string;
   digestConnectOpen: string;
   digestConnectedTo: string;
   digestDisconnect: string;
   digestNoPlatformNumber: string;
+  digestWhatsAppTitle: string;
+  digestSettingsTitle: string;
+  digestStatusOn: string;
+  digestStatusOff: string;
+  digestStepCopy: string;
+  digestStepSend: string;
+  digestCopy: string;
+  digestCopied: string;
+  digestCodeExpiry: string;
+  digestNewCode: string;
+  digestPreview: string;
+  digestConnectIntro: string;
   save: string;
   saving: string;
   saved: string;
@@ -42,7 +56,46 @@ const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => ({
 
 const SECTORS: Sector[] = ["general", "hospitality", "appointments"];
 
-export function DigestSettingsForm({ labels }: { labels: Labels }) {
+/** 972555076806 -> +972 55-507-6806 (Israeli mobiles); anything else just gets a +. */
+function formatPhone(digits: string): string {
+  const il = /^972(5\d)(\d{3})(\d{4})$/.exec(digits);
+  return il ? `+972 ${il[1]}-${il[2]}-${il[3]}` : `+${digits}`;
+}
+
+function CopyButton({ text, label, done }: { text: string; label: string; done: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      return; // no clipboard (http, old browser): the code stays selectable
+    }
+    setCopied(true);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <button type="button" className="btn-secondary digest-copy" onClick={() => void copy()} aria-live="polite">
+      {copied ? <Icon name="check" small /> : <CopyIcon />}
+      {copied ? done : label}
+    </button>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg className="crm-i sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+    </svg>
+  );
+}
+
+export function DigestSettingsForm({ labels, previews }: { labels: Labels; previews: Record<Sector, DigestPreview> }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [digestEnabled, setDigestEnabled] = useState(false);
   const [digestHour, setDigestHour] = useState("8");
@@ -83,7 +136,9 @@ export function DigestSettingsForm({ labels }: { labels: Labels }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = (await res.json().catch(() => ({}))) as Settings & { error?: string };
+      const data = (await res.json().catch(() => ({}))) as Settings & {
+        error?: string;
+      };
       if (!res.ok) {
         setError(data.error ?? labels.loadFailed);
         return false;
@@ -103,10 +158,15 @@ export function DigestSettingsForm({ labels }: { labels: Labels }) {
   if (!settings) return <p className="muted">…</p>;
 
   const me = settings.me;
+  const connected = Boolean(me?.optedIn);
   const sectorOptions = [
-    { value: "", label: `${labels.digestSectorAuto} · ${labels.digestSectorNames[settings.autoSector]}` },
+    {
+      value: "",
+      label: `${labels.digestSectorAuto} · ${labels.digestSectorNames[settings.autoSector]}`,
+    },
     ...SECTORS.map((s) => ({ value: s, label: labels.digestSectorNames[s] })),
   ];
+  const preview = previews[digestSector || settings.autoSector];
   const startText = me?.code ? `START ${me.code}` : "";
   const waLink =
     startText && settings.platformNumber
@@ -114,77 +174,144 @@ export function DigestSettingsForm({ labels }: { labels: Labels }) {
       : "";
 
   return (
-    <div className="stack form-narrow">
-      <form onSubmit={(e) => void save(e)} className="card stack">
-        {!settings.featureOn ? <div className="status-banner warn">{labels.digestFeatureOff}</div> : null}
+    <div className="digest-page form-narrow">
+      {!settings.featureOn ? <div className="status-banner warn">{labels.digestFeatureOff}</div> : null}
 
-        <label className="choice">
-          <input type="checkbox" checked={digestEnabled} onChange={(e) => setDigestEnabled(e.target.checked)} />
-          {labels.digestEnabled}
-        </label>
+      <section className="card digest-card">
+        <header className="digest-card-head">
+          <h2>{labels.digestWhatsAppTitle}</h2>
+          <span className={connected ? "badge" : "badge badge-demo"}>
+            {connected ? labels.digestStatusOn : labels.digestStatusOff}
+          </span>
+        </header>
 
-        <label>
-          {labels.digestHour}
-          <Select value={digestHour} onChange={setDigestHour} options={HOUR_OPTIONS} ariaLabel={labels.digestHour} />
-        </label>
-
-        <label>
-          {labels.digestSector}
-          <Select
-            value={digestSector}
-            onChange={(v) => setDigestSector(v as "" | Sector)}
-            options={sectorOptions}
-            ariaLabel={labels.digestSector}
-          />
-        </label>
-
-        {saved && !error ? <p className="muted">{labels.saved}</p> : null}
-
-        <div className="field-form-actions">
-          <button type="submit" className="btn" disabled={saving} aria-busy={saving}>
-            {saving ? labels.saving : labels.save}
-          </button>
-        </div>
-      </form>
-
-      <div className="card stack">
-        {me?.optedIn ? (
-          <>
+        {connected ? (
+          <div className="digest-connected">
+            <span className="digest-connected-icon">
+              <Icon name="check" />
+            </span>
             <p>
-              {labels.digestConnectedTo} <bdi className="ltr-isolate">+{me.phone}</bdi>
+              {labels.digestConnectedTo} <bdi className="digest-phone">{formatPhone(me!.phone)}</bdi>
             </p>
-            <div className="field-form-actions">
-              <button type="button" className="btn-secondary" disabled={saving} onClick={() => void put({ action: "disconnect" })}>
-                {labels.digestDisconnect}
-              </button>
-            </div>
-          </>
+            <button
+              type="button"
+              className="btn-ghost"
+              disabled={saving}
+              onClick={() => void put({ action: "disconnect" })}
+            >
+              {labels.digestDisconnect}
+            </button>
+          </div>
         ) : me?.code ? (
-          <>
-            <p className="muted">{labels.digestConnectHint}</p>
-            <p>
-              <code className="ltr-isolate">{startText}</code>
+          <div className="digest-connect">
+            <ol className="digest-steps">
+              <li>
+                <span className="digest-step-title">{labels.digestStepCopy}</span>
+                <div className="digest-code-row">
+                  <code className="digest-code" dir="ltr">
+                    {startText}
+                  </code>
+                  <CopyButton text={startText} label={labels.digestCopy} done={labels.digestCopied} />
+                </div>
+              </li>
+              <li>
+                <span className="digest-step-title">{labels.digestStepSend}</span>
+                {settings.platformNumber ? (
+                  <div className="digest-code-row">
+                    <bdi className="digest-phone">{formatPhone(settings.platformNumber)}</bdi>
+                    {waLink ? (
+                      <a className="btn digest-wa" href={waLink} target="_blank" rel="noreferrer">
+                        <Icon name="msg" small />
+                        {labels.digestConnectOpen}
+                      </a>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="muted">{labels.digestNoPlatformNumber}</p>
+                )}
+              </li>
+            </ol>
+            <p className="muted digest-expiry">
+              {labels.digestCodeExpiry}{" "}
+              <button
+                type="button"
+                className="digest-link"
+                disabled={saving}
+                onClick={() => void put({ action: "connect" })}
+              >
+                {labels.digestNewCode}
+              </button>
             </p>
-            {waLink ? (
-              <div className="field-form-actions">
-                <a className="btn" href={waLink} target="_blank" rel="noreferrer">
-                  {labels.digestConnectOpen}
-                </a>
-              </div>
-            ) : (
-              <p className="muted">{labels.digestNoPlatformNumber}</p>
-            )}
-          </>
+          </div>
         ) : (
-          <div className="field-form-actions">
+          <div className="digest-intro">
+            <p>{labels.digestConnectIntro}</p>
             <button type="button" className="btn" disabled={saving} onClick={() => void put({ action: "connect" })}>
               {labels.digestConnect}
             </button>
           </div>
         )}
-      </div>
+      </section>
 
-      {error ? <p className="muted">{error}</p> : null}
+      <form onSubmit={(e) => void save(e)} className="card digest-card">
+        <header className="digest-card-head">
+          <h2>{labels.digestSettingsTitle}</h2>
+        </header>
+
+        <div className="digest-settings-grid">
+          <div className="stack">
+            <label className="choice">
+              <input type="checkbox" checked={digestEnabled} onChange={(e) => setDigestEnabled(e.target.checked)} />
+              {labels.digestEnabled}
+            </label>
+
+            <label>
+              {labels.digestHour}
+              <Select
+                value={digestHour}
+                onChange={setDigestHour}
+                options={HOUR_OPTIONS}
+                ariaLabel={labels.digestHour}
+              />
+            </label>
+
+            <label>
+              {labels.digestSector}
+              <Select
+                value={digestSector}
+                onChange={(v) => setDigestSector(v as "" | Sector)}
+                options={sectorOptions}
+                ariaLabel={labels.digestSector}
+              />
+            </label>
+
+            <div className="field-form-actions digest-save">
+              <button type="submit" className="btn" disabled={saving} aria-busy={saving}>
+                {saving ? labels.saving : labels.save}
+              </button>
+              {saved && !error ? (
+                <span className="muted digest-saved">
+                  <Icon name="check" small /> {labels.saved}
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <figure className="digest-preview">
+            <figcaption className="muted">{labels.digestPreview}</figcaption>
+            <div className="digest-chat" dir="rtl">
+              <div className="digest-bubble">
+                <p className="digest-bubble-body">{preview.body}</p>
+                <p className="digest-bubble-footer">{preview.footer}</p>
+                <span className="digest-bubble-time">{`${digestHour.padStart(2, "0")}:00`}</span>
+              </div>
+              <div className="digest-bubble-button">{preview.button}</div>
+            </div>
+          </figure>
+        </div>
+      </form>
+
+      {error ? <div className="status-banner warn">{error}</div> : null}
     </div>
   );
 }
