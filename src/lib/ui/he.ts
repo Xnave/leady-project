@@ -127,6 +127,18 @@ export const he: UiCopy = {
     tenantPhone: "טלפון",
     ownerEmail: "אימייל בעלים",
     openAsTenant: "התחבר כדייר",
+    zernioGateTitle: "שולחי בדיקה ב-Zernio",
+    zernioGateSender: "טלפון או שם משתמש",
+    zernioGateAdd: "שמירה",
+    zernioGateRemove: "הסרה",
+    zernioGateEmpty: "אין שולחים ברשימה.",
+    zernioGateFormat:
+      "התאימו לשולח ש-WhatsApp או Instagram שולחים: קידומת מדינה לטלפון, שם משתמש בלי @ לאינסטגרם.",
+    zernioGateHintProduction:
+      "שולח שמופיע כאן מושהה בפרודקשן. מספר הבדיקה מטופל כאן עד שמוסיפים אותו. אפשרו את אותו שולח בסטייג'ינג כשסטייג'ינג צריך לענות. אם הוא רשום בשתי הסביבות, שתיהן עונות.",
+    zernioGateHintPreview:
+      "רק שולחים שברשימה מקבלים תשובה מהפריסה הזו. השהו את אותו שולח בפרודקשן, אחרת שתי הסביבות עונות.",
+    zernioGateHintLocal: "בפיתוח מקומי העוזר עונה לכולם. הרשימה נשמרת אבל לא חלה.",
     account: "חשבון",
     signOut: "התנתקות",
     backToSignIn: "חזרה להתחברות",

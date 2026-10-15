@@ -459,3 +459,11 @@ model AgreementAcceptance {
 
   @@unique([tenantId, version])
 }
+
+/// Per-environment inbound gate for one Zernio sender.
+/// Production: a row pauses that sender. Other Vercel deploys: a row allows that sender.
+/// Local dev ignores the table and handles everyone.
+model ZernioSenderGate {
+  senderKey String   @id
+  createdAt DateTime @default(now())
+}
