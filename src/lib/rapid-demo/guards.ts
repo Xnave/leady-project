@@ -86,11 +86,11 @@ export function decideDemoReuse(
   rows: DemoReuseRow[],
   websiteHost: string,
   now: Date,
-): { type: "create" } | { type: "reuse"; code: string } | { type: "conflict" } {
+): { type: "create" } | { type: "reuse"; code: string } | { type: "conflict"; code: string } {
   const active = rows.filter((row) => isActiveDemo(row, now));
   const same = active.find((row) => row.websiteHost === websiteHost);
   if (same) return { type: "reuse", code: same.code };
-  if (active.length > 0) return { type: "conflict" };
+  if (active[0]) return { type: "conflict", code: active[0].code };
   return { type: "create" };
 }
 

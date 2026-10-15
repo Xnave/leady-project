@@ -58,7 +58,7 @@ describe("rapid demo guards", () => {
       { websiteHost: "gold.example", status: "active", expiresAt: later, code: "ZD-AAAAAAAA" },
     ];
     expect(decideDemoReuse(rows, "gold.example", now)).toEqual({ type: "reuse", code: "ZD-AAAAAAAA" });
-    expect(decideDemoReuse(rows, "other.example", now)).toEqual({ type: "conflict" });
+    expect(decideDemoReuse(rows, "other.example", now)).toEqual({ type: "conflict", code: "ZD-AAAAAAAA" });
     expect(
       decideDemoReuse(
         [{ websiteHost: "gold.example", status: "active", expiresAt: new Date("2026-10-15T11:00:00Z"), code: "ZD-AAAAAAAA" }],

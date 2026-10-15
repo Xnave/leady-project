@@ -17,6 +17,7 @@ import {
   fileHost,
   generateDemoCode,
   hashIp,
+  isActiveDemo,
   rateLimitDecision,
   type DemoReuseRow,
 } from "./guards";
@@ -58,6 +59,10 @@ export type RapidDemoFailure = {
     | "missing_input"
     | "missing_identity"
     | "draft_expired";
+  /** Present when error is demo_exists — so the visitor can open the live demo. */
+  code?: string;
+  name?: string;
+  waPrefill?: string;
 };
 
 export type RapidDemoResult = RapidDemoSuccess | RapidDemoFailure;
@@ -136,6 +141,19 @@ function createdPayload(row: { code: string; expiresAt: Date | null; extract: un
   };
 }
 
+async function demoExistsPayload(code: string): Promise<RapidDemoFailure> {
+  const existing = await prisma.rapidDemo.findFirst({ where: { code } });
+  if (!existing) return { ok: false, error: "demo_exists" };
+  const name = readStoredExtract(existing.extract).name ?? "";
+  return {
+    ok: false,
+    error: "demo_exists",
+    code: existing.code,
+    name,
+    waPrefill: activationPrefill({ code: existing.code, name, lang: prefillLang(existing.extract) }),
+  };
+}
+
 async function insertRow(
   data: Omit<Prisma.RapidDemoCreateInput, "code">,
 ): Promise<{ row: { id: string; code: string; expiresAt: Date | null; extract: unknown } } | "conflict"> {
@@ -185,7 +203,7 @@ export async function previewRapidDemo(input: {
 
   await expireStale(identity);
   const reuse = decideDemoReuse(await visitorDemos(identity), websiteHost, new Date());
-  if (reuse.type === "conflict") return { ok: false, error: "demo_exists" };
+  if (reuse.type === "conflict") return demoExistsPayload(reuse.code);
   if (reuse.type === "reuse") {
     const existing = await prisma.rapidDemo.findFirst({ where: { code: reuse.code } });
     if (existing) {
@@ -218,7 +236,10 @@ export async function previewRapidDemo(input: {
     extract: profile as unknown as Prisma.InputJsonValue,
     expiresAt: new Date(Date.now() + DRAFT_TTL_MS),
   });
-  if (inserted === "conflict") return { ok: false, error: "demo_exists" };
+  if (inserted === "conflict") {
+    const active = (await visitorDemos(identity)).find((row) => isActiveDemo(row, new Date()));
+    return active ? demoExistsPayload(active.code) : { ok: false, error: "demo_exists" };
+  }
   if (profileNeedsName(profile)) {
     return { ok: true, status: "needs_name", draftId: inserted.row.id };
   }
@@ -253,7 +274,7 @@ export async function createRapidDemoFromDraft(input: {
   }
 
   const reuse = decideDemoReuse(await visitorDemos(identity), draft.websiteHost, new Date());
-  if (reuse.type === "conflict") return { ok: false, error: "demo_exists" };
+  if (reuse.type === "conflict") return demoExistsPayload(reuse.code);
   if (reuse.type === "reuse") {
     const existing = await prisma.rapidDemo.findFirst({ where: { code: reuse.code } });
     if (existing) return createdPayload(existing, readStoredExtract(existing.extract).name || name);
@@ -284,7 +305,10 @@ export async function createRapidDemoFromDraft(input: {
     return createdPayload(row, profile.name ?? name);
   } catch (err) {
     await prisma.tenant.delete({ where: { id: tenantId } }).catch(() => undefined);
-    if (isIdentityConflict(err)) return { ok: false, error: "demo_exists" };
+    if (isIdentityConflict(err)) {
+      const active = (await visitorDemos(identity)).find((row) => isActiveDemo(row, new Date()));
+      return active ? demoExistsPayload(active.code) : { ok: false, error: "demo_exists" };
+    }
     throw err;
   }
 }
