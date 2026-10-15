@@ -83,6 +83,19 @@ async function sweepEmptyOpenThreads(opts: {
   });
 }
 
+/** Session keys plus the visit note. Name and phone stay. The Request keeps the saved need. */
+export function clearEndedThreadLeadFields(
+  fields: LeadFields,
+  reservationConfig?: Parameters<typeof clearReservationSessionFields>[1],
+): LeadFields {
+  const next = clearReservationSessionFields(
+    clearBookingSessionFields(fields),
+    reservationConfig,
+  );
+  delete next.interest;
+  return next;
+}
+
 /** Mark a conversation closed at terminal `done` without opening a new empty thread. */
 export async function closeConversationAsDone(opts: {
   tenantId: string;
@@ -113,10 +126,7 @@ export async function closeConversationAsDone(opts: {
   // Compat: strip any leaked booking-session keys still parked on Lead.fields.
   const prevFields = (conversation.lead.fields as LeadFields) ?? {};
   const reservationConfig = await reservationConfigForTenant(opts.tenantId);
-  const nextFields = clearReservationSessionFields(
-    clearBookingSessionFields(prevFields),
-    reservationConfig,
-  );
+  const nextFields = clearEndedThreadLeadFields(prevFields, reservationConfig);
   if (JSON.stringify(prevFields) !== JSON.stringify(nextFields)) {
     await prisma.lead.update({
       where: { id: conversation.leadId },
@@ -307,10 +317,7 @@ export async function rotateConversation(opts: {
   // Compat: strip leaked booking-session keys from Lead (new thread already has empty session).
   const prevFields = (lead.fields as LeadFields) ?? {};
   const reservationConfig = await reservationConfigForTenant(opts.tenantId);
-  const nextFields = clearReservationSessionFields(
-    clearBookingSessionFields(prevFields),
-    reservationConfig,
-  );
+  const nextFields = clearEndedThreadLeadFields(prevFields, reservationConfig);
   const fieldsChanged = JSON.stringify(prevFields) !== JSON.stringify(nextFields);
   const markUnread = opts.reason === "idle";
   if (fieldsChanged || markUnread) {

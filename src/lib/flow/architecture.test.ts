@@ -165,6 +165,42 @@ describe("system prompts by capability", () => {
     ensureFlowRegistry();
   });
 
+  it("does not paste a prior meeting into a brand-new thread", () => {
+    const flow = flowForCapabilities({ capabilities: ["booking"], bookingStance: "passive" });
+    const stage = talkStage(flow);
+    const prior = {
+      id: "req-1",
+      status: "pending",
+      slotText: "Thu 15:00",
+      needText: "meniscus tear rehab",
+      contactName: "Noa Levi",
+    };
+    const continuing = buildTalkSystemPrompt(
+      baseCtx(flow, { capabilityState: { booking: prior } }),
+      stage,
+      {},
+    );
+    const fresh = buildTalkSystemPrompt(
+      baseCtx(flow, {
+        capabilityState: { booking: prior },
+        conversation: {
+          id: "c2",
+          status: "open",
+          flowState: "talk",
+          flowVersion: 1,
+          nudgeCountByStage: {},
+          lifecycleReason: "start_new_conversation",
+        },
+      }),
+      stage,
+      {},
+    );
+    expect(continuing).toContain("meniscus tear rehab");
+    expect(fresh).not.toContain("meniscus tear rehab");
+    expect(fresh).not.toContain("Thu 15:00");
+    expect(fresh).not.toContain("Noa Levi");
+  });
+
   it("includes booking idle / start_booking guidance when booking is on", () => {
     const flow = flowForCapabilities({ capabilities: ["booking"], bookingStance: "passive" });
     const stage = talkStage(flow);

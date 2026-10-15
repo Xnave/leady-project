@@ -469,7 +469,10 @@ export async function loadTurnContext(
       apiBase: conversation.channel.apiBase,
       // Filled on first send via ensureChannelAccessToken (overlaps message persist).
       accessToken: "",
-      zernioAccountId: conversation.channel.providerExternalId || undefined,
+      zernioAccountId:
+        (typeof fields.replyAccountId === "string" && fields.replyAccountId.trim()) ||
+        conversation.channel.providerExternalId ||
+        undefined,
     },
   };
 }

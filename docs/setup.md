@@ -271,6 +271,8 @@ npm run db:migrate:production    # apply the pending migrations (prisma migrate 
 npm run db:verify:production     # again: "Pending migrations: none ... OK"
 ```
 
+**Staging** is the same workflow against `.env.staging` (the Neon `staging` branch used by Vercel Preview): `npm run db:status:staging`, `npm run db:verify:staging`, `npm run db:migrate:staging`.
+
 `baseline`, `migrate` and `backfill` change the database. They ask you to type the target host first and refuse to run without a terminal (from a script, CI, or an agent).
 
 If `verify` says MISMATCH, the database drifted from the migrations. Stop and compare the printed SQL before migrating.

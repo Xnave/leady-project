@@ -23,6 +23,8 @@ export type LeadViewScope = "lite" | "full";
 const HIDDEN_DETAIL_KEYS = new Set([
   "instagramUsername",
   "zernioConversationId",
+  "replyAccountId",
+  "rapidDemo",
   "staff_slot_offer",
   "staff_date_offer",
   "time_preference",

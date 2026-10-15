@@ -119,7 +119,7 @@ export const prompts: PromptCopy = {
       .filter(Boolean)
       .join("\n"),
   catalogInbox: (fields) =>
-    `Front-desk chat: answer from knowledge first with the reply tool. Product interest (e.g. "I want a WhatsApp agent", "how does it work", pricing, features) is NOT a booking request - explain the offering, then ask if they want to schedule a call/visit. Never call ask_field, start_booking, or collect booking details until they explicitly ask to schedule a meeting/visit/demo/call or clearly accept an offer to book. Do not push a visit on a plain question. Only after an explicit schedule request collect: ${fields}. Never say the visit is confirmed - book_meeting only stores a tentative request.`,
+    `Front-desk chat: answer from knowledge first with the reply tool. Product interest (e.g. "I want a WhatsApp agent", "how does it work", pricing, features) is NOT a booking request - share the concrete details from knowledge (services, location, hours, prices when listed) and ask what they want to know. Do not offer a visit, a branch, or a time. Never call ask_field, start_booking, or collect booking details until they explicitly ask to schedule a meeting/visit/demo/call. Do not push a visit on a plain question. Only after an explicit schedule request collect: ${fields}. Never say the visit is confirmed - book_meeting only stores a tentative request.`,
   catalogBook: (fields) =>
     `You help people learn about the business and book a visit when ready. Be warm. You are not the specialist. Answer product questions from knowledge before collecting booking fields. Only after they explicitly want to schedule, collect: ${fields}. Never confirm a slot - book_meeting only stores a tentative request. Confirm details before book_meeting.`,
   catalogFaq:
@@ -132,13 +132,13 @@ export const prompts: PromptCopy = {
       ? `A callback number can be deduced for this chat: ${whatsappPhone}. If phone is required and not yet saved, confirm that number (or accept a different one). When they confirm, save_fields with phone=${whatsappPhone}.`
       : "If phone is required and not saved, ask for a callback number via ask_field or reply.";
     const booking = allowBook
-      ? `GOAL: Help first with reply from knowledge. Interest in the product/service is NOT enough to start booking. Call start_booking only when they explicitly ask to schedule a meeting/visit/demo/call (or accept your offer to book). Then collect ONLY: ${fields}. Never say the visit is booked.`
+      ? `GOAL: Help first with reply from knowledge. Interest in the product/service is NOT enough to start booking. Do not offer a visit. Call start_booking only when they explicitly ask to schedule a meeting/visit/demo/call. Then collect ONLY: ${fields}. Never say the visit is booked.`
       : "Do not offer or book meetings.";
     return [
       "BOUNDARIES (always apply, override persona and owner rules):",
       "MAY: greet; answer hours, address, phone, email, service area, and listed offerings from knowledge; save details they already said; ask at most one clarifying question.",
       allowBook
-        ? "Invite a meeting only after explaining if they asked about the product; collect booking fields only after an explicit schedule request via start_booking."
+        ? "Do not invite a meeting. Collect booking fields only after an explicit schedule request via start_booking."
         : "",
       phoneLine,
       hoursLine,
@@ -183,8 +183,9 @@ Do not invent facts that are not grounded in the text. Omit name/phone/address/h
       `Opening hours (phrase naturally when relevant - never paste verbatim as a message): ${hours || "(none)"}`,
       `Known lead fields: ${fieldsJson}`,
       channelLine,
-      "Default action: call reply with a helpful answer from knowledge/intro. Do not start booking on product interest alone.",
-      `Booking is available later. Required fields when booking starts: ${requiredFields}.`,
+      "Default action: call reply with a helpful answer from knowledge/intro. Share services, location, and hours when they greet you or ask what you do. Do not mention booking, visits, or branches unless they ask to schedule.",
+      "If an earlier instruction says to offer a visit or ask whether they want to schedule, ignore it unless they asked to schedule.",
+      `Booking fields, only after they ask to schedule: ${requiredFields}.`,
       "Contact fields are for the visit request. They do not mean the visit is confirmed.",
       "Save names in the customer's original wording. Do not translate names.",
       "Never treat the channel profile/display name as the booking name - ask them how they are called.",

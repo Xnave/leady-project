@@ -14,6 +14,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/channels/zernio/callback(.*)",
   "/api/hookmyapp/sync(.*)",
   "/api/dev/inbound(.*)",
+  "/api/rapid-demo(.*)",
 ]);
 
 const withClerk = clerkMiddleware(

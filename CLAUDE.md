@@ -27,7 +27,7 @@ npx inngest-cli@latest dev   # only needed for delayed nudges
 
 First-time setup: `npm install && npx prisma migrate deploy && npx prisma generate && npm run db:seed`, then `/demo`.
 
-Schema changes ship as Prisma migrations (`prisma/migrations/`). Production is migrated by hand with `npm run db:verify:production` then `npm run db:migrate:production` (`scripts/db-production.sh`, reads `.env.production`); see [`docs/setup.md`](docs/setup.md#schema-changes-and-production).
+Schema changes ship as Prisma migrations (`prisma/migrations/`). Production is migrated by hand with `npm run db:verify:production` then `npm run db:migrate:production` (`scripts/db-production.sh`, reads `.env.production`). Staging uses the same commands with `:staging` (`scripts/db-staging.sh`, reads `.env.staging`). See [`docs/setup.md`](docs/setup.md#schema-changes-and-production).
 
 `npm run dev` alone covers most work - the demo route runs turns synchronously, so Inngest is not required unless testing nudges.
 
