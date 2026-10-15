@@ -224,6 +224,15 @@ export type UiCopy = {
     tenantPhone: string;
     ownerEmail: string;
     openAsTenant: string;
+    zernioGateTitle: string;
+    zernioGateSender: string;
+    zernioGateAdd: string;
+    zernioGateRemove: string;
+    zernioGateEmpty: string;
+    zernioGateFormat: string;
+    zernioGateHintProduction: string;
+    zernioGateHintPreview: string;
+    zernioGateHintLocal: string;
     account: string;
     signOut: string;
     backToSignIn: string;

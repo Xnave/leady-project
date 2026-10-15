@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import type { ZernioGateMode } from "@/lib/zernio-sender-gate";
 
 type Labels = {
   createTenant: string;
@@ -13,6 +14,15 @@ type Labels = {
   createdClaimOnSignIn: string;
   search: string;
   forbidden: string;
+  zernioGateTitle: string;
+  zernioGateSender: string;
+  zernioGateAdd: string;
+  zernioGateRemove: string;
+  zernioGateEmpty: string;
+  zernioGateFormat: string;
+  zernioGateHintProduction: string;
+  zernioGateHintPreview: string;
+  zernioGateHintLocal: string;
 };
 
 type TenantRow = { id: string; name: string; phone: string; ownerEmail?: string };
@@ -21,10 +31,14 @@ export function AdminClient({
   labels,
   unlocked,
   tenants,
+  gateMode,
+  gatedSenders,
 }: {
   labels: Labels;
   unlocked: boolean;
   tenants: TenantRow[];
+  gateMode: ZernioGateMode;
+  gatedSenders: string[];
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -33,6 +47,8 @@ export function AdminClient({
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [sender, setSender] = useState("");
+  const [gateError, setGateError] = useState("");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -71,12 +87,75 @@ export function AdminClient({
     router.refresh();
   }
 
+  async function addSender(e: FormEvent) {
+    e.preventDefault();
+    setGateError("");
+    const res = await fetch("/api/admin/zernio-senders", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sender }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      setGateError(data.error ?? labels.createFailed);
+      return;
+    }
+    setSender("");
+    router.refresh();
+  }
+
+  async function removeSender(key: string) {
+    setGateError("");
+    const res = await fetch("/api/admin/zernio-senders", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sender: key }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      setGateError(data.error ?? labels.createFailed);
+      return;
+    }
+    router.refresh();
+  }
+
   if (!unlocked) {
     return <p className="muted">{labels.forbidden}</p>;
   }
 
+  const gateHint =
+    gateMode === "pause"
+      ? labels.zernioGateHintProduction
+      : gateMode === "allow"
+        ? labels.zernioGateHintPreview
+        : labels.zernioGateHintLocal;
+
   return (
     <div className="stack">
+      <section className="card stack">
+        <h2>{labels.zernioGateTitle}</h2>
+        <p className="muted">{gateHint}</p>
+        <p className="muted">{labels.zernioGateFormat}</p>
+        <form onSubmit={(e) => void addSender(e)} className="create-inline">
+          <label>
+            {labels.zernioGateSender}
+            <input value={sender} onChange={(e) => setSender(e.target.value)} required />
+          </label>
+          <button type="submit">{labels.zernioGateAdd}</button>
+        </form>
+        {gateError ? <p className="muted">{gateError}</p> : null}
+        {gatedSenders.length === 0 ? <p className="muted">{labels.zernioGateEmpty}</p> : null}
+        <ul>
+          {gatedSenders.map((key) => (
+            <li key={key}>
+              <span>{key}</span>{" "}
+              <button type="button" className="btn-secondary" onClick={() => void removeSender(key)}>
+                {labels.zernioGateRemove}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
       <form onSubmit={(e) => void create(e)} className="card create-inline">
         <label>
           {labels.tenantName}
