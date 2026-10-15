@@ -29,7 +29,9 @@ import {
 } from "@/lib/flow/rotate-conversation";
 import { summarizeConversation } from "@/lib/flow/summarize";
 import type { Stage, TurnContext } from "@/lib/flow/types";
+import { replyLang } from "@/lib/copy";
 import { rewritePhonesInText } from "@/lib/leads";
+import { decorateRapidDemoText, notifyRapidDemoHitl, turnNeedsDemoNotice } from "@/lib/rapid-demo/outbound";
 import { inngest } from "@/inngest/client";
 import { prisma } from "@/lib/db";
 import { batchLeadRefreshes, safeRefreshLeadState } from "@/lib/crm/refresh";
@@ -53,11 +55,18 @@ export async function sendAndSave(
   opts?: { idempotencyKey?: string },
 ) {
   if (!text.trim()) return;
-  const cleaned = rewritePhonesInText(text, [
+  const rewritten = rewritePhonesInText(text, [
     savedPhone(ctx.lead.fields),
     callbackPhone(ctx),
     typeof ctx.lead.externalUserId === "string" ? ctx.lead.externalUserId : null,
   ]);
+  const cleaned =
+    ctx.lead.fields.rapidDemo === true
+      ? decorateRapidDemoText(
+          rewritten,
+          replyLang(ctx, [...ctx.messages].reverse().find((message) => message.role === "lead")?.text ?? ""),
+        )
+      : rewritten;
   const sendStarted = Date.now();
   if (opts?.idempotencyKey) {
     const existing = await prisma.message.findFirst({
@@ -223,6 +232,7 @@ export type SkippedTurnResult = {
   stage: string;
   action: string;
   nudgeEvent: null;
+  rapidDemo?: boolean;
 };
 
 /** One turn. Every CRM refresh the turn triggers collapses into one, after it ends. */
@@ -255,6 +265,14 @@ export async function runTurnNow(opts: RunTurnOpts) {
     ...(queue_ms != null ? { queue_ms } : {}),
     ...perf,
   });
+  if (turnNeedsDemoNotice("rapidDemo" in result && result.rapidDemo === true ? { rapidDemo: true } : {})) {
+    await notifyRapidDemoHitl({
+      tenantId: opts.tenantId,
+      conversationId: result.conversationId ?? opts.conversationId,
+      triggerMessageId: opts.triggerMessageId,
+      since: new Date(started),
+    });
+  }
   return result;
 }
 
@@ -276,11 +294,13 @@ async function runTurn(opts: RunTurnOpts) {
         stage: "",
         action: "",
         nudgeEvent: null,
+        rapidDemo: false,
       } satisfies SkippedTurnResult;
     }
     throw err;
   }
 
+  const rapidDemo = ctx.lead.fields.rapidDemo === true;
   if (!agentRepliesAllowed(ctx)) {
     return {
       skipped: "agent_replies_disabled",
@@ -288,6 +308,7 @@ async function runTurn(opts: RunTurnOpts) {
       stage: ctx.conversation.flowState,
       action: "agent_replies_disabled",
       nudgeEvent: null,
+      rapidDemo,
     } satisfies SkippedTurnResult;
   }
 
@@ -391,6 +412,7 @@ async function runTurn(opts: RunTurnOpts) {
       nudgeEvent,
       conversationId: rotated.conversationId,
       previousConversationId: opts.conversationId,
+      rapidDemo,
     };
   }
 
@@ -403,5 +425,5 @@ async function runTurn(opts: RunTurnOpts) {
   }
 
   await safeRefreshLeadState(opts.tenantId, ctx.lead.id);
-  return { ...result, nudgeEvent, conversationId: opts.conversationId };
+  return { ...result, nudgeEvent, conversationId: opts.conversationId, rapidDemo };
 }

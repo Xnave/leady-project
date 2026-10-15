@@ -10,6 +10,7 @@ import {
   contactDisplayName,
   instagramIdentityFields,
 } from "@/lib/leads";
+import { routeRapidDemoInbound } from "@/lib/rapid-demo/route-inbound";
 import {
   fetchZernioInboxContact,
   parseZernioMessageReceived,
@@ -60,6 +61,10 @@ export async function POST(req: Request) {
   const { handleDigestReply } = await import("@/lib/crm/digest-send");
   if (await handleDigestReply({ accountId: inbound.accountId, conversationId: inbound.conversationId, from: inbound.from })) {
     return NextResponse.json({ ok: true, digest: true });
+  }
+
+  if (await routeRapidDemoInbound(inbound)) {
+    return NextResponse.json({ ok: true, rapidDemo: true });
   }
 
   if (!inbound.accountId) {
