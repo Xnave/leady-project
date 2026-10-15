@@ -58,7 +58,7 @@ export function parseDemoCommand(text: string): "restart" | "tasks" | null {
 
 export function demoTtlMs(): number {
   const raw = Number(process.env.RAPID_DEMO_TTL_HOURS);
-  const hours = Number.isFinite(raw) && raw > 0 ? raw : 24;
+  const hours = Number.isFinite(raw) && raw > 0 ? raw : 24*7;
   return hours * 60 * 60 * 1000;
 }
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { hitlNotice, formatHitlTaskLine, turnNeedsDemoNotice } from "./outbound";
-import { decorateRapidDemoText, stripDemoFooter } from "./copy";
+import { activationPrefill, decorateRapidDemoText, stripDemoFooter } from "./copy";
 import {
   applyMissingName,
   chosenCapabilities,
@@ -96,6 +96,12 @@ describe("rapid demo guards", () => {
 
   it("reads a demo code and exact commands", () => {
     expect(parseDemoCode("היי Zapidly, תפתחו לי את הדמו ZD-K7M2Q9PX")).toBe("ZD-K7M2Q9PX");
+    expect(parseDemoCode(activationPrefill({ code: "ZD-K7M2Q9PX", name: "מטבחי זהב", lang: "he" }))).toBe(
+      "ZD-K7M2Q9PX",
+    );
+    expect(parseDemoCode(activationPrefill({ code: "ZD-K7M2Q9PX", name: "Gold Kitchens", lang: "en" }))).toBe(
+      "ZD-K7M2Q9PX",
+    );
     expect(parseDemoCode("hello")).toBeNull();
     expect(parseDemoCommand("restart")).toBe("restart");
     expect(parseDemoCommand("new")).toBe("restart");
@@ -104,6 +110,14 @@ describe("rapid demo guards", () => {
     expect(parseDemoCommand("משימות")).toBe("tasks");
     expect(parseDemoCommand("please restart")).toBeNull();
     expect(parseDemoCommand("היי Zapidly ZD-K7M2Q9PX")).toBeNull();
+  });
+
+  it("builds a warm activation prefill with the business name", () => {
+    expect(activationPrefill({ code: "ZD-AAAAAAAA", name: "מטבחי זהב", lang: "he" })).toContain("מטבחי זהב");
+    expect(activationPrefill({ code: "ZD-AAAAAAAA", name: "מטבחי זהב", lang: "he" })).toContain("ZD-AAAAAAAA");
+    expect(activationPrefill({ code: "ZD-AAAAAAAA", name: "Gold Kitchens", lang: "en" })).toContain(
+      "Gold Kitchens",
+    );
   });
 
   it("strips html and keys a file upload", () => {

@@ -5,11 +5,11 @@ import { cannedFallbackIntro, replyLang } from "@/lib/copy";
 import { resolveReplyLanguage, isChatLanguage } from "@/lib/flow/locale";
 import { enqueueAgentTurn, sendAndSave } from "@/lib/flow/run-turn";
 import { rotateConversation } from "@/lib/flow/rotate-conversation";
+import { personaGreeting } from "@/lib/persona/greeting";
 import { ensureLocalDemoChannel } from "@/lib/provision-tenant";
 import { sendZernioInboxMessage, type ZernioInbound } from "@/lib/zernio";
 import {
   decorateRapidDemoText,
-  starterText,
   tasksEmptyText,
   tasksListText,
   unboundCommandText,
@@ -148,11 +148,16 @@ export async function routeRapidDemoInbound(inbound: ZernioInbound): Promise<boo
   });
   if (!inserted) return true;
 
+  // First bind: reply with the same intro prod extract wrote on the tenant
+  // (personaGreeting), and skip the LLM turn so we don't greet twice.
   if (code && !alreadyBound) {
     const ctx = await loadTurnContext(demo.tenantId, inserted.conversationId);
-    await sendAndSave(ctx, starterText(replyLang(ctx, inbound.text)), {
+    const lang = replyLang(ctx, inbound.text);
+    await sendAndSave(ctx, personaGreeting(ctx, lang), {
       idempotencyKey: `starter-${inserted.messageId}`,
     });
+    await safeRefreshLeadState(demo.tenantId, inserted.leadId);
+    return true;
   }
 
   try {

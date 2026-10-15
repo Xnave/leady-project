@@ -35,10 +35,8 @@ export const chat: ChatCopy = {
   askNeed: "כדי שנוכל להתכונן לפגישה, מה חשוב לך שנדע מראש?",
   askNeedWithGathered: (gathered) =>
     [
-      "תודה, הנה מה שהבנתי עד עכשיו:",
-      gathered,
-      "",
-      "יש עוד משהו שחשוב לך שנדע לקראת הפגישה?",
+      "פרטי הפגישה: ${gathered}",
+      "לאשר או שתרצה להוסיף משהו?",
     ].join("\n"),
   bookingConfirmIntro: "הנה פרטי הפגישה, כדי שנוכל לוודא שהכול נכון:",
   bookingConfirmAsk: "ודא שהכול נכון ושאפשר לשמור את הבקשה",

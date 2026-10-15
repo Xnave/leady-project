@@ -20,14 +20,31 @@ import {
   rateLimitDecision,
   type DemoReuseRow,
 } from "./guards";
+import { activationPrefill, type DemoLang } from "./copy";
 import { provisionRapidDemoTenant } from "./provision";
 
 const DRAFT_TTL_MS = 60 * 60 * 1000;
 
 export type RapidDemoSuccess =
   | { ok: true; ignored: true }
-  | { ok: true; status: "created"; code: string; name: string; expiresAt: string }
-  | { ok: true; status: "needs_name"; draftId: string };
+  | {
+      ok: true;
+      status: "created";
+      code: string;
+      name: string;
+      expiresAt: string;
+      /** WhatsApp prefill for the visitor link (includes the demo code). */
+      waPrefill: string;
+    }
+  | { ok: true; status: "needs_name"; draftId: string }
+  | {
+      ok: true;
+      status: "confirm";
+      draftId: string;
+      name: string;
+      phone?: string;
+      venueAddress?: string;
+    };
 
 export type RapidDemoFailure = {
   ok: false;
@@ -103,6 +120,11 @@ async function visitorDemos(identity: Identity): Promise<DemoReuseRow[]> {
   });
 }
 
+function prefillLang(extract: unknown): DemoLang {
+  const chat = readStoredExtract(extract).chatLanguage;
+  return chat === "en" ? "en" : "he";
+}
+
 function createdPayload(row: { code: string; expiresAt: Date | null; extract: unknown }, name: string): RapidDemoSuccess {
   return {
     ok: true,
@@ -110,6 +132,7 @@ function createdPayload(row: { code: string; expiresAt: Date | null; extract: un
     code: row.code,
     name,
     expiresAt: (row.expiresAt ?? new Date(Date.now() + demoTtlMs())).toISOString(),
+    waPrefill: activationPrefill({ code: row.code, name, lang: prefillLang(row.extract) }),
   };
 }
 
@@ -186,14 +209,6 @@ export async function previewRapidDemo(input: {
     capabilities: chosenCapabilities(input.capabilities),
     website: website || undefined,
   });
-  const expiresAt = profileNeedsName(profile)
-    ? new Date(Date.now() + DRAFT_TTL_MS)
-    : new Date(Date.now() + demoTtlMs());
-
-  if (!profileNeedsName(profile)) {
-    return activateNew(identity, websiteHost, profile, expiresAt);
-  }
-
   const inserted = await insertRow({
     status: "draft",
     websiteHost,
@@ -201,39 +216,20 @@ export async function previewRapidDemo(input: {
     browserId: identity.browserId,
     knowledgeMd: profile.knowledgeMd,
     extract: profile as unknown as Prisma.InputJsonValue,
-    expiresAt,
+    expiresAt: new Date(Date.now() + DRAFT_TTL_MS),
   });
   if (inserted === "conflict") return { ok: false, error: "demo_exists" };
-  return { ok: true, status: "needs_name", draftId: inserted.row.id };
-}
-
-async function activateNew(
-  identity: Identity,
-  websiteHost: string,
-  profile: RapidExtract,
-  expiresAt: Date,
-): Promise<RapidDemoResult> {
-  const { tenantId } = await provisionRapidDemoTenant(profile);
-  try {
-    const inserted = await insertRow({
-      status: "active",
-      tenant: { connect: { id: tenantId } },
-      websiteHost,
-      ipHash: identity.ipHash,
-      browserId: identity.browserId,
-      knowledgeMd: profile.knowledgeMd,
-      extract: profile as unknown as Prisma.InputJsonValue,
-      expiresAt,
-    });
-    if (inserted === "conflict") {
-      await prisma.tenant.delete({ where: { id: tenantId } }).catch(() => undefined);
-      return { ok: false, error: "demo_exists" };
-    }
-    return createdPayload(inserted.row, profile.name ?? "");
-  } catch (err) {
-    await prisma.tenant.delete({ where: { id: tenantId } }).catch(() => undefined);
-    throw err;
+  if (profileNeedsName(profile)) {
+    return { ok: true, status: "needs_name", draftId: inserted.row.id };
   }
+  return {
+    ok: true,
+    status: "confirm",
+    draftId: inserted.row.id,
+    name: profile.name?.trim() ?? "",
+    ...(profile.phone ? { phone: profile.phone } : {}),
+    ...(profile.venueAddress ? { venueAddress: profile.venueAddress } : {}),
+  };
 }
 
 export async function createRapidDemoFromDraft(input: {
@@ -263,10 +259,14 @@ export async function createRapidDemoFromDraft(input: {
     if (existing) return createdPayload(existing, readStoredExtract(existing.extract).name || name);
   }
 
-  const stored = applyMissingName(readStoredExtract(draft.extract, draft.knowledgeMd), name);
-  const profile = await withResearch(
-    input.capabilities === undefined ? stored : { ...stored, capabilities: chosenCapabilities(input.capabilities) },
-  );
+  const storedExtract = readStoredExtract(draft.extract, draft.knowledgeMd);
+  const hadName = Boolean(storedExtract.name?.trim());
+  const stored = applyMissingName(storedExtract, name);
+  if (hadName && stored.name !== storedExtract.name && stored.pageText) {
+    stored.knowledgeMd = buildKnowledgeMarkdown(stored, stored.pageText);
+  }
+  const named = input.capabilities === undefined ? stored : { ...stored, capabilities: chosenCapabilities(input.capabilities) };
+  const profile = hadName ? named : await withResearch(named);
   const expiresAt = new Date(Date.now() + demoTtlMs());
   const { tenantId } = await provisionRapidDemoTenant(profile);
   try {

@@ -21,8 +21,25 @@ export function decorateRapidDemoText(text: string, lang: DemoLang): string {
   return `${trimmed}\n\n${demoFooter(lang)}`;
 }
 
-export function starterText(lang: DemoLang): string {
-  return lang === "he" ? "מתחילים את ההדגמה…" : "Starting your demo…";
+/**
+ * Prefill the visitor sends on WhatsApp to bind their phone to the demo.
+ * Keep the code parseable by `parseDemoCode`; personalize with the business name.
+ */
+export function activationPrefill(opts: {
+  code: string;
+  name?: string;
+  lang: DemoLang;
+}): string {
+  const code = opts.code.trim();
+  const business = opts.name?.trim();
+  if (opts.lang === "he") {
+    return business
+      ? `היי Zapidly, אשמח לנסות את הנציג הדיגיטלי של ${business} 🙂 הקוד שלי הוא: ${code}`
+      : `היי Zapidly, אשמח להתחיל את ההדגמה 🙂 הקוד שלי הוא: ${code}`;
+  }
+  return business
+    ? `Hi! I'd love to try ${business}'s digital agent 🙂 My code: ${code}`
+    : `Hi! I'd love to start the demo 🙂 My code: ${code}`;
 }
 
 /** Drop the demo footer so a later model reads only what the business said. */
