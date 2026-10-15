@@ -35,6 +35,9 @@
     "db:migrate:production": "bash scripts/db-production.sh migrate",
     "db:import:production": "bash scripts/db-import-local-to-production.sh",
 
+    "demos:expire": "bash scripts/expire-rapid-demos.sh",
+    "demos:expire:staging": "ENV_FILE=.env.staging bash scripts/expire-rapid-demos.sh",
+
     "crm:backfill": "tsx scripts/crm-backfill.ts",
     "crm:backfill:production": "bash scripts/db-production.sh backfill"
   },
