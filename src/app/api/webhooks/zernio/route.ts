@@ -15,6 +15,11 @@ import {
   parseZernioMessageReceived,
   zernioWebhookSecret,
 } from "@/lib/zernio";
+import {
+  loadZernioSenderKeys,
+  shouldHandleZernioSender,
+  zernioGateModeFromEnv,
+} from "@/lib/zernio-sender-gate";
 
 /** Zernio dashboard URL check / browser probe - POST carries events. */
 export async function GET() {
@@ -55,6 +60,15 @@ export async function POST(req: Request) {
     }
   } else if (!verifyZernioSignature(raw, signature, secret)) {
     return new Response("bad signature", { status: 401 });
+  }
+
+  const gateMode = zernioGateModeFromEnv();
+  if (gateMode !== "handle-all") {
+    const gates = await loadZernioSenderKeys();
+    if (!shouldHandleZernioSender(inbound.from, gates, gateMode)) {
+      console.log(JSON.stringify({ msg: "zernio.sender_gate", mode: gateMode }));
+      return NextResponse.json({ ok: true, ignored: "sender-gate" });
+    }
   }
 
   const { handleDigestReply } = await import("@/lib/crm/digest-send");
