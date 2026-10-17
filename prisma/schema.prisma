@@ -8,45 +8,57 @@ datasource db {
 }
 
 model Tenant {
-  id                     String   @id @default(cuid())
-  clerkOrgId             String   @unique
-  name                   String
-  phone                  String   @default("")
-  intro                  String   @default("")
-  /** Immutable tenant owner email (invited at creation). */
-  ownerEmail             String   @default("")
-  /** Filled when the owner accepts the Clerk org invite. */
-  ownerClerkUserId       String?  @unique
-  chatLanguage           String   @default("multi")
-  idleResetDays          Int      @default(5)
-  mediaAnalysisEnabled   Boolean  @default(false)
-  hookmyappWorkspaceId   String?
-  zernioProfileId        String?  @unique
-  /** IANA timezone for the daily digest clock. */
-  timezone               String   @default("Asia/Jerusalem")
-  digestEnabled          Boolean  @default(false)
-  digestHour             Int      @default(8)
-  /** When false, agent never replies (inbound still persists). */
-  agentRepliesEnabled    Boolean  @default(true)
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  clerkOrgId           String   @unique
+  name                 String
+  phone                String   @default("")
+  intro                String   @default("")
+  /**
+   * Immutable tenant owner email (invited at creation).
+   */
+  ownerEmail           String   @default("")
+  /**
+   * Filled when the owner accepts the Clerk org invite.
+   */
+  ownerClerkUserId     String?  @unique
+  chatLanguage         String   @default("multi")
+  idleResetDays        Int      @default(5)
+  mediaAnalysisEnabled Boolean  @default(false)
+  hookmyappWorkspaceId String?
+  zernioProfileId      String?  @unique
+  /**
+   * IANA timezone for the daily digest clock.
+   */
+  timezone             String   @default("Asia/Jerusalem")
+  digestEnabled        Boolean  @default(false)
+  digestHour           Int      @default(8)
+  /**
+   * Digest template sector ("general" | "hospitality" | "appointments"); "" = infer from capabilities.
+   */
+  digestSector         String   @default("")
+  /**
+   * When false, agent never replies (inbound still persists).
+   */
+  agentRepliesEnabled  Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
-  agents               Agent[]
-  capabilityInstances  CapabilityInstance[]
-  channelConnections   ChannelConnection[]
-  leads                Lead[]
-  conversations        Conversation[]
-  messages             Message[]
-  hitlTasks            HitlTask[]
-  requests             Request[]
-  adminDecisionLogs    AdminDecisionLog[]
-  mediaAssets          MediaAsset[]
-  revisions            AgentConfigRevision[]
-  pendingTeamInvites   TeamPendingInvite[]
-  leadStageEvents      LeadStageEvent[]
-  leadNotes            LeadNote[]
-  digestRecipients     DigestRecipient[]
-  digestLogs           DigestLog[]
+  agents              Agent[]
+  capabilityInstances CapabilityInstance[]
+  channelConnections  ChannelConnection[]
+  leads               Lead[]
+  conversations       Conversation[]
+  messages            Message[]
+  hitlTasks           HitlTask[]
+  requests            Request[]
+  adminDecisionLogs   AdminDecisionLog[]
+  mediaAssets         MediaAsset[]
+  revisions           AgentConfigRevision[]
+  pendingTeamInvites  TeamPendingInvite[]
+  leadStageEvents     LeadStageEvent[]
+  leadNotes           LeadNote[]
+  digestRecipients    DigestRecipient[]
+  digestLogs          DigestLog[]
 }
 
 /**
@@ -58,12 +70,18 @@ model CapabilityInstance {
   id           String   @id @default(cuid())
   tenantId     String
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  /** Registered capability that runs this instance: "booking" | "reservations". */
+  /**
+   * Registered capability that runs this instance: "booking" | "reservations".
+   */
   capabilityId String
-  /** Tenant-facing kind, also the `Request.kind`: "visit" | "stay" | "fitting" | … */
+  /**
+   * Tenant-facing kind, also the `Request.kind`: "visit" | "stay" | "fitting" | …
+   */
   kind         String
   enabled      Boolean  @default(true)
-  /** Field schema, nouns, templates, availability provider, policies. */
+  /**
+   * Field schema, nouns, templates, availability provider, policies.
+   */
   config       Json     @default("{}")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -72,7 +90,9 @@ model CapabilityInstance {
   @@index([tenantId, capabilityId])
 }
 
-/** Local pending invites when Clerk org invitations are unavailable (e.g. *.vercel.app). */
+/**
+ * Local pending invites when Clerk org invitations are unavailable (e.g. *.vercel.app).
+ */
 model TeamPendingInvite {
   id        String   @id @default(cuid())
   tenantId  String
@@ -86,26 +106,26 @@ model TeamPendingInvite {
 }
 
 model Agent {
-  id                   String   @id @default(cuid())
-  tenantId             String
-  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name                 String
-  catalogId            String   @default("inbox")
-  systemPrompt         String   @default("")
-  knowledgeText        String   @default("")
-  persona              Json     @default("{}")
-  flow                 Json
-  flowVersion          Int      @default(1)
-  flowChangedAt        DateTime @default(now())
-  leadSchema           Json
-  leadSchemaVersion    Int      @default(1)
-  leadSchemaChangedAt  DateTime @default(now())
-  hitlPolicy           Json
-  mediaAnalysis        Boolean  @default(false)
-  n8nWebhookUrl        String?
-  calcomEventTypeId    String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  tenantId            String
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name                String
+  catalogId           String   @default("inbox")
+  systemPrompt        String   @default("")
+  knowledgeText       String   @default("")
+  persona             Json     @default("{}")
+  flow                Json
+  flowVersion         Int      @default(1)
+  flowChangedAt       DateTime @default(now())
+  leadSchema          Json
+  leadSchemaVersion   Int      @default(1)
+  leadSchemaChangedAt DateTime @default(now())
+  hitlPolicy          Json
+  mediaAnalysis       Boolean  @default(false)
+  n8nWebhookUrl       String?
+  calcomEventTypeId   String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   channelConnections ChannelConnection[]
   conversations      Conversation[]
@@ -115,38 +135,40 @@ model Agent {
 }
 
 model AgentConfigRevision {
-  id        String   @id @default(cuid())
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  agentId   String
-  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  kind      String
-  version   Int
-  payload   Json
-  savedBy   String?
-  savedAt   DateTime @default(now())
+  id       String   @id @default(cuid())
+  tenantId String
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agentId  String
+  agent    Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  kind     String
+  version  Int
+  payload  Json
+  savedBy  String?
+  savedAt  DateTime @default(now())
 
   @@index([agentId, kind, version])
 }
 
 model ChannelConnection {
-  id                 String   @id @default(cuid())
-  tenantId           String
-  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  agentId            String
-  agent              Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  provider           String
-  providerAccountId  String
-  providerExternalId String? @map("hookmyappChannelId")
-  apiBase            String   @default("https://gateway.hookmyapp.com/meta")
-  accessTokenEnc     String
-  hmacSecretEnc      String
-  verifyToken        String
-  enabled            Boolean  @default(true)
-  /** When false, agent never replies on this channel (inbound still persists). */
-  agentRepliesEnabled Boolean @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  tenantId            String
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agentId             String
+  agent               Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  provider            String
+  providerAccountId   String
+  providerExternalId  String?  @map("hookmyappChannelId")
+  apiBase             String   @default("https://gateway.hookmyapp.com/meta")
+  accessTokenEnc      String
+  hmacSecretEnc       String
+  verifyToken         String
+  enabled             Boolean  @default(true)
+  /**
+   * When false, agent never replies on this channel (inbound still persists).
+   */
+  agentRepliesEnabled Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   leads         Lead[]
   conversations Conversation[]
@@ -156,41 +178,49 @@ model ChannelConnection {
 }
 
 model Lead {
-  id             String   @id @default(cuid())
-  tenantId       String
-  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  channelId      String
-  channel        ChannelConnection @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  externalUserId String
-  displayName    String?
-  status         String   @default("open")
-  /** Admin has not opened / marked this lead as read. */
-  adminUnread    Boolean  @default(true)
-  fields         Json     @default("{}")
-  /** Sales pipeline position (new → talking → … → won). Not the bot's `Conversation.flowState`. */
-  pipelineStage          String    @default("new")
-  /** auto | manual */
-  pipelineStageSource    String    @default("auto")
-  pipelineStageReason    String    @default("")
-  pipelineStageChangedAt DateTime  @default(now())
-  /** Why the owner should act now: handoff | approval | reminder | cold. Not the bot's auto-nudge. */
+  id                     String            @id @default(cuid())
+  tenantId               String
+  tenant                 Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  channelId              String
+  channel                ChannelConnection @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  externalUserId         String
+  displayName            String?
+  status                 String            @default("open")
+  /**
+   * Admin has not opened / marked this lead as read.
+   */
+  adminUnread            Boolean           @default(true)
+  fields                 Json              @default("{}")
+  /**
+   * Sales pipeline position (new → talking → … → won). Not the bot's `Conversation.flowState`.
+   */
+  pipelineStage          String            @default("new")
+  /**
+   * auto | manual
+   */
+  pipelineStageSource    String            @default("auto")
+  pipelineStageReason    String            @default("")
+  pipelineStageChangedAt DateTime          @default(now())
+  /**
+   * Why the owner should act now: handoff | approval | reminder | cold. Not the bot's auto-nudge.
+   */
   attentionReason        String?
   attentionAt            DateTime?
-  snoozedUntil      DateTime?
-  nextStepText      String?
-  nextStepAt        DateTime?
-  lastLeadMessageAt DateTime?
-  lastOutboundAt    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  snoozedUntil           DateTime?
+  nextStepText           String?
+  nextStepAt             DateTime?
+  lastLeadMessageAt      DateTime?
+  lastOutboundAt         DateTime?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
 
-  conversations Conversation[]
-  hitlTasks     HitlTask[]
-  requests      Request[]
+  conversations     Conversation[]
+  hitlTasks         HitlTask[]
+  requests          Request[]
   adminDecisionLogs AdminDecisionLog[]
-  mediaAssets   MediaAsset[]
-  stageEvents   LeadStageEvent[]
-  notes         LeadNote[]
+  mediaAssets       MediaAsset[]
+  stageEvents       LeadStageEvent[]
+  notes             LeadNote[]
 
   @@unique([tenantId, channelId, externalUserId])
   @@index([tenantId])
@@ -199,26 +229,30 @@ model Lead {
 }
 
 model Conversation {
-  id               String   @id @default(cuid())
-  tenantId         String
-  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  leadId           String
-  lead             Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  channelId        String
-  channel          ChannelConnection @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  agentId          String
-  agent            Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  status           String   @default("open")
-  flowState        String
-  flowVersion      Int
-  /** Ephemeral per-thread state (booking_flow, drafts). Dies with the conversation. */
-  session          Json     @default("{}")
-  /** Why this thread opened/closed: idle | admin | done | hitl_resume | approve | inbound_create | … */
-  lifecycleReason  String   @default("")
-  nudgeCountByStage Json    @default("{}")
-  summary          String   @default("")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                String            @id @default(cuid())
+  tenantId          String
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leadId            String
+  lead              Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  channelId         String
+  channel           ChannelConnection @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  agentId           String
+  agent             Agent             @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  status            String            @default("open")
+  flowState         String
+  flowVersion       Int
+  /**
+   * Ephemeral per-thread state (booking_flow, drafts). Dies with the conversation.
+   */
+  session           Json              @default("{}")
+  /**
+   * Why this thread opened/closed: idle | admin | done | hitl_resume | approve | inbound_create | …
+   */
+  lifecycleReason   String            @default("")
+  nudgeCountByStage Json              @default("{}")
+  summary           String            @default("")
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   messages  Message[]
   hitlTasks HitlTask[]
@@ -229,16 +263,16 @@ model Conversation {
 }
 
 model Message {
-  id                 String   @id @default(cuid())
-  tenantId           String
-  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  conversationId     String
-  conversation       Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  role               String
-  text               String   @default("")
-  providerMessageId  String
-  metadata           Json     @default("{}")
-  createdAt          DateTime @default(now())
+  id                String       @id @default(cuid())
+  tenantId          String
+  tenant            Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationId    String
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role              String
+  text              String       @default("")
+  providerMessageId String
+  metadata          Json         @default("{}")
+  createdAt         DateTime     @default(now())
 
   @@unique([tenantId, providerMessageId])
   @@index([conversationId, createdAt])
@@ -248,39 +282,50 @@ model Message {
  * One structured commitment awaiting human approval - a visit, a stay, a fitting,
  * a rental. Verticals differ only in their `kind`, whether the time spine is a point
  * or a span, and the typed values in `data`; they are not separate tables.
- *
  * The time dimension stays normalized so the calendar and conflict queries work;
  * everything else is typed config (see `src/lib/flow/fields`).
  */
 model Request {
-  id             String    @id @default(cuid())
+  id             String       @id @default(cuid())
   tenantId       String
-  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   leadId         String
-  lead           Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead           Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  /** Capability that owns this request: "booking" | "reservations" | … */
+  /**
+   * Capability that owns this request: "booking" | "reservations" | …
+   */
   capabilityId   String
-  /** Tenant-facing kind: "visit" | "stay" | "fitting" | "rental" - a CapabilityInstance id. */
+  /**
+   * Tenant-facing kind: "visit" | "stay" | "fitting" | "rental" - a CapabilityInstance id.
+   */
   kind           String
-  status         String    @default("pending")
-  /** Normalized time spine: a point in time sets startAt only; a span sets both. */
+  status         String       @default("pending")
+  /**
+   * Normalized time spine: a point in time sets startAt only; a span sets both.
+   */
   startAt        DateTime?
   endAt          DateTime?
-  /** Original human wording, e.g. "Thursday evening". Authoritative for display. */
-  timeText       String    @default("")
-  contactName    String    @default("")
-  contactEmail   String    @default("")
-  contactPhone   String    @default("")
-  /** Typed field values per the instance's field schema (need, guests, unit, size, …). */
-  data           Json      @default("{}")
-  /** Set only when a configured rate source produced a quote. */
+  /**
+   * Original human wording, e.g. "Thursday evening". Authoritative for display.
+   */
+  timeText       String       @default("")
+  contactName    String       @default("")
+  contactEmail   String       @default("")
+  contactPhone   String       @default("")
+  /**
+   * Typed field values per the instance's field schema (need, guests, unit, size, …).
+   */
+  data           Json         @default("{}")
+  /**
+   * Set only when a configured rate source produced a quote.
+   */
   quotedTotal    Float?
   decidedBy      String?
   decidedAt      DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@index([tenantId, status, startAt])
   @@index([tenantId, kind, status])
@@ -299,13 +344,19 @@ model AdminDecisionLog {
   leadId         String?
   lead           Lead?    @relation(fields: [leadId], references: [id], onDelete: Cascade)
   conversationId String?
-  /** Domain: request | hitl | lead | … */
+  /**
+   * Domain: request | hitl | lead | …
+   */
   category       String
-  /** Action within category: approve | decline | reschedule | … */
+  /**
+   * Action within category: approve | decline | reschedule | …
+   */
   action         String
   actorUserId    String
   actorLabel     String   @default("")
-  /** Type-specific payload (note, customReply, requestId, kind, times, …). */
+  /**
+   * Type-specific payload (note, customReply, requestId, kind, times, …).
+   */
   details        Json     @default("{}")
   summary        String   @default("")
   createdAt      DateTime @default(now())
@@ -315,40 +366,42 @@ model AdminDecisionLog {
 }
 
 model HitlTask {
-  id             String    @id @default(cuid())
+  id             String       @id @default(cuid())
   tenantId       String
-  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   leadId         String
-  lead           Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead           Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
   type           String
   reason         String
-  payload        Json      @default("{}")
-  status         String    @default("open")
+  payload        Json         @default("{}")
+  status         String       @default("open")
   resolution     Json?
   completedBy    String?
-  createdAt      DateTime  @default(now())
+  createdAt      DateTime     @default(now())
   completedAt    DateTime?
 
   @@index([tenantId, status])
 }
 
 model MediaAsset {
-  id          String   @id @default(cuid())
-  tenantId    String
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  leadId      String?
-  lead        Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  providerId  String
-  storageUrl  String?
-  analysis    Json?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leadId     String?
+  lead       Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  providerId String
+  storageUrl String?
+  analysis   Json?
+  createdAt  DateTime @default(now())
 
   @@index([tenantId])
 }
 
-/** Append-only stage history. Source of the activity timeline and future reports. */
+/**
+ * Append-only stage history. Source of the activity timeline and future reports.
+ */
 model LeadStageEvent {
   id          String   @id @default(cuid())
   tenantId    String
@@ -357,7 +410,9 @@ model LeadStageEvent {
   lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
   from        String
   to          String
-  /** auto | manual */
+  /**
+   * auto | manual
+   */
   source      String
   reason      String   @default("")
   actorUserId String?
@@ -367,7 +422,9 @@ model LeadStageEvent {
   @@index([tenantId, to, createdAt])
 }
 
-/** Internal note on a lead. Never shown to the customer. */
+/**
+ * Internal note on a lead. Never shown to the customer.
+ */
 model LeadNote {
   id           String   @id @default(cuid())
   tenantId     String
@@ -384,27 +441,49 @@ model LeadNote {
   @@index([tenantId, leadId])
 }
 
-/** Staff member who opted in to the WhatsApp daily digest. */
+/**
+ * Staff member who opted in to the WhatsApp daily digest.
+ */
 model DigestRecipient {
-  id          String    @id @default(cuid())
-  tenantId    String
-  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  clerkUserId String
-  label       String    @default("")
-  phone       String
-  optedInAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clerkUserId    String
+  label          String    @default("")
+  /**
+   * Digits with country code, taken from the WhatsApp sender when the owner confirms.
+   */
+  phone          String
+  optedInAt      DateTime?
+  /**
+   * One-time `START <code>` the owner sends to the platform number to confirm the phone.
+   */
+  optInCode      String?   @unique
+  optInCodeAt    DateTime?
+  /**
+   * Zernio conversation on the platform number, for free-text sends inside the window.
+   */
+  conversationId String    @default("")
+  /**
+   * Owner's last message to the platform number - opens WhatsApp's 24h window.
+   */
+  lastInboundAt  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@unique([tenantId, clerkUserId])
 }
 
-/** One row per tenant per local day - the idempotency guard for the digest. */
+/**
+ * One row per tenant per local day - the idempotency guard for the digest.
+ */
 model DigestLog {
   id         String   @id @default(cuid())
   tenantId   String
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  /** YYYY-MM-DD in the tenant timezone. */
+  /**
+   * YYYY-MM-DD in the tenant timezone.
+   */
   date       String
   sentAt     DateTime @default(now())
   recipients Json     @default("[]")

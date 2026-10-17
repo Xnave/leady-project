@@ -227,27 +227,54 @@ export async function listZernioWebhookSettings(): Promise<ZernioWebhookSettings
 }
 
 /**
- * Path of Zernio's bulk template send (SDK: whatsapp.sendWhatsAppBulk).
- * Verify against the API reference before enabling the digest - this has not
- * been confirmed against a live send (no platform number / approved template
- * yet). See task-14 report for details.
+ * Opens (or continues) a WhatsApp conversation with an approved template.
+ * `participantId` is the phone as digits with country code and no `+`;
+ * `templateParams` is one flat array in the order the variables appear
+ * (header, then body, then dynamic URL buttons).
+ * Docs: https://docs.zernio.com/platforms/whatsapp/templates
  */
-const WHATSAPP_BULK_PATH = "/whatsapp/bulk";
-
 export async function sendWhatsAppTemplate(opts: {
   accountId: string;
   phone: string;
   template: { name: string; language: string };
-  variables: Record<string, string>;
-}): Promise<void> {
-  await zernio(WHATSAPP_BULK_PATH, {
+  params: string[];
+}): Promise<{ conversationId: string }> {
+  const res = await zernio<{ data?: { conversationId?: string } }>("/inbox/conversations", {
     method: "POST",
     body: JSON.stringify({
       accountId: opts.accountId,
-      recipients: [{ phone: opts.phone, variables: opts.variables }],
-      template: opts.template,
+      participantId: opts.phone.replace(/\D/g, ""),
+      templateName: opts.template.name,
+      templateLanguage: opts.template.language,
+      templateParams: opts.params,
     }),
   });
+  return { conversationId: res.data?.conversationId ?? "" };
+}
+
+export type ZernioWhatsAppTemplate = {
+  id: string;
+  name: string;
+  language: string;
+  status: string;
+  category: string;
+  rejectedReason?: string;
+};
+
+/** Every template on the account's WABA, read live from Meta (one entry per name + language). */
+export async function listWhatsAppTemplates(accountId: string): Promise<ZernioWhatsAppTemplate[]> {
+  const qs = new URLSearchParams({ accountId });
+  const res = await zernio<{ templates?: ZernioWhatsAppTemplate[] }>(`/whatsapp/templates?${qs.toString()}`);
+  return res.templates ?? [];
+}
+
+/** Submits a template for Meta review. Comes back `PENDING`. */
+export async function createWhatsAppTemplate(body: unknown): Promise<ZernioWhatsAppTemplate | null> {
+  const res = await zernio<{ template?: ZernioWhatsAppTemplate }>("/whatsapp/templates", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return res.template ?? null;
 }
 
 export async function sendZernioInboxMessage(opts: {

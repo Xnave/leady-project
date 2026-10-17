@@ -36,7 +36,16 @@ export type CrmCopy = {
   selected: string; bulkStage: string; bulkSnooze: string; bulkRead: string; bulkUnread: string; clearSelection: string;
   keysHint: string; search: string;
   digestTitle: string; digestBlurb: string; digestEnabled: string; digestHour: string;
-  digestPhone: string; digestOptInText: string; digestFeatureOff: string; saved: string;
+  digestFeatureOff: string; saved: string;
+  digestSector: string; digestSectorAuto: string;
+  digestSectorNames: { general: string; hospitality: string; appointments: string };
+  digestConnect: string; digestConnectOpen: string; digestConnectedTo: string;
+  digestDisconnect: string; digestNoPlatformNumber: string;
+  digestWhatsAppTitle: string; digestSettingsTitle: string; digestStatusOn: string; digestStatusOff: string;
+  digestStepCopy: string; digestStepSend: string; digestCopy: string; digestCopied: string;
+  digestCodeExpiry: string; digestNewCode: string; digestPreview: string; digestConnectIntro: string;
+  /** WhatsApp replies from the platform number to the owner. */
+  digestConnected: string; digestCodeInvalid: string; digestPhoneTaken: string; digestStopped: string;
 };
 
 export type UiCopy = {

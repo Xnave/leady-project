@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DIGEST_SECTORS } from "./digest-templates";
 import { PIPELINE_STAGES, type PipelineStage } from "./types";
 
 /**
@@ -133,19 +134,19 @@ export function parseBulkBody(b: unknown): BulkInput | Err {
   return "error" in op ? op : { ...op, ids: ids.ids };
 }
 
-const digestSettingsBody = z
-  .object({
-    digestEnabled: z.boolean().optional(),
-    digestHour: z
-      .number()
-      .int({ message: "digestHour must be 0-23" })
-      .min(0, { message: "digestHour must be 0-23" })
-      .max(23, { message: "digestHour must be 0-23" })
-      .optional(),
-    phone: z.string().trim().optional(),
-    optIn: z.boolean().optional(),
-  })
-  .refine((o) => !o.optIn || Boolean(o.phone), { message: "Phone number required to opt in" });
+const digestSettingsBody = z.object({
+  digestEnabled: z.boolean().optional(),
+  digestHour: z
+    .number()
+    .int({ message: "digestHour must be 0-23" })
+    .min(0, { message: "digestHour must be 0-23" })
+    .max(23, { message: "digestHour must be 0-23" })
+    .optional(),
+  /** "" = infer from the tenant's capabilities. */
+  digestSector: z.enum(["", ...DIGEST_SECTORS], { message: "bad_sector" }).optional(),
+  /** `connect` issues a fresh `START <code>`; `disconnect` stops sends to the caller. */
+  action: z.enum(["connect", "disconnect"], { message: "bad_action" }).optional(),
+});
 
 export type DigestSettingsInput = z.infer<typeof digestSettingsBody>;
 

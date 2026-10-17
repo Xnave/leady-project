@@ -72,7 +72,17 @@ export async function POST(req: Request) {
   }
 
   const { handleDigestReply } = await import("@/lib/crm/digest-send");
-  if (await handleDigestReply({ accountId: inbound.accountId, conversationId: inbound.conversationId, from: inbound.from })) {
+  // Reaching here with a secret means the signature checked out above.
+  const signatureVerified = Boolean(secret);
+  if (
+    await handleDigestReply({
+      accountId: inbound.accountId,
+      conversationId: inbound.conversationId,
+      from: inbound.from,
+      text: inbound.text,
+      signatureVerified,
+    })
+  ) {
     return NextResponse.json({ ok: true, digest: true });
   }
 
