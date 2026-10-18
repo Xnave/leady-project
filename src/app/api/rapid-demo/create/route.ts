@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { rapidDemoAuthorized } from "@/lib/rapid-demo/guards";
 import { createRapidDemoFromDraft } from "@/lib/rapid-demo/service";
 
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   if (!rapidDemoAuthorized(req.headers.get("authorization"))) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });

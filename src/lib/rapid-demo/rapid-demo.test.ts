@@ -6,7 +6,7 @@ import {
   chosenCapabilities,
   normalizeRapidExtract,
   profileNeedsName,
-  markdownFromInteraction,
+  researchMarkdownFromText,
   RAPID_DEMO_RESEARCH_MODEL,
   rapidDemoResearchModel,
   researchPrompt,
@@ -199,7 +199,7 @@ describe("rapid demo extract", () => {
     expect(prompt).toContain("שעות פתיחה 9 עד 18");
     const request = researchRequest("נוגה", "https://noga.example/", prompt);
     expect(request.model).toBe(RAPID_DEMO_RESEARCH_MODEL);
-    expect(request.tools).toEqual([{ type: "url_context" }]);
+    expect(request.prompt).toContain("נוגה");
     expect(request.model).toBe("gemini-3.8-flash");
     const english = researchPrompt("Noga", "https://noga.example", "Open 9 to 18");
     expect(english).toContain("Write a markdown file");
@@ -211,14 +211,10 @@ describe("rapid demo extract", () => {
     else process.env.RAPID_DEMO_RESEARCH_MODEL = prevModel;
   });
 
-  it("reads the knowledge markdown from an Interactions response", () => {
-    expect(markdownFromInteraction({ output_text: "```md\n# Noga\n\nHours: 9-18\n```" })).toBe("# Noga\n\nHours: 9-18");
-    expect(
-      markdownFromInteraction({
-        steps: [{ type: "model_output", content: [{ type: "text", text: "# Clinic" }] }],
-      }),
-    ).toBe("# Clinic");
-    expect(markdownFromInteraction({ steps: [{ type: "url_context_result" }] })).toBeUndefined();
+  it("reads the knowledge markdown from the research reply", () => {
+    expect(researchMarkdownFromText("```md\n# Noga\n\nHours: 9-18\n```")).toBe("# Noga\n\nHours: 9-18");
+    expect(researchMarkdownFromText("# Clinic")).toBe("# Clinic");
+    expect(researchMarkdownFromText("  ")).toBeUndefined();
   });
 });
 

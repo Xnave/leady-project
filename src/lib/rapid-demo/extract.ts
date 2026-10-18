@@ -1,4 +1,5 @@
-import { GoogleGenAI } from "@google/genai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { generateText } from "ai";
 import { isCapabilityId, type CapabilityId } from "@/lib/flow/catalog";
 import { isChatLanguage, looksHebrew, type ChatLanguage } from "@/lib/flow/locale";
 import { geminiApiKey } from "@/lib/flow/model";
@@ -78,32 +79,13 @@ export function researchPrompt(name: string, website: string, pageText: string):
 export function researchRequest(name: string, website: string, pageText: string) {
   return {
     model: rapidDemoResearchModel(),
-    input: researchPrompt(name, website, pageText),
-    tools: [{ type: "url_context" as const }],
+    prompt: researchPrompt(name, website, pageText),
   };
 }
 
-type ResearchStep = {
-  type: string;
-  content?: Array<{ type?: string; text?: string }>;
-};
-
-export function markdownFromInteraction(interaction: {
-  output_text?: string;
-  steps?: ResearchStep[];
-}): string | undefined {
-  const direct = unwrapMarkdown(trimField(interaction.output_text));
-  if (direct) return direct.slice(0, MAX_CHARS);
-  const parts: string[] = [];
-  for (const step of interaction.steps ?? []) {
-    if (step.type !== "model_output") continue;
-    for (const block of step.content ?? []) {
-      const text = block.type === "text" ? unwrapMarkdown(trimField(block.text)) : undefined;
-      if (text) parts.push(text);
-    }
-  }
-  const joined = trimField(parts.join("\n\n"));
-  return joined ? joined.slice(0, MAX_CHARS) : undefined;
+export function researchMarkdownFromText(text: string | undefined): string | undefined {
+  const unwrapped = unwrapMarkdown(trimField(text));
+  return unwrapped ? unwrapped.slice(0, MAX_CHARS) : undefined;
 }
 
 function unwrapMarkdown(text: string | undefined): string | undefined {
@@ -180,9 +162,14 @@ export async function researchBusinessMarkdown(opts: {
   const page = parsePublicHttpsUrl(opts.website);
   if (!key || !opts.name.trim() || !page) return undefined;
   try {
-    const client = new GoogleGenAI({ apiKey: key });
-    const interaction = await client.interactions.create(researchRequest(opts.name, page.href, opts.pageText));
-    return markdownFromInteraction(interaction);
+    const google = createGoogleGenerativeAI({ apiKey: key });
+    const request = researchRequest(opts.name, page.href, opts.pageText);
+    const result = await generateText({
+      model: google(request.model),
+      prompt: request.prompt,
+      tools: { url_context: google.tools.urlContext({}) },
+    });
+    return researchMarkdownFromText(result.text);
   } catch (err) {
     console.warn(JSON.stringify({ msg: "rapid_demo.research_failed", error: String(err) }));
     return undefined;

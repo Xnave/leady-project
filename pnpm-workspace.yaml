@@ -1,6 +1,5 @@
 allowBuilds:
   "@clerk/shared": true
-  '@google/genai': true
   "@prisma/client": true
   "@prisma/engines": true
   esbuild: true
@@ -13,4 +12,3 @@ minimumReleaseAgeExclude:
   - '@clerk/nextjs@7.9.3'
   - '@clerk/react@6.16.0'
   - '@clerk/shared@4.32.0'
-  - '@google/genai@2.30.0'

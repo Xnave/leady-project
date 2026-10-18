@@ -165,7 +165,7 @@ describe("system prompts by capability", () => {
     ensureFlowRegistry();
   });
 
-  it("does not paste a prior meeting into a brand-new thread", () => {
+  it("keeps a prior meeting in context on a brand-new thread", () => {
     const flow = flowForCapabilities({ capabilities: ["booking"], bookingStance: "passive" });
     const stage = talkStage(flow);
     const prior = {
@@ -196,9 +196,9 @@ describe("system prompts by capability", () => {
       {},
     );
     expect(continuing).toContain("meniscus tear rehab");
-    expect(fresh).not.toContain("meniscus tear rehab");
-    expect(fresh).not.toContain("Thu 15:00");
-    expect(fresh).not.toContain("Noa Levi");
+    expect(fresh).toContain("meniscus tear rehab");
+    expect(fresh).toContain("Thu 15:00");
+    expect(fresh).toContain("Do NOT mention the meeting");
   });
 
   it("includes booking idle / start_booking guidance when booking is on", () => {

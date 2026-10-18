@@ -1,7 +1,7 @@
 import { persistInboundIfNew, loadTurnContext } from "@/lib/conversations";
 import { safeRefreshLeadState } from "@/lib/crm/refresh";
 import { prisma } from "@/lib/db";
-import { cannedFallbackIntro, replyLang } from "@/lib/copy";
+import { replyLang } from "@/lib/copy";
 import { resolveReplyLanguage, isChatLanguage } from "@/lib/flow/locale";
 import { enqueueAgentTurn, sendAndSave } from "@/lib/flow/run-turn";
 import { rotateConversation } from "@/lib/flow/rotate-conversation";
@@ -267,7 +267,7 @@ async function handleDemoCommand(opts: {
       reason: "start_new_conversation",
     });
     const ctx = await loadTurnContext(opts.tenantId, rotated.conversationId);
-    await sendAndSave(ctx, cannedFallbackIntro(ctx));
+    await sendAndSave(ctx, personaGreeting(ctx, lang));
     return;
   }
 
