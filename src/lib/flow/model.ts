@@ -50,11 +50,12 @@ function openaiModelId(): string {
   return env("OPENAI_CHAT_MODEL") || "gpt-4o-mini";
 }
 
-/** Key for the Gemini API. Rapid-demo research reads the site through this, not chatModel(). */
+/**
+ * Key for the Gemini API. Rapid-demo research passes this into the client.
+ * Does not write process.env; chatModel() still hydrates the AI SDK env itself.
+ */
 export function geminiApiKey(): string {
-  const gemini = env("GOOGLE_GENERATIVE_AI_API_KEY") || env("GEMINI_API_KEY");
-  if (gemini) process.env["GOOGLE_GENERATIVE_AI_API_KEY"] = gemini;
-  return gemini;
+  return env("GOOGLE_GENERATIVE_AI_API_KEY") || env("GEMINI_API_KEY");
 }
 
 /** OpenAI (OPENAI_API_KEY + optional OPENAI_CHAT_MODEL), then Gemini, then Anthropic. */

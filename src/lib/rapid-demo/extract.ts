@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { isCapabilityId, type CapabilityId } from "@/lib/flow/catalog";
-import { isChatLanguage, type ChatLanguage } from "@/lib/flow/locale";
+import { isChatLanguage, looksHebrew, type ChatLanguage } from "@/lib/flow/locale";
 import { geminiApiKey } from "@/lib/flow/model";
 import { extractOnboardDetails, type OnboardExtract } from "@/lib/flow/onboard-extract";
 import { DEMO_ACTIVATION_NOTE } from "./copy";
@@ -9,6 +9,10 @@ import { parsePublicHttpsUrl } from "./fetch-site";
 const MAX_CHARS = 24_000;
 
 export const RAPID_DEMO_RESEARCH_MODEL = "gemini-3.8-flash";
+
+export function rapidDemoResearchModel(env: NodeJS.ProcessEnv = process.env): string {
+  return env.RAPID_DEMO_RESEARCH_MODEL?.trim() || RAPID_DEMO_RESEARCH_MODEL;
+}
 
 export type RapidExtract = OnboardExtract & {
   chatLanguage: ChatLanguage;
@@ -56,18 +60,24 @@ export function profileNeedsName(profile: { name?: string }): boolean {
 }
 
 export function researchPrompt(name: string, website: string, pageText: string): string {
-  const lines = [
-    `צור לי קובץ md לסוכן ai שמתאר את כל פרטי העסק שהסוכן צריך לדעת עבור העסק ${name.trim()} ${website.trim()}`,
-    "החזר רק את קובץ ה-markdown, בלי הקדמה.",
-  ];
   const page = pageText.trim().slice(0, MAX_CHARS);
-  if (page) lines.push(`טקסט מהאתר:\n${page}`);
+  const hebrew = looksHebrew(page || name);
+  const lines = hebrew
+    ? [
+        `צור לי קובץ md לסוכן ai שמתאר את כל פרטי העסק שהסוכן צריך לדעת עבור העסק ${name.trim()} ${website.trim()}`,
+        "כתוב את הקובץ בעברית. החזר רק את קובץ ה-markdown, בלי הקדמה.",
+      ]
+    : [
+        `Write a markdown file for an AI agent that describes everything the agent needs to know about the business ${name.trim()} ${website.trim()}`,
+        "Write the file in English. Return only the markdown file, with no introduction.",
+      ];
+  if (page) lines.push(hebrew ? `טקסט מהאתר:\n${page}` : `Text from the site:\n${page}`);
   return lines.join("\n\n");
 }
 
 export function researchRequest(name: string, website: string, pageText: string) {
   return {
-    model: RAPID_DEMO_RESEARCH_MODEL,
+    model: rapidDemoResearchModel(),
     input: researchPrompt(name, website, pageText),
     tools: [{ type: "url_context" as const }],
   };

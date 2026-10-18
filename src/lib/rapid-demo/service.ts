@@ -309,7 +309,7 @@ export async function createRapidDemoFromDraft(input: {
         tenantId,
         expiresAt,
         knowledgeMd: profile.knowledgeMd,
-        extract: profile as unknown as Prisma.InputJsonValue,
+        extract: { ...profile, pageText: "" } as unknown as Prisma.InputJsonValue,
       },
     });
     if (activated.count !== 1) {

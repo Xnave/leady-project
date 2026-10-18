@@ -8,6 +8,7 @@ import {
   profileNeedsName,
   markdownFromInteraction,
   RAPID_DEMO_RESEARCH_MODEL,
+  rapidDemoResearchModel,
   researchPrompt,
   researchRequest,
 } from "./extract";
@@ -19,6 +20,7 @@ import {
   fileHost,
   hashIp,
   htmlToText,
+  ipSalt,
   isBlockedHostname,
   isPublicIpAddress,
   parseDemoCode,
@@ -50,6 +52,26 @@ describe("rapid demo guards", () => {
   it("hashes an IP with the salt", () => {
     expect(hashIp("1.2.3.4", "salt")).toBe(hashIp("1.2.3.4", "salt"));
     expect(hashIp("1.2.3.4", "salt")).not.toBe(hashIp("1.2.3.4", "other"));
+  });
+
+  it("requires a private IP salt in production and leaves the API secret unused", () => {
+    const prevSalt = process.env.RAPID_DEMO_IP_SALT;
+    const prevVercel = process.env.VERCEL;
+    try {
+      process.env.RAPID_DEMO_API_SECRET = "top-secret";
+      delete process.env.RAPID_DEMO_IP_SALT;
+      delete process.env.VERCEL;
+      expect(ipSalt()).toBe("rapid-demo");
+      process.env.VERCEL = "1";
+      expect(() => ipSalt()).toThrow(/RAPID_DEMO_IP_SALT/);
+      process.env.RAPID_DEMO_IP_SALT = "private-salt";
+      expect(ipSalt()).toBe("private-salt");
+    } finally {
+      if (prevSalt === undefined) delete process.env.RAPID_DEMO_IP_SALT;
+      else process.env.RAPID_DEMO_IP_SALT = prevSalt;
+      if (prevVercel === undefined) delete process.env.VERCEL;
+      else process.env.VERCEL = prevVercel;
+    }
   });
 
   it("reuses the same host and blocks a second live demo", () => {
@@ -179,6 +201,14 @@ describe("rapid demo extract", () => {
     expect(request.model).toBe(RAPID_DEMO_RESEARCH_MODEL);
     expect(request.tools).toEqual([{ type: "url_context" }]);
     expect(request.model).toBe("gemini-3.8-flash");
+    const english = researchPrompt("Noga", "https://noga.example", "Open 9 to 18");
+    expect(english).toContain("Write a markdown file");
+    expect(english).not.toContain("צור לי קובץ md");
+    const prevModel = process.env.RAPID_DEMO_RESEARCH_MODEL;
+    process.env.RAPID_DEMO_RESEARCH_MODEL = "gemini-test";
+    expect(rapidDemoResearchModel()).toBe("gemini-test");
+    if (prevModel === undefined) delete process.env.RAPID_DEMO_RESEARCH_MODEL;
+    else process.env.RAPID_DEMO_RESEARCH_MODEL = prevModel;
   });
 
   it("reads the knowledge markdown from an Interactions response", () => {

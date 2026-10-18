@@ -164,7 +164,7 @@ export const crmDigest = inngest.createFunction(
   },
 );
 
-/** Drop expired demo tenants so they do not accumulate in the database. */
+/** Drop expired demo tenants and wipe page text still inside the rate-limit window. */
 // export const purgeRapidDemos = inngest.createFunction(
 //   { id: "purge-rapid-demos", retries: 1 },
 //   { cron: "15 3 * * *" },

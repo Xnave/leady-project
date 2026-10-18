@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { isProductionRuntime } from "@/lib/dev-auth-bypass";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const CODE_RE = /\bZD-([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8})\b/i;
@@ -25,8 +26,16 @@ export function rapidDemoAuthorized(authorization: string | null): boolean {
   return timingSafeEqual(Buffer.from(token), Buffer.from(secret));
 }
 
+/** Local only. Production must set RAPID_DEMO_IP_SALT; a public salt makes IPv4 hashes reversible. */
+const DEV_IP_SALT = "rapid-demo";
+
 export function ipSalt(): string {
-  return process.env.RAPID_DEMO_IP_SALT?.trim() || rapidDemoSecret() || "rapid-demo";
+  const salt = process.env.RAPID_DEMO_IP_SALT?.trim() ?? "";
+  if (salt) return salt;
+  if (isProductionRuntime()) {
+    throw new Error("RAPID_DEMO_IP_SALT is required in production");
+  }
+  return DEV_IP_SALT;
 }
 
 export function hashIp(ip: string, salt = ipSalt()): string {
