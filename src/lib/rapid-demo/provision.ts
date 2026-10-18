@@ -12,6 +12,7 @@ import { parseReservationConfig } from "@/lib/flow/reservation-config";
 import { defaultLeadSchema, validateFlow } from "@/lib/flow/validate";
 import { ensureLocalDemoChannel } from "@/lib/provision-tenant";
 import { withActivationNote, type RapidExtract } from "./extract";
+import { RAPID_DEMO_CLERK_ORG_PREFIX } from "./guards";
 
 export async function provisionRapidDemoTenant(profile: RapidExtract): Promise<{ tenantId: string }> {
   const name = profile.name?.trim() ?? "";
@@ -37,7 +38,7 @@ export async function provisionRapidDemoTenant(profile: RapidExtract): Promise<{
 
   const tenant = await prisma.tenant.create({
     data: {
-      clerkOrgId: `local-demo-${crypto.randomUUID()}`,
+      clerkOrgId: `${RAPID_DEMO_CLERK_ORG_PREFIX}${crypto.randomUUID()}`,
       name,
       phone,
       intro,
@@ -46,29 +47,37 @@ export async function provisionRapidDemoTenant(profile: RapidExtract): Promise<{
     },
   });
 
-  await prisma.agent.create({
-    data: {
-      tenantId: tenant.id,
-      name: "Inbox agent",
-      catalogId,
-      systemPrompt: buildAgentSystemPrompt(name, intro, phone, chatLanguage),
-      knowledgeText: withActivationNote(profile.knowledgeMd),
-      flow: flow as Prisma.InputJsonValue,
-      leadSchema: defaultLeadSchema as Prisma.InputJsonValue,
-      hitlPolicy: hitlPolicy as Prisma.InputJsonValue,
-    },
-  });
-  await ensureLocalDemoChannel(tenant.id);
-
-  if (capabilities.includes("booking")) {
-    await upsertCapabilityInstance({ tenantId: tenant.id, capabilityId: "booking", config: bookingConfig });
-  }
-  if (capabilities.includes("reservations")) {
-    await upsertCapabilityInstance({
-      tenantId: tenant.id,
-      capabilityId: "reservations",
-      config: parseReservationConfig({}),
+  try {
+    await prisma.agent.create({
+      data: {
+        tenantId: tenant.id,
+        name: "Inbox agent",
+        catalogId,
+        systemPrompt: buildAgentSystemPrompt(name, intro, phone, chatLanguage),
+        knowledgeText: withActivationNote(profile.knowledgeMd),
+        flow: flow as Prisma.InputJsonValue,
+        leadSchema: defaultLeadSchema as Prisma.InputJsonValue,
+        hitlPolicy: hitlPolicy as Prisma.InputJsonValue,
+      },
     });
+    await ensureLocalDemoChannel(tenant.id);
+
+    if (capabilities.includes("booking")) {
+      await upsertCapabilityInstance({ tenantId: tenant.id, capabilityId: "booking", config: bookingConfig });
+    }
+    if (capabilities.includes("reservations")) {
+      await upsertCapabilityInstance({
+        tenantId: tenant.id,
+        capabilityId: "reservations",
+        config: parseReservationConfig({}),
+      });
+    }
+  } catch (err) {
+    // The channel and capability helpers use the root client, so this cannot be one
+    // transaction. Drop the tenant (cascade removes the agent and channel) instead
+    // of leaving an orphan when a later step throws.
+    await prisma.tenant.delete({ where: { id: tenant.id } }).catch(() => undefined);
+    throw err;
   }
 
   return { tenantId: tenant.id };

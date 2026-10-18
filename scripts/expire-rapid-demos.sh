@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Expire every active rapid demo on one database: status → expired, phone unbound.
+# Expire every active rapid demo on one database, then delete those tenants.
 #
 #   npm run demos:expire
 #   npm run demos:expire:staging

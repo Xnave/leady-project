@@ -46,6 +46,27 @@ export function parseDemoCode(text: string): string | null {
   return `ZD-${match[1].toUpperCase()}`;
 }
 
+/** Clerk org ids for throwaway demo tenants. Jobs and /admin skip these. */
+export const RAPID_DEMO_CLERK_ORG_PREFIX = "local-demo-";
+
+export function isRapidDemoClerkOrg(clerkOrgId: string): boolean {
+  return clerkOrgId.startsWith(RAPID_DEMO_CLERK_ORG_PREFIX);
+}
+
+/**
+ * A demo phone binding sticks to the first handset that sends the code.
+ * Another phone that later sends the same code does not take it over.
+ */
+export function demoBindDecision(
+  boundPhone: string | null | undefined,
+  from: string,
+): "bind" | "continue" | "in_use" {
+  const bound = boundPhone?.trim() ?? "";
+  if (!bound) return "bind";
+  if (bound === from) return "continue";
+  return "in_use";
+}
+
 export function parseDemoCommand(text: string): "restart" | "tasks" | null {
   const trimmed = text
     .trim()
@@ -157,15 +178,66 @@ function isPublicIpv4(ip: string): boolean {
   return true;
 }
 
+/** Eight hextets, or null when the address is not a parseable IPv6 literal. */
+function ipv6Hextets(ip: string): number[] | null {
+  let host = ip.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  const zone = host.indexOf("%");
+  if (zone >= 0) host = host.slice(0, zone);
+  if (!host.includes(":") || host.split("::").length > 2) return null;
+
+  const dotted = host.match(/^(.*:)(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (dotted) {
+    const parts = dotted[2]!.split(".").map(Number);
+    if (parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+    const hi = ((parts[0]! << 8) | parts[1]!).toString(16);
+    const lo = ((parts[2]! << 8) | parts[3]!).toString(16);
+    host = `${dotted[1]}${hi}:${lo}`;
+  }
+
+  const [leftRaw, rightRaw] = host.split("::") as [string, string | undefined];
+  const parseSide = (side: string | undefined): number[] | null => {
+    if (!side) return [];
+    const bits = side.split(":");
+    if (bits.some((bit) => !/^[0-9a-f]{1,4}$/.test(bit))) return null;
+    return bits.map((bit) => Number.parseInt(bit, 16));
+  };
+  const left = parseSide(leftRaw);
+  if (!left) return null;
+  if (rightRaw === undefined) return left.length === 8 ? left : null;
+  const right = parseSide(rightRaw);
+  if (!right) return null;
+  const missing = 8 - left.length - right.length;
+  if (missing < 1) return null;
+  return [...left, ...Array<number>(missing).fill(0), ...right];
+}
+
 function isPublicIpv6(ip: string): boolean {
-  const host = ip.replace(/^\[|\]$/g, "");
-  if (host === "::" || host === "::1") return false;
-  if (host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return false;
-  if (host.startsWith("::ffff:")) {
-    const v4 = host.slice("::ffff:".length);
+  const hextets = ipv6Hextets(ip);
+  if (!hextets) return false;
+  const first = hextets[0]!;
+  if (hextets.every((part) => part === 0) || (hextets.slice(0, 7).every((part) => part === 0) && hextets[7] === 1)) {
+    return false;
+  }
+  // fe80::/10 link-local, fec0::/10 site-local, fc00::/7 unique local, ff00::/8 multicast.
+  if ((first & 0xffc0) === 0xfe80 || (first & 0xffc0) === 0xfec0) return false;
+  if ((first & 0xfe00) === 0xfc00 || (first & 0xff00) === 0xff00) return false;
+  // 64:ff9b::/96 well-known NAT64 prefix. The embedded IPv4 can be anything, including private.
+  if (
+    first === 0x64 &&
+    hextets[1] === 0xff9b &&
+    hextets[2] === 0 &&
+    hextets[3] === 0 &&
+    hextets[4] === 0 &&
+    hextets[5] === 0
+  ) {
+    return false;
+  }
+  // IPv4-mapped (::ffff:0:0/96).
+  if (hextets.slice(0, 5).every((part) => part === 0) && hextets[5] === 0xffff) {
+    const v4 = `${(hextets[6]! >> 8) & 0xff}.${hextets[6]! & 0xff}.${(hextets[7]! >> 8) & 0xff}.${hextets[7]! & 0xff}`;
     return isPublicIpv4(v4);
   }
-  return host.includes(":") && !host.startsWith("ff");
+  return true;
 }
 
 export function htmlToText(html: string, maxChars = 24_000): string {

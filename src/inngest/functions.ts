@@ -5,6 +5,7 @@ import { agentRepliesAllowed } from "@/lib/flow/agent-replies";
 import { draftNudgeReply } from "@/lib/flow/llm";
 import { leadRepliedSinceAnchor } from "@/lib/flow/helpers";
 import { prisma } from "@/lib/db";
+import { RAPID_DEMO_CLERK_ORG_PREFIX } from "@/lib/rapid-demo/guards";
 import type { FlowDefinition } from "@/lib/flow/types";
 
 export const runAgentTurn = inngest.createFunction(
@@ -144,7 +145,13 @@ export const crmDigest = inngest.createFunction(
     const nowIso = await step.run("now", () => new Date().toISOString());
     const now = new Date(nowIso);
     const tenants = await step.run("tenants", () =>
-      prisma.tenant.findMany({ where: { digestEnabled: true }, select: { id: true, timezone: true, digestHour: true } }),
+      prisma.tenant.findMany({
+        where: {
+          digestEnabled: true,
+          NOT: { clerkOrgId: { startsWith: RAPID_DEMO_CLERK_ORG_PREFIX } },
+        },
+        select: { id: true, timezone: true, digestHour: true },
+      }),
     );
     const due = tenants.filter((t) => localDateAndHour(now, t.timezone).hour === t.digestHour);
     for (const t of due) {
@@ -157,4 +164,17 @@ export const crmDigest = inngest.createFunction(
   },
 );
 
-export const inngestFunctions = [runAgentTurn, nudgeIfSilent, crmDigest];
+/** Drop expired demo tenants so they do not accumulate in the database. */
+// export const purgeRapidDemos = inngest.createFunction(
+//   { id: "purge-rapid-demos", retries: 1 },
+//   { cron: "15 3 * * *" },
+//   async ({ step }) =>
+//     step.run("purge", async () => {
+//       const { purgeExpiredRapidDemos } = await import("@/lib/rapid-demo/cleanup");
+//       return purgeExpiredRapidDemos();
+//     }),
+// );
+
+export const inngestFunctions = [runAgentTurn, nudgeIfSilent, crmDigest
+    // , purgeRapidDemos
+];

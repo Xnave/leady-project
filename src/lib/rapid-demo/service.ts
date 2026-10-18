@@ -288,11 +288,22 @@ export async function createRapidDemoFromDraft(input: {
   }
   const named = input.capabilities === undefined ? stored : { ...stored, capabilities: chosenCapabilities(input.capabilities) };
   const profile = hadName ? named : await withResearch(named);
+
+  // Claim the draft before any tenant exists, so two concurrent creates cannot
+  // each provision one and leave the loser orphaned.
+  const claimed = await prisma.rapidDemo.updateMany({
+    where: { id: draft.id, status: "draft" },
+    data: { status: "provisioning" },
+  });
+  if (claimed.count !== 1) return { ok: false, error: "draft_expired" };
+
   const expiresAt = new Date(Date.now() + demoTtlMs());
-  const { tenantId } = await provisionRapidDemoTenant(profile);
+  let tenantId: string | undefined;
   try {
-    const row = await prisma.rapidDemo.update({
-      where: { id: draft.id },
+    const provisioned = await provisionRapidDemoTenant(profile);
+    tenantId = provisioned.tenantId;
+    const activated = await prisma.rapidDemo.updateMany({
+      where: { id: draft.id, status: "provisioning" },
       data: {
         status: "active",
         tenantId,
@@ -300,14 +311,29 @@ export async function createRapidDemoFromDraft(input: {
         knowledgeMd: profile.knowledgeMd,
         extract: profile as unknown as Prisma.InputJsonValue,
       },
+    });
+    if (activated.count !== 1) {
+      throw new Error("rapid demo claim lost");
+    }
+    const row = await prisma.rapidDemo.findFirstOrThrow({
+      where: { id: draft.id },
       select: { code: true, expiresAt: true, extract: true },
     });
     return createdPayload(row, profile.name ?? name);
   } catch (err) {
-    await prisma.tenant.delete({ where: { id: tenantId } }).catch(() => undefined);
+    if (tenantId) await prisma.tenant.delete({ where: { id: tenantId } }).catch(() => undefined);
+    await prisma.rapidDemo
+      .updateMany({
+        where: { id: draft.id, status: "provisioning" },
+        data: { status: "draft", tenantId: null },
+      })
+      .catch(() => undefined);
     if (isIdentityConflict(err)) {
       const active = (await visitorDemos(identity)).find((row) => isActiveDemo(row, new Date()));
       return active ? demoExistsPayload(active.code) : { ok: false, error: "demo_exists" };
+    }
+    if (err instanceof Error && err.message === "rapid demo claim lost") {
+      return { ok: false, error: "draft_expired" };
     }
     throw err;
   }

@@ -1,4 +1,5 @@
 import { lookup } from "node:dns/promises";
+import { Agent, fetch as undiciFetch } from "undici";
 import { isBlockedHostname, isIpLiteral, isPublicIpAddress, htmlToText } from "./guards";
 
 const MAX_BYTES = 1_500_000;
@@ -30,16 +31,43 @@ export function parsePublicHttpsUrl(raw: string): URL | null {
   return url;
 }
 
-async function hostResolvesPublic(hostname: string): Promise<boolean> {
-  if (isIpLiteral(hostname)) return isPublicIpAddress(hostname);
+/**
+ * Every address must be public. Returns one of them so the later connection
+ * can pin to that IP instead of resolving the name again (DNS rebinding).
+ */
+export function selectPublicAddress(addresses: string[]): string | null {
+  if (addresses.length === 0 || addresses.some((address) => !isPublicIpAddress(address))) return null;
+  return addresses[0] ?? null;
+}
+
+/**
+ * undici calls `lookup` again when it connects. Ignore the hostname it passes
+ * and answer with the address `selectPublicAddress` already allowed.
+ */
+export function lookupPinnedTo(address: string) {
+  const family = address.includes(":") ? 6 : 4;
+  return (
+    _hostname: string,
+    options: { all?: boolean },
+    callback: (err: NodeJS.ErrnoException | null, address: string | { address: string; family: number }[], family?: number) => void,
+  ) => {
+    if (options.all) {
+      callback(null, [{ address, family }]);
+      return;
+    }
+    callback(null, address, family);
+  };
+}
+
+async function vettedAddress(hostname: string): Promise<string | null> {
+  if (isIpLiteral(hostname)) return isPublicIpAddress(hostname) ? hostname : null;
   let records: { address: string }[];
   try {
     records = await lookup(hostname, { all: true, verbatim: true });
   } catch {
-    return false;
+    return null;
   }
-  if (records.length === 0) return false;
-  return records.every((record) => isPublicIpAddress(record.address));
+  return selectPublicAddress(records.map((record) => record.address));
 }
 
 async function readCapped(res: Response): Promise<string | null> {
@@ -75,34 +103,44 @@ export async function fetchPublicSite(rawUrl: string): Promise<FetchSiteResult> 
   if (!current || !requestedHost) return { ok: false, error: "invalid_url" };
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    if (!(await hostResolvesPublic(current.hostname))) return { ok: false, error: "invalid_url" };
-    let res: Response;
+    const address = await vettedAddress(current.hostname);
+    if (!address) return { ok: false, error: "invalid_url" };
+    const dispatcher = new Agent({
+      connect: {
+        ...(isIpLiteral(current.hostname) ? {} : { servername: current.hostname }),
+        lookup: lookupPinnedTo(address),
+      },
+    });
     try {
-      res = await fetch(current, {
+      const res = await undiciFetch(current, {
+        dispatcher,
         redirect: "manual",
         signal: AbortSignal.timeout(TIMEOUT_MS),
         headers: { accept: "text/html, text/plain;q=0.9, */*;q=0.1" },
       });
+
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get("location");
+        await res.body?.cancel();
+        if (!location || hop === MAX_REDIRECTS) return { ok: false, error: "fetch_failed" };
+        const next = parsePublicHttpsUrl(new URL(location, current).toString());
+        if (!next) return { ok: false, error: "invalid_url" };
+        current = next;
+        continue;
+      }
+
+      if (!res.ok) return { ok: false, error: "fetch_failed" };
+      if (!acceptableType(res.headers.get("content-type"))) return { ok: false, error: "fetch_failed" };
+      const body = await readCapped(res as unknown as Response);
+      if (!body) return { ok: false, error: "fetch_failed" };
+      const text = htmlToText(body);
+      if (text.length < 20) return { ok: false, error: "fetch_failed" };
+      return { ok: true, text, host: requestedHost };
     } catch {
       return { ok: false, error: "fetch_failed" };
+    } finally {
+      await dispatcher.close();
     }
-
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get("location");
-      if (!location || hop === MAX_REDIRECTS) return { ok: false, error: "fetch_failed" };
-      const next = parsePublicHttpsUrl(new URL(location, current).toString());
-      if (!next) return { ok: false, error: "invalid_url" };
-      current = next;
-      continue;
-    }
-
-    if (!res.ok) return { ok: false, error: "fetch_failed" };
-    if (!acceptableType(res.headers.get("content-type"))) return { ok: false, error: "fetch_failed" };
-    const body = await readCapped(res);
-    if (!body) return { ok: false, error: "fetch_failed" };
-    const text = htmlToText(body);
-    if (text.length < 20) return { ok: false, error: "fetch_failed" };
-    return { ok: true, text, host: requestedHost };
   }
   return { ok: false, error: "fetch_failed" };
 }

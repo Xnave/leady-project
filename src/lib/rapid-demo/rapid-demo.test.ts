@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { hitlNotice, formatHitlTaskLine, turnNeedsDemoNotice } from "./outbound";
-import { activationPrefill, decorateRapidDemoText, stripDemoFooter } from "./copy";
+import { activationPrefill, decorateRapidDemoText, demoExpiredText, demoInUseText, stripDemoFooter } from "./copy";
 import {
   applyMissingName,
   chosenCapabilities,
@@ -11,10 +11,11 @@ import {
   researchPrompt,
   researchRequest,
 } from "./extract";
-import { isSharedDemoAccount } from "./route-inbound";
-import { parsePublicHttpsUrl } from "./fetch-site";
+import { isSharedDemoAccount, resolveRapidDemoAccountId, whatsappAccountMatches } from "./route-inbound";
+import { lookupPinnedTo, parsePublicHttpsUrl, selectPublicAddress } from "./fetch-site";
 import {
   decideDemoReuse,
+  demoBindDecision,
   fileHost,
   hashIp,
   htmlToText,
@@ -89,6 +90,18 @@ describe("rapid demo guards", () => {
     expect(isPublicIpAddress("172.16.0.1")).toBe(false);
     expect(isPublicIpAddress("169.254.1.1")).toBe(false);
     expect(isPublicIpAddress("::1")).toBe(false);
+    expect(isPublicIpAddress("fe80::1")).toBe(false);
+    expect(isPublicIpAddress("fe90::1")).toBe(false);
+    expect(isPublicIpAddress("fec0::1")).toBe(false);
+    expect(isPublicIpAddress("fed0::1")).toBe(false);
+    expect(isPublicIpAddress("64:ff9b::808:808")).toBe(false);
+    expect(isPublicIpAddress("64:ff9b::192.0.2.1")).toBe(false);
+    expect(isPublicIpAddress("::ffff:127.0.0.1")).toBe(false);
+    expect(isPublicIpAddress("::ffff:8.8.8.8")).toBe(true);
+    expect(isPublicIpAddress("2001:4860:4860::8888")).toBe(true);
+    expect(selectPublicAddress(["8.8.8.8", "1.1.1.1"])).toBe("8.8.8.8");
+    expect(selectPublicAddress(["8.8.8.8", "127.0.0.1"])).toBeNull();
+    expect(selectPublicAddress([])).toBeNull();
     expect(parsePublicHttpsUrl("http://gold.example")).toBeNull();
     expect(parsePublicHttpsUrl("https://127.0.0.1/admin")).toBeNull();
     expect(parsePublicHttpsUrl("https://gold.example/about")?.hostname).toBe("gold.example");
@@ -110,6 +123,15 @@ describe("rapid demo guards", () => {
     expect(parseDemoCommand("משימות")).toBe("tasks");
     expect(parseDemoCommand("please restart")).toBeNull();
     expect(parseDemoCommand("היי Zapidly ZD-K7M2Q9PX")).toBeNull();
+  });
+
+  it("binds a demo only to the first phone", () => {
+    expect(demoBindDecision(null, "972501111111")).toBe("bind");
+    expect(demoBindDecision("972501111111", "972501111111")).toBe("continue");
+    expect(demoBindDecision("972501111111", "972502222222")).toBe("in_use");
+    expect(demoInUseText("en")).toContain("already in use");
+    expect(demoExpiredText("en")).toContain("zapidly.com");
+    expect(demoExpiredText("he")).toContain("zapidly.com");
   });
 
   it("builds a warm activation prefill with the business name", () => {
@@ -175,6 +197,34 @@ describe("rapid demo hot path", () => {
     expect(isSharedDemoAccount("other-account", "zapidly-account")).toBe(false);
     expect(isSharedDemoAccount("zapidly-account", "zapidly-account")).toBe(true);
     expect(isSharedDemoAccount("zapidly-account", null)).toBe(false);
+  });
+
+  it("uses a pinned WhatsApp account id and refuses short digit suffixes", async () => {
+    const prev = process.env.RAPID_DEMO_WHATSAPP_ACCOUNT_ID;
+    process.env.RAPID_DEMO_WHATSAPP_ACCOUNT_ID = " acct-1 ";
+    await expect(resolveRapidDemoAccountId()).resolves.toBe("acct-1");
+    if (prev === undefined) delete process.env.RAPID_DEMO_WHATSAPP_ACCOUNT_ID;
+    else process.env.RAPID_DEMO_WHATSAPP_ACCOUNT_ID = prev;
+
+    expect(whatsappAccountMatches("972555076806", "972555076806")).toBe(true);
+    expect(whatsappAccountMatches("555076806", "972555076806")).toBe(true);
+    expect(whatsappAccountMatches("6", "972555076806")).toBe(false);
+    expect(whatsappAccountMatches("06", "06")).toBe(false);
+    expect(whatsappAccountMatches("972555076806", "6806")).toBe(false);
+    expect(whatsappAccountMatches("972555076807", "972555076806")).toBe(false);
+  });
+
+  it("pins the connection lookup to the address that was already checked", () => {
+    const lookup = lookupPinnedTo("8.8.8.8");
+    lookup("rebind.example", {}, (err, address, family) => {
+      expect(err).toBeNull();
+      expect(address).toBe("8.8.8.8");
+      expect(family).toBe(4);
+    });
+    lookup("rebind.example", { all: true }, (err, addresses) => {
+      expect(err).toBeNull();
+      expect(addresses).toEqual([{ address: "8.8.8.8", family: 4 }]);
+    });
   });
 
   it("skips the HITL notice unless the lead is a rapid demo", () => {

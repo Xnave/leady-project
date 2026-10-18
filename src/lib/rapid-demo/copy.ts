@@ -69,6 +69,18 @@ export function hitlNoticeText(lang: DemoLang, lines: string[]): string {
   return `A task was created for the business to confirm:\n${body}\n\nIn the live product the team confirms this in Zapidly, so the bot pauses until then.`;
 }
 
+export function demoInUseText(lang: DemoLang): string {
+  return lang === "he"
+    ? "ההדגמה הזו כבר בשימוש ממכשיר אחר. אפשר ליצור הדגמה חדשה ב-zapidly.com."
+    : "This demo is already in use on another phone. Create a new one at zapidly.com.";
+}
+
+export function demoExpiredText(lang: DemoLang): string {
+  return lang === "he"
+    ? "ההדגמה הזו הסתיימה. אפשר ליצור הדגמה חדשה ב-zapidly.com."
+    : "This demo has expired. Create a new one at zapidly.com.";
+}
+
 export function unboundCommandText(lang: DemoLang): string {
   return lang === "he"
     ? "כדי להתחיל, שלחו את הודעת ההדגמה מהקישור."

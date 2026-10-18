@@ -10,36 +10,53 @@ import { ensureLocalDemoChannel } from "@/lib/provision-tenant";
 import { sendZernioInboxMessage, type ZernioInbound } from "@/lib/zernio";
 import {
   decorateRapidDemoText,
+  demoExpiredText,
+  demoInUseText,
   tasksEmptyText,
   tasksListText,
   unboundCommandText,
 } from "./copy";
-import { parseDemoCode, parseDemoCommand } from "./guards";
+import { demoBindDecision, parseDemoCode, parseDemoCommand } from "./guards";
 import { formatHitlTaskLine } from "./outbound";
-
-const DEFAULT_WHATSAPP_NUMBER = "972555076806";
-
-/** Process-local. Production should set RAPID_DEMO_WHATSAPP_ACCOUNT_ID and skip the lookup. */
-let cachedAccountId: string | null | undefined;
-
-function digits(raw: string): string {
-  return raw.replace(/\D/g, "");
-}
 
 export function isSharedDemoAccount(inboundAccountId: string, sharedAccountId: string | null): boolean {
   return Boolean(sharedAccountId) && inboundAccountId === sharedAccountId;
 }
 
-/** Zernio account id of the Zapidly WhatsApp number that also hosts demos. */
+const DEFAULT_WHATSAPP_NUMBER = "972555076806";
+
+/** A hit can be reused. A miss is not cached, so a channel connected later still matches. */
+let cachedAccountId: string | undefined;
+
+/**
+ * Match the shared demo number only when both sides are real phone lengths.
+ * A channel id of "6" or "06" must not win just because the needle ends with it.
+ * A national number (no country code) still matches the full international form.
+ */
+export function whatsappAccountMatches(accountDigits: string, needleDigits: string): boolean {
+  if (accountDigits.length < 8 || needleDigits.length < 8) return false;
+  return (
+    accountDigits === needleDigits ||
+    accountDigits.endsWith(needleDigits) ||
+    needleDigits.endsWith(accountDigits)
+  );
+}
+
+function digits(raw: string): string {
+  return raw.replace(/\D/g, "");
+}
+
+/**
+ * Zernio account id of the WhatsApp number that hosts demos.
+ * Set `RAPID_DEMO_WHATSAPP_ACCOUNT_ID` to skip the lookup. Without it, the
+ * channel's digits must equal `RAPID_DEMO_WHATSAPP_NUMBER` exactly.
+ */
 export async function resolveRapidDemoAccountId(): Promise<string | null> {
   const pinned = process.env.RAPID_DEMO_WHATSAPP_ACCOUNT_ID?.trim();
   if (pinned) return pinned;
-  if (cachedAccountId !== undefined) return cachedAccountId;
+  if (cachedAccountId) return cachedAccountId;
   const needle = digits(process.env.RAPID_DEMO_WHATSAPP_NUMBER || DEFAULT_WHATSAPP_NUMBER);
-  if (!needle) {
-    cachedAccountId = null;
-    return null;
-  }
+  if (!whatsappAccountMatches(needle, needle)) return null;
   const channels = await prisma.channelConnection.findMany({
     where: { provider: "whatsapp", enabled: true, providerExternalId: { not: null } },
     select: { providerAccountId: true, providerExternalId: true },
@@ -47,11 +64,10 @@ export async function resolveRapidDemoAccountId(): Promise<string | null> {
   const match = channels.find((channel) => {
     const external = channel.providerExternalId ?? "";
     if (external.startsWith("local-")) return false;
-    const account = digits(channel.providerAccountId);
-    if (!account) return false;
-    return account.endsWith(needle) || needle.endsWith(account);
+    return whatsappAccountMatches(digits(channel.providerAccountId), needle);
   });
-  cachedAccountId = match?.providerExternalId ?? null;
+  if (!match?.providerExternalId) return null;
+  cachedAccountId = match.providerExternalId;
   return cachedAccountId;
 }
 
@@ -69,6 +85,22 @@ async function sendDirect(accountId: string, conversationId: string, text: strin
     accountId,
     conversationId,
     text: decorateRapidDemoText(text, lang),
+  });
+}
+
+async function replyTerminal(
+  accountId: string,
+  inbound: ZernioInbound,
+  tenantId: string | null,
+  textFor: (lang: "en" | "he") => string,
+): Promise<void> {
+  const lang = tenantId
+    ? await demoLang(tenantId, inbound.text)
+    : resolveReplyLanguage("multi", inbound.text);
+  await sendZernioInboxMessage({
+    accountId,
+    conversationId: inbound.conversationId,
+    text: textFor(lang),
   });
 }
 
@@ -90,11 +122,18 @@ export async function routeRapidDemoInbound(inbound: ZernioInbound): Promise<boo
       });
 
   if (!demo?.tenantId || !demo.expiresAt || demo.expiresAt.getTime() <= now.getTime()) {
-    if (demo && demo.expiresAt && demo.expiresAt.getTime() <= now.getTime()) {
-      await prisma.rapidDemo.update({
-        where: { id: demo.id },
+    if (demo?.expiresAt && demo.expiresAt.getTime() <= now.getTime()) {
+      const flipped = await prisma.rapidDemo.updateMany({
+        where: { id: demo.id, status: "active" },
         data: { status: "expired", boundPhone: null },
       });
+      // One explanation, then later messages (no longer bound) reach the sales agent.
+      if (flipped.count === 1) {
+        await replyTerminal(accountId, inbound, demo.tenantId, demoExpiredText).catch((err) => {
+          console.warn(JSON.stringify({ msg: "rapid_demo.expired_reply_failed", error: String(err) }));
+        });
+        return true;
+      }
     }
     return false;
   }
@@ -112,16 +151,38 @@ export async function routeRapidDemoInbound(inbound: ZernioInbound): Promise<boo
     return true;
   }
 
-  const alreadyBound = demo.boundPhone === inbound.from;
-  if (!alreadyBound) {
-    await prisma.rapidDemo.updateMany({
-      where: { boundPhone: inbound.from, status: "active", NOT: { id: demo.id } },
-      data: { boundPhone: null },
+  const decision = demoBindDecision(demo.boundPhone, inbound.from);
+  if (decision === "in_use") {
+    await replyTerminal(accountId, inbound, demo.tenantId, demoInUseText).catch((err) => {
+      console.warn(JSON.stringify({ msg: "rapid_demo.in_use_reply_failed", error: String(err) }));
     });
-    await prisma.rapidDemo.update({
-      where: { id: demo.id },
+    return true;
+  }
+
+  let justBound = false;
+  if (decision === "bind") {
+    const claimed = await prisma.rapidDemo.updateMany({
+      where: { id: demo.id, status: "active", boundPhone: null },
       data: { boundPhone: inbound.from },
     });
+    if (claimed.count !== 1) {
+      const current = await prisma.rapidDemo.findFirst({
+        where: { id: demo.id },
+        select: { boundPhone: true },
+      });
+      if (current?.boundPhone !== inbound.from) {
+        await replyTerminal(accountId, inbound, demo.tenantId, demoInUseText).catch((err) => {
+          console.warn(JSON.stringify({ msg: "rapid_demo.in_use_reply_failed", error: String(err) }));
+        });
+        return true;
+      }
+    } else {
+      justBound = true;
+      await prisma.rapidDemo.updateMany({
+        where: { boundPhone: inbound.from, status: "active", NOT: { id: demo.id } },
+        data: { boundPhone: null },
+      });
+    }
   }
 
   const channelId = await ensureLocalDemoChannel(demo.tenantId);
@@ -150,7 +211,7 @@ export async function routeRapidDemoInbound(inbound: ZernioInbound): Promise<boo
 
   // First bind: reply with the same intro prod extract wrote on the tenant
   // (personaGreeting), and skip the LLM turn so we don't greet twice.
-  if (code && !alreadyBound) {
+  if (code && justBound) {
     const ctx = await loadTurnContext(demo.tenantId, inserted.conversationId);
     const lang = replyLang(ctx, inbound.text);
     await sendAndSave(ctx, personaGreeting(ctx, lang), {

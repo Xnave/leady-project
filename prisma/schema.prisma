@@ -296,7 +296,7 @@ model Request {
 model RapidDemo {
   id          String    @id @default(cuid())
   code        String    @unique
-  /** draft | active | expired */
+  /** draft | provisioning | active | expired */
   status      String    @default("draft")
   tenantId    String?   @unique
   tenant      Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
