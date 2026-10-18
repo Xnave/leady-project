@@ -725,6 +725,7 @@ export const he: UiCopy = {
     digestCopied: "הועתק",
     digestCodeExpiry: "הקוד תקף ל-24 שעות ומאשר שהמספר שלכם.",
     digestNewCode: "קוד חדש",
+    digestRefresh: "רענון",
     digestPreview: "כך זה ייראה בוואטסאפ",
     digestConnectIntro: "חברו את הוואטסאפ שלכם כדי לקבל כל בוקר את הפניות שמחכות לכם.",
     digestConnected:

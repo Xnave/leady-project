@@ -181,6 +181,9 @@ describe("runDigestForTenant", () => {
     expect(await runDigestForTenant("t1", NOW, approved)).toMatchObject({ sent: 1 });
     expect(sendText).toHaveBeenCalledOnce();
     expect(sendTemplate).not.toHaveBeenCalled();
+    const text = sendText.mock.calls[0][0].text;
+    expect(text).toContain("בוקר טוב Villa Nofim");
+    expect(text).toContain("/leads?tab=needs");
   });
 
   it("sends the sector template when the window is closed", async () => {

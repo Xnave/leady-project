@@ -4,6 +4,7 @@ import {
   DIGEST_SECTORS,
   DIGEST_TEMPLATES,
   digestTemplateParams,
+  digestTemplateText,
   pickDigestTemplate,
   resolveDigestSector,
   templateCreateBody,
@@ -61,6 +62,22 @@ describe("digestTemplateParams", () => {
     expect(p[0]).toBe("Snir");
     expect(p[4]).not.toMatch(/[\n\t]/);
     expect(Array.from(p[4]).length).toBeLessThanOrEqual(80);
+  });
+});
+
+describe("digestTemplateText", () => {
+  const t = DIGEST_TEMPLATES.hospitality;
+  const text = digestTemplateText(t, ["צימרי הגליל", "2", "1", "3", "יוסי כהן"], "https://app.example.com/");
+
+  it("fills every variable", () => {
+    expect(text).not.toMatch(/\{\{\d+\}\}/);
+    expect(text).toContain("בוקר טוב צימרי הגליל");
+    expect(text).toContain("הכי דחוף: יוסי כהן");
+  });
+  it("swaps the button line for the list link and keeps the footer", () => {
+    expect(text).not.toContain("לחצו על הכפתור");
+    expect(text).toContain("https://app.example.com/leads?tab=needs");
+    expect(text.endsWith(t.footer)).toBe(true);
   });
 });
 

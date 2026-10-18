@@ -52,6 +52,7 @@ export default async function DigestSettingsPage() {
           digestCopied: ui.crm.digestCopied,
           digestCodeExpiry: ui.crm.digestCodeExpiry,
           digestNewCode: ui.crm.digestNewCode,
+          digestRefresh: ui.crm.digestRefresh,
           digestPreview: ui.crm.digestPreview,
           digestConnectIntro: ui.crm.digestConnectIntro,
           save: ui.common.save,

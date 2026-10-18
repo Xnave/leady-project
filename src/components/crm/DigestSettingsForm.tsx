@@ -30,6 +30,7 @@ type Labels = {
   digestCopied: string;
   digestCodeExpiry: string;
   digestNewCode: string;
+  digestRefresh: string;
   digestPreview: string;
   digestConnectIntro: string;
   save: string;
@@ -86,6 +87,15 @@ function CopyButton({ text, label, done }: { text: string; label: string; done: 
   );
 }
 
+function RefreshIcon() {
+  return (
+    <svg className="crm-i sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
+    </svg>
+  );
+}
+
 function CopyIcon() {
   return (
     <svg className="crm-i sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -103,6 +113,7 @@ export function DigestSettingsForm({ labels, previews }: { labels: Labels; previ
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const apply = useCallback((data: Settings) => {
     setSettings(data);
@@ -125,6 +136,19 @@ export function DigestSettingsForm({ labels, previews }: { labels: Labels; previ
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** Re-reads the connection after the owner sends START, leaving unsaved form edits alone. */
+  async function refresh() {
+    setError("");
+    setRefreshing(true);
+    try {
+      const res = await fetch("/api/crm/digest-settings");
+      if (res.ok) setSettings((await res.json()) as Settings);
+      else setError(labels.loadFailed);
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   async function put(body: Record<string, unknown>): Promise<boolean> {
     setError("");
@@ -180,9 +204,21 @@ export function DigestSettingsForm({ labels, previews }: { labels: Labels; previ
       <section className="card digest-card">
         <header className="digest-card-head">
           <h2>{labels.digestWhatsAppTitle}</h2>
-          <span className={connected ? "badge" : "badge badge-demo"}>
-            {connected ? labels.digestStatusOn : labels.digestStatusOff}
-          </span>
+          <div className="digest-card-status">
+            <span className={connected ? "badge" : "badge badge-demo"}>
+              {connected ? labels.digestStatusOn : labels.digestStatusOff}
+            </span>
+            <button
+              type="button"
+              className="btn-ghost digest-refresh"
+              disabled={refreshing}
+              aria-busy={refreshing}
+              onClick={() => void refresh()}
+            >
+              <RefreshIcon />
+              {labels.digestRefresh}
+            </button>
+          </div>
         </header>
 
         {connected ? (

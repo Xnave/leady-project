@@ -4811,6 +4811,11 @@ button.crm-stage { cursor: pointer; }
   margin-bottom: 14px;
 }
 .digest-card-head h2 { margin: 0; font-size: var(--fs-md); font-weight: 700; color: var(--text); }
+.digest-card-status { display: flex; align-items: center; gap: 8px; }
+.digest-refresh { display: inline-flex; align-items: center; gap: 6px; }
+.digest-refresh[aria-busy="true"] svg { animation: digest-spin 0.8s linear infinite; }
+@keyframes digest-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .digest-refresh[aria-busy="true"] svg { animation: none; } }
 
 .digest-intro { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .digest-intro p { margin: 0; color: var(--text-soft); font-size: var(--fs-sm); max-width: 46ch; }

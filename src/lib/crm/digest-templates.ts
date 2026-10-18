@@ -33,6 +33,8 @@ export type DigestTemplate = {
 
 const FOOTER = "להפסקת הסיכום השיבו: הסר";
 const BUTTON = "הצג רשימה מלאה";
+/** Last body line; the free-text copy swaps it for a link (see `digestTemplateText`). */
+const BUTTON_LINE = "לרשימה המלאה לחצו על הכפתור.";
 
 /**
  * Variables, same order in every sector: {{1}} business name, {{2}} awaiting
@@ -54,7 +56,7 @@ export const DIGEST_TEMPLATES: Record<DigestSector, DigestTemplate> = {
       "",
       "הכי דחוף: {{5}}",
       "",
-      "לרשימה המלאה לחצו על הכפתור.",
+      BUTTON_LINE,
     ].join("\n"),
     footer: FOOTER,
     button: BUTTON,
@@ -74,7 +76,7 @@ export const DIGEST_TEMPLATES: Record<DigestSector, DigestTemplate> = {
       "",
       "הכי דחוף: {{5}}",
       "",
-      "לרשימה המלאה לחצו על הכפתור.",
+      BUTTON_LINE,
     ].join("\n"),
     footer: FOOTER,
     button: BUTTON,
@@ -94,7 +96,7 @@ export const DIGEST_TEMPLATES: Record<DigestSector, DigestTemplate> = {
       "",
       "הכי דחוף: {{5}}",
       "",
-      "לרשימה המלאה לחצו על הכפתור.",
+      BUTTON_LINE,
     ].join("\n"),
     footer: FOOTER,
     button: BUTTON,
@@ -130,6 +132,17 @@ export function digestTemplateParams(d: Digest, businessName: string): string[] 
     String(d.counts.reminder + d.counts.cold),
     sanitizeTemplateParam([d.top.name, d.top.stand.trim()].filter(Boolean).join(" · "), 80),
   ];
+}
+
+/**
+ * The template's wording as a free-text message, for an owner whose 24h
+ * window is open. A free-text message has no button, so the button line
+ * becomes the link to the full list.
+ */
+export function digestTemplateText(t: DigestTemplate, params: string[], appUrl: string): string {
+  const body = t.body.replace(/\{\{(\d+)\}\}/g, (_, n: string) => params[Number(n) - 1] ?? "");
+  const link = `לרשימה המלאה: ${appUrl.replace(/\/$/, "")}/leads?tab=needs`;
+  return [body.replace(BUTTON_LINE, link), "", t.footer].join("\n");
 }
 
 /**

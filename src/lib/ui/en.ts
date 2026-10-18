@@ -725,6 +725,7 @@ export const en: UiCopy = {
     digestCopied: "Copied",
     digestCodeExpiry: "The code is valid for 24 hours and proves the number is yours.",
     digestNewCode: "New code",
+    digestRefresh: "Refresh",
     digestPreview: "How it looks on WhatsApp",
     digestConnectIntro: "Connect your WhatsApp to get the leads waiting for you every morning.",
     digestConnected:

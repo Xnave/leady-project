@@ -20,7 +20,13 @@ import {
   serviceWindowOpen,
   type DigestItem,
 } from "./digest";
-import { digestTemplateParams, pickDigestTemplate, resolveDigestSector } from "./digest-templates";
+import {
+  DIGEST_TEMPLATES,
+  digestTemplateParams,
+  digestTemplateText,
+  pickDigestTemplate,
+  resolveDigestSector,
+} from "./digest-templates";
 import { digestFeatureOn } from "./flags";
 import { attentionWhere } from "./needs";
 import { isFollowUpReason } from "./types";
@@ -142,8 +148,11 @@ export async function runDigestForTenant(
   const pending = pendingRecipients(recipients, sentIds);
   if (pending.length === 0) return { sent: 0, skipped: "already_sent" as const };
 
-  const template = pickDigestTemplate(resolveDigestSector(tenant.digestSector, capabilities), approvedTemplates);
-  const ui = digestUi();
+  const sector = resolveDigestSector(tenant.digestSector, capabilities);
+  const template = pickDigestTemplate(sector, approvedTemplates);
+  // The recipient label is the staff email or role, never a first name, so
+  // the greeting addresses the business.
+  const params = digestTemplateParams(digest, tenant.name);
   let sent = 0;
   let waiting = 0;
   let failed = 0;
@@ -163,16 +172,16 @@ export async function runDigestForTenant(
         await sendZernioInboxMessage({
           accountId,
           conversationId: r.conversationId,
-          text: digestFullText(items, ui.crm.reasons, env("NEXT_PUBLIC_APP_URL")),
+          // Same wording as the template, approved or not, so the owner
+          // reads one digest whichever path delivered it.
+          text: digestTemplateText(DIGEST_TEMPLATES[sector], params, env("NEXT_PUBLIC_APP_URL")),
         });
       } else if (template) {
         const opened = await sendWhatsAppTemplate({
           accountId,
           phone: r.phone,
           template: { name: template.name, language: template.language },
-          // The recipient label is the staff email or role, never a first
-          // name, so the greeting addresses the business.
-          params: digestTemplateParams(digest, tenant.name),
+          params,
         });
         if (opened.conversationId && opened.conversationId !== r.conversationId) {
           await prisma.digestRecipient.update({ where: { id: r.id }, data: { conversationId: opened.conversationId } });
