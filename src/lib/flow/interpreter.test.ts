@@ -638,7 +638,7 @@ describe("reconcileBooking (booking capability reconcile hook)", () => {
     });
     expect(out.fields?.booking_confirm).toBe("pending");
     expect(out.reply).toMatch(/הנה פרטי הפגישה/);
-    expect(out.reply).toMatch(/הכול נכון ואפשר לשמור/);
+    expect(out.reply).toMatch(/ודא שהכול נכון, לשמור את הבקשה/);
     expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBeFalsy();
   });
 

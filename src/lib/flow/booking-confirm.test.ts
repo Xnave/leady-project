@@ -162,7 +162,7 @@ describe("booking confirm_details rails", () => {
       execute: (args: { field: string }) => Promise<unknown>;
     };
     await ask.execute({ field: "need" });
-    expect(collected.reply).toMatch(/הנה מה שהבנתי עד עכשיו/);
+    expect(collected.reply).toMatch(/פרטי הפגישה/);
     expect(collected.reply).toMatch(/שעות הפניות|מפת הזדמנויות/);
     expect(String(collected.fields.interest ?? "")).toMatch(/שעות הפניות|מפת הזדמנויות/);
   });
