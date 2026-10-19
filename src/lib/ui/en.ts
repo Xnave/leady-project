@@ -127,6 +127,18 @@ export const en: UiCopy = {
     tenantPhone: "Phone",
     ownerEmail: "Owner email",
     openAsTenant: "Open as tenant",
+    zernioGateTitle: "Zernio test senders",
+    zernioGateSender: "Phone or username",
+    zernioGateAdd: "Save",
+    zernioGateRemove: "Remove",
+    zernioGateEmpty: "No senders listed.",
+    zernioGateFormat:
+      "Use the sender WhatsApp or Instagram sends: country code for phones, username without @ for Instagram.",
+    zernioGateHintProduction:
+      "A listed sender is paused on production. Your test number is handled here until you add it. Allow the same sender on staging when staging should reply. If it is listed on both, both reply.",
+    zernioGateHintPreview:
+      "Only listed senders get a reply from this deploy. Pause the same sender on production, or both apps reply.",
+    zernioGateHintLocal: "Local dev replies to everyone. This list is saved but not applied.",
     account: "Account",
     signOut: "Sign out",
     backToSignIn: "Back to sign in",

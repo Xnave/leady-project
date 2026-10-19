@@ -3,29 +3,43 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "proxy": "bash scripts/proxy.sh start",
-    "proxy:stop": "bash scripts/proxy.sh stop",
-    "proxy:status": "bash scripts/proxy.sh status",
-    "build": "prisma generate && next build",
     "start": "next start",
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+
+    "typecheck": "tsc --noEmit",
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
+
+    "proxy": "bash scripts/proxy.sh start",
+    "proxy:stop": "bash scripts/proxy.sh stop",
+    "proxy:status": "bash scripts/proxy.sh status",
+    "zernio:webhook:dev": "tsx scripts/zernio-register-dev-webhook.ts",
+
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+
+    "db:diff:staging": "bash scripts/db-staging.sh diff",
+    "db:verify:staging": "bash scripts/db-staging.sh verify",
+    "db:status:staging": "bash scripts/db-staging.sh status",
+    "db:baseline:staging": "bash scripts/db-staging.sh baseline",
+    "db:migrate:staging": "bash scripts/db-staging.sh migrate",
+
     "db:diff:production": "bash scripts/db-production.sh diff",
     "db:verify:production": "bash scripts/db-production.sh verify",
     "db:status:production": "bash scripts/db-production.sh status",
     "db:baseline:production": "bash scripts/db-production.sh baseline",
     "db:migrate:production": "bash scripts/db-production.sh migrate",
     "db:import:production": "bash scripts/db-import-local-to-production.sh",
-    "db:seed": "tsx prisma/seed.ts",
-    "zernio:webhook:dev": "tsx scripts/zernio-register-dev-webhook.ts",
+
+    "demos:expire": "bash scripts/expire-rapid-demos.sh",
+    "demos:expire:staging": "ENV_FILE=.env.staging bash scripts/expire-rapid-demos.sh",
+
     "crm:backfill": "tsx scripts/crm-backfill.ts",
-    "crm:backfill:production": "bash scripts/db-production.sh backfill",
-    "typecheck": "tsc --noEmit"
+    "crm:backfill:production": "bash scripts/db-production.sh backfill"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -42,6 +56,7 @@
     "next": "^15.5.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "undici": "^5.29.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {

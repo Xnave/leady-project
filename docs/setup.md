@@ -216,6 +216,25 @@ pnpm zernio:webhook:dev
 
 That registers a webhook at `{NEXT_PUBLIC_APP_URL}/api/webhooks/zernio`. Keep a production webhook if you want - you may see duplicate replies while both are active.
 
+### Staging webhooks
+
+Zernio delivers every `message.received` to every active webhook on the account. Do not register a webhook per Vercel preview URL. Register the stable staging hostname once (the `staging` branch alias, not each deploy's `VERCEL_URL`), the same way as local:
+
+```bash
+NEXT_PUBLIC_APP_URL="https://<staging-alias>" pnpm zernio:webhook:dev
+```
+
+Leave the production webhook in place. Re-register only if that hostname changes. `ZERNIO_WEBHOOK_SECRET` is required on every Vercel environment, including preview.
+
+Staging needs its own Inngest environment. The webhook only enqueues `agent/turn.requested`; without Inngest the message is saved and nobody replies. Put `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`, and `INNGEST_ENV=staging` on the `staging` git branch only (Vercel Preview scope). Do not copy the production Inngest keys onto Preview deploys: a preview sync can replace the production serve URL. Leave `DIGEST_WHATSAPP_ENABLED` unset on staging so the hourly digest does not send from the staging database.
+
+Production still replies to your test number. To move that sender onto staging without a redeploy, open `/admin` in each app:
+
+1. On production, add the sender. A listed sender is paused there.
+2. On staging, add the same sender. Staging replies only to listed senders. An empty list drops everyone, so a preview URL registered by mistake cannot talk to customers.
+
+If the sender is listed on both, both reply. Remove it from production when you want production to handle it again. The list stays cached until that add or remove, so inbound messages do not read the table again until the change. Local dev ignores the list and replies to everyone.
+
 ---
 
 ## Typical three-terminal layout
@@ -251,6 +270,8 @@ npm run db:verify:production     # read-only: the DB differs from the schema by 
 npm run db:migrate:production    # apply the pending migrations (prisma migrate deploy)
 npm run db:verify:production     # again: "Pending migrations: none ... OK"
 ```
+
+**Staging** is the same workflow against `.env.staging` (the Neon `staging` branch used by Vercel Preview): `npm run db:status:staging`, `npm run db:verify:staging`, `npm run db:migrate:staging`.
 
 `baseline`, `migrate` and `backfill` change the database. They ask you to type the target host first and refuse to run without a terminal (from a script, CI, or an agent).
 

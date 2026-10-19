@@ -4,6 +4,8 @@ import { isAdminSession } from "@/lib/admin";
 import { getUiLang } from "@/lib/cookies";
 import { prisma } from "@/lib/db";
 import { uiCopy } from "@/lib/ui";
+import { RAPID_DEMO_CLERK_ORG_PREFIX } from "@/lib/rapid-demo/guards";
+import { zernioGateModeFromEnv } from "@/lib/zernio-sender-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -13,9 +15,18 @@ export default async function AdminPage() {
   const unlocked = await isAdminSession();
   const tenants = unlocked
     ? await prisma.tenant.findMany({
+        where: { NOT: { clerkOrgId: { startsWith: RAPID_DEMO_CLERK_ORG_PREFIX } } },
         orderBy: { createdAt: "desc" },
         select: { id: true, name: true, phone: true, ownerEmail: true },
       })
+    : [];
+  const gatedSenders = unlocked
+    ? (
+        await prisma.zernioSenderGate.findMany({
+          orderBy: { createdAt: "desc" },
+          select: { senderKey: true },
+        })
+      ).map((row) => row.senderKey)
     : [];
 
   return (
@@ -32,9 +43,20 @@ export default async function AdminPage() {
           createdClaimOnSignIn: ui.errors.createdClaimOnSignIn,
           search: ui.common.search,
           forbidden: ui.errors.forbidden,
+          zernioGateTitle: ui.common.zernioGateTitle,
+          zernioGateSender: ui.common.zernioGateSender,
+          zernioGateAdd: ui.common.zernioGateAdd,
+          zernioGateRemove: ui.common.zernioGateRemove,
+          zernioGateEmpty: ui.common.zernioGateEmpty,
+          zernioGateFormat: ui.common.zernioGateFormat,
+          zernioGateHintProduction: ui.common.zernioGateHintProduction,
+          zernioGateHintPreview: ui.common.zernioGateHintPreview,
+          zernioGateHintLocal: ui.common.zernioGateHintLocal,
         }}
         unlocked={unlocked}
         tenants={tenants}
+        gateMode={zernioGateModeFromEnv()}
+        gatedSenders={gatedSenders}
       />
     </div>
   );
