@@ -162,7 +162,7 @@ export function templateKey(name: string, language: string): string {
 }
 
 /** Body for Zernio's `POST /v1/whatsapp/templates`. */
-export function templateCreateBody(t: DigestTemplate, accountId: string) {
+export function templateCreateBody(t: Omit<DigestTemplate, "sector">, accountId: string) {
   return {
     accountId,
     name: t.name,

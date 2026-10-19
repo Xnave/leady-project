@@ -44,6 +44,9 @@ export type CrmCopy = {
   digestWhatsAppTitle: string; digestSettingsTitle: string; digestStatusOn: string; digestStatusOff: string;
   digestStepCopy: string; digestStepSend: string; digestCopy: string; digestCopied: string;
   digestCodeExpiry: string; digestNewCode: string; digestRefresh: string; digestPreview: string; digestConnectIntro: string;
+  alertsTitle: string; alertsBlurb: string; alertsEnabled: string; alertApprovals: string; alertHandoffs: string;
+  alertsNeedConnect: string; quietHoursEnabled: string; quietFrom: string; quietTo: string; quietMode: string;
+  quietModeNames: { hold: string; digest: string };
   /** WhatsApp replies from the platform number to the owner. */
   digestConnected: string; digestCodeInvalid: string; digestPhoneTaken: string; digestStopped: string;
 };

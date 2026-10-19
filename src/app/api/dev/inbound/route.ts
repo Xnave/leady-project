@@ -1,5 +1,5 @@
 import { persistInboundIfNew } from "@/lib/conversations";
-import { runTurnNow, tryDispatchNudgeEvent, tryEnqueueAgentTurn } from "@/lib/flow/run-turn";
+import { runTurnNow, tryDispatchNudgeEvent, tryDispatchOwnerAlertEvents, tryEnqueueAgentTurn } from "@/lib/flow/run-turn";
 import { adminBypass } from "@/lib/admin";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
@@ -41,6 +41,7 @@ export async function POST(req: Request) {
         triggerMessageId: inserted.messageId,
       });
       await tryDispatchNudgeEvent(turn.nudgeEvent);
+      await tryDispatchOwnerAlertEvents(turn.ownerAlertEvents);
     }
   }
   return NextResponse.redirect(redirectPath(req, "/leads"), 303);

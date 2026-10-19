@@ -33,10 +33,33 @@ type Labels = {
   digestRefresh: string;
   digestPreview: string;
   digestConnectIntro: string;
+  alertsTitle: string;
+  alertsBlurb: string;
+  alertsEnabled: string;
+  alertApprovals: string;
+  alertHandoffs: string;
+  alertsNeedConnect: string;
+  quietHoursEnabled: string;
+  quietFrom: string;
+  quietTo: string;
+  quietMode: string;
+  quietModeNames: Record<QuietMode, string>;
   save: string;
   saving: string;
   saved: string;
   loadFailed: string;
+};
+
+type QuietMode = "hold" | "digest";
+
+type Alerts = {
+  enabled: boolean;
+  approvals: boolean;
+  handoffs: boolean;
+  quietHoursEnabled: boolean;
+  quietStartHour: number;
+  quietEndHour: number;
+  quietMode: QuietMode;
 };
 
 type Settings = {
@@ -46,6 +69,7 @@ type Settings = {
   timezone: string;
   digestSector: "" | Sector;
   autoSector: Sector;
+  alerts: Alerts;
   platformNumber: string;
   me: { phone: string; optedIn: boolean; code: string | null } | null;
 };
@@ -56,6 +80,7 @@ const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => ({
 }));
 
 const SECTORS: Sector[] = ["general", "hospitality", "appointments"];
+const QUIET_MODES: QuietMode[] = ["hold", "digest"];
 
 /** 972555076806 -> +972 55-507-6806 (Israeli mobiles); anything else just gets a +. */
 function formatPhone(digits: string): string {
@@ -114,12 +139,15 @@ export function DigestSettingsForm({ labels, previews }: { labels: Labels; previ
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [alerts, setAlerts] = useState<Alerts | null>(null);
+  const [alertsSaved, setAlertsSaved] = useState(false);
 
   const apply = useCallback((data: Settings) => {
     setSettings(data);
     setDigestEnabled(data.digestEnabled);
     setDigestHour(String(data.digestHour));
     setDigestSector(data.digestSector);
+    setAlerts(data.alerts);
   }, []);
 
   const load = useCallback(async () => {
@@ -179,7 +207,25 @@ export function DigestSettingsForm({ labels, previews }: { labels: Labels; previ
     if (await put({ digestEnabled, digestHour: Number(digestHour), digestSector })) setSaved(true);
   }
 
-  if (!settings) return <p className="muted">…</p>;
+  async function saveAlerts(e: FormEvent) {
+    e.preventDefault();
+    if (!alerts) return;
+    setAlertsSaved(false);
+    const ok = await put({
+      alertsEnabled: alerts.enabled,
+      alertApprovals: alerts.approvals,
+      alertHandoffs: alerts.handoffs,
+      quietHoursEnabled: alerts.quietHoursEnabled,
+      quietStartHour: alerts.quietStartHour,
+      quietEndHour: alerts.quietEndHour,
+      quietMode: alerts.quietMode,
+    });
+    if (ok) setAlertsSaved(true);
+  }
+
+  if (!settings || !alerts) return <p className="muted">…</p>;
+
+  const setAlert = (patch: Partial<Alerts>) => setAlerts({ ...alerts, ...patch });
 
   const me = settings.me;
   const connected = Boolean(me?.optedIn);
@@ -344,6 +390,94 @@ export function DigestSettingsForm({ labels, previews }: { labels: Labels; previ
               <div className="digest-bubble-button">{preview.button}</div>
             </div>
           </figure>
+        </div>
+      </form>
+
+      <form onSubmit={(e) => void saveAlerts(e)} className="card digest-card">
+        <header className="digest-card-head">
+          <h2>{labels.alertsTitle}</h2>
+        </header>
+        <p className="muted">{labels.alertsBlurb}</p>
+        {!connected ? <p className="muted">{labels.alertsNeedConnect}</p> : null}
+
+        <div className="stack">
+          <label className="choice">
+            <input type="checkbox" checked={alerts.enabled} onChange={(e) => setAlert({ enabled: e.target.checked })} />
+            {labels.alertsEnabled}
+          </label>
+
+          <fieldset className="stack digest-alert-kinds" disabled={!alerts.enabled}>
+            <label className="choice">
+              <input
+                type="checkbox"
+                checked={alerts.approvals}
+                onChange={(e) => setAlert({ approvals: e.target.checked })}
+              />
+              {labels.alertApprovals}
+            </label>
+            <label className="choice">
+              <input
+                type="checkbox"
+                checked={alerts.handoffs}
+                onChange={(e) => setAlert({ handoffs: e.target.checked })}
+              />
+              {labels.alertHandoffs}
+            </label>
+
+            <label className="choice">
+              <input
+                type="checkbox"
+                checked={alerts.quietHoursEnabled}
+                onChange={(e) => setAlert({ quietHoursEnabled: e.target.checked })}
+              />
+              {labels.quietHoursEnabled}
+            </label>
+
+            {alerts.quietHoursEnabled ? (
+              <>
+                <div className="digest-quiet-range">
+                  <label>
+                    {labels.quietFrom}
+                    <Select
+                      value={String(alerts.quietStartHour)}
+                      onChange={(v) => setAlert({ quietStartHour: Number(v) })}
+                      options={HOUR_OPTIONS}
+                      ariaLabel={labels.quietFrom}
+                    />
+                  </label>
+                  <label>
+                    {labels.quietTo}
+                    <Select
+                      value={String(alerts.quietEndHour)}
+                      onChange={(v) => setAlert({ quietEndHour: Number(v) })}
+                      options={HOUR_OPTIONS}
+                      ariaLabel={labels.quietTo}
+                    />
+                  </label>
+                </div>
+                <label>
+                  {labels.quietMode}
+                  <Select
+                    value={alerts.quietMode}
+                    onChange={(v) => setAlert({ quietMode: v as QuietMode })}
+                    options={QUIET_MODES.map((m) => ({ value: m, label: labels.quietModeNames[m] }))}
+                    ariaLabel={labels.quietMode}
+                  />
+                </label>
+              </>
+            ) : null}
+          </fieldset>
+
+          <div className="field-form-actions digest-save">
+            <button type="submit" className="btn" disabled={saving} aria-busy={saving}>
+              {saving ? labels.saving : labels.save}
+            </button>
+            {alertsSaved && !error ? (
+              <span className="muted digest-saved">
+                <Icon name="check" small /> {labels.saved}
+              </span>
+            ) : null}
+          </div>
         </div>
       </form>
 

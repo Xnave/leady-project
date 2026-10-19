@@ -22,7 +22,19 @@ export async function GET() {
     const [tenant, recipient, capabilities] = await Promise.all([
       prisma.tenant.findFirst({
         where: { id: tenantId },
-        select: { digestEnabled: true, digestHour: true, timezone: true, digestSector: true },
+        select: {
+          digestEnabled: true,
+          digestHour: true,
+          timezone: true,
+          digestSector: true,
+          alertsEnabled: true,
+          alertApprovals: true,
+          alertHandoffs: true,
+          quietHoursEnabled: true,
+          quietStartHour: true,
+          quietEndHour: true,
+          quietMode: true,
+        },
       }),
       prisma.digestRecipient.findUnique({ where: { tenantId_clerkUserId: { tenantId, clerkUserId: actorUserId } } }),
       prisma.capabilityInstance.findMany({ where: { tenantId }, select: { capabilityId: true, enabled: true } }),
@@ -37,6 +49,15 @@ export async function GET() {
       timezone: tenant.timezone,
       digestSector: tenant.digestSector,
       autoSector: resolveDigestSector("", capabilities),
+      alerts: {
+        enabled: tenant.alertsEnabled,
+        approvals: tenant.alertApprovals,
+        handoffs: tenant.alertHandoffs,
+        quietHoursEnabled: tenant.quietHoursEnabled,
+        quietStartHour: tenant.quietStartHour,
+        quietEndHour: tenant.quietEndHour,
+        quietMode: tenant.quietMode,
+      },
       platformNumber: phoneDigits(process.env["DIGEST_WHATSAPP_NUMBER"] ?? ""),
       me: recipient
         ? {
@@ -59,15 +80,13 @@ export async function PUT(req: Request) {
     const body = parseDigestSettingsBody(await req.json().catch(() => ({})));
     if ("error" in body) return NextResponse.json(body, { status: 400 });
 
-    if (body.digestEnabled !== undefined || body.digestHour !== undefined || body.digestSector !== undefined) {
-      await prisma.tenant.update({
-        where: { id: tenantId },
-        data: { digestEnabled: body.digestEnabled, digestHour: body.digestHour, digestSector: body.digestSector },
-      });
+    const { action, ...tenantFields } = body;
+    if (Object.values(tenantFields).some((v) => v !== undefined)) {
+      await prisma.tenant.update({ where: { id: tenantId }, data: tenantFields });
     }
 
     const key = { tenantId_clerkUserId: { tenantId, clerkUserId: actorUserId } };
-    if (body.action === "connect") {
+    if (action === "connect") {
       // The phone is never typed here: it is taken from the WhatsApp sender
       // when the owner sends `START <code>` to the platform number.
       for (let attempt = 0; ; attempt++) {
@@ -83,7 +102,7 @@ export async function PUT(req: Request) {
           if (attempt >= 4) throw e; // optInCode is unique; retry a collision
         }
       }
-    } else if (body.action === "disconnect") {
+    } else if (action === "disconnect") {
       await prisma.digestRecipient.updateMany({
         where: { tenantId, clerkUserId: actorUserId },
         data: { optedInAt: null, optInCode: null, optInCodeAt: null },

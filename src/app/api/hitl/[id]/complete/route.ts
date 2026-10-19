@@ -6,7 +6,7 @@ import { sendStaffReply } from "@/lib/staff-reply";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
 import { decideRegisteredRequest } from "@/lib/flow/registry";
 import { closeConversationAsDone } from "@/lib/flow/rotate-conversation";
-import { runTurnNow, sendAndSave, tryDispatchNudgeEvent } from "@/lib/flow/run-turn";
+import { runTurnNow, sendAndSave, tryDispatchNudgeEvent, tryDispatchOwnerAlertEvents } from "@/lib/flow/run-turn";
 import { getRequest, REQUEST_APPROVAL_TASK } from "@/lib/requests";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
@@ -106,6 +106,7 @@ async function handle(
       resume: true,
     });
     await tryDispatchNudgeEvent(turn.nudgeEvent);
+    await tryDispatchOwnerAlertEvents(turn.ownerAlertEvents);
   } catch (err) {
     console.error(JSON.stringify({ msg: "hitl.resume_failed", conversationId, error: String(err) }));
   }

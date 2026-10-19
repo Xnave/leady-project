@@ -28,6 +28,16 @@ model Tenant {
   digestHour             Int      @default(8)
   /** Digest template sector ("general" | "hospitality" | "appointments"); "" = infer from capabilities. */
   digestSector           String   @default("")
+  /** Instant WhatsApp alerts to digest recipients when a lead needs the owner now. */
+  alertsEnabled          Boolean  @default(false)
+  alertApprovals         Boolean  @default(true)
+  alertHandoffs          Boolean  @default(true)
+  /** Off hours in the tenant timezone; `quietStartHour` > `quietEndHour` spans midnight. */
+  quietHoursEnabled      Boolean  @default(true)
+  quietStartHour         Int      @default(22)
+  quietEndHour           Int      @default(8)
+  /** What an alert does in off hours: "hold" = send when they end, "digest" = leave it to the daily digest. */
+  quietMode              String   @default("hold")
   /** When false, agent never replies (inbound still persists). */
   agentRepliesEnabled    Boolean  @default(true)
   createdAt              DateTime @default(now())
