@@ -47,6 +47,7 @@ model Tenant {
   leadNotes            LeadNote[]
   digestRecipients     DigestRecipient[]
   digestLogs           DigestLog[]
+  rapidDemos           RapidDemo[]
 }
 
 /**
@@ -286,6 +287,42 @@ model Request {
   @@index([tenantId, kind, status])
   @@index([leadId])
   @@index([conversationId])
+}
+
+/**
+ * A throwaway tenant spun up from zapidly.com. No Clerk org and no admin.
+ * WhatsApp for the shared Zapidly number is routed here by `code` / `boundPhone`.
+ */
+model RapidDemo {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  /** draft | provisioning | active | expired */
+  status      String    @default("draft")
+  tenantId    String?   @unique
+  tenant      Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  websiteHost String    @default("")
+  ipHash      String    @default("")
+  browserId   String    @default("")
+  knowledgeMd String    @default("")
+  extract     Json      @default("{}")
+  expiresAt   DateTime?
+  boundPhone  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, expiresAt])
+  @@index([ipHash, createdAt])
+  @@index([browserId, createdAt])
+  @@index([websiteHost, status])
+  @@index([boundPhone, status])
+  // Partial unique indexes live only in
+  // prisma/migrations/20261015120000_rapid_demo/migration.sql:
+  // RapidDemo_one_active_ip, RapidDemo_one_active_browser
+  // (status = 'active' AND the identity column <> '').
+  // Prisma cannot model that WHERE clause. Against staging, with both indexes
+  // present and the migration applied, `prisma migrate diff` was empty, so
+  // db:verify does not special-case them. If a future Prisma version emits
+  // DROP INDEX for those two names, delete those lines from the migration.
 }
 
 /**

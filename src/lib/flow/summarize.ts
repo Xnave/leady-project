@@ -2,6 +2,7 @@ import { generateText } from "ai";
 import { prisma } from "@/lib/db";
 import { chatModel, llmConfigured } from "@/lib/flow/model";
 import { isChatLanguage, resolveReplyLanguage } from "@/lib/flow/locale";
+import { stripDemoFooter } from "@/lib/rapid-demo/copy";
 
 /** Free-text LLM summary of one conversation. No structured fields. */
 export async function summarizeConversation(conversationId: string): Promise<string> {
@@ -14,7 +15,7 @@ export async function summarizeConversation(conversationId: string): Promise<str
   });
 
   const transcript = conversation.messages
-    .map((m) => `${m.role}: ${m.text}`)
+    .map((m) => `${m.role}: ${stripDemoFooter(m.text)}`)
     .join("\n")
     .trim();
   if (!transcript) return "";
@@ -39,6 +40,7 @@ export async function summarizeConversation(conversationId: string): Promise<str
       "Summarize this customer conversation for a human teammate in the inbox.",
       "One short paragraph of prose only. No bullet lists, no JSON, no field labels.",
       "Include intent, key facts they shared, and what is still open or waiting.",
+      "If they answered yes to the last confirmation, say they confirmed those details. Do not describe that yes as still unfinished. A teammate may still need to approve; that is separate from the customer's agreement.",
       langLine,
     ].join(" "),
     prompt: transcript,

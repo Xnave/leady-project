@@ -37,9 +37,9 @@ function formatWhen(d: Date, lang: string) {
 export default async function DemoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ leadId?: string }>;
+  searchParams: Promise<{ leadId?: string; new?: string }>;
 }) {
-  const { leadId } = await searchParams;
+  const { leadId, new: startNew } = await searchParams;
   const tenantId = await requireTenantIdForPage();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
@@ -122,13 +122,15 @@ export default async function DemoPage({
     yesterday: ui.chat.yesterday,
   };
 
+  const composing = !lead && startNew === "1";
+
   return (
-    <div>
+    <div className={`demo-page ${lead || composing ? "is-thread" : "is-list"}${composing ? " is-compose" : ""}`}>
       <p className="demo-banner">{ui.demo.banner}</p>
       <div className="demo-grid">
-        <aside className="card">
+        <aside className="card demo-list">
           <h2>{ui.common.customers}</h2>
-          <Link href="/demo" className="btn-secondary">
+          <Link href="/demo?new=1" className="btn-secondary">
             {ui.common.newChat}
           </Link>
           <ul className="lead-list">
@@ -164,12 +166,26 @@ export default async function DemoPage({
         <section className="card chat-panel">
           <div className="chat-header">
             <div>
-              <h2>{lead ? leadDisplayName(lead) : (tenant?.name ?? ui.page.chatTitle)}</h2>
-              <p className="muted">
-                {ui.demo.simulateAs}
-                {convo ? ` · ${convoStatusLabel(ui, convo.status)}` : ""} · {catalogTitle} ·{" "}
-                {languageTitle}
-              </p>
+              <Link href="/demo" className="demo-back" aria-label={ui.common.customers}>
+                <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+                  <path
+                    d="M15 6l-6 6 6 6"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </Link>
+              <div className="chat-header-copy">
+                <h2>{lead ? leadDisplayName(lead) : (tenant?.name ?? ui.page.chatTitle)}</h2>
+                <p className="muted">
+                  {ui.demo.simulateAs}
+                  {convo ? ` · ${convoStatusLabel(ui, convo.status)}` : ""} · {catalogTitle} ·{" "}
+                  {languageTitle}
+                </p>
+              </div>
             </div>
             <div className="row-actions">
               {lead ? (
@@ -224,7 +240,7 @@ export default async function DemoPage({
                   <Link href="/onboard">{ui.nav.setup}</Link>
                 </p>
               ) : null}
-              <p className="muted">{ui.demo.noLeadSelected}</p>
+              {composing ? null : <p className="muted">{ui.demo.noLeadSelected}</p>}
               <DemoChat
                 lang={lang}
                 composerLabels={chatLabels}
@@ -235,29 +251,37 @@ export default async function DemoPage({
           )}
         </section>
 
-        <aside className="stack">
+        <aside className="stack demo-profile">
           {lead ? (
-            <LeadProfilePanel
-              lang={lang}
-              ui={ui}
-              leadId={lead.id}
-              name={leadDisplayName(lead)}
-              phone={phone ? formatPhoneDisplay(phone) : undefined}
-              email={fields.email ? String(fields.email) : undefined}
-              intent={fields.intent ? String(fields.intent) : undefined}
-              status={lead.status}
-              stage={convo?.flowState}
-              convoStatus={convo?.status}
-              isDemo={isDemoLead(lead.externalUserId)}
-              channel={lead.channel}
-              waitingHuman={convo?.status === "waiting_human"}
-              instagramHandle={igHandle || undefined}
-              instagramUrl={instagramProfileUrl(igHandle) || undefined}
-              whatsappUrl={waUrl || undefined}
-              schema={schema}
-              fields={fields}
-              conversationId={convo?.id}
-            />
+            <>
+              <input id="demo-profile-open" type="checkbox" className="sr-only demo-profile-check" />
+              <label htmlFor="demo-profile-open" className="demo-profile-toggle">
+                {ui.demo.leadProfile}
+              </label>
+              <div className="demo-profile-body">
+                <LeadProfilePanel
+                  lang={lang}
+                  ui={ui}
+                  leadId={lead.id}
+                  name={leadDisplayName(lead)}
+                  phone={phone ? formatPhoneDisplay(phone) : undefined}
+                  email={fields.email ? String(fields.email) : undefined}
+                  intent={fields.intent ? String(fields.intent) : undefined}
+                  status={lead.status}
+                  stage={convo?.flowState}
+                  convoStatus={convo?.status}
+                  isDemo={isDemoLead(lead.externalUserId)}
+                  channel={lead.channel}
+                  waitingHuman={convo?.status === "waiting_human"}
+                  instagramHandle={igHandle || undefined}
+                  instagramUrl={instagramProfileUrl(igHandle) || undefined}
+                  whatsappUrl={waUrl || undefined}
+                  schema={schema}
+                  fields={fields}
+                  conversationId={convo?.id}
+                />
+              </div>
+            </>
           ) : (
             <div className="card demo-sidebar-agent">
               <h2>{ui.demo.agentContext}</h2>

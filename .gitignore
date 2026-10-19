@@ -18,3 +18,4 @@ marketing-materials/
 .vercel
 .env*
 eval-out/
+tsconfig.tsbuildinfo

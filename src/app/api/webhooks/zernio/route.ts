@@ -10,6 +10,7 @@ import {
   contactDisplayName,
   instagramIdentityFields,
 } from "@/lib/leads";
+import { routeRapidDemoInbound } from "@/lib/rapid-demo/route-inbound";
 import {
   fetchZernioInboxContact,
   parseZernioMessageReceived,
@@ -19,6 +20,7 @@ import {
   loadZernioSenderKeys,
   shouldHandleZernioSender,
   zernioGateModeFromEnv,
+  zernioSenderKey,
 } from "@/lib/zernio-sender-gate";
 
 /** Zernio dashboard URL check / browser probe - POST carries events. */
@@ -63,17 +65,33 @@ export async function POST(req: Request) {
   }
 
   const gateMode = zernioGateModeFromEnv();
+  let pauseAgent = false;
   if (gateMode !== "handle-all") {
     const gates = await loadZernioSenderKeys();
     if (!shouldHandleZernioSender(inbound.from, gates, gateMode)) {
-      console.log(JSON.stringify({ msg: "zernio.sender_gate", mode: gateMode }));
-      return NextResponse.json({ ok: true, ignored: "sender-gate" });
+      console.log(
+        JSON.stringify({
+          msg: "zernio.sender_gate",
+          mode: gateMode,
+          senderKey: zernioSenderKey(inbound.from),
+        }),
+      );
+      // Preview allow-lists drop the sender so that deploy does not store every message.
+      // Production pause saves the message and skips the agent, so a mistaken list entry stays in the CRM.
+      if (gateMode === "allow") {
+        return NextResponse.json({ ok: true, ignored: "sender-gate" });
+      }
+      pauseAgent = true;
     }
   }
 
   const { handleDigestReply } = await import("@/lib/crm/digest-send");
   if (await handleDigestReply({ accountId: inbound.accountId, conversationId: inbound.conversationId, from: inbound.from })) {
     return NextResponse.json({ ok: true, digest: true });
+  }
+
+  if (await routeRapidDemoInbound(inbound)) {
+    return NextResponse.json({ ok: true, rapidDemo: true });
   }
 
   if (!inbound.accountId) {
@@ -142,6 +160,22 @@ export async function POST(req: Request) {
       }),
     );
     return new Response("ok", { status: 200 });
+  }
+
+  if (pauseAgent) {
+    await safeRefreshLeadState(channel.tenantId, inserted.leadId);
+    console.log(
+      JSON.stringify({
+        msg: "zernio.inbound",
+        tenantId: channel.tenantId,
+        conversationId: inserted.conversationId,
+        persist_ms,
+        agent: "skipped",
+        reason: "sender-gate",
+        ms: Date.now() - started,
+      }),
+    );
+    return NextResponse.json({ ok: true, ignored: "sender-gate" });
   }
 
   let enqueue_ms = 0;

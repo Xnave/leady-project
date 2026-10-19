@@ -54,9 +54,9 @@ describe("need-context", () => {
     const he = askBookingField("he", "need", {
       gatheredNeed: "המענה לא מכסה את כל שעות הפניות",
     });
-    expect(he).toMatch(/הנה מה שהבנתי עד עכשיו/);
+    expect(he).toMatch(/פרטי הפגישה/);
     expect(he).toMatch(/המענה לא מכסה/);
-    expect(he).toMatch(/יש עוד משהו שחשוב/);
+    expect(he).toMatch(/לאשר או שתרצה להוסיף/);
     expect(askBookingField("he", "need")).toMatch(/מה חשוב לך שנדע מראש/);
   });
 });

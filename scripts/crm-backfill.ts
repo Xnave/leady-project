@@ -14,6 +14,9 @@
  */
 import { prisma } from "../src/lib/db";
 import { refreshLeadState } from "../src/lib/crm/refresh";
+import { RAPID_DEMO_CLERK_ORG_PREFIX } from "../src/lib/rapid-demo/guards";
+
+const notDemoTenant = { tenant: { NOT: { clerkOrgId: { startsWith: RAPID_DEMO_CLERK_ORG_PREFIX } } } };
 
 async function main() {
   const legacy = await prisma.lead.findMany({
@@ -21,6 +24,7 @@ async function main() {
       status: { in: ["won", "lost", "closed"] },
       pipelineStageSource: "auto",
       stageEvents: { none: { source: "manual" } },
+      ...notDemoTenant,
     },
     select: { id: true, tenantId: true, status: true, updatedAt: true },
   });
@@ -46,7 +50,7 @@ async function main() {
       }),
     ]);
   }
-  const all = await prisma.lead.findMany({ select: { id: true, tenantId: true } });
+  const all = await prisma.lead.findMany({ where: notDemoTenant, select: { id: true, tenantId: true } });
   let changed = 0;
   for (const l of all) {
     const plan = await refreshLeadState(l.tenantId, l.id);
