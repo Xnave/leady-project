@@ -118,6 +118,8 @@ export type PromptCopy = {
     fields: string;
     hours: string;
     whatsappPhone: string;
+    /** Missing stance is passive: suggest a meeting only when it fits, not on every reply. */
+    bookingStance?: "passive" | "proactive";
   }) => string;
   extractFields: (nextField: string) => string;
   draftQuestion: (nextField: string) => string;

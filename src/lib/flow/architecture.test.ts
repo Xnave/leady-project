@@ -123,6 +123,8 @@ describe("flowForCapabilities settings", () => {
     expect(passive.bookingStance).toBe("passive");
     expect(passive.allowBook).toBe(true);
     expect(passive.prompt).toMatch(/NOT a booking request|explicitly ask to schedule/i);
+    expect(passive.prompt).toMatch(/you may suggest one once/i);
+    expect(passive.prompt).not.toMatch(/ask if they want to schedule/i);
 
     expect(proactive.bookingStance).toBe("proactive");
     expect(proactive.prompt).toMatch(/book a visit when ready|confirm details before book_meeting/i);
@@ -428,6 +430,9 @@ describe("talkTurn with mocked LLM", () => {
     expect(seenTools).not.toContain("ask_field");
     expect(seenSystem).toMatch(/Visit booking is NOT started|start_booking/i);
     expect(seenSystem).toMatch(/NOT a booking request|explicitly ask to schedule/i);
+    expect(seenSystem).toMatch(/you may suggest one once/i);
+    expect(seenSystem).not.toMatch(/Suggest a meeting at most once/);
+    expect(seenSystem).toMatch(/does not apply to greetings or factual questions/);
   });
 
   it("does not register booking tools when capabilities are empty", async () => {
@@ -477,6 +482,8 @@ describe("talkTurn with mocked LLM", () => {
     });
     await talkTurn(baseCtx(flow), talkStage(flow));
     expect(seenSystem).toMatch(/book a visit when ready/i);
+    expect(seenSystem).toMatch(/Suggest a meeting at most once/);
+    expect(seenSystem).toMatch(/you may invite them once, gently, to schedule/);
   });
 
   it("includes active collect tools after start_booking fields are set", async () => {

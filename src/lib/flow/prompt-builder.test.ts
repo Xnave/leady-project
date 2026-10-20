@@ -4,7 +4,7 @@ import { bookingInstance } from "./booking-config";
 import { normalizeTalkOutcome } from "./interpreter";
 import { buildNudgeSystemPrompt, buildTalkSystemPrompt, talkTransitionTargets } from "./prompt-builder";
 import { ensureFlowRegistry } from "./capabilities";
-import { flowForCatalog } from "./catalog";
+import { flowForCapabilities, flowForCatalog } from "./catalog";
 import type { TalkStage, TurnContext } from "./types";
 import { defaultHitlPolicy, defaultLeadSchema } from "./validate";
 
@@ -158,11 +158,23 @@ describe("persona prompt order", () => {
     expect(buildTalkSystemPrompt(ctx, talkStage(ctx))).toMatch(/already greeted/);
   });
 
-  it("meeting frequency is a booking rule, not persona", () => {
+  it("passive stance suggests a meeting only when relevant", () => {
     const ctx = makeCtx({});
     const s = buildTalkSystemPrompt(ctx, talkStage(ctx));
+    expect(s).toMatch(/When a meeting is relevant, you may suggest one once/);
+    expect(s).not.toMatch(/Suggest a meeting at most once/);
+    expect(s.indexOf("you may suggest one once")).toBeGreaterThan(s.indexOf("CONVERSATION CRAFT"));
+    expect(s).toMatch(/pure hours, address, or phone question/);
+  });
+
+  it("proactive stance may invite a meeting once", () => {
+    const ctx = makeCtx({});
+    const flow = flowForCapabilities({ capabilities: ["booking"], bookingStance: "proactive" });
+    ctx.agent.flow = flow;
+    const s = buildTalkSystemPrompt(ctx, flow.stages.talk as TalkStage);
     expect(s).toMatch(/Suggest a meeting at most once/);
     expect(s.indexOf("Suggest a meeting at most once")).toBeGreaterThan(s.indexOf("CONVERSATION CRAFT"));
+    expect(s).toMatch(/you may invite them once, gently, to schedule/);
   });
 });
 

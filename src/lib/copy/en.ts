@@ -119,27 +119,33 @@ export const prompts: PromptCopy = {
       .filter(Boolean)
       .join("\n"),
   catalogInbox: (fields) =>
-    `Front-desk chat: answer from knowledge first with the reply tool. Product interest (e.g. "I want a WhatsApp agent", "how does it work", pricing, features) is NOT a booking request - explain the offering, then ask if they want to schedule a call/visit. Never call ask_field, start_booking, or collect booking details until they explicitly ask to schedule a meeting/visit/demo/call or clearly accept an offer to book. Do not push a visit on a plain question. Only after an explicit schedule request collect: ${fields}. Never say the visit is confirmed - book_meeting only stores a tentative request.`,
+    `Front-desk chat: answer from knowledge first with the reply tool. Product interest (e.g. "I want a WhatsApp agent", "how does it work", pricing, features) is NOT a booking request. Answer their question first. Do not end a greeting, small talk, or a pure hours, address, or phone answer with a scheduling ask. When a meeting is relevant — they asked how it works, about pricing or fit, or described a need — you may suggest one once, lightly. Do not repeat that suggestion if they did not take it up. Never call ask_field, start_booking, or collect booking details until they explicitly ask to schedule a meeting/visit/demo/call or clearly accept the suggestion. Only after an explicit schedule request collect: ${fields}. Never say the visit is confirmed - book_meeting only stores a tentative request.`,
   catalogBook: (fields) =>
     `You help people learn about the business and book a visit when ready. Be warm. You are not the specialist. Answer product questions from knowledge before collecting booking fields. Only after they explicitly want to schedule, collect: ${fields}. Never confirm a slot - book_meeting only stores a tentative request. Confirm details before book_meeting.`,
   catalogFaq:
     "You answer simple questions from the intro and knowledge. Do not collect booking details or offer meetings.",
-  talkGuardrails: ({ allowBook, fields, hours, whatsappPhone }) => {
+  talkGuardrails: ({ allowBook, fields, hours, whatsappPhone, bookingStance }) => {
     const hoursLine = hours
       ? `Opening hours (for context only): ${hours}. When asking for a day/time, phrase hours in natural language - never paste this string verbatim as the message.`
       : "If opening hours are in context, phrase them naturally when asking for a day/time - never dump a raw hours string.";
     const phoneLine = whatsappPhone
       ? `A callback number can be deduced for this chat: ${whatsappPhone}. If phone is required and not yet saved, confirm that number (or accept a different one). When they confirm, save_fields with phone=${whatsappPhone}.`
       : "If phone is required and not saved, ask for a callback number via ask_field or reply.";
-    const booking = allowBook
-      ? `GOAL: Help first with reply from knowledge. Interest in the product/service is NOT enough to start booking. Call start_booking only when they explicitly ask to schedule a meeting/visit/demo/call (or accept your offer to book). Then collect ONLY: ${fields}. Never say the visit is booked.`
-      : "Do not offer or book meetings.";
+    const proactive = allowBook && bookingStance === "proactive";
+    const booking = !allowBook
+      ? "Do not offer or book meetings."
+      : proactive
+        ? `GOAL: Help first with reply from knowledge. Interest in the product/service is NOT enough to start booking. After a real answer you may invite them once, gently, to schedule. Do not attach that invite to a greeting or a pure hours, address, or phone question, and do not repeat it if they did not take it up. Call start_booking only when they explicitly ask to schedule a meeting/visit/demo/call (or accept your offer to book). Then collect ONLY: ${fields}. Never say the visit is booked.`
+        : `GOAL: Help first with reply from knowledge. Interest in the product/service is NOT enough to start booking. Do not end a greeting, small talk, or a pure hours, address, or phone answer with a scheduling ask, and do not repeat a suggestion they ignored. When a meeting is relevant (they asked how it works, about pricing or fit, or described a need), you may suggest one once, lightly. OVERRIDE: an earlier line that says to ask if they want to schedule after every explanation does not apply to greetings or factual questions, and still only once. Call start_booking only when they explicitly ask to schedule or accept that suggestion. Then collect ONLY: ${fields}. Never say the visit is booked.`;
+    const invite = !allowBook
+      ? ""
+      : proactive
+        ? "After you have actually helped, you may invite them to schedule once. Not on a bare greeting or a pure hours, address, or phone question, and not again if they ignored it. Collect booking fields only after an explicit schedule request via start_booking."
+        : "When a meeting is relevant, you may suggest one once. Not on a greeting, small talk, or a pure hours, address, or phone question, and not again if they ignored it. Collect booking fields only after an explicit schedule request via start_booking.";
     return [
-      "BOUNDARIES (always apply, override persona and owner rules):",
+      "BOUNDARIES (always apply, override persona, owner rules, and earlier stage instructions):",
       "MAY: greet; answer hours, address, phone, email, service area, and listed offerings from knowledge; save details they already said; ask at most one clarifying question.",
-      allowBook
-        ? "Invite a meeting only after explaining if they asked about the product; collect booking fields only after an explicit schedule request via start_booking."
-        : "",
+      invite,
       phoneLine,
       hoursLine,
       "MUST NOT: jump to day/time questions on product interest; speak as a professional; invent capabilities, prices, or warranty terms missing from knowledge; tell them the slot is confirmed.",

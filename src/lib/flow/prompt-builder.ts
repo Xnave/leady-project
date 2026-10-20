@@ -130,6 +130,7 @@ export class PromptBuilder {
         hours: booking.venueHours,
         whatsappPhone: !saved && deduced ? deduced : undefined,
         lang,
+        bookingStance: stage.bookingStance === "proactive" ? "proactive" : "passive",
       }),
     );
     return this;
