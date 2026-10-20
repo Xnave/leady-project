@@ -735,7 +735,7 @@ export const he: UiCopy = {
     digestStepSend: "שלחו אותה בוואטסאפ למספר של Zapidly",
     digestCopy: "העתקה",
     digestCopied: "הועתק",
-    digestCodeExpiry: "הקוד תקף ל-24 שעות ומאשר שהמספר שלכם.",
+    digestCodeExpiry: "הקוד תקף ל-15 דקות ומאשר שהמספר שלכם.",
     digestNewCode: "קוד חדש",
     digestRefresh: "רענון",
     digestPreview: "כך זה ייראה בוואטסאפ",

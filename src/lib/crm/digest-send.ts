@@ -5,8 +5,10 @@
  * the full list). Everything here is a no-op unless `digestFeatureOn()` - see
  * `./flags`.
  */
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { leadDisplayName } from "@/lib/leads";
+import { resolveRapidDemoAccountId } from "@/lib/rapid-demo/route-inbound";
 import { uiCopy } from "@/lib/ui";
 import { listWhatsAppTemplates, sendWhatsAppTemplate, sendZernioInboxMessage } from "@/lib/zernio";
 import {
@@ -14,6 +16,7 @@ import {
   digestDelivery,
   digestFullText,
   localDateAndHour,
+  OPT_IN_CODE_TTL_MS,
   parseOwnerCommand,
   pendingRecipients,
   phoneDigits,
@@ -71,8 +74,14 @@ export async function loadDueDigestItems(tenantId: string, now: Date): Promise<D
     }));
 }
 
-/** Opt-in codes expire so a leaked screenshot can't be replayed later. */
-const OPT_IN_CODE_TTL_MS = 24 * 60 * 60 * 1000;
+/**
+ * Zernio account id of the number the digest is sent from:
+ * `DIGEST_WHATSAPP_ACCOUNT_ID`, else the shared Zapidly number the rapid demo
+ * uses. Set it together with `DIGEST_WHATSAPP_NUMBER` or not at all.
+ */
+export async function digestAccountId(): Promise<string> {
+  return env("DIGEST_WHATSAPP_ACCOUNT_ID").trim() || (await resolveRapidDemoAccountId()) || "";
+}
 
 function digestUi() {
   return uiCopy(env("DIGEST_TEMPLATE_LANG", "he") === "en" ? "en" : "he");
@@ -80,19 +89,20 @@ function digestUi() {
 
 /**
  * `name:language` of every APPROVED template on the platform number. Read
- * once per cron run; an empty set (no account, Zernio down) just means every
- * recipient falls back to the free-text window or waits.
+ * once per cron run. A Zernio error throws, so the cron step retries instead
+ * of writing the day's `DigestLog` as if nothing were approved. An empty list
+ * means recipients with a closed window wait for their next message.
  */
 export async function loadApprovedDigestTemplates(): Promise<string[]> {
-  const accountId = env("DIGEST_WHATSAPP_ACCOUNT_ID");
-  if (!accountId) return [];
-  try {
-    const templates = await listWhatsAppTemplates(accountId);
-    return templates.filter((t) => t.status === "APPROVED").map((t) => `${t.name}:${t.language}`);
-  } catch (err) {
-    console.warn(JSON.stringify({ msg: "digest.templates_unavailable", error: String(err) }));
+  const accountId = await digestAccountId();
+  if (!accountId) {
+    console.warn(JSON.stringify({ msg: "digest.no_platform_account" }));
     return [];
   }
+  const templates = await listWhatsAppTemplates(accountId);
+  const approved = templates.filter((t) => t.status === "APPROVED").map((t) => `${t.name}:${t.language}`);
+  if (approved.length === 0) console.warn(JSON.stringify({ msg: "digest.no_approved_templates", accountId }));
+  return approved;
 }
 
 /**
@@ -118,7 +128,7 @@ export async function runDigestForTenant(
   approvedTemplates: ReadonlySet<string> = new Set(),
 ): Promise<{ sent: number; waiting?: number; failed?: number; skipped?: "already_sent" | "empty" | "no_recipients" }> {
   if (!digestFeatureOn()) return { sent: 0, skipped: "no_recipients" };
-  const accountId = env("DIGEST_WHATSAPP_ACCOUNT_ID");
+  const accountId = await digestAccountId();
   const [tenant, capabilities] = await Promise.all([
     prisma.tenant.findUniqueOrThrow({
       where: { id: tenantId },
@@ -209,11 +219,12 @@ export async function runDigestForTenant(
  * here - the webhook route must skip its normal tenant-channel routing when
  * this returns true.
  *
- * `accountId !== DIGEST_WHATSAPP_ACCOUNT_ID` guarantees this never intercepts
- * a normal tenant's inbound message: a real tenant channel's `accountId`
- * cannot equal the platform digest number's account id.
+ * The platform number is also a tenant channel (the shared Zapidly number),
+ * so only owner traffic is claimed: a `START <code>`, or any message from a
+ * phone that is opted in. Everything else returns false and stays on the lead
+ * path. The account id comparison runs first, so other channels pay nothing.
  *
- * Nothing is answered unless the webhook signature was verified: the sender
+ * Nothing is claimed unless the webhook signature was verified: the sender
  * phone is the only identity here, and an unsigned request could claim any
  * owner's phone and read their leads.
  */
@@ -224,14 +235,15 @@ export async function handleDigestReply(o: {
   text: string;
   signatureVerified: boolean;
 }): Promise<boolean> {
-  const digestAccountId = env("DIGEST_WHATSAPP_ACCOUNT_ID");
-  if (!digestFeatureOn() || !digestAccountId || o.accountId !== digestAccountId) return false;
+  if (!digestFeatureOn() || !o.accountId) return false;
+  const platformAccountId = await digestAccountId();
+  if (!platformAccountId || o.accountId !== platformAccountId) return false;
   if (!o.signatureVerified) {
-    console.error(JSON.stringify({ msg: "digest.unsigned_reply_refused" }));
-    return true;
+    console.error(JSON.stringify({ msg: "digest.unsigned_reply_ignored" }));
+    return false;
   }
   const phone = phoneDigits(o.from);
-  if (!phone) return true;
+  if (!phone) return false;
   const now = new Date();
   const ui = digestUi();
   const reply = (text: string) => sendZernioInboxMessage({ accountId: o.accountId, conversationId: o.conversationId, text });
@@ -243,29 +255,39 @@ export async function handleDigestReply(o: {
   if (command.kind === "start") {
     const pendingOptIn = await prisma.digestRecipient.findUnique({ where: { optInCode: command.code } });
     if (!pendingOptIn || !pendingOptIn.optInCodeAt || now.getTime() - pendingOptIn.optInCodeAt.getTime() > OPT_IN_CODE_TTL_MS) {
-      await reply(ui.crm.digestCodeInvalid);
+      // A redelivered webhook (or a retry after the reply below failed) finds
+      // the code already spent. Same phone, same conversation, opted in
+      // within the TTL: that was this START, so confirm it again.
+      const already = await prisma.digestRecipient.findFirst({
+        where: { phone, conversationId: o.conversationId, optedInAt: { gte: new Date(now.getTime() - OPT_IN_CODE_TTL_MS) } },
+        select: { id: true },
+      });
+      await reply(already ? ui.crm.digestConnected : ui.crm.digestCodeInvalid);
       return true;
     }
-    const taken = await prisma.digestRecipient.findFirst({
-      where: { phone, optedInAt: { not: null }, NOT: { id: pendingOptIn.id } },
-      select: { id: true },
-    });
-    if (taken) {
+    try {
+      await prisma.digestRecipient.update({
+        where: { id: pendingOptIn.id },
+        data: { phone, optedInAt: now, optInCode: null, optInCodeAt: null, conversationId: o.conversationId, lastInboundAt: now },
+      });
+    } catch (err) {
+      // `DigestRecipient_phone_opted_in_key`: one opted-in business per phone.
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) throw err;
       await reply(ui.crm.digestPhoneTaken);
       return true;
     }
-    await prisma.digestRecipient.update({
-      where: { id: pendingOptIn.id },
-      data: { phone, optedInAt: now, optInCode: null, optInCodeAt: null, conversationId: o.conversationId, lastInboundAt: now },
-    });
     await reply(ui.crm.digestConnected);
     return true;
   }
 
   const r = await prisma.digestRecipient.findFirst({ where: { phone, optedInAt: { not: null } } });
-  if (!r) return true; // our account, unknown sender: swallow, never route to a tenant agent
+  if (!r) return false; // not an owner: a lead of the tenant that owns this number
   if (command.kind === "stop") {
-    await prisma.digestRecipient.update({ where: { id: r.id }, data: { optedInAt: null, lastInboundAt: now } });
+    // Same end state as disconnecting in settings: no live code left to bind another phone.
+    await prisma.digestRecipient.update({
+      where: { id: r.id },
+      data: { optedInAt: null, optInCode: null, optInCodeAt: null, lastInboundAt: now },
+    });
     await reply(ui.crm.digestStopped);
     return true;
   }

@@ -735,7 +735,7 @@ export const en: UiCopy = {
     digestStepSend: "Send it on WhatsApp to Zapidly's number",
     digestCopy: "Copy",
     digestCopied: "Copied",
-    digestCodeExpiry: "The code is valid for 24 hours and proves the number is yours.",
+    digestCodeExpiry: "The code is valid for 15 minutes and proves the number is yours.",
     digestNewCode: "New code",
     digestRefresh: "Refresh",
     digestPreview: "How it looks on WhatsApp",

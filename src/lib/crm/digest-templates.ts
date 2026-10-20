@@ -134,13 +134,23 @@ export function digestTemplateParams(d: Digest, businessName: string): string[] 
   ];
 }
 
+/** The body with each positional `{{n}}` replaced by `params[n - 1]`. */
+export function fillTemplateBody(t: DigestTemplate, params: string[]): string {
+  return t.body.replace(/\{\{(\d+)\}\}/g, (_, n: string) => params[Number(n) - 1] ?? "");
+}
+
+/** What the settings page shows: the sector's review examples, greeting this business. */
+export function digestTemplatePreview(t: DigestTemplate, businessName: string): string {
+  return fillTemplateBody(t, [sanitizeTemplateParam(businessName || t.example[0], 40), ...t.example.slice(1)]);
+}
+
 /**
  * The template's wording as a free-text message, for an owner whose 24h
  * window is open. A free-text message has no button, so the button line
  * becomes the link to the full list.
  */
 export function digestTemplateText(t: DigestTemplate, params: string[], appUrl: string): string {
-  const body = t.body.replace(/\{\{(\d+)\}\}/g, (_, n: string) => params[Number(n) - 1] ?? "");
+  const body = fillTemplateBody(t, params);
   const link = `לרשימה המלאה: ${appUrl.replace(/\/$/, "")}/leads?tab=needs`;
   return [body.replace(BUTTON_LINE, link), "", t.footer].join("\n");
 }

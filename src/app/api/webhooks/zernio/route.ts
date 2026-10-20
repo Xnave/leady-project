@@ -66,7 +66,9 @@ export async function POST(req: Request) {
 
   const { handleDigestReply } = await import("@/lib/crm/digest-send");
   // Digest traffic is owners on the platform number, not leads, so it runs
-  // before the lead sender gate. Reaching here with a secret means the signature checked out above.
+  // before the lead sender gate. It returns false for anyone who is not an
+  // owner, so leads of the tenant on that number still reach the agent.
+  // Reaching here with a secret means the signature checked out above.
   const signatureVerified = Boolean(secret);
   if (
     await handleDigestReply({

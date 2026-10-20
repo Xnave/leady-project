@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { DigestSettingsForm, type DigestPreview } from "@/components/crm/DigestSettingsForm";
 import { getUiLang } from "@/lib/cookies";
-import { DIGEST_SECTORS, DIGEST_TEMPLATES, type DigestSector } from "@/lib/crm/digest-templates";
+import { DIGEST_SECTORS, DIGEST_TEMPLATES, digestTemplatePreview, type DigestSector } from "@/lib/crm/digest-templates";
 import { prisma } from "@/lib/db";
 import { requireTenantIdForPage } from "@/lib/tenant";
 import { uiCopy } from "@/lib/ui";
@@ -16,13 +16,12 @@ export default async function DigestSettingsPage() {
     where: { id: tenantId },
     select: { name: true },
   });
-  // Each sector's template with its review examples, greeting this business.
+  // A sector picks which template wording the owner gets (guesthouse:
+  // "booking requests", clinic: "appointment requests"). One preview each.
   const previews = Object.fromEntries(
     DIGEST_SECTORS.map((sector) => {
       const t = DIGEST_TEMPLATES[sector];
-      const params = [tenant?.name || t.example[0], ...t.example.slice(1)];
-      const body = t.body.replace(/\{\{(\d+)\}\}/g, (_, n: string) => params[Number(n) - 1] ?? "");
-      return [sector, { body, footer: t.footer, button: t.button }];
+      return [sector, { body: digestTemplatePreview(t, tenant?.name ?? ""), footer: t.footer, button: t.button }];
     }),
   ) as Record<DigestSector, DigestPreview>;
 

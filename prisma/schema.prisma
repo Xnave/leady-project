@@ -444,6 +444,10 @@ model DigestRecipient {
   updatedAt      DateTime  @updatedAt
 
   @@unique([tenantId, clerkUserId])
+  // Partial unique index in
+  // prisma/migrations/20261021120000_digest_phone_unique/migration.sql:
+  // DigestRecipient_phone_opted_in_key (one opted-in business per phone).
+  // Prisma cannot model the WHERE clause; see the RapidDemo note above.
 }
 
 /** One row per tenant per local day - the idempotency guard for the digest. */
