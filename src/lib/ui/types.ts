@@ -70,6 +70,25 @@ export type UiCopy = {
   themeToggle: { appearance: string; system: string; light: string; dark: string };
   actingAs: string;
   stopActing: string;
+  admin: {
+    tenantsTab: string;
+    demosTab: string;
+    code: string;
+    website: string;
+    created: string;
+    expires: string;
+    notStarted: string;
+    leads: string;
+    messages: string;
+    viewAs: string;
+    empty: string;
+    statusDraft: string;
+    statusProvisioning: string;
+    statusActive: string;
+    statusExpired: string;
+    /** "expires {when}" on the acting-as chip. */
+    actingExpires: string;
+  };
   page: {
     homeTitle: string;
     homeBlurb: string;
