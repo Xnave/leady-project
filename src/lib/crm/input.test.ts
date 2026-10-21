@@ -89,4 +89,13 @@ describe("bulk and digest settings bodies", () => {
     expect(parseDigestSettingsBody({ action: "connect" })).toEqual({ action: "connect" });
     expect(parseDigestSettingsBody({ action: "optIn" })).toEqual({ error: "bad_action" });
   });
+
+  it("validates the instant-alert settings", () => {
+    expect(
+      parseDigestSettingsBody({ alertsEnabled: true, quietStartHour: 22, quietEndHour: 7, quietMode: "digest" }),
+    ).toEqual({ alertsEnabled: true, quietStartHour: 22, quietEndHour: 7, quietMode: "digest" });
+    expect(parseDigestSettingsBody({ quietStartHour: -1 })).toEqual({ error: "quietStartHour must be 0-23" });
+    expect(parseDigestSettingsBody({ quietEndHour: 24 })).toEqual({ error: "quietEndHour must be 0-23" });
+    expect(parseDigestSettingsBody({ quietMode: "never" })).toEqual({ error: "bad_quiet_mode" });
+  });
 });

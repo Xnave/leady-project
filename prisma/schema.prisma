@@ -50,6 +50,7 @@ model Tenant {
   digestRecipients     DigestRecipient[]
   digestLogs           DigestLog[]
   rapidDemos           RapidDemo[]
+  alertSettings        TenantAlertSettings?
 }
 
 /**
@@ -424,6 +425,23 @@ model LeadNote {
 }
 
 /** Staff member who opted in to the WhatsApp daily digest. */
+/** Instant WhatsApp alerts to digest recipients when a lead needs the owner now. No row = alerts off. */
+model TenantAlertSettings {
+  tenantId          String   @id
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  alertsEnabled     Boolean  @default(false)
+  alertApprovals    Boolean  @default(true)
+  alertHandoffs     Boolean  @default(true)
+  /** Off hours in the tenant timezone; `quietStartHour` > `quietEndHour` spans midnight. */
+  quietHoursEnabled Boolean  @default(true)
+  quietStartHour    Int      @default(22)
+  quietEndHour      Int      @default(8)
+  /** What an alert does in off hours: "hold" = send when they end, "digest" = leave it to the daily digest. */
+  quietMode         String   @default("hold")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
 model DigestRecipient {
   id             String    @id @default(cuid())
   tenantId       String

@@ -31,9 +31,8 @@ Each item gives the problem, what the market does, and what we already have to b
 
 ## Instant alerts
 
-- **Problem:** the daily digest is too slow for handoffs and approvals.
-- **Ideas:** a push or WhatsApp alert for each event, with throttling and quiet hours.
-- **Have:** the digest's recipient list and template setup.
+- **v1 shipped** (`src/lib/crm/alerts.ts`, `alerts-send.ts`, Inngest `owner-alert`): a WhatsApp alert to the digest's opted-in owners for each new approval request or handoff, with per-tenant switches and configurable off hours (hold until they end, or leave to the digest).
+- **Open:** throttling for a burst of tasks (one message per task today); a push channel; the alert templates (`zapidly_alert_*_v1`) still need submitting and approval.
 
 ## LLM summary for each lead
 

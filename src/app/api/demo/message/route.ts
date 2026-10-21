@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { persistInboundIfNew } from "@/lib/conversations";
-import { runTurnNow, tryDispatchNudgeEvent, tryEnqueueAgentTurn } from "@/lib/flow/run-turn";
+import { runTurnNow, tryDispatchNudgeEvent, tryDispatchOwnerAlertEvents, tryEnqueueAgentTurn } from "@/lib/flow/run-turn";
 import { prisma } from "@/lib/db";
 import { ensureLocalDemoChannel } from "@/lib/provision-tenant";
 import { requireTenantId } from "@/lib/tenant";
@@ -123,6 +123,7 @@ export async function POST(req: Request) {
       triggerMessageId: inserted.messageId,
     });
     await tryDispatchNudgeEvent(turn.nudgeEvent);
+    await tryDispatchOwnerAlertEvents(turn.ownerAlertEvents);
     answered = true;
   }
 
