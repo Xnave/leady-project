@@ -706,7 +706,9 @@ samp {
 .acting-chip {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
+  max-width: min(100%, 42rem);
   background: var(--warning-soft);
   border: 1px solid var(--warning-line);
   color: var(--warning);
@@ -715,6 +717,7 @@ samp {
   font-size: var(--fs-xs);
   font-weight: 600;
 }
+.acting-demo { font-weight: 500; }
 [dir="rtl"] .acting-chip { padding: 4px 14px 4px 6px; }
 
 /* --------------------------------------------------------------------------
