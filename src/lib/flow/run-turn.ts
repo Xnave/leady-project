@@ -240,7 +240,18 @@ type RunTurnOpts = {
   triggerMessageId?: string;
   /** Epoch ms stamped at enqueue - worker start minus this is queue_ms. */
   inboundAt?: number;
+  /**
+   * Epoch ms to match the tasks this turn opened from, for turns with no
+   * trigger message (HITL resume). Set once by the caller so a re-run still
+   * finds what an earlier attempt opened; defaults to the worker start.
+   */
+  tasksSince?: number;
 };
+
+/** Where `tasksOpenedThisTurn` starts when there is no trigger message. */
+export function turnTasksSince(opts: Pick<RunTurnOpts, "tasksSince">, started: number): Date {
+  return new Date(opts.tasksSince ?? started);
+}
 
 export type SkippedTurnResult = {
   skipped: "missing_conversation" | "agent_replies_disabled";
@@ -286,7 +297,7 @@ export async function runTurnNow(opts: RunTurnOpts) {
       tenantId: opts.tenantId,
       conversationId: result.conversationId ?? opts.conversationId,
       triggerMessageId: opts.triggerMessageId,
-      since: new Date(started),
+      since: turnTasksSince(opts, started),
     });
   }
   // Approvals and handoffs this turn opened; the caller sends them (see tryDispatchOwnerAlertEvents).
@@ -297,7 +308,7 @@ export async function runTurnNow(opts: RunTurnOpts) {
           tenantId: opts.tenantId,
           conversationId: result.conversationId ?? opts.conversationId,
           triggerMessageId: opts.triggerMessageId,
-          since: new Date(started),
+          since: turnTasksSince(opts, started),
         });
   return { ...result, ownerAlertEvents };
 }

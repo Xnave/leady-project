@@ -90,6 +90,8 @@ async function handle(
   }
 
   const actor = await resolveStaffActor();
+  // A resume has no trigger message: anchor "tasks this turn opened" here, once.
+  const tasksSince = Date.now();
   const { conversationId } = await completeHitlTask({
     tenantId,
     taskId: id,
@@ -104,6 +106,7 @@ async function handle(
       tenantId,
       conversationId,
       resume: true,
+      tasksSince,
     });
     await tryDispatchNudgeEvent(turn.nudgeEvent);
     await tryDispatchOwnerAlertEvents(turn.ownerAlertEvents);

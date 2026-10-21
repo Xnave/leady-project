@@ -20,12 +20,19 @@ const settings = {
   quietEndHour: 8,
   quietMode: "hold",
 };
-let tenant: { name: string; timezone: string; digestEnabled: boolean; alertSettings: typeof settings | null } | null;
+let tenant: {
+  name: string;
+  clerkOrgId: string;
+  timezone: string;
+  digestEnabled: boolean;
+  alertSettings: typeof settings | null;
+} | null;
 let tasks: Task[];
 let recipients: Recipient[];
 let approved: Set<string>;
 let triggerId: string;
 const hitlFindMany = vi.fn();
+const messageFindFirst = vi.fn();
 const recipientUpdate = vi.fn(async (_a: unknown): Promise<unknown> => ({ count: 1 }));
 
 const openTask = (id: string) => tasks.find((t) => t.id === id && t.status === "open") ?? null;
@@ -33,8 +40,14 @@ const openTask = (id: string) => tasks.find((t) => t.id === id && t.status === "
 vi.mock("@/lib/db", () => ({
   prisma: {
     tenant: {
-      findFirst: async ({ where }: { where: { alertSettings?: { is: { alertsEnabled: boolean } } } }) =>
-        tenant && (!where.alertSettings || tenant.alertSettings?.alertsEnabled === where.alertSettings.is.alertsEnabled)
+      findFirst: async ({
+        where,
+      }: {
+        where: { alertSettings?: { is: { alertsEnabled: boolean } }; NOT?: { clerkOrgId: { startsWith: string } } };
+      }) =>
+        tenant &&
+        (!where.alertSettings || tenant.alertSettings?.alertsEnabled === where.alertSettings.is.alertsEnabled) &&
+        (!where.NOT || !tenant.clerkOrgId.startsWith(where.NOT.clerkOrgId.startsWith))
           ? tenant
           : null,
     },
@@ -42,7 +55,10 @@ vi.mock("@/lib/db", () => ({
       findFirst: async () => ({ leadId: "lead1", lead: { externalUserId: tasks[0]?.lead.externalUserId ?? "" } }),
     },
     message: {
-      findFirst: async () => ({ createdAt: new Date("2026-10-20T08:59:00Z"), providerMessageId: triggerId }),
+      findFirst: async () => {
+        messageFindFirst();
+        return { createdAt: new Date("2026-10-20T08:59:00Z"), providerMessageId: triggerId };
+      },
     },
     hitlTask: {
       findMany: async (a: { where: { createdAt: { gte: Date } } }) => {
@@ -95,12 +111,19 @@ beforeEach(() => {
   process.env.DIGEST_WHATSAPP_ENABLED = "true";
   process.env.DIGEST_WHATSAPP_ACCOUNT_ID = "platform";
   process.env.NEXT_PUBLIC_APP_URL = "https://app.example";
-  tenant = { name: "Villa Nofim", timezone: "Asia/Jerusalem", digestEnabled: true, alertSettings: { ...settings } };
+  tenant = {
+    name: "Villa Nofim",
+    clerkOrgId: "org_villa",
+    timezone: "Asia/Jerusalem",
+    digestEnabled: true,
+    alertSettings: { ...settings },
+  };
   tasks = [task()];
   recipients = [recipient()];
   approved = new Set();
   triggerId = "wamid.1";
   hitlFindMany.mockClear();
+  messageFindFirst.mockClear();
   recipientUpdate.mockClear();
   sendText.mockClear();
   sendTemplate.mockClear();
@@ -128,6 +151,19 @@ describe("collectOwnerAlertEvents", () => {
     tenant!.alertSettings = { ...settings, alertsEnabled: false };
     expect(await collect()).toEqual([]);
     tenant!.alertSettings = null;
+    expect(await collect()).toEqual([]);
+    expect(hitlFindMany).not.toHaveBeenCalled();
+  });
+
+  it("matches from the caller's anchor when there is no trigger message (HITL resume)", async () => {
+    const anchor = new Date("2026-10-20T08:30:00Z");
+    await collectOwnerAlertEvents({ tenantId: "t1", conversationId: "c1", since: anchor });
+    expect(messageFindFirst).not.toHaveBeenCalled();
+    expect(hitlFindMany.mock.calls[0][0].where.createdAt.gte).toEqual(anchor);
+  });
+
+  it("skips rapid-demo tenants", async () => {
+    tenant!.clerkOrgId = "local-demo-1234";
     expect(await collect()).toEqual([]);
     expect(hitlFindMany).not.toHaveBeenCalled();
   });
