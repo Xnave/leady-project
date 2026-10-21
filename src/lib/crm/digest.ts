@@ -61,11 +61,13 @@ export function serviceWindowOpen(lastInboundAt: Date | null | undefined, now: D
 
 /**
  * How one recipient gets today's digest:
- * - `text`: their window is open, so the full list goes as free text (no
- *   template fee, and it carries every item, not just counts);
+ * - `text`: their window is open, so the template's wording goes as free
+ *   text (no template fee), with a link to the needs tab in place of the
+ *   button;
  * - `template`: window closed, an approved template exists;
  * - `wait`: neither - nothing is sent, and the owner's next message to the
- *   platform number gets the full list (see `handleDigestReply`).
+ *   platform number gets the full list: every due lead by name, the same
+ *   leads as the CRM's needs tab (see `handleDigestReply`, `digestFullText`).
  */
 export function digestDelivery(o: { windowOpen: boolean; hasConversation: boolean; hasTemplate: boolean }): "text" | "template" | "wait" {
   if (o.windowOpen && o.hasConversation) return "text";
@@ -75,20 +77,30 @@ export function digestDelivery(o: { windowOpen: boolean; hasConversation: boolea
 
 export type OwnerCommand = { kind: "start"; code: string } | { kind: "stop" } | { kind: "other" };
 
-/** Opt-in code length; the settings page shows `START <code>`. */
-export const OPT_IN_CODE_LENGTH = 6;
+/**
+ * Opt-in code length; the settings page shows `START <code>`. Codes are
+ * looked up across every tenant, so length and TTL together are what keeps
+ * guessing someone else's live code impractical.
+ */
+export const OPT_IN_CODE_LENGTH = 8;
+
+/** A short-lived OTP: the owner copies it straight into WhatsApp. */
+export const OPT_IN_CODE_TTL_MS = 15 * 60 * 1000;
+
+const START_RE = new RegExp(`^(?:start|הפעל)\\s*(\\d{${OPT_IN_CODE_LENGTH}})$`, "i");
 
 /**
- * What an owner's message to the platform number asks for: `START 123456`
- * (or `הפעל 123456`) confirms an opt-in, `STOP` / `הסר` unsubscribes, and
+ * What an owner's message to the platform number asks for: `START 12345678`
+ * (or `הפעל 12345678`) confirms an opt-in, `STOP` / `הסר` unsubscribes, and
  * anything else (including the template's quick-reply button) is a request
- * for the full list.
+ * for the full list. Punctuation and a trailing "please" are ignored, so
+ * `הסר.` still unsubscribes instead of getting the lead list back.
  */
 export function parseOwnerCommand(text: string): OwnerCommand {
-  const t = text.trim();
-  const start = t.match(/^(?:start|הפעל)\s*(\d{6})$/i);
+  const t = text.replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+  const start = t.match(START_RE);
   if (start) return { kind: "start", code: start[1] };
-  if (/^(?:stop|unsubscribe|הסר|הסרה|עצור)$/i.test(t)) return { kind: "stop" };
+  if (/^(?:stop|unsubscribe|הסר|הסרה|עצור)(?: (?:please|בבקשה))?$/i.test(t)) return { kind: "stop" };
   return { kind: "other" };
 }
 

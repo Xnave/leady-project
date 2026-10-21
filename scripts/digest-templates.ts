@@ -29,6 +29,12 @@ const CATALOG = [
 ];
 
 async function main() {
+  // tsx does not load `.env`; values already in the environment win.
+  try {
+    process.loadEnvFile();
+  } catch {
+    // no .env: rely on the environment
+  }
   const [cmd, arg] = process.argv.slice(2);
   const accountId = process.env.DIGEST_WHATSAPP_ACCOUNT_ID ?? "";
   if (!accountId) throw new Error("Set DIGEST_WHATSAPP_ACCOUNT_ID (Zernio account of the platform number)");

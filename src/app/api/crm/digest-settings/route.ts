@@ -1,15 +1,13 @@
 import { randomInt } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { resolveStaffActor } from "@/lib/admin-decisions";
 import { prisma } from "@/lib/db";
-import { OPT_IN_CODE_LENGTH, phoneDigits } from "@/lib/crm/digest";
+import { OPT_IN_CODE_LENGTH, OPT_IN_CODE_TTL_MS } from "@/lib/crm/digest";
 import { resolveDigestSector } from "@/lib/crm/digest-templates";
-import { digestFeatureOn } from "@/lib/crm/flags";
+import { digestFeatureOn, digestPlatformNumber } from "@/lib/crm/flags";
 import { parseDigestSettingsBody } from "@/lib/crm/input";
 import { requireTenantId } from "@/lib/tenant";
-
-/** Same TTL the webhook enforces in `handleDigestReply`. */
-const CODE_TTL_MS = 24 * 60 * 60 * 1000;
 
 function newCode(): string {
   return String(randomInt(0, 10 ** OPT_IN_CODE_LENGTH)).padStart(OPT_IN_CODE_LENGTH, "0");
@@ -41,7 +39,7 @@ export async function GET() {
     ]);
     if (!tenant) return NextResponse.json({ error: "No tenant" }, { status: 404 });
     const codeLive =
-      recipient?.optInCode && recipient.optInCodeAt && Date.now() - recipient.optInCodeAt.getTime() < CODE_TTL_MS;
+      recipient?.optInCode && recipient.optInCodeAt && Date.now() - recipient.optInCodeAt.getTime() < OPT_IN_CODE_TTL_MS;
     return NextResponse.json({
       featureOn: digestFeatureOn(),
       digestEnabled: tenant.digestEnabled,
@@ -58,7 +56,7 @@ export async function GET() {
         quietEndHour: tenant.quietEndHour,
         quietMode: tenant.quietMode,
       },
-      platformNumber: phoneDigits(process.env["DIGEST_WHATSAPP_NUMBER"] ?? ""),
+      platformNumber: digestPlatformNumber(),
       me: recipient
         ? {
             phone: recipient.optedInAt ? recipient.phone : "",
@@ -99,14 +97,16 @@ export async function PUT(req: Request) {
           });
           break;
         } catch (e) {
-          if (attempt >= 4) throw e; // optInCode is unique; retry a collision
+          // `optInCode` is unique because START looks a code up across every
+          // tenant: a collision would bind the wrong business. Retry it.
+          const collision = e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
+          if (!collision || attempt >= 4) throw e;
         }
       }
     } else if (action === "disconnect") {
-      await prisma.digestRecipient.updateMany({
-        where: { tenantId, clerkUserId: actorUserId },
-        data: { optedInAt: null, optInCode: null, optInCodeAt: null },
-      });
+      // Nothing references the row, and `connect` upserts it again, so drop
+      // the phone and conversation along with the opt-in.
+      await prisma.digestRecipient.deleteMany({ where: { tenantId, clerkUserId: actorUserId } });
     }
 
     return GET();

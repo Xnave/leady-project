@@ -108,13 +108,15 @@ describe("digestDelivery", () => {
 
 describe("parseOwnerCommand", () => {
   it("reads opt-in codes in English and Hebrew", () => {
-    expect(parseOwnerCommand(" START 123456 ")).toEqual({ kind: "start", code: "123456" });
-    expect(parseOwnerCommand("start123456")).toEqual({ kind: "start", code: "123456" });
-    expect(parseOwnerCommand("הפעל 654321")).toEqual({ kind: "start", code: "654321" });
-    expect(parseOwnerCommand("START 12345")).toEqual({ kind: "other" });
+    expect(parseOwnerCommand(" START 12345678 ")).toEqual({ kind: "start", code: "12345678" });
+    expect(parseOwnerCommand("start12345678")).toEqual({ kind: "start", code: "12345678" });
+    expect(parseOwnerCommand("הפעל 87654321")).toEqual({ kind: "start", code: "87654321" });
+    expect(parseOwnerCommand("START 1234567")).toEqual({ kind: "other" });
   });
   it("reads unsubscribe words", () => {
-    for (const w of ["STOP", "stop", "הסר", "עצור"]) expect(parseOwnerCommand(w)).toEqual({ kind: "stop" });
+    for (const w of ["STOP", "stop", "הסר", "עצור", "הסר.", "הסר בבקשה", "Stop!"]) {
+      expect(parseOwnerCommand(w)).toEqual({ kind: "stop" });
+    }
   });
   it("treats anything else, including the button, as a full-list request", () => {
     expect(parseOwnerCommand("הצג רשימה מלאה")).toEqual({ kind: "other" });

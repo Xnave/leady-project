@@ -4,6 +4,13 @@ import { isProductionRuntime } from "@/lib/dev-auth-bypass";
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const CODE_RE = /\bZD-([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8})\b/i;
 
+const DEFAULT_WHATSAPP_NUMBER = "972555076806";
+
+/** Digits of the shared Zapidly WhatsApp number that hosts demos (and the digest, unless it has its own). */
+export function rapidDemoWhatsAppNumber(): string {
+  return (process.env.RAPID_DEMO_WHATSAPP_NUMBER || DEFAULT_WHATSAPP_NUMBER).replace(/\D/g, "");
+}
+
 export const VISITOR_HOURLY_LIMIT = 20;
 export const VISITOR_DAILY_LIMIT = 50;
 

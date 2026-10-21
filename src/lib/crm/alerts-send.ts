@@ -21,7 +21,7 @@ import {
   type AlertPlan,
 } from "./alerts";
 import { digestDelivery, serviceWindowOpen } from "./digest";
-import { loadApprovedDigestTemplates } from "./digest-send";
+import { digestAccountId, loadApprovedDigestTemplates } from "./digest-send";
 import { templateKey } from "./digest-templates";
 import { digestFeatureOn } from "./flags";
 
@@ -140,7 +140,7 @@ export async function sendOwnerAlert(
   recipientId: string,
   now: Date,
 ): Promise<"text" | "template" | "wait" | "gone"> {
-  const accountId = env("DIGEST_WHATSAPP_ACCOUNT_ID");
+  const accountId = await digestAccountId();
   const [tenant, task, r] = await Promise.all([
     prisma.tenant.findFirst({ where: { id: tenantId }, select: { name: true } }),
     prisma.hitlTask.findFirst({
