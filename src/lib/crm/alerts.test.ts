@@ -52,38 +52,48 @@ describe("inQuietHours", () => {
 
 describe("quietHoursEnd", () => {
   it("is the next local end hour, on the hour", () => {
-    expect(quietHoursEnd(lateNight, TZ, 8).toISOString()).toBe("2026-10-21T05:00:00.000Z");
+    expect(quietHoursEnd(lateNight, TZ, 22, 8).toISOString()).toBe("2026-10-21T05:00:00.000Z");
   });
   it("works in a half-hour zone", () => {
     // 23:00 in Kolkata (UTC+5:30) -> 08:00 local next day = 02:30Z
-    expect(quietHoursEnd(new Date("2026-10-20T17:30:00Z"), "Asia/Kolkata", 8).toISOString()).toBe(
+    expect(quietHoursEnd(new Date("2026-10-20T17:30:00Z"), "Asia/Kolkata", 22, 8).toISOString()).toBe(
       "2026-10-21T02:30:00.000Z",
     );
   });
   it("crosses the DST change", () => {
     // Israel leaves DST on 2026-10-25 at 02:00; 08:00 local that morning is UTC+2.
-    expect(quietHoursEnd(new Date("2026-10-24T21:00:00Z"), TZ, 8).toISOString()).toBe("2026-10-25T06:00:00.000Z");
+    expect(quietHoursEnd(new Date("2026-10-24T21:00:00Z"), TZ, 22, 8).toISOString()).toBe("2026-10-25T06:00:00.000Z");
+  });
+  it("ends at the first hour after an end hour that spring-forward skips", () => {
+    // Israel enters DST on 2027-03-26: 02:00 jumps to 03:00 (UTC+2 -> UTC+3).
+    expect(quietHoursEnd(new Date("2027-03-25T21:00:00Z"), TZ, 22, 2).toISOString()).toBe("2027-03-26T00:00:00.000Z");
   });
 });
 
 describe("planAlert", () => {
   it("sends now during the day", () => {
-    expect(planAlert(on, "approval", noon, TZ)).toEqual({ send: true, at: noon });
+    expect(planAlert(on, "approval", noon, TZ, true)).toEqual({ send: true, at: noon });
   });
   it("respects the master switch and per-kind switches", () => {
-    expect(planAlert({ ...on, alertsEnabled: false }, "approval", noon, TZ)).toEqual({ send: false, reason: "disabled" });
-    expect(planAlert({ ...on, alertApprovals: false }, "approval", noon, TZ)).toEqual({ send: false, reason: "kind_off" });
-    expect(planAlert({ ...on, alertApprovals: false }, "handoff", noon, TZ).send).toBe(true);
-    expect(planAlert({ ...on, alertHandoffs: false }, "handoff", noon, TZ)).toEqual({ send: false, reason: "kind_off" });
+    expect(planAlert({ ...on, alertsEnabled: false }, "approval", noon, TZ, true)).toEqual({ send: false, reason: "disabled" });
+    expect(planAlert({ ...on, alertApprovals: false }, "approval", noon, TZ, true)).toEqual({ send: false, reason: "kind_off" });
+    expect(planAlert({ ...on, alertApprovals: false }, "handoff", noon, TZ, true).send).toBe(true);
+    expect(planAlert({ ...on, alertHandoffs: false }, "handoff", noon, TZ, true)).toEqual({ send: false, reason: "kind_off" });
   });
   it("holds an off-hours alert until they end", () => {
-    expect(planAlert(on, "handoff", lateNight, TZ)).toEqual({ send: true, at: new Date("2026-10-21T05:00:00Z") });
+    expect(planAlert(on, "handoff", lateNight, TZ, true)).toEqual({ send: true, at: new Date("2026-10-21T05:00:00Z") });
   });
   it("leaves an off-hours alert to the digest in digest mode", () => {
-    expect(planAlert({ ...on, quietMode: "digest" }, "handoff", lateNight, TZ)).toEqual({ send: false, reason: "quiet_hours" });
+    expect(planAlert({ ...on, quietMode: "digest" }, "handoff", lateNight, TZ, true)).toEqual({ send: false, reason: "quiet_hours" });
+  });
+  it("holds instead in digest mode when the digest is off", () => {
+    expect(planAlert({ ...on, quietMode: "digest" }, "handoff", lateNight, TZ, false)).toEqual({
+      send: true,
+      at: new Date("2026-10-21T05:00:00Z"),
+    });
   });
   it("sends at night when off hours are disabled", () => {
-    expect(planAlert({ ...on, quietHoursEnabled: false }, "handoff", lateNight, TZ)).toEqual({ send: true, at: lateNight });
+    expect(planAlert({ ...on, quietHoursEnabled: false }, "handoff", lateNight, TZ, true)).toEqual({ send: true, at: lateNight });
   });
 });
 

@@ -181,6 +181,7 @@ export function DigestSettingsForm({ labels, previews }: { labels: Labels; previ
   async function put(body: Record<string, unknown>): Promise<boolean> {
     setError("");
     setSaved(false);
+    setAlertsSaved(false);
     setSaving(true);
     try {
       const res = await fetch("/api/crm/digest-settings", {
@@ -210,7 +211,6 @@ export function DigestSettingsForm({ labels, previews }: { labels: Labels; previ
   async function saveAlerts(e: FormEvent) {
     e.preventDefault();
     if (!alerts) return;
-    setAlertsSaved(false);
     const ok = await put({
       alertsEnabled: alerts.enabled,
       alertApprovals: alerts.approvals,
@@ -225,7 +225,10 @@ export function DigestSettingsForm({ labels, previews }: { labels: Labels; previ
 
   if (!settings || !alerts) return <p className="muted">…</p>;
 
-  const setAlert = (patch: Partial<Alerts>) => setAlerts({ ...alerts, ...patch });
+  const setAlert = (patch: Partial<Alerts>) => {
+    setAlerts({ ...alerts, ...patch });
+    setAlertsSaved(false);
+  };
 
   const me = settings.me;
   const connected = Boolean(me?.optedIn);

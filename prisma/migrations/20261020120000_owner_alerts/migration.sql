@@ -1,8 +1,18 @@
--- AlterTable
-ALTER TABLE "Tenant" ADD COLUMN "alertsEnabled" BOOLEAN NOT NULL DEFAULT false,
-ADD COLUMN "alertApprovals" BOOLEAN NOT NULL DEFAULT true,
-ADD COLUMN "alertHandoffs" BOOLEAN NOT NULL DEFAULT true,
-ADD COLUMN "quietHoursEnabled" BOOLEAN NOT NULL DEFAULT true,
-ADD COLUMN "quietStartHour" INTEGER NOT NULL DEFAULT 22,
-ADD COLUMN "quietEndHour" INTEGER NOT NULL DEFAULT 8,
-ADD COLUMN "quietMode" TEXT NOT NULL DEFAULT 'hold';
+-- CreateTable
+CREATE TABLE "TenantAlertSettings" (
+    "tenantId" TEXT NOT NULL,
+    "alertsEnabled" BOOLEAN NOT NULL DEFAULT false,
+    "alertApprovals" BOOLEAN NOT NULL DEFAULT true,
+    "alertHandoffs" BOOLEAN NOT NULL DEFAULT true,
+    "quietHoursEnabled" BOOLEAN NOT NULL DEFAULT true,
+    "quietStartHour" INTEGER NOT NULL DEFAULT 22,
+    "quietEndHour" INTEGER NOT NULL DEFAULT 8,
+    "quietMode" TEXT NOT NULL DEFAULT 'hold',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TenantAlertSettings_pkey" PRIMARY KEY ("tenantId")
+);
+
+-- AddForeignKey
+ALTER TABLE "TenantAlertSettings" ADD CONSTRAINT "TenantAlertSettings_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;

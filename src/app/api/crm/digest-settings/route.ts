@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { resolveStaffActor } from "@/lib/admin-decisions";
 import { prisma } from "@/lib/db";
+import { DEFAULT_ALERT_SETTINGS } from "@/lib/crm/alerts";
 import { OPT_IN_CODE_LENGTH, OPT_IN_CODE_TTL_MS } from "@/lib/crm/digest";
 import { resolveDigestSector } from "@/lib/crm/digest-templates";
 import { digestFeatureOn, digestPlatformNumber } from "@/lib/crm/flags";
@@ -25,19 +26,14 @@ export async function GET() {
           digestHour: true,
           timezone: true,
           digestSector: true,
-          alertsEnabled: true,
-          alertApprovals: true,
-          alertHandoffs: true,
-          quietHoursEnabled: true,
-          quietStartHour: true,
-          quietEndHour: true,
-          quietMode: true,
+          alertSettings: true,
         },
       }),
       prisma.digestRecipient.findUnique({ where: { tenantId_clerkUserId: { tenantId, clerkUserId: actorUserId } } }),
       prisma.capabilityInstance.findMany({ where: { tenantId }, select: { capabilityId: true, enabled: true } }),
     ]);
     if (!tenant) return NextResponse.json({ error: "No tenant" }, { status: 404 });
+    const alerts = { ...DEFAULT_ALERT_SETTINGS, ...tenant.alertSettings };
     const codeLive =
       recipient?.optInCode && recipient.optInCodeAt && Date.now() - recipient.optInCodeAt.getTime() < OPT_IN_CODE_TTL_MS;
     return NextResponse.json({
@@ -48,13 +44,13 @@ export async function GET() {
       digestSector: tenant.digestSector,
       autoSector: resolveDigestSector("", capabilities),
       alerts: {
-        enabled: tenant.alertsEnabled,
-        approvals: tenant.alertApprovals,
-        handoffs: tenant.alertHandoffs,
-        quietHoursEnabled: tenant.quietHoursEnabled,
-        quietStartHour: tenant.quietStartHour,
-        quietEndHour: tenant.quietEndHour,
-        quietMode: tenant.quietMode,
+        enabled: alerts.alertsEnabled,
+        approvals: alerts.alertApprovals,
+        handoffs: alerts.alertHandoffs,
+        quietHoursEnabled: alerts.quietHoursEnabled,
+        quietStartHour: alerts.quietStartHour,
+        quietEndHour: alerts.quietEndHour,
+        quietMode: alerts.quietMode,
       },
       platformNumber: digestPlatformNumber(),
       me: recipient
@@ -78,9 +74,17 @@ export async function PUT(req: Request) {
     const body = parseDigestSettingsBody(await req.json().catch(() => ({})));
     if ("error" in body) return NextResponse.json(body, { status: 400 });
 
-    const { action, ...tenantFields } = body;
+    const { action, digestEnabled, digestHour, digestSector, ...alertFields } = body;
+    const tenantFields = { digestEnabled, digestHour, digestSector };
     if (Object.values(tenantFields).some((v) => v !== undefined)) {
       await prisma.tenant.update({ where: { id: tenantId }, data: tenantFields });
+    }
+    if (Object.values(alertFields).some((v) => v !== undefined)) {
+      await prisma.tenantAlertSettings.upsert({
+        where: { tenantId },
+        create: { tenantId, ...alertFields },
+        update: alertFields,
+      });
     }
 
     const key = { tenantId_clerkUserId: { tenantId, clerkUserId: actorUserId } };

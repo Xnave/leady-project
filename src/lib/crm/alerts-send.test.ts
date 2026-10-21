@@ -12,7 +12,6 @@ type Task = {
 type Recipient = { id: string; phone: string; optedInAt: Date | null; conversationId: string; lastInboundAt: Date | null };
 
 const settings = {
-  timezone: "Asia/Jerusalem",
   alertsEnabled: true,
   alertApprovals: true,
   alertHandoffs: true,
@@ -21,28 +20,34 @@ const settings = {
   quietEndHour: 8,
   quietMode: "hold",
 };
-let tenant: (typeof settings & { name: string }) | null;
+let tenant: { name: string; timezone: string; digestEnabled: boolean; alertSettings: typeof settings | null } | null;
 let tasks: Task[];
 let recipients: Recipient[];
-let approved: { name: string; language: string; status: string }[];
+let approved: Set<string>;
+let triggerId: string;
 const hitlFindMany = vi.fn();
+const recipientUpdate = vi.fn(async (_a: unknown): Promise<unknown> => ({ count: 1 }));
 
 const openTask = (id: string) => tasks.find((t) => t.id === id && t.status === "open") ?? null;
 
 vi.mock("@/lib/db", () => ({
   prisma: {
     tenant: {
-      findFirst: async ({ where }: { where: { alertsEnabled?: boolean } }) =>
-        tenant && (where.alertsEnabled === undefined || tenant.alertsEnabled === where.alertsEnabled) ? tenant : null,
+      findFirst: async ({ where }: { where: { alertSettings?: { is: { alertsEnabled: boolean } } } }) =>
+        tenant && (!where.alertSettings || tenant.alertSettings?.alertsEnabled === where.alertSettings.is.alertsEnabled)
+          ? tenant
+          : null,
     },
-    conversation: { findFirst: async () => ({ leadId: "lead1" }) },
-    message: { findFirst: async () => ({ createdAt: new Date("2026-10-20T08:59:00Z") }) },
+    conversation: {
+      findFirst: async () => ({ leadId: "lead1", lead: { externalUserId: tasks[0]?.lead.externalUserId ?? "" } }),
+    },
+    message: {
+      findFirst: async () => ({ createdAt: new Date("2026-10-20T08:59:00Z"), providerMessageId: triggerId }),
+    },
     hitlTask: {
-      findMany: async (a: { where: { createdAt: { gte: Date }; lead: unknown } }) => {
+      findMany: async (a: { where: { createdAt: { gte: Date } } }) => {
         hitlFindMany(a);
-        return tasks
-          .filter((t) => t.status === "open" && t.createdAt >= a.where.createdAt.gte)
-          .filter((t) => !t.lead.externalUserId.startsWith("demo-"));
+        return tasks.filter((t) => t.status === "open" && t.createdAt >= a.where.createdAt.gte);
       },
       findFirst: async ({ where }: { where: { id: string } }) => openTask(where.id),
     },
@@ -50,7 +55,7 @@ vi.mock("@/lib/db", () => ({
       findMany: async () => recipients.filter((r) => r.optedInAt),
       findFirst: async ({ where }: { where: { id: string } }) =>
         recipients.find((r) => r.id === where.id && r.optedInAt) ?? null,
-      update: async () => undefined,
+      updateMany: (a: unknown) => recipientUpdate(a),
     },
   },
 }));
@@ -62,7 +67,6 @@ const sendTemplate = vi.fn(async (_o: { phone: string; template: { name: string 
 vi.mock("@/lib/zernio", () => ({
   sendZernioInboxMessage: (o: { conversationId: string; text: string }) => sendText(o),
   sendWhatsAppTemplate: (o: { phone: string; template: { name: string }; params: string[] }) => sendTemplate(o),
-  listWhatsAppTemplates: async () => approved,
 }));
 
 const { collectOwnerAlertEvents, ownerAlertRecipients, planOwnerAlert, sendOwnerAlert } = await import("./alerts-send");
@@ -91,11 +95,13 @@ beforeEach(() => {
   process.env.DIGEST_WHATSAPP_ENABLED = "true";
   process.env.DIGEST_WHATSAPP_ACCOUNT_ID = "platform";
   process.env.NEXT_PUBLIC_APP_URL = "https://app.example";
-  tenant = { ...settings, name: "Villa Nofim" };
+  tenant = { name: "Villa Nofim", timezone: "Asia/Jerusalem", digestEnabled: true, alertSettings: { ...settings } };
   tasks = [task()];
   recipients = [recipient()];
-  approved = [];
+  approved = new Set();
+  triggerId = "wamid.1";
   hitlFindMany.mockClear();
+  recipientUpdate.mockClear();
   sendText.mockClear();
   sendTemplate.mockClear();
 });
@@ -119,13 +125,20 @@ describe("collectOwnerAlertEvents", () => {
     process.env.DIGEST_WHATSAPP_ENABLED = "false";
     expect(await collect()).toEqual([]);
     process.env.DIGEST_WHATSAPP_ENABLED = "true";
-    tenant = { ...settings, name: "Villa Nofim", alertsEnabled: false };
+    tenant!.alertSettings = { ...settings, alertsEnabled: false };
+    expect(await collect()).toEqual([]);
+    tenant!.alertSettings = null;
     expect(await collect()).toEqual([]);
     expect(hitlFindMany).not.toHaveBeenCalled();
   });
 
   it("skips demo leads", async () => {
     tasks = [task({ lead: { id: "l", displayName: "x", externalUserId: "demo-1", fields: {} } })];
+    expect(await collect()).toEqual([]);
+  });
+
+  it("skips demo chat turns that post as a real-looking lead", async () => {
+    triggerId = "demo-1b2c";
     expect(await collect()).toEqual([]);
   });
 });
@@ -146,7 +159,7 @@ describe("planOwnerAlert / ownerAlertRecipients", () => {
 
   it("re-reads the switches after the wait", async () => {
     expect(await ownerAlertRecipients("t1", "task1")).toEqual(["r1"]);
-    tenant = { ...settings, name: "Villa Nofim", alertApprovals: false };
+    tenant!.alertSettings = { ...settings, alertApprovals: false };
     expect(await ownerAlertRecipients("t1", "task1")).toEqual([]);
   });
 });
@@ -154,15 +167,15 @@ describe("planOwnerAlert / ownerAlertRecipients", () => {
 describe("sendOwnerAlert", () => {
   it("sends free text with a link to the lead inside the 24h window", async () => {
     recipients = [recipient({ conversationId: "conv-1", lastInboundAt: new Date(NOW.getTime() - 3600_000) })];
-    expect(await sendOwnerAlert("t1", "task1", "r1", NOW)).toBe("text");
+    expect(await sendOwnerAlert("t1", "task1", "r1", NOW, approved)).toBe("text");
     expect(sendText.mock.calls[0][0].text).toContain("https://app.example/leads/lead1");
     expect(sendText.mock.calls[0][0].text).toContain("Dana");
     expect(sendTemplate).not.toHaveBeenCalled();
   });
 
   it("uses the approved template outside the window", async () => {
-    approved = [{ name: "zapidly_alert_approval_v1", language: "he", status: "APPROVED" }];
-    expect(await sendOwnerAlert("t1", "task1", "r1", NOW)).toBe("template");
+    approved = new Set(["zapidly_alert_approval_v1:he"]);
+    expect(await sendOwnerAlert("t1", "task1", "r1", NOW, approved)).toBe("template");
     expect(sendTemplate.mock.calls[0][0]).toMatchObject({
       phone: "972501234567",
       template: { name: "zapidly_alert_approval_v1" },
@@ -172,19 +185,26 @@ describe("sendOwnerAlert", () => {
 
   it("picks the handoff template for a handoff", async () => {
     tasks = [task({ type: "more_info", reason: "asked_for_person", payload: { summary: "Wants a group price" } })];
-    approved = [{ name: "zapidly_alert_handoff_v1", language: "he", status: "APPROVED" }];
-    expect(await sendOwnerAlert("t1", "task1", "r1", NOW)).toBe("template");
+    approved = new Set(["zapidly_alert_handoff_v1:he"]);
+    expect(await sendOwnerAlert("t1", "task1", "r1", NOW, approved)).toBe("template");
     expect(sendTemplate.mock.calls[0][0].params[2]).toBe("Wants a group price");
   });
 
   it("waits when the window is closed and no template is approved", async () => {
-    expect(await sendOwnerAlert("t1", "task1", "r1", NOW)).toBe("wait");
+    expect(await sendOwnerAlert("t1", "task1", "r1", NOW, approved)).toBe("wait");
     expect(sendText).not.toHaveBeenCalled();
     expect(sendTemplate).not.toHaveBeenCalled();
   });
 
+  it("keeps the template sent when saving the new conversation fails", async () => {
+    approved = new Set(["zapidly_alert_approval_v1:he"]);
+    recipientUpdate.mockRejectedValueOnce(new Error("deadlock"));
+    expect(await sendOwnerAlert("t1", "task1", "r1", NOW, approved)).toBe("template");
+    expect(recipientUpdate.mock.calls[0][0]).toMatchObject({ where: { id: "r1", tenantId: "t1" } });
+  });
+
   it("sends nothing to a recipient who opted out meanwhile", async () => {
     recipients = [recipient({ optedInAt: null })];
-    expect(await sendOwnerAlert("t1", "task1", "r1", NOW)).toBe("gone");
+    expect(await sendOwnerAlert("t1", "task1", "r1", NOW, approved)).toBe("gone");
   });
 });

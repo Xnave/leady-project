@@ -31,6 +31,17 @@ export type AlertSettings = {
   quietMode: string;
 };
 
+/** A tenant with no `TenantAlertSettings` row has these: alerts off, the rest at the schema defaults. */
+export const DEFAULT_ALERT_SETTINGS: AlertSettings = {
+  alertsEnabled: false,
+  alertApprovals: true,
+  alertHandoffs: true,
+  quietHoursEnabled: true,
+  quietStartHour: 22,
+  quietEndHour: 8,
+  quietMode: "hold",
+};
+
 /** Whether local `hour` falls in [start, end); start > end spans midnight, start == end is off. */
 export function inQuietHours(hour: number, start: number, end: number): boolean {
   if (start === end) return false;
@@ -43,16 +54,17 @@ function localMinute(now: Date, tz: string): number {
 }
 
 /**
- * The next instant at which the local clock in `tz` reads `endHour`:00.
- * Walks forward in 15-minute steps (every real zone offset is a multiple of
- * 15) so DST changes and half-hour zones need no special case.
+ * The first local quarter-hour in `tz` outside off hours [startHour, endHour),
+ * normally `endHour`:00. Walks forward in 15-minute steps (every real zone
+ * offset is a multiple of 15), so half-hour zones and DST need no special
+ * case: when spring-forward skips `endHour`, the first hour after it wins.
  */
-export function quietHoursEnd(now: Date, tz: string, endHour: number): Date {
+export function quietHoursEnd(now: Date, tz: string, startHour: number, endHour: number): Date {
   const step = 15 * 60 * 1000;
   let t = Math.ceil(now.getTime() / step) * step;
   for (let i = 0; i < 4 * 25; i++, t += step) {
     const at = new Date(t);
-    if (localDateAndHour(at, tz).hour === endHour && localMinute(at, tz) === 0) return at;
+    if (!inQuietHours(localDateAndHour(at, tz).hour, startHour, endHour) && localMinute(at, tz) === 0) return at;
   }
   return new Date(now.getTime() + 24 * 60 * 60 * 1000);
 }
@@ -64,15 +76,23 @@ export type AlertPlan =
 /**
  * When an alert of `kind` goes out: now, at the end of off hours ("hold"), or
  * never ("digest" mode in off hours - the daily digest picks the lead up).
+ * "digest" mode holds instead when the tenant's digest is off, so the lead
+ * still reaches the owner.
  */
-export function planAlert(s: AlertSettings, kind: AlertKind, now: Date, tz: string): AlertPlan {
+export function planAlert(
+  s: AlertSettings,
+  kind: AlertKind,
+  now: Date,
+  tz: string,
+  digestEnabled: boolean,
+): AlertPlan {
   if (!s.alertsEnabled) return { send: false, reason: "disabled" };
   if (kind === "approval" ? !s.alertApprovals : !s.alertHandoffs) return { send: false, reason: "kind_off" };
   if (!s.quietHoursEnabled) return { send: true, at: now };
   const { hour } = localDateAndHour(now, tz);
   if (!inQuietHours(hour, s.quietStartHour, s.quietEndHour)) return { send: true, at: now };
-  if (s.quietMode === "digest") return { send: false, reason: "quiet_hours" };
-  return { send: true, at: quietHoursEnd(now, tz, s.quietEndHour) };
+  if (s.quietMode === "digest" && digestEnabled) return { send: false, reason: "quiet_hours" };
+  return { send: true, at: quietHoursEnd(now, tz, s.quietStartHour, s.quietEndHour) };
 }
 
 export type AlertTemplate = Omit<DigestTemplate, "sector">;

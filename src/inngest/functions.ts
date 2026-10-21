@@ -200,11 +200,17 @@ export const ownerAlert = inngest.createFunction(
       const { ownerAlertRecipients } = await import("@/lib/crm/alerts-send");
       return ownerAlertRecipients(tenantId, taskId);
     });
+    if (recipients.length === 0) return { recipients: 0, sent: {} };
+    // One Meta lookup per alert, shared by every recipient.
+    const approved = await step.run("approved-templates", async () => {
+      const { loadApprovedDigestTemplates } = await import("@/lib/crm/digest-send");
+      return loadApprovedDigestTemplates();
+    });
     const sent: Record<string, string> = {};
     for (const recipientId of recipients) {
       sent[recipientId] = await step.run(`send-${recipientId}`, async () => {
         const { sendOwnerAlert } = await import("@/lib/crm/alerts-send");
-        return sendOwnerAlert(tenantId, taskId, recipientId, new Date());
+        return sendOwnerAlert(tenantId, taskId, recipientId, new Date(), new Set(approved));
       });
     }
     return { recipients: recipients.length, sent };
