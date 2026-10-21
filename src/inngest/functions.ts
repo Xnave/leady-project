@@ -154,10 +154,16 @@ export const crmDigest = inngest.createFunction(
       }),
     );
     const due = tenants.filter((t) => localDateAndHour(now, t.timezone).hour === t.digestHour);
+    if (due.length === 0) return { tenants: 0 };
+    // One Meta lookup per run, shared by every tenant due this hour.
+    const approved = await step.run("approved-templates", async () => {
+      const { loadApprovedDigestTemplates } = await import("@/lib/crm/digest-send");
+      return loadApprovedDigestTemplates();
+    });
     for (const t of due) {
       await step.run(`digest-${t.id}`, async () => {
         const { runDigestForTenant } = await import("@/lib/crm/digest-send");
-        return runDigestForTenant(t.id, now);
+        return runDigestForTenant(t.id, now, new Set(approved));
       });
     }
     return { tenants: due.length };

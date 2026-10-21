@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  FULL_TEXT_MAX_ITEMS,
   buildDigest,
+  digestDelivery,
   digestFullText,
-  digestTemplateParams,
   localDateAndHour,
+  parseOwnerCommand,
   pendingRecipients,
-  phoneDigitsMatch,
+  phoneDigits,
   sanitizeTemplateParam,
+  serviceWindowOpen,
 } from "./digest";
 
 const at = new Date("2026-09-25T05:00:00Z");
@@ -26,20 +29,10 @@ describe("buildDigest", () => {
   });
 });
 
-describe("digestTemplateParams", () => {
-  it("produces 7 params in template order", () => {
-    const d = buildDigest([item("handoff", "Yossi", "Group of 12"), item("cold", "Ori")])!;
-    expect(digestTemplateParams(d, "Snir")).toEqual(["Snir", "2", "0", "1", "0", "1", "Yossi · Group of 12"]);
-  });
-  it("strips line breaks, tabs and runs of spaces, and truncates", () => {
-    const d = buildDigest([item("handoff", "Dana\nCohen", "a\t\tb     c " + "x".repeat(200))])!;
-    const p = digestTemplateParams(d, "  Snir  ");
-    for (const v of p) {
-      expect(v).not.toMatch(/[\n\t]/);
-      expect(v).not.toMatch(/ {4,}/);
-    }
-    expect(p[0]).toBe("Snir");
-    expect(p[6].length).toBeLessThanOrEqual(80);
+describe("sanitizeTemplateParam", () => {
+  it("strips line breaks, tabs and runs of spaces", () => {
+    const v = sanitizeTemplateParam("a\t\tb     c\nd");
+    expect(v).toBe("a b c d");
   });
   it("never sends an empty param", () => {
     expect(sanitizeTemplateParam("   ")).toBe("-");
@@ -69,23 +62,6 @@ describe("localDateAndHour", () => {
   });
 });
 
-describe("phoneDigitsMatch", () => {
-  it("matches the same number formatted differently", () => {
-    expect(phoneDigitsMatch("+972 50-123-4567", "+972501234567")).toBe(true);
-    expect(phoneDigitsMatch("(050) 123-4567", "0501234567")).toBe(true);
-  });
-  it("does not normalize country code vs. local prefix", () => {
-    expect(phoneDigitsMatch("+972501234567", "0501234567")).toBe(false);
-  });
-  it("does not match on empty digits", () => {
-    expect(phoneDigitsMatch("", "")).toBe(false);
-    expect(phoneDigitsMatch("+-", "")).toBe(false);
-  });
-  it("rejects different numbers", () => {
-    expect(phoneDigitsMatch("+972501234567", "+972509999999")).toBe(false);
-  });
-});
-
 describe("pendingRecipients", () => {
   const all = [{ clerkUserId: "a" }, { clerkUserId: "b" }, { clerkUserId: "c" }];
 
@@ -100,5 +76,56 @@ describe("pendingRecipients", () => {
   });
   it("ignores sent ids that aren't in the recipient list", () => {
     expect(pendingRecipients(all, ["z"])).toEqual(all);
+  });
+});
+
+describe("digestFullText cap", () => {
+  it("lists at most FULL_TEXT_MAX_ITEMS lines and counts the rest", () => {
+    const many = Array.from({ length: FULL_TEXT_MAX_ITEMS + 5 }, (_, i) => item("cold", `L${i}`));
+    const text = digestFullText(many, { handoff: "H", approval: "A", reminder: "R", cold: "C" }, "https://x");
+    expect(text.split("\n").filter((l) => l.startsWith("•"))).toHaveLength(FULL_TEXT_MAX_ITEMS);
+    expect(text).toContain("+5");
+  });
+});
+
+describe("service window", () => {
+  const now = new Date("2026-10-14T08:00:00Z");
+  it("is open for 24h after the owner's last message", () => {
+    expect(serviceWindowOpen(new Date("2026-10-13T08:30:00Z"), now)).toBe(true);
+    expect(serviceWindowOpen(new Date("2026-10-13T07:59:00Z"), now)).toBe(false);
+    expect(serviceWindowOpen(null, now)).toBe(false);
+  });
+});
+
+describe("digestDelivery", () => {
+  it("prefers free text in an open window, then the template, else waits", () => {
+    expect(digestDelivery({ windowOpen: true, hasConversation: true, hasTemplate: true })).toBe("text");
+    expect(digestDelivery({ windowOpen: true, hasConversation: false, hasTemplate: true })).toBe("template");
+    expect(digestDelivery({ windowOpen: false, hasConversation: true, hasTemplate: true })).toBe("template");
+    expect(digestDelivery({ windowOpen: false, hasConversation: true, hasTemplate: false })).toBe("wait");
+  });
+});
+
+describe("parseOwnerCommand", () => {
+  it("reads opt-in codes in English and Hebrew", () => {
+    expect(parseOwnerCommand(" START 12345678 ")).toEqual({ kind: "start", code: "12345678" });
+    expect(parseOwnerCommand("start12345678")).toEqual({ kind: "start", code: "12345678" });
+    expect(parseOwnerCommand("הפעל 87654321")).toEqual({ kind: "start", code: "87654321" });
+    expect(parseOwnerCommand("START 1234567")).toEqual({ kind: "other" });
+  });
+  it("reads unsubscribe words", () => {
+    for (const w of ["STOP", "stop", "הסר", "עצור", "הסר.", "הסר בבקשה", "Stop!"]) {
+      expect(parseOwnerCommand(w)).toEqual({ kind: "stop" });
+    }
+  });
+  it("treats anything else, including the button, as a full-list request", () => {
+    expect(parseOwnerCommand("הצג רשימה מלאה")).toEqual({ kind: "other" });
+    expect(parseOwnerCommand("")).toEqual({ kind: "other" });
+  });
+});
+
+describe("phoneDigits", () => {
+  it("keeps digits only", () => {
+    expect(phoneDigits("+972 50-123-4567")).toBe("972501234567");
   });
 });

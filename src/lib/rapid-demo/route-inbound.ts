@@ -16,14 +16,13 @@ import {
   tasksListText,
   unboundCommandText,
 } from "./copy";
-import { demoBindDecision, parseDemoCode, parseDemoCommand } from "./guards";
+import { demoBindDecision, parseDemoCode, parseDemoCommand, rapidDemoWhatsAppNumber } from "./guards";
 import { formatHitlTaskLine } from "./outbound";
 
 export function isSharedDemoAccount(inboundAccountId: string, sharedAccountId: string | null): boolean {
   return Boolean(sharedAccountId) && inboundAccountId === sharedAccountId;
 }
 
-const DEFAULT_WHATSAPP_NUMBER = "972555076806";
 
 /** A hit can be reused. A miss is not cached, so a channel connected later still matches. */
 let cachedAccountId: string | undefined;
@@ -55,7 +54,7 @@ export async function resolveRapidDemoAccountId(): Promise<string | null> {
   const pinned = process.env.RAPID_DEMO_WHATSAPP_ACCOUNT_ID?.trim();
   if (pinned) return pinned;
   if (cachedAccountId) return cachedAccountId;
-  const needle = digits(process.env.RAPID_DEMO_WHATSAPP_NUMBER || DEFAULT_WHATSAPP_NUMBER);
+  const needle = rapidDemoWhatsAppNumber();
   if (!whatsappAccountMatches(needle, needle)) return null;
   const channels = await prisma.channelConnection.findMany({
     where: { provider: "whatsapp", enabled: true, providerExternalId: { not: null } },

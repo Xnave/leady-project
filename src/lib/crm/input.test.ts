@@ -79,11 +79,14 @@ describe("bulk and digest settings bodies", () => {
     expect(parseBulkBody(null)).toEqual({ error: "bad_ids" });
   });
 
-  it("validates the digest hour and requires a phone to opt in", () => {
+  it("validates the digest hour, sector and action", () => {
     expect(parseDigestSettingsBody({ digestEnabled: true, digestHour: 8 })).toEqual({ digestEnabled: true, digestHour: 8 });
     expect(parseDigestSettingsBody({ digestHour: 24 })).toEqual({ error: "digestHour must be 0-23" });
     expect(parseDigestSettingsBody({ digestHour: 7.5 })).toEqual({ error: "digestHour must be 0-23" });
-    expect(parseDigestSettingsBody({ optIn: true })).toEqual({ error: "Phone number required to opt in" });
-    expect(parseDigestSettingsBody({ optIn: true, phone: " 0501234567 " })).toEqual({ optIn: true, phone: "0501234567" });
+    expect(parseDigestSettingsBody({ digestSector: "hospitality" })).toEqual({ digestSector: "hospitality" });
+    expect(parseDigestSettingsBody({ digestSector: "" })).toEqual({ digestSector: "" });
+    expect(parseDigestSettingsBody({ digestSector: "bakery" })).toEqual({ error: "bad_sector" });
+    expect(parseDigestSettingsBody({ action: "connect" })).toEqual({ action: "connect" });
+    expect(parseDigestSettingsBody({ action: "optIn" })).toEqual({ error: "bad_action" });
   });
 });

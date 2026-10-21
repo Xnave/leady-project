@@ -64,6 +64,24 @@ export async function POST(req: Request) {
     return new Response("bad signature", { status: 401 });
   }
 
+  const { handleDigestReply } = await import("@/lib/crm/digest-send");
+  // Digest traffic is owners on the platform number, not leads, so it runs
+  // before the lead sender gate. It returns false for anyone who is not an
+  // owner, so leads of the tenant on that number still reach the agent.
+  // Reaching here with a secret means the signature checked out above.
+  const signatureVerified = Boolean(secret);
+  if (
+    await handleDigestReply({
+      accountId: inbound.accountId,
+      conversationId: inbound.conversationId,
+      from: inbound.from,
+      text: inbound.text,
+      signatureVerified,
+    })
+  ) {
+    return NextResponse.json({ ok: true, digest: true });
+  }
+
   const gateMode = zernioGateModeFromEnv();
   let pauseAgent = false;
   if (gateMode !== "handle-all") {
@@ -83,11 +101,6 @@ export async function POST(req: Request) {
       }
       pauseAgent = true;
     }
-  }
-
-  const { handleDigestReply } = await import("@/lib/crm/digest-send");
-  if (await handleDigestReply({ accountId: inbound.accountId, conversationId: inbound.conversationId, from: inbound.from })) {
-    return NextResponse.json({ ok: true, digest: true });
   }
 
   if (await routeRapidDemoInbound(inbound)) {

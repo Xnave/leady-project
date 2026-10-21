@@ -72,18 +72,13 @@ Each item gives the problem, what the market does, and what we already have to b
 ## Follow-ups from phase 1 implementation
 
 - Stage-change Undo marks the source manual; the API needs a `source: "auto"` restore option.
-- Before enabling the digest: verify Zernio's `WHATSAPP_BULK_PATH`, get the Meta template approved, and supply the platform number.
+- Before enabling the digest: connect the platform number in Zernio, set `DIGEST_WHATSAPP_ACCOUNT_ID` / `DIGEST_WHATSAPP_NUMBER`, and get the sector templates approved (`scripts/digest-templates.ts`).
 - The Needs you tab is capped at 200 with no "200 of N" note.
 - ARIA: the menu contains h6/input; the header has 6 columns vs 7 row cells; the j/k cursor is not announced.
 - The empty timeline uses "No leads here" copy.
 - `LeadDetails` has untranslated unknown statuses.
 - The closed-conversation note has no CTA.
 - Demo / dev inbound routes return 500 without the Inngest dev server (`inngest.send` for nudges), which contradicts the CLAUDE.md claim. Investigate.
-
-## Must fix before enabling the WhatsApp digest (`DIGEST_WHATSAPP_ENABLED`)
-
-- **Replies can be faked when the webhook secret is unset.** The Zernio signature check only runs if a secret is configured. Without one, anyone who messages the platform number with an owner's phone as the sender can pull that tenant's lead list. Fix: refuse digest replies unless the secret is set and the signature checks out.
-- **Opt-in never checks who owns the phone.** Any user can sign any number up for daily templates. Add a one-time code or a reply-to-confirm step, and make phone numbers unique across opted-in recipients. Today, when two tenants share a number, the first match wins.
 
 ## After merging the Inbox into Leads
 

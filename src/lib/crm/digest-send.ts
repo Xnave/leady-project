@@ -1,22 +1,35 @@
 /**
- * Sends the WhatsApp daily digest: which leads are due, the per-tenant runner
- * with its `DigestLog` idempotency guard, and routing an owner's reply to the
- * full list. Everything here is a no-op unless `digestFeatureOn()` - see
+ * Sends the WhatsApp daily digest from the Zapidly platform number: which
+ * leads are due, the per-tenant runner with its `DigestLog` idempotency guard,
+ * and everything an owner can send back (confirm opt-in, unsubscribe, ask for
+ * the full list). Everything here is a no-op unless `digestFeatureOn()` - see
  * `./flags`.
  */
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { leadDisplayName } from "@/lib/leads";
+import { resolveRapidDemoAccountId } from "@/lib/rapid-demo/route-inbound";
 import { uiCopy } from "@/lib/ui";
-import { sendWhatsAppTemplate, sendZernioInboxMessage } from "@/lib/zernio";
+import { listWhatsAppTemplates, sendWhatsAppTemplate, sendZernioInboxMessage } from "@/lib/zernio";
 import {
   buildDigest,
+  digestDelivery,
   digestFullText,
-  digestTemplateParams,
   localDateAndHour,
+  OPT_IN_CODE_TTL_MS,
+  parseOwnerCommand,
   pendingRecipients,
-  phoneDigitsMatch,
+  phoneDigits,
+  serviceWindowOpen,
   type DigestItem,
 } from "./digest";
+import {
+  DIGEST_TEMPLATES,
+  digestTemplateParams,
+  digestTemplateText,
+  pickDigestTemplate,
+  resolveDigestSector,
+} from "./digest-templates";
 import { digestFeatureOn } from "./flags";
 import { attentionWhere } from "./needs";
 import { isFollowUpReason } from "./types";
@@ -62,6 +75,37 @@ export async function loadDueDigestItems(tenantId: string, now: Date): Promise<D
 }
 
 /**
+ * Zernio account id of the number the digest is sent from:
+ * `DIGEST_WHATSAPP_ACCOUNT_ID`, else the shared Zapidly number the rapid demo
+ * uses. Set it together with `DIGEST_WHATSAPP_NUMBER` or not at all.
+ */
+export async function digestAccountId(): Promise<string> {
+  return env("DIGEST_WHATSAPP_ACCOUNT_ID").trim() || (await resolveRapidDemoAccountId()) || "";
+}
+
+function digestUi() {
+  return uiCopy(env("DIGEST_TEMPLATE_LANG", "he") === "en" ? "en" : "he");
+}
+
+/**
+ * `name:language` of every APPROVED template on the platform number. Read
+ * once per cron run. A Zernio error throws, so the cron step retries instead
+ * of writing the day's `DigestLog` as if nothing were approved. An empty list
+ * means recipients with a closed window wait for their next message.
+ */
+export async function loadApprovedDigestTemplates(): Promise<string[]> {
+  const accountId = await digestAccountId();
+  if (!accountId) {
+    console.warn(JSON.stringify({ msg: "digest.no_platform_account" }));
+    return [];
+  }
+  const templates = await listWhatsAppTemplates(accountId);
+  const approved = templates.filter((t) => t.status === "APPROVED").map((t) => `${t.name}:${t.language}`);
+  if (approved.length === 0) console.warn(JSON.stringify({ msg: "digest.no_approved_templates", accountId }));
+  return approved;
+}
+
+/**
  * Sends one tenant's digest for `now`, if it hasn't already gone out today
  * (tenant-local day) and there is at least one opted-in recipient with
  * something to report. No-op unless `digestFeatureOn()`.
@@ -71,19 +115,27 @@ export async function loadDueDigestItems(tenantId: string, now: Date): Promise<D
  * becomes due) can still send. Once the digest is non-empty, the day's log
  * row is claimed (found-or-created) and each successful send appends its
  * recipient's `clerkUserId` to `DigestLog.recipients` - so a retry after a
- * partial failure (one send throws mid-loop) only sends to whoever is still
- * missing from that list, instead of either re-sending to everyone or
- * skipping the whole day via `already_sent`.
+ * partial failure only sends to whoever is still missing from that list.
+ *
+ * Per recipient (`digestDelivery`): free text when their 24h window is open,
+ * else the sector's approved template, else nothing (they get the full list
+ * the next time they message the platform number). One recipient's failure
+ * is logged and skipped; it never blocks the others.
  */
 export async function runDigestForTenant(
   tenantId: string,
   now: Date,
-): Promise<{ sent: number; skipped?: "already_sent" | "empty" | "no_recipients" }> {
+  approvedTemplates: ReadonlySet<string> = new Set(),
+): Promise<{ sent: number; waiting?: number; failed?: number; skipped?: "already_sent" | "empty" | "no_recipients" }> {
   if (!digestFeatureOn()) return { sent: 0, skipped: "no_recipients" };
-  const tenant = await prisma.tenant.findUniqueOrThrow({
-    where: { id: tenantId },
-    select: { timezone: true, digestEnabled: true, name: true, chatLanguage: true },
-  });
+  const accountId = await digestAccountId();
+  const [tenant, capabilities] = await Promise.all([
+    prisma.tenant.findUniqueOrThrow({
+      where: { id: tenantId },
+      select: { timezone: true, name: true, digestSector: true },
+    }),
+    prisma.capabilityInstance.findMany({ where: { tenantId }, select: { capabilityId: true, enabled: true } }),
+  ]);
   const { date } = localDateAndHour(now, tenant.timezone);
   const recipients = await prisma.digestRecipient.findMany({ where: { tenantId, optedInAt: { not: null } } });
   if (recipients.length === 0) return { sent: 0, skipped: "no_recipients" as const };
@@ -106,15 +158,50 @@ export async function runDigestForTenant(
   const pending = pendingRecipients(recipients, sentIds);
   if (pending.length === 0) return { sent: 0, skipped: "already_sent" as const };
 
+  const sector = resolveDigestSector(tenant.digestSector, capabilities);
+  const template = pickDigestTemplate(sector, approvedTemplates);
+  // The recipient label is the staff email or role, never a first name, so
+  // the greeting addresses the business.
+  const params = digestTemplateParams(digest, tenant.name);
   let sent = 0;
+  let waiting = 0;
+  let failed = 0;
   for (const r of pending) {
-    const params = digestTemplateParams(digest, r.label || tenant.name);
-    await sendWhatsAppTemplate({
-      accountId: env("DIGEST_WHATSAPP_ACCOUNT_ID"),
-      phone: r.phone,
-      template: { name: env("DIGEST_TEMPLATE_NAME", "zapidly_daily_digest"), language: env("DIGEST_TEMPLATE_LANG", "he") },
-      variables: Object.fromEntries(params.map((v, i) => [String(i + 1), v])),
+    const how = digestDelivery({
+      windowOpen: serviceWindowOpen(r.lastInboundAt, now),
+      hasConversation: Boolean(r.conversationId),
+      hasTemplate: Boolean(template),
     });
+    try {
+      if (how === "wait") {
+        waiting++;
+        console.log(JSON.stringify({ msg: "digest.waiting_for_owner", tenantId, recipientId: r.id }));
+        continue;
+      }
+      if (how === "text") {
+        await sendZernioInboxMessage({
+          accountId,
+          conversationId: r.conversationId,
+          // Same wording as the template, approved or not, so the owner
+          // reads one digest whichever path delivered it.
+          text: digestTemplateText(DIGEST_TEMPLATES[sector], params, env("NEXT_PUBLIC_APP_URL")),
+        });
+      } else if (template) {
+        const opened = await sendWhatsAppTemplate({
+          accountId,
+          phone: r.phone,
+          template: { name: template.name, language: template.language },
+          params,
+        });
+        if (opened.conversationId && opened.conversationId !== r.conversationId) {
+          await prisma.digestRecipient.update({ where: { id: r.id }, data: { conversationId: opened.conversationId } });
+        }
+      }
+    } catch (err) {
+      failed++;
+      console.error(JSON.stringify({ msg: "digest.send_failed", tenantId, recipientId: r.id, how, error: String(err) }));
+      continue;
+    }
     sent++;
     sentIds.push(r.clerkUserId);
     // Persist after each send so a crash mid-loop still leaves an accurate
@@ -124,32 +211,88 @@ export async function runDigestForTenant(
       data: { itemCount: digest.total, recipients: sentIds },
     });
   }
-  return { sent };
+  return { sent, waiting, failed };
 }
 
 /**
- * Owner replied to the digest (24h window now open): send the full list as
- * free text. Returns whether the inbound was handled here - the webhook route
- * must skip its normal tenant-channel routing when this returns true.
+ * An inbound message on the platform number. Returns whether it was handled
+ * here - the webhook route must skip its normal tenant-channel routing when
+ * this returns true.
  *
- * `accountId !== DIGEST_WHATSAPP_ACCOUNT_ID` guarantees this never intercepts
- * a normal tenant's inbound message: a real tenant channel's `accountId`
- * cannot equal the platform digest number's account id.
+ * The platform number is also a tenant channel (the shared Zapidly number),
+ * so only owner traffic is claimed: a `START <code>`, or any message from a
+ * phone that is opted in. Everything else returns false and stays on the lead
+ * path. The account id comparison runs first, so other channels pay nothing.
+ *
+ * Nothing is claimed unless the webhook signature was verified: the sender
+ * phone is the only identity here, and an unsigned request could claim any
+ * owner's phone and read their leads.
  */
-export async function handleDigestReply(o: { accountId: string; conversationId: string; from: string }): Promise<boolean> {
-  const digestAccountId = env("DIGEST_WHATSAPP_ACCOUNT_ID");
-  if (!digestFeatureOn() || !digestAccountId || o.accountId !== digestAccountId) return false;
+export async function handleDigestReply(o: {
+  accountId: string;
+  conversationId: string;
+  from: string;
+  text: string;
+  signatureVerified: boolean;
+}): Promise<boolean> {
+  if (!digestFeatureOn() || !o.accountId) return false;
+  const platformAccountId = await digestAccountId();
+  if (!platformAccountId || o.accountId !== platformAccountId) return false;
+  if (!o.signatureVerified) {
+    console.error(JSON.stringify({ msg: "digest.unsigned_reply_ignored" }));
+    return false;
+  }
+  const phone = phoneDigits(o.from);
+  if (!phone) return false;
+  const now = new Date();
+  const ui = digestUi();
+  const reply = (text: string) => sendZernioInboxMessage({ accountId: o.accountId, conversationId: o.conversationId, text });
+  const command = parseOwnerCommand(o.text);
+
   // Cross-tenant by necessity: the inbound arrives on the shared platform
-  // number, before any tenant is known - the reply is matched to a tenant by
-  // phone, scoped to recipients who have explicitly opted in.
-  const recipients = await prisma.digestRecipient.findMany({ where: { optedInAt: { not: null } } });
-  const r = recipients.find((x) => phoneDigitsMatch(x.phone, o.from));
-  if (!r) return true; // our account, unknown sender: swallow, never route to a tenant agent
-  const items = await loadDueDigestItems(r.tenantId, new Date());
-  const ui = uiCopy(env("DIGEST_TEMPLATE_LANG", "he") === "en" ? "en" : "he");
-  const text = items.length
-    ? digestFullText(items, ui.crm.reasons, env("NEXT_PUBLIC_APP_URL"))
-    : ui.crm.needsEmpty;
-  await sendZernioInboxMessage({ accountId: o.accountId, conversationId: o.conversationId, text });
+  // number, before any tenant is known. A recipient is found only by a
+  // one-time code it was issued, or by a phone WhatsApp itself vouched for.
+  if (command.kind === "start") {
+    const pendingOptIn = await prisma.digestRecipient.findUnique({ where: { optInCode: command.code } });
+    if (!pendingOptIn || !pendingOptIn.optInCodeAt || now.getTime() - pendingOptIn.optInCodeAt.getTime() > OPT_IN_CODE_TTL_MS) {
+      // A redelivered webhook (or a retry after the reply below failed) finds
+      // the code already spent. Same phone, same conversation, opted in
+      // within the TTL: that was this START, so confirm it again.
+      const already = await prisma.digestRecipient.findFirst({
+        where: { phone, conversationId: o.conversationId, optedInAt: { gte: new Date(now.getTime() - OPT_IN_CODE_TTL_MS) } },
+        select: { id: true },
+      });
+      await reply(already ? ui.crm.digestConnected : ui.crm.digestCodeInvalid);
+      return true;
+    }
+    try {
+      await prisma.digestRecipient.update({
+        where: { id: pendingOptIn.id },
+        data: { phone, optedInAt: now, optInCode: null, optInCodeAt: null, conversationId: o.conversationId, lastInboundAt: now },
+      });
+    } catch (err) {
+      // `DigestRecipient_phone_opted_in_key`: one opted-in business per phone.
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) throw err;
+      await reply(ui.crm.digestPhoneTaken);
+      return true;
+    }
+    await reply(ui.crm.digestConnected);
+    return true;
+  }
+
+  const r = await prisma.digestRecipient.findFirst({ where: { phone, optedInAt: { not: null } } });
+  if (!r) return false; // not an owner: a lead of the tenant that owns this number
+  if (command.kind === "stop") {
+    // Same end state as disconnecting in settings: no live code left to bind another phone.
+    await prisma.digestRecipient.update({
+      where: { id: r.id },
+      data: { optedInAt: null, optInCode: null, optInCodeAt: null, lastInboundAt: now },
+    });
+    await reply(ui.crm.digestStopped);
+    return true;
+  }
+  await prisma.digestRecipient.update({ where: { id: r.id }, data: { lastInboundAt: now, conversationId: o.conversationId } });
+  const items = await loadDueDigestItems(r.tenantId, now);
+  await reply(items.length ? digestFullText(items, ui.crm.reasons, env("NEXT_PUBLIC_APP_URL")) : ui.crm.needsEmpty);
   return true;
 }

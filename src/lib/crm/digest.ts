@@ -21,34 +21,20 @@ export function sanitizeTemplateParam(v: string, max = 80): string {
   return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : clean;
 }
 
-/** Order matches the approved template: name, total, approval, handoff, reminder, cold, top. */
-export function digestTemplateParams(d: Digest, ownerName: string): string[] {
-  return [
-    sanitizeTemplateParam(ownerName, 40),
-    String(d.total),
-    String(d.counts.approval),
-    String(d.counts.handoff),
-    String(d.counts.reminder),
-    String(d.counts.cold),
-    sanitizeTemplateParam(`${d.top.name} · ${d.top.stand}`, 80),
-  ];
-}
+/** Lines in the free-text list; the rest is summarised as `+N` (WhatsApp caps text at 4096 chars). */
+export const FULL_TEXT_MAX_ITEMS = 30;
 
 export function digestFullText(
   items: DigestItem[],
   labels: Record<FollowUpReason, string>,
   appUrl: string,
 ): string {
-  const lines = [...items]
-    .sort((a, b) => rank(a.reason) - rank(b.reason) || a.at.getTime() - b.at.getTime())
-    .map((i) => `• ${i.name} · ${labels[i.reason]}`);
+  const sorted = [...items].sort((a, b) => rank(a.reason) - rank(b.reason) || a.at.getTime() - b.at.getTime());
+  const lines = sorted
+    .slice(0, FULL_TEXT_MAX_ITEMS)
+    .map((i) => sanitizeTemplateParam(`• ${i.name} · ${labels[i.reason]}`, 120));
+  if (sorted.length > FULL_TEXT_MAX_ITEMS) lines.push(`+${sorted.length - FULL_TEXT_MAX_ITEMS}`);
   return [...lines, "", `${appUrl.replace(/\/$/, "")}/leads?tab=needs`].join("\n");
-}
-
-/** Compares two phone numbers ignoring formatting (spaces, dashes, +, parens). */
-export function phoneDigitsMatch(a: string, b: string): boolean {
-  const digits = (v: string) => v.replace(/\D/g, "");
-  return digits(a) === digits(b) && digits(a).length > 0;
 }
 
 /**
@@ -64,4 +50,61 @@ export function localDateAndHour(now: Date, tz: string): { date: string; hour: n
   const date = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
   const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(now));
   return { date, hour };
+}
+
+/** WhatsApp lets a business send free text for 24h after the customer's last message. */
+export const SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export function serviceWindowOpen(lastInboundAt: Date | null | undefined, now: Date): boolean {
+  return !!lastInboundAt && now.getTime() - lastInboundAt.getTime() < SERVICE_WINDOW_MS;
+}
+
+/**
+ * How one recipient gets today's digest:
+ * - `text`: their window is open, so the template's wording goes as free
+ *   text (no template fee), with a link to the needs tab in place of the
+ *   button;
+ * - `template`: window closed, an approved template exists;
+ * - `wait`: neither - nothing is sent, and the owner's next message to the
+ *   platform number gets the full list: every due lead by name, the same
+ *   leads as the CRM's needs tab (see `handleDigestReply`, `digestFullText`).
+ */
+export function digestDelivery(o: { windowOpen: boolean; hasConversation: boolean; hasTemplate: boolean }): "text" | "template" | "wait" {
+  if (o.windowOpen && o.hasConversation) return "text";
+  if (o.hasTemplate) return "template";
+  return "wait";
+}
+
+export type OwnerCommand = { kind: "start"; code: string } | { kind: "stop" } | { kind: "other" };
+
+/**
+ * Opt-in code length; the settings page shows `START <code>`. Codes are
+ * looked up across every tenant, so length and TTL together are what keeps
+ * guessing someone else's live code impractical.
+ */
+export const OPT_IN_CODE_LENGTH = 8;
+
+/** A short-lived OTP: the owner copies it straight into WhatsApp. */
+export const OPT_IN_CODE_TTL_MS = 15 * 60 * 1000;
+
+const START_RE = new RegExp(`^(?:start|הפעל)\\s*(\\d{${OPT_IN_CODE_LENGTH}})$`, "i");
+
+/**
+ * What an owner's message to the platform number asks for: `START 12345678`
+ * (or `הפעל 12345678`) confirms an opt-in, `STOP` / `הסר` unsubscribes, and
+ * anything else (including the template's quick-reply button) is a request
+ * for the full list. Punctuation and a trailing "please" are ignored, so
+ * `הסר.` still unsubscribes instead of getting the lead list back.
+ */
+export function parseOwnerCommand(text: string): OwnerCommand {
+  const t = text.replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+  const start = t.match(START_RE);
+  if (start) return { kind: "start", code: start[1] };
+  if (/^(?:stop|unsubscribe|הסר|הסרה|עצור)(?: (?:please|בבקשה))?$/i.test(t)) return { kind: "stop" };
+  return { kind: "other" };
+}
+
+/** Phone as WhatsApp sends it: digits only, country code included, no `+`. */
+export function phoneDigits(v: string): string {
+  return v.replace(/\D/g, "");
 }
