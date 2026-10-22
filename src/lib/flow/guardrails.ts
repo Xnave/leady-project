@@ -14,6 +14,6 @@ export function talkGuardrails(opts: {
     fields: opts.requiredForBook.join(", "),
     hours: opts.hours,
     whatsappPhone: opts.whatsappPhone ?? "",
-    bookingStance: opts.bookingStance === "proactive" ? "proactive" : "passive",
+    bookingStance: opts.bookingStance,
   });
 }

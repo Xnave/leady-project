@@ -161,10 +161,24 @@ describe("persona prompt order", () => {
   it("passive stance suggests a meeting only when relevant", () => {
     const ctx = makeCtx({});
     const s = buildTalkSystemPrompt(ctx, talkStage(ctx));
-    expect(s).toMatch(/When a meeting is relevant, you may suggest one once/);
+    expect(s).toMatch(/Offer a meeting at most once/);
     expect(s).not.toMatch(/Suggest a meeting at most once/);
-    expect(s.indexOf("you may suggest one once")).toBeGreaterThan(s.indexOf("CONVERSATION CRAFT"));
-    expect(s).toMatch(/pure hours, address, or phone question/);
+    expect(s.indexOf("Offer a meeting at most once")).toBeGreaterThan(s.indexOf("CONVERSATION CRAFT"));
+    expect(s.split("Offer a meeting at most once").length - 1).toBe(1);
+    expect(s.split("If the knowledge file tells you what to reply").length - 1).toBe(1);
+  });
+
+  it("knowledge instructions outrank a capability next step", () => {
+    const ctx = makeCtx({});
+    const s = buildTalkSystemPrompt(ctx, talkStage(ctx));
+    const peers = s.indexOf("Enabled capabilities are available workflows");
+    const boundaries = s.indexOf("BOUNDARIES (always");
+    expect(peers).toBeGreaterThan(s.indexOf("CONVERSATION CRAFT"));
+    expect(peers).toBeLessThan(boundaries);
+    expect(s).toMatch(/do not override a knowledge instruction/);
+    expect(s).toMatch(/Do not replace that instruction with another capability's flow/);
+    expect(s).toMatch(/Do not treat booking as the default next step/);
+    expect(s).not.toMatch(/meeting\/visit\/demo\/call/);
   });
 
   it("proactive stance may invite a meeting once", () => {
@@ -174,7 +188,21 @@ describe("persona prompt order", () => {
     const s = buildTalkSystemPrompt(ctx, flow.stages.talk as TalkStage);
     expect(s).toMatch(/Suggest a meeting at most once/);
     expect(s.indexOf("Suggest a meeting at most once")).toBeGreaterThan(s.indexOf("CONVERSATION CRAFT"));
-    expect(s).toMatch(/you may invite them once, gently, to schedule/);
+    expect(s.split("Suggest a meeting at most once").length - 1).toBe(1);
+    expect(s.split("If the knowledge file tells you what to reply").length - 1).toBe(1);
+    expect(s).not.toMatch(/you may invite them once, gently, to schedule/);
+  });
+
+  it("legacy book catalog with no stored stance stays proactive", () => {
+    const flow = flowForCatalog("book");
+    const stage = flow.stages.talk as TalkStage;
+    delete stage.bookingStance;
+    const ctx = makeCtx({ catalogId: "book", flow });
+    const s = buildTalkSystemPrompt(ctx, stage);
+    expect(s).toMatch(/Suggest a meeting at most once/);
+    expect(s).not.toMatch(/Offer a meeting at most once/);
+    expect(s.split("Suggest a meeting at most once").length - 1).toBe(1);
+    expect(s.split("If the knowledge file tells you what to reply").length - 1).toBe(1);
   });
 });
 

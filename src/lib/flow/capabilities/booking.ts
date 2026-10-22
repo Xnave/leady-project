@@ -439,7 +439,7 @@ export function registerBookingCapability(): void {
       "Call reply unless ask_field or resolve_offered_slot already set the outbound text. After update_meeting_details, still call reply in the same turn.",
       "Meeting details (פרטי הפגישה): concrete customer wording → update_meeting_details then reply; wrong/incomplete with no replacement → reply only and ask. Always write TO the customer, never staff/CRM notes.",
     ],
-    promptSection: ({ ctx, stage, fields }) => {
+    promptSection: ({ ctx, fields }) => {
       const required = effectiveBookingRequired(ctx);
       const recent = recentMeeting(ctx);
       const lang = replyLang(ctx, lastLeadText(ctx));
@@ -515,20 +515,9 @@ export function registerBookingCapability(): void {
       }
 
       const interest = gatheredInterest(fields);
-      const proactive = stage.bookingStance === "proactive";
-      const invite = proactive
-        ? [
-            "Suggest a meeting at most once until the customer responds to it; don't end consecutive replies with the same invitation. If they haven't taken it up, keep helping and ask about their needs instead.",
-            "Do not attach that invite to a greeting or a pure factual question (hours, address, phone).",
-          ]
-        : [
-            "When a meeting is relevant (they asked how it works, about pricing or fit, or described a need), you may suggest one once, lightly. Do not end a greeting, small talk, or a pure hours, address, or phone answer with a scheduling ask, and do not repeat it if they did not take it up.",
-          ];
       const idle = [
-        `${noun} booking is NOT started. Use reply to answer product/sales questions from knowledge.`,
-        'Examples that must NOT trigger booking: "I want a WhatsApp agent", "how much is it", "tell me more", "I need something for Instagram".',
-        `Only call start_booking if they explicitly ask to schedule a ${noun}/meeting/demo/call, or clearly accept an offer to book.`,
-        ...invite,
+        `${noun} booking is NOT started. Use reply to answer from knowledge.`,
+        `Only call start_booking if they explicitly ask to schedule a ${noun}, meeting, visit, or call, or clearly accept an offer to book.`,
         "When they already shared concrete context (pain, business type, goals - e.g. a mini-app dump), call save_interest with their wording in the SAME turn as reply. Do not invent. Do not start booking for that alone.",
         "Past/expired meetings are irrelevant - do not mention them, do not say בהמשך לפגישה, and do not reuse their need text unless the customer explicitly brings that meeting up.",
       ];
@@ -657,7 +646,7 @@ export function registerBookingCapability(): void {
           }),
           start_booking: tool({
             description:
-              "Begin collecting visit/meeting details. Call ONLY when the customer explicitly asks to schedule a meeting, visit, demo, or call - or clearly accepts your offer to book one. Do NOT call for product interest alone (e.g. wanting a WhatsApp agent, asking how it works, pricing, features). Do NOT call when they are only clarifying details for an existing/approved meeting - use update_meeting_details + reply instead. Optional interest: pass concrete context they already gave (or reuse saved interest) so the later need ask can present it.",
+              "Begin collecting visit/meeting details. Call ONLY when the customer explicitly asks to schedule a meeting, visit, or call - or clearly accepts your offer to book one. Do NOT call for product interest alone (e.g. wanting a WhatsApp agent, asking how it works, pricing, features). Do NOT call when they are only clarifying details for an existing/approved meeting - use update_meeting_details + reply instead. Optional interest: pass concrete context they already gave (or reuse saved interest) so the later need ask can present it.",
             inputSchema: z.object({
               reason: z.string().optional(),
               interest: z

@@ -1,5 +1,6 @@
 import { copyFor, replyLang } from "@/lib/copy";
 import { calendarClockLine } from "./clock";
+import { resolveBookingStance } from "./catalog";
 import { talkGuardrails } from "./guardrails";
 import { bookingConfigFromCtx } from "./booking-config";
 import { hasAgentReplied, isIdleConversationReset } from "./intro";
@@ -130,14 +131,20 @@ export class PromptBuilder {
         hours: booking.venueHours,
         whatsappPhone: !saved && deduced ? deduced : undefined,
         lang,
-        bookingStance: stage.bookingStance === "proactive" ? "proactive" : "passive",
+        bookingStance: resolveBookingStance({ stage, catalogId: ctx.agent.catalogId }),
       }),
     );
     return this;
   }
 
   withCapabilities(ctx: TurnContext, stage: TalkStage, fields: LeadFields): this {
-    this.parts.push(...capabilityPromptSections({ ctx, stage, fields }));
+    const sections = capabilityPromptSections({ ctx, stage, fields });
+    if (sections.length > 0) {
+      this.parts.push(
+        "Enabled capabilities are available workflows. Use the one the message and the knowledge instructions call for. Do not treat booking as the default next step.",
+      );
+    }
+    this.parts.push(...sections);
     return this;
   }
 
