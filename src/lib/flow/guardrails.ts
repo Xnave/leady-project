@@ -6,11 +6,14 @@ export function talkGuardrails(opts: {
   hours: string;
   whatsappPhone?: string;
   lang: "en" | "he";
+  /** Missing stance is passive: suggest a meeting only when it fits, not on every reply. */
+  bookingStance?: "passive" | "proactive";
 }): string {
   return copyFor(opts.lang).prompts.talkGuardrails({
     allowBook: opts.allowBook,
     fields: opts.requiredForBook.join(", "),
     hours: opts.hours,
     whatsappPhone: opts.whatsappPhone ?? "",
+    bookingStance: opts.bookingStance,
   });
 }
