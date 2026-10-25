@@ -122,7 +122,12 @@ describe("flowForCapabilities settings", () => {
     expect(passive.capabilities).toEqual(["booking"]);
     expect(passive.bookingStance).toBe("passive");
     expect(passive.allowBook).toBe(true);
-    expect(passive.prompt).toMatch(/NOT a booking request|explicitly ask to schedule/i);
+    expect(passive.prompt).toMatch(/answer from knowledge/i);
+    expect(passive.prompt).toMatch(/booking is available when they ask/i);
+    expect(passive.prompt).not.toMatch(/at most once/i);
+    expect(passive.prompt).not.toMatch(/did not already specify the next step/i);
+    expect(passive.prompt).not.toMatch(/ask if they want to schedule/i);
+    expect(passive.prompt).not.toMatch(/demo/i);
 
     expect(proactive.bookingStance).toBe("proactive");
     expect(proactive.prompt).toMatch(/book a visit when ready|confirm details before book_meeting/i);
@@ -427,7 +432,14 @@ describe("talkTurn with mocked LLM", () => {
     expect(seenTools).not.toContain("set_intent");
     expect(seenTools).not.toContain("ask_field");
     expect(seenSystem).toMatch(/Visit booking is NOT started|start_booking/i);
-    expect(seenSystem).toMatch(/NOT a booking request|explicitly ask to schedule/i);
+    expect(seenSystem).toMatch(/explicitly ask to schedule/i);
+    expect(seenSystem).toMatch(/Offer a meeting at most once/);
+    expect(seenSystem.split("Offer a meeting at most once").length - 1).toBe(1);
+    expect(seenSystem.split("If the knowledge file tells you what to reply").length - 1).toBe(1);
+    expect(seenSystem).toMatch(/Do not treat booking as the default next step/);
+    expect(seenSystem).toMatch(/do not override a knowledge instruction/);
+    expect(seenSystem).not.toMatch(/Suggest a meeting at most once/);
+    expect(seenSystem).not.toMatch(/does not apply to greetings or factual questions/);
   });
 
   it("does not register booking tools when capabilities are empty", async () => {
@@ -477,6 +489,9 @@ describe("talkTurn with mocked LLM", () => {
     });
     await talkTurn(baseCtx(flow), talkStage(flow));
     expect(seenSystem).toMatch(/book a visit when ready/i);
+    expect(seenSystem).toMatch(/Suggest a meeting at most once/);
+    expect(seenSystem.split("Suggest a meeting at most once").length - 1).toBe(1);
+    expect(seenSystem).not.toMatch(/you may invite them once, gently, to schedule/);
   });
 
   it("includes active collect tools after start_booking fields are set", async () => {

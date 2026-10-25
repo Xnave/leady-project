@@ -516,10 +516,8 @@ export function registerBookingCapability(): void {
 
       const interest = gatheredInterest(fields);
       const idle = [
-        `${noun} booking is NOT started. Use reply to answer product/sales questions from knowledge.`,
-        'Examples that must NOT trigger booking: "I want a WhatsApp agent", "how much is it", "tell me more", "I need something for Instagram".',
-        `Only call start_booking if they explicitly ask to schedule a ${noun}/meeting/demo/call, or clearly accept an offer to book.`,
-        "Suggest a meeting at most once until the customer responds to it; don't end consecutive replies with the same invitation. If they haven't taken it up, keep helping and ask about their needs instead.",
+        `${noun} booking is NOT started. Use reply to answer from knowledge.`,
+        `Only call start_booking if they explicitly ask to schedule a ${noun}, meeting, visit, or call, or clearly accept an offer to book.`,
         "When they already shared concrete context (pain, business type, goals - e.g. a mini-app dump), call save_interest with their wording in the SAME turn as reply. Do not invent. Do not start booking for that alone.",
         "Past/expired meetings are irrelevant - do not mention them, do not say בהמשך לפגישה, and do not reuse their need text unless the customer explicitly brings that meeting up.",
       ];
@@ -648,7 +646,7 @@ export function registerBookingCapability(): void {
           }),
           start_booking: tool({
             description:
-              "Begin collecting visit/meeting details. Call ONLY when the customer explicitly asks to schedule a meeting, visit, demo, or call - or clearly accepts your offer to book one. Do NOT call for product interest alone (e.g. wanting a WhatsApp agent, asking how it works, pricing, features). Do NOT call when they are only clarifying details for an existing/approved meeting - use update_meeting_details + reply instead. Optional interest: pass concrete context they already gave (or reuse saved interest) so the later need ask can present it.",
+              "Begin collecting visit/meeting details. Call ONLY when the customer explicitly asks to schedule a meeting, visit, or call - or clearly accepts your offer to book one. Do NOT call for product interest alone (e.g. wanting a WhatsApp agent, asking how it works, pricing, features). Do NOT call when they are only clarifying details for an existing/approved meeting - use update_meeting_details + reply instead. Optional interest: pass concrete context they already gave (or reuse saved interest) so the later need ask can present it.",
             inputSchema: z.object({
               reason: z.string().optional(),
               interest: z

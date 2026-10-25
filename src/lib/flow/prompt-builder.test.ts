@@ -4,7 +4,7 @@ import { bookingInstance } from "./booking-config";
 import { normalizeTalkOutcome } from "./interpreter";
 import { buildNudgeSystemPrompt, buildTalkSystemPrompt, talkTransitionTargets } from "./prompt-builder";
 import { ensureFlowRegistry } from "./capabilities";
-import { flowForCatalog } from "./catalog";
+import { flowForCapabilities, flowForCatalog } from "./catalog";
 import type { TalkStage, TurnContext } from "./types";
 import { defaultHitlPolicy, defaultLeadSchema } from "./validate";
 
@@ -158,11 +158,51 @@ describe("persona prompt order", () => {
     expect(buildTalkSystemPrompt(ctx, talkStage(ctx))).toMatch(/already greeted/);
   });
 
-  it("meeting frequency is a booking rule, not persona", () => {
+  it("passive stance suggests a meeting only when relevant", () => {
     const ctx = makeCtx({});
     const s = buildTalkSystemPrompt(ctx, talkStage(ctx));
+    expect(s).toMatch(/Offer a meeting at most once/);
+    expect(s).not.toMatch(/Suggest a meeting at most once/);
+    expect(s.indexOf("Offer a meeting at most once")).toBeGreaterThan(s.indexOf("CONVERSATION CRAFT"));
+    expect(s.split("Offer a meeting at most once").length - 1).toBe(1);
+    expect(s.split("If the knowledge file tells you what to reply").length - 1).toBe(1);
+  });
+
+  it("knowledge instructions outrank a capability next step", () => {
+    const ctx = makeCtx({});
+    const s = buildTalkSystemPrompt(ctx, talkStage(ctx));
+    const peers = s.indexOf("Enabled capabilities are available workflows");
+    const boundaries = s.indexOf("BOUNDARIES (always");
+    expect(peers).toBeGreaterThan(s.indexOf("CONVERSATION CRAFT"));
+    expect(peers).toBeLessThan(boundaries);
+    expect(s).toMatch(/do not override a knowledge instruction/);
+    expect(s).toMatch(/Do not replace that instruction with another capability's flow/);
+    expect(s).toMatch(/Do not treat booking as the default next step/);
+    expect(s).not.toMatch(/meeting\/visit\/demo\/call/);
+  });
+
+  it("proactive stance may invite a meeting once", () => {
+    const ctx = makeCtx({});
+    const flow = flowForCapabilities({ capabilities: ["booking"], bookingStance: "proactive" });
+    ctx.agent.flow = flow;
+    const s = buildTalkSystemPrompt(ctx, flow.stages.talk as TalkStage);
     expect(s).toMatch(/Suggest a meeting at most once/);
     expect(s.indexOf("Suggest a meeting at most once")).toBeGreaterThan(s.indexOf("CONVERSATION CRAFT"));
+    expect(s.split("Suggest a meeting at most once").length - 1).toBe(1);
+    expect(s.split("If the knowledge file tells you what to reply").length - 1).toBe(1);
+    expect(s).not.toMatch(/you may invite them once, gently, to schedule/);
+  });
+
+  it("legacy book catalog with no stored stance stays proactive", () => {
+    const flow = flowForCatalog("book");
+    const stage = flow.stages.talk as TalkStage;
+    delete stage.bookingStance;
+    const ctx = makeCtx({ catalogId: "book", flow });
+    const s = buildTalkSystemPrompt(ctx, stage);
+    expect(s).toMatch(/Suggest a meeting at most once/);
+    expect(s).not.toMatch(/Offer a meeting at most once/);
+    expect(s.split("Suggest a meeting at most once").length - 1).toBe(1);
+    expect(s.split("If the knowledge file tells you what to reply").length - 1).toBe(1);
   });
 });
 
