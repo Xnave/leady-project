@@ -133,6 +133,9 @@ function statedClocks(text: string): string[] {
   for (const hit of explicitClockHits(text)) {
     if (!clockDiscarded(text, hit.index)) found.add(hit.clock);
   }
+  for (const hit of bareMeridianClocks(text)) {
+    if (!clockDiscarded(text, hit.index)) found.add(hit.clock);
+  }
   const parsed = parseTime(text);
   if (parsed && !found.has(parsed)) {
     const idx = text.indexOf(parsed);
@@ -140,6 +143,24 @@ function statedClocks(text: string): string[] {
     if (at >= 0 && !clockDiscarded(text, at)) found.add(parsed);
   }
   return [...found];
+}
+
+/** "ב6 בערב" is 18:00. The discard check uses the digit the customer typed. */
+function bareMeridianClocks(text: string): { clock: string; index: number }[] {
+  const hits: { clock: string; index: number }[] = [];
+  const re = /(?:ב־|ב-|at\s+|בשעה\s+|ב\s*)(\d{1,2})(?!\d)(?!\s*:)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    let h = Number(match[1]);
+    const hasMeridian = /ערב|בוקר|צהריים|a\.?m\.?|p\.?m\.?/i.test(text);
+    if (!hasMeridian && h >= 1 && h <= 12) continue;
+    if (/ערב|pm/i.test(text) && h < 12) h += 12;
+    if (/בוקר|am/i.test(text) && h === 12) h = 0;
+    const clock = hhmm(h, 0);
+    const digitAt = match.index + match[0].lastIndexOf(match[1]);
+    if (clock) hits.push({ clock, index: digitAt });
+  }
+  return hits;
 }
 
 /**

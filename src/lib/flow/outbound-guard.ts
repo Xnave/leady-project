@@ -46,17 +46,25 @@ function sentences(text: string): string[] {
     .filter(Boolean);
 }
 
+/** Drop a line-leading period, and a repeated opening letter ("ה הכוונה"). */
+export function tidyOutbound(text: string): string {
+  const lines = text.split("\n").map((line) => line.replace(/^\.\s*/, "").trimEnd());
+  const joined = lines.filter((line) => line.length > 0).join("\n").trim();
+  return joined.replace(/^(\p{Script=Hebrew})\s+\1/u, "$1");
+}
+
 /**
  * Keep model text that only uses phones and URLs from knowledge.
  * While booking collection is open, a violation is replaced by the open gap ask.
  * An empty result means nothing safe is left to send.
  */
 export function sanitizeModelOutbound(text: string, ctx: TurnContext): string {
+  const tidy = tidyOutbound(text);
   const knowledge = ctx.agent.knowledgeText ?? "";
-  if (!modelOutboundViolation(text, knowledge)) return text;
+  if (!modelOutboundViolation(tidy, knowledge)) return tidy;
   const gap = bookingActiveGapReply(ctx);
   if (gap) return gap;
-  return sentences(text)
+  return sentences(tidy)
     .filter((sentence) => !modelOutboundViolation(sentence, knowledge))
     .join(" ")
     .trim();

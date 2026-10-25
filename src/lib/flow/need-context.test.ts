@@ -66,6 +66,8 @@ describe("need-context", () => {
     expect(clockGroundedInLeadText("23 באוקטובר בשעה 17:00", ["מחר ב-17:00"])).toBe(true);
     expect(clockGroundedInLeadText("23 באוקטובר בשעה 17:00", ["ב-17:00", "מחר"])).toBe(true);
     expect(clockGroundedInLeadText("23 באוקטובר בשעה 17:00", ["מחר בשעה 17"])).toBe(true);
+    expect(clockGroundedInLeadText("26 באוקטובר בשעה 18:00", ["מחר ב6 בערב"])).toBe(true);
+    expect(clockGroundedInLeadText("26 באוקטובר בשעה 18:00", ["מחר ב6"])).toBe(false);
     expect(clockGroundedInLeadText("23 באוקטובר בשעה 19:00", ["פתוחים עד 19:00"])).toBe(false);
     expect(clockGroundedInLeadText("23 באוקטובר בשעה 10:00", ["לא ב-10:00"])).toBe(false);
     expect(clockGroundedInLeadText("23 באוקטובר בשעה 17:00", ["פתוחים עד 19:00, אפשר ב-17:00"])).toBe(

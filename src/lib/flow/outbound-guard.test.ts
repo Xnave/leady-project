@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { bookingActiveGapReply } from "./capabilities/booking";
 import { flowForCapabilities } from "./catalog";
 import { bookingInstance } from "./booking-config";
-import { outboundReply, sanitizeModelOutbound } from "./outbound-guard";
+import { outboundReply, sanitizeModelOutbound, tidyOutbound } from "./outbound-guard";
 import type { TurnContext } from "./types";
 import { defaultHitlPolicy, defaultLeadSchema } from "./validate";
 
@@ -42,6 +42,15 @@ function ctx(opts: { fields?: Record<string, unknown>; knowledge?: string }): Tu
     channel: { provider: "whatsapp", customerPhone: "972523434400" },
   };
 }
+
+describe("tidyOutbound", () => {
+  it("drops a line-leading period and a repeated opening letter", () => {
+    expect(tidyOutbound("בשמחה! הנה הקישור:\nhttps://zapidly.com/demo\n. רוצה שנקבע שיחה?")).toBe(
+      "בשמחה! הנה הקישור:\nhttps://zapidly.com/demo\nרוצה שנקבע שיחה?",
+    );
+    expect(tidyOutbound("ה הכוונה היא לשאלות שוטפות")).toBe("הכוונה היא לשאלות שוטפות");
+  });
+});
 
 describe("sanitizeModelOutbound", () => {
   it("replaces a saved-visit claim and a calendar offer with the open booking question", () => {

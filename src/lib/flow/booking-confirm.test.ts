@@ -110,6 +110,36 @@ describe("booking confirm_details rails", () => {
     expect(collected2.reply).toBe(before);
   });
 
+  it("keeps Hebrew when the latest message is only a phone number", async () => {
+    const fields = {
+      booking_flow: "active",
+      time_preference: "מחר ב-18:00",
+      name: "נווה עיני",
+      need: "בדיקת סוכן לעסק שיפוצים",
+      phone: "0526595639",
+    };
+    const ctx = ctxWithFields(fields);
+    ctx.tenant = { ...ctx.tenant, chatLanguage: "multi" };
+    ctx.messages = [
+      { role: "lead", text: "היי, אשמח לקבל דמו לעסק שיפוצים" },
+      { role: "agent", text: "איזה יום ושעה יתאימו לך?" },
+      { role: "lead", text: "0526595639" },
+    ];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const confirm = tools.confirm_details as {
+      execute: (args: Record<string, unknown>) => Promise<unknown>;
+    };
+    await confirm.execute({});
+    expect(collected.reply).toMatch(/הנה פרטי הפגישה/);
+    expect(collected.reply).not.toMatch(/Perfect/);
+  });
+
   it("confirm_details while pending appends a תוסיף extra instead of skip", async () => {
     const fields = {
       booking_flow: "active",
@@ -273,6 +303,24 @@ describe("booking confirm_details rails", () => {
     };
     await save.execute({ time_preference: "מחר ב-17:00" });
     expect(String(collected.fields.time_preference ?? "")).toMatch(/17:00/);
+  });
+
+  it("saves מחר ב6 בערב as 18:00", async () => {
+    const ctx = ctxWithFields({ booking_flow: "active" });
+    ctx.messages = [{ role: "lead", text: "מחר ב6 בערב" }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const save = tools.save_fields as {
+      execute: (args: Record<string, string>) => Promise<string>;
+    };
+    const result = await save.execute({ time_preference: "מחר ב6 בערב" });
+    expect(result).not.toMatch(/unclear_time/);
+    expect(String(collected.fields.time_preference ?? "")).toMatch(/18:00/);
   });
 
   it("saves בשעה 17 as 17:00 and ignores a closing hour the lead only quoted", async () => {

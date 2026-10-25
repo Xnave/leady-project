@@ -3,7 +3,7 @@ import { chat as chatEn, prompts as promptsEn } from "./en";
 import { chat as chatHe, prompts as promptsHe } from "./he";
 import type { BookingVars } from "./types";
 import type { ChatLanguage } from "@/lib/flow/locale";
-import { resolveReplyLanguage } from "@/lib/flow/locale";
+import { looksHebrew, resolveReplyLanguage } from "@/lib/flow/locale";
 import type { TurnContext } from "@/lib/flow/types";
 import { formatPhoneDisplay } from "@/lib/leads";
 
@@ -25,8 +25,33 @@ export function copyFor(lang: "en" | "he", opts?: { gender?: PersonaGender }) {
   return { chat: over ? { ...chatHe, ...over } : chatHe, prompts: promptsHe };
 }
 
+function hasLetters(text: string): boolean {
+  return looksHebrew(text) || /[A-Za-z]/.test(text);
+}
+
+/** A phone or a bare clock has no letters, so it must not flip a multi-language thread. */
+function languageSample(
+  messages: { role: string; text: string }[] | undefined,
+  lastCustomer: string,
+): string {
+  if (hasLetters(lastCustomer)) return lastCustomer;
+  const thread = messages ?? [];
+  for (const message of [...thread].reverse()) {
+    if (message.role === "lead" && hasLetters(message.text)) return message.text;
+  }
+  for (const message of [...thread].reverse()) {
+    if ((message.role === "agent" || message.role === "human") && hasLetters(message.text)) {
+      return message.text;
+    }
+  }
+  return lastCustomer;
+}
+
 export function replyLang(ctx: TurnContext, lastCustomer = ""): "en" | "he" {
-  return resolveReplyLanguage(ctx.tenant?.chatLanguage, lastCustomer);
+  return resolveReplyLanguage(
+    ctx.tenant?.chatLanguage,
+    languageSample(ctx.messages, lastCustomer),
+  );
 }
 
 export function languageSystemRule(policy: ChatLanguage | undefined): string {
