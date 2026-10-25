@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { QUIET_MODES } from "./alerts";
 import { DIGEST_SECTORS } from "./digest-templates";
 import { PIPELINE_STAGES, type PipelineStage } from "./types";
 
@@ -134,16 +135,26 @@ export function parseBulkBody(b: unknown): BulkInput | Err {
   return "error" in op ? op : { ...op, ids: ids.ids };
 }
 
+const hour = (name: string) =>
+  z
+    .number()
+    .int({ message: `${name} must be 0-23` })
+    .min(0, { message: `${name} must be 0-23` })
+    .max(23, { message: `${name} must be 0-23` })
+    .optional();
+
 const digestSettingsBody = z.object({
   digestEnabled: z.boolean().optional(),
-  digestHour: z
-    .number()
-    .int({ message: "digestHour must be 0-23" })
-    .min(0, { message: "digestHour must be 0-23" })
-    .max(23, { message: "digestHour must be 0-23" })
-    .optional(),
+  digestHour: hour("digestHour"),
   /** "" = infer from the tenant's capabilities. */
   digestSector: z.enum(["", ...DIGEST_SECTORS], { message: "bad_sector" }).optional(),
+  alertsEnabled: z.boolean().optional(),
+  alertApprovals: z.boolean().optional(),
+  alertHandoffs: z.boolean().optional(),
+  quietHoursEnabled: z.boolean().optional(),
+  quietStartHour: hour("quietStartHour"),
+  quietEndHour: hour("quietEndHour"),
+  quietMode: z.enum(QUIET_MODES, { message: "bad_quiet_mode" }).optional(),
   /** `connect` issues a fresh `START <code>`; `disconnect` stops sends to the caller. */
   action: z.enum(["connect", "disconnect"], { message: "bad_action" }).optional(),
 });

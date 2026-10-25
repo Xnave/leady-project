@@ -45,7 +45,7 @@ Multi-tenant agent CRM. A lead messages on WhatsApp/Instagram (via Zernio) or th
 
 **When adding a port, `run-turn.ts` is the only file to change.** Only touch `src/inngest/functions.ts` if the turn needs a new durable step or a new event.
 
-Because nudge scheduling is split (the port records the event, the Inngest wrapper sends it), callers that invoke `runTurnNow()` directly must send the returned `nudgeEvent` themselves - `dispatchNudgeEvent()` in `run-turn.ts` does this. Details: [`docs/nudges.md`](docs/nudges.md).
+Because nudge scheduling is split (the port records the event, the Inngest wrapper sends it), callers that invoke `runTurnNow()` directly must send the returned `nudgeEvent` themselves - `dispatchNudgeEvent()` in `run-turn.ts` does this. The same goes for `ownerAlertEvents` (instant WhatsApp alerts for approvals/handoffs the turn opened): `tryDispatchOwnerAlertEvents()`. Details: [`docs/nudges.md`](docs/nudges.md).
 
 Turn ordering is protected by `concurrency: [{ key: "event.data.conversationId", limit: 1 }]` on `runAgentTurn`.
 

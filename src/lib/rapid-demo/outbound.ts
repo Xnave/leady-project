@@ -55,23 +55,12 @@ export async function notifyRapidDemoHitl(opts: {
     const fields = (convo.lead.fields ?? {}) as Record<string, unknown>;
     if (fields.rapidDemo !== true) return;
 
-    let since = opts.since;
-    if (opts.triggerMessageId) {
-      const trigger = await prisma.message.findFirst({
-        where: { id: opts.triggerMessageId, tenantId: opts.tenantId },
-        select: { createdAt: true },
-      });
-      if (trigger) since = trigger.createdAt;
-    }
-
-    const tasks = await prisma.hitlTask.findMany({
-      where: {
-        tenantId: opts.tenantId,
-        leadId: convo.leadId,
-        status: "open",
-        createdAt: { gte: since },
-      },
-      orderBy: { createdAt: "asc" },
+    const { tasksOpenedThisTurn } = await import("@/lib/turn-tasks");
+    const { tasks } = await tasksOpenedThisTurn({
+      tenantId: opts.tenantId,
+      leadId: convo.leadId,
+      triggerMessageId: opts.triggerMessageId,
+      since: opts.since,
     });
     if (tasks.length === 0) return;
 

@@ -35,6 +35,7 @@ import { decorateRapidDemoText, notifyRapidDemoHitl, turnNeedsDemoNotice } from 
 import { inngest } from "@/inngest/client";
 import { prisma } from "@/lib/db";
 import { batchLeadRefreshes, safeRefreshLeadState } from "@/lib/crm/refresh";
+import { collectOwnerAlertEvents, type OwnerAlertEvent } from "@/lib/crm/alerts-send";
 import { addTurnPerf, runWithTurnPerf, timeAsync } from "@/lib/perf";
 
 function logTurn(phase: "enter" | "exit", extra: Record<string, unknown>) {
@@ -168,6 +169,21 @@ export async function dispatchNudgeEvent(
   return true;
 }
 
+/**
+ * Send the owner-alert events a turn returned. `runAgentTurn` does this through
+ * `step.sendEvent`; callers that invoke `runTurnNow()` directly must call this.
+ */
+export async function tryDispatchOwnerAlertEvents(events: OwnerAlertEvent[] | undefined): Promise<boolean> {
+  if (!events?.length) return false;
+  try {
+    await inngest.send(events);
+    return true;
+  } catch (err) {
+    console.warn(JSON.stringify({ msg: "inngest.unreachable", op: "owner_alert", error: String(err) }));
+    return false;
+  }
+}
+
 export async function enqueueAgentTurn(opts: {
   tenantId: string;
   conversationId: string;
@@ -224,7 +240,18 @@ type RunTurnOpts = {
   triggerMessageId?: string;
   /** Epoch ms stamped at enqueue - worker start minus this is queue_ms. */
   inboundAt?: number;
+  /**
+   * Epoch ms to match the tasks this turn opened from, for turns with no
+   * trigger message (HITL resume). Set once by the caller so a re-run still
+   * finds what an earlier attempt opened; defaults to the worker start.
+   */
+  tasksSince?: number;
 };
+
+/** Where `tasksOpenedThisTurn` starts when there is no trigger message. */
+export function turnTasksSince(opts: Pick<RunTurnOpts, "tasksSince">, started: number): Date {
+  return new Date(opts.tasksSince ?? started);
+}
 
 export type SkippedTurnResult = {
   skipped: "missing_conversation" | "agent_replies_disabled";
@@ -270,10 +297,20 @@ export async function runTurnNow(opts: RunTurnOpts) {
       tenantId: opts.tenantId,
       conversationId: result.conversationId ?? opts.conversationId,
       triggerMessageId: opts.triggerMessageId,
-      since: new Date(started),
+      since: turnTasksSince(opts, started),
     });
   }
-  return result;
+  // Approvals and handoffs this turn opened; the caller sends them (see tryDispatchOwnerAlertEvents).
+  const ownerAlertEvents: OwnerAlertEvent[] =
+    "skipped" in result
+      ? []
+      : await collectOwnerAlertEvents({
+          tenantId: opts.tenantId,
+          conversationId: result.conversationId ?? opts.conversationId,
+          triggerMessageId: opts.triggerMessageId,
+          since: turnTasksSince(opts, started),
+        });
+  return { ...result, ownerAlertEvents };
 }
 
 async function runTurn(opts: RunTurnOpts) {
