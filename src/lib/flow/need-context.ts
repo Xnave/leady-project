@@ -68,7 +68,8 @@ export function looksLikeNothingToAdd(text: string): boolean {
 export function resolveNeedFromReply(
   raw: string,
   gathered: string,
-): { need: string } | { reject: "empty" | "deixis" | "nothing_without_gathered" } {
+  messages?: readonly MessageSnapshot[],
+): { need: string } | { reject: "empty" | "deixis" | "nothing_without_gathered" | "verbatim" } {
   const text = raw.trim();
   if (!text) return { reject: "empty" };
   if (looksLikeNeedDeixis(text)) {
@@ -79,10 +80,30 @@ export function resolveNeedFromReply(
     if (gathered) return { need: gathered };
     return { reject: "nothing_without_gathered" };
   }
+  if (messages && interestCopiesLeadMessage(text, messages) && !allowNeedExtra(text, gathered, messages)) {
+    return { reject: "verbatim" };
+  }
   if (gathered) {
     const head = gathered.slice(0, Math.min(40, gathered.length));
     if (head && text.includes(head)) return { need: text };
     return { need: `${gathered}\n${text}` };
   }
   return { need: text };
+}
+
+/**
+ * A later lead message may be appended onto a saved understanding ("גם בעברית").
+ * The opener, or the only lead message, is not an extra.
+ */
+function allowNeedExtra(
+  text: string,
+  gathered: string,
+  messages: readonly MessageSnapshot[],
+): boolean {
+  if (!gathered) return false;
+  const leads = messages.filter((m) => m.role === "lead");
+  if (leads.length < 2) return false;
+  const latest = leads[leads.length - 1];
+  if (!latest || compact(latest.text) !== compact(text)) return false;
+  return leads.slice(0, -1).every((m) => compact(m.text) !== compact(text));
 }

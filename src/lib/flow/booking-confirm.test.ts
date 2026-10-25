@@ -219,6 +219,25 @@ describe("booking confirm_details rails", () => {
     expect(collected.fields.need).toBe(understood);
   });
 
+  it("does not store the opener when save_fields pastes it as need", async () => {
+    const opener = "היי Zapidly, אשמח לקבל דמו ולראות איך הסוכן יכול להתאים לעסק שלי";
+    const ctx = ctxWithFields({ booking_flow: "active" });
+    ctx.messages = [{ role: "lead", text: opener }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const save = tools.save_fields as {
+      execute: (args: Record<string, string>) => Promise<string>;
+    };
+    const result = JSON.parse(await save.execute({ need: opener }));
+    expect(result.error).toBe("verbatim");
+    expect(collected.fields.need).toBeUndefined();
+  });
+
   it("rejects a clock the customer did not say", async () => {
     const ctx = ctxWithFields({ booking_flow: "active" });
     ctx.messages = [{ role: "lead", text: "מחר" }];
@@ -254,6 +273,44 @@ describe("booking confirm_details rails", () => {
     };
     await save.execute({ time_preference: "מחר ב-17:00" });
     expect(String(collected.fields.time_preference ?? "")).toMatch(/17:00/);
+  });
+
+  it("saves בשעה 17 as 17:00 and ignores a closing hour the lead only quoted", async () => {
+    const ctx = ctxWithFields({ booking_flow: "active" });
+    ctx.messages = [{ role: "lead", text: "מחר בשעה 17" }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const save = tools.save_fields as {
+      execute: (args: Record<string, string>) => Promise<string>;
+    };
+    await save.execute({ time_preference: "מחר בשעה 17:00" });
+    expect(String(collected.fields.time_preference ?? "")).toMatch(/17:00/);
+
+    const quoted = ctxWithFields({ booking_flow: "active" });
+    quoted.messages = [{ role: "lead", text: "ראיתי שאתם פתוחים עד 19:00" }];
+    const quotedCollected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const quotedTools = getCapability("booking")!.tools!({
+      ctx: quoted,
+      stage,
+      collected: quotedCollected,
+    });
+    const quotedSave = quotedTools.save_fields as {
+      execute: (args: Record<string, string>) => Promise<string>;
+    };
+    const rejected = JSON.parse(
+      await quotedSave.execute({ time_preference: "מחר בשעה 19:00" }),
+    );
+    expect(rejected.error).toBe("unclear_time");
+    expect(quotedCollected.fields.time_preference).toBeUndefined();
   });
 
   it("keeps a clock the customer named earlier when the latest message is only a day", async () => {

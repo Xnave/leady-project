@@ -139,7 +139,7 @@ describe("persona prompt order", () => {
     const s = buildNudgeSystemPrompt(ctx, talkStage(ctx), "");
     expect(s).toMatch(/1–2 short sentences/);
     expect(s).toMatch(/Do NOT say a visit or meeting was saved/);
-    expect(s).toMatch(/Do NOT offer a calendar link, a callback, or a phone number/);
+    expect(s).toMatch(/Do NOT offer a calendar link, a callback, or a phone number, and do not attach a link/);
     expect(s).toMatch(/re-ask the open question/);
   });
 
@@ -149,7 +149,8 @@ describe("persona prompt order", () => {
     expect(s).toMatch(/BOUNDARIES \(always apply/);
     expect(s).toMatch(/ask at most one clarifying question/);
     expect(s).toMatch(/invent a phone number, a callback, or a calendar link/);
-    expect(s).toMatch(/paste it in the same message/);
+    expect(s).toMatch(/only when that exact string is in knowledge/);
+    expect(s).not.toMatch(/offer the public phone from context/);
   });
 
   it("next-step rule lives in the base talk instructions, not the persona", () => {

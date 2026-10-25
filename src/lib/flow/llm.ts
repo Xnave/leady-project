@@ -25,6 +25,7 @@ import type {
   TurnContext,
 } from "./types";
 import type { TalkCollected } from "./capabilities/booking";
+import { outboundReply, sanitizeModelOutbound } from "./outbound-guard";
 
 function lastLeadText(ctx: TurnContext): string {
   const last = [...ctx.messages].reverse().find((m) => m.role === "lead");
@@ -195,7 +196,7 @@ export async function draftNudgeReply(
   const hint =
     instruction.trim() || copyFor(lang).prompts.nudgeDefaultInstruction;
   if (!llmConfigured()) {
-    return hint;
+    return sanitizeModelOutbound(hint, ctx);
   }
   try {
     const business = ctx.tenant?.name?.trim() || "the business";
@@ -210,10 +211,10 @@ export async function draftNudgeReply(
       ].join("\n"),
       maxRetries: 2,
     });
-    return text || hint;
+    return sanitizeModelOutbound(text || hint, ctx);
   } catch (err) {
     console.error("draftNudgeReply failed, using instruction fallback", err);
-    return hint;
+    return sanitizeModelOutbound(hint, ctx);
   }
 }
 
@@ -253,7 +254,7 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
         intent?: "sales" | "support" | "other";
       }) => {
         if (!collected.replyLocked) {
-          collected.reply = text.trim();
+          collected.reply = outboundReply(text.trim(), ctx);
         }
         if (intent) collected.intent = intent;
         return "ok";
@@ -336,6 +337,7 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
     }
   }
 
+  let modelProducedText = false;
   try {
     const system = buildTalkSystemPrompt(ctx, stage, fieldsForTurn);
     // Cap talk transcript at 8 (load may keep more for clocks/helpers).
@@ -363,17 +365,21 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
     addTurnPerf({ talk_steps: result.steps?.length ?? 1, tools_used: toolsUsed });
 
     if (!collected.reply && result.text?.trim()) {
-      collected.reply = result.text.trim();
+      collected.reply = outboundReply(result.text.trim(), ctx);
     }
+    modelProducedText = (result.text?.trim() ?? "") !== "" || toolsUsed.length > 0;
   } catch (err) {
     console.error("talkTurn LLM failed, degrading", err);
     return degradeTalk(ctx, stage);
   }
 
+  // A cleared model message is not a model failure. Send nothing new so the
+  // last reply stays, instead of escalating to a human.
   if (
     !collected.reply &&
     !(collected.effects?.length) &&
-    !collected.nextStage
+    !collected.nextStage &&
+    !modelProducedText
   ) {
     return degradeTalk(ctx, stage);
   }

@@ -78,12 +78,30 @@ function hhmm(h: number, m: number): string | null {
 
 /** Explicit clocks in the text (HH:MM and am/pm). Bare "ב-10" is not a stated hour. */
 export function clocksInText(text: string): string[] {
-  const found = new Set<string>();
+  return explicitClockHits(text).map((hit) => hit.clock);
+}
+
+/** Words that sit between "לא" / "עד" and the hour ("בשעה", "ב-", "at"). */
+const CLOCK_LEAD_IN = String.raw`(?:בשעה|ב־|ב-|at\s+)?`;
+
+/** A clock after לא/not, עד/until, or a prior HH:MM dash is not a visit hour. */
+function clockDiscarded(text: string, index: number): boolean {
+  const before = text.slice(Math.max(0, index - 40), index);
+  if (new RegExp(`(?:לא|not)\\s+${CLOCK_LEAD_IN}\\s*$`, "i").test(before)) return true;
+  if (new RegExp(`(?:עד|until)\\s+${CLOCK_LEAD_IN}\\s*$`, "i").test(before)) return true;
+  if (new RegExp(`\\d{1,2}\\s*:\\s*\\d{2}\\s*[-–—]\\s*${CLOCK_LEAD_IN}\\s*$`).test(before)) {
+    return true;
+  }
+  return false;
+}
+
+function explicitClockHits(text: string): { clock: string; index: number }[] {
+  const hits: { clock: string; index: number }[] = [];
   const colon = /\b(\d{1,2})\s*:\s*(\d{2})\b/g;
   let match: RegExpExecArray | null;
   while ((match = colon.exec(text))) {
     const clock = hhmm(Number(match[1]), Number(match[2]));
-    if (clock) found.add(clock);
+    if (clock) hits.push({ clock, index: match.index });
   }
   const ampm = /\b(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b/gi;
   while ((match = ampm.exec(text))) {
@@ -93,7 +111,33 @@ export function clocksInText(text: string): string[] {
     if (afternoon && h < 12) h += 12;
     if (!afternoon && h === 12) h = 0;
     const clock = hhmm(h, minute);
-    if (clock) found.add(clock);
+    if (clock) hits.push({ clock, index: match.index });
+  }
+  return hits;
+}
+
+/** Clocks the model put on the saved slot, including בשעה 17 → 17:00. */
+function proposedClocks(text: string): string[] {
+  const found = new Set(clocksInText(text));
+  const parsed = parseTime(text);
+  if (parsed) found.add(parsed);
+  return [...found];
+}
+
+/**
+ * Clocks a lead message actually offered.
+ * Uses the same hour reading as parseTime, and skips negated or range-end hours.
+ */
+function statedClocks(text: string): string[] {
+  const found = new Set<string>();
+  for (const hit of explicitClockHits(text)) {
+    if (!clockDiscarded(text, hit.index)) found.add(hit.clock);
+  }
+  const parsed = parseTime(text);
+  if (parsed && !found.has(parsed)) {
+    const idx = text.indexOf(parsed);
+    const at = idx >= 0 ? idx : text.search(new RegExp(`(?<!\\d)${Number(parsed.slice(0, 2))}(?!\\d)`));
+    if (at >= 0 && !clockDiscarded(text, at)) found.add(parsed);
   }
   return [...found];
 }
@@ -104,9 +148,9 @@ export function clocksInText(text: string): string[] {
  */
 export function clockGroundedInLeadText(proposed: string, leadTexts: readonly string[]): boolean {
   if (!messageStatesClock(proposed)) return true;
-  const wanted = clocksInText(proposed);
+  const wanted = proposedClocks(proposed);
   if (wanted.length === 0) return false;
-  const stated = new Set(leadTexts.flatMap(clocksInText));
+  const stated = new Set(leadTexts.flatMap(statedClocks));
   return wanted.every((clock) => stated.has(clock));
 }
 

@@ -180,6 +180,27 @@ function lastLeadText(ctx: TurnContext): string {
   return [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
 }
 
+/** Open booking question, when collection is active and a gap remains. Rails copy. */
+export function bookingActiveGapReply(ctx: TurnContext): string | null {
+  const required = effectiveBookingRequired(ctx);
+  const fields = ctx.lead.fields;
+  if (!isBookingCollectActive(fields, required)) return null;
+  const gaps = bookingFieldGaps(fields, required);
+  if (gaps.length === 0) return null;
+  const next = gaps[0];
+  const lang = replyLang(ctx, lastLeadText(ctx));
+  return askNextBookingGap(
+    lang,
+    next,
+    fields,
+    {
+      hours: venueHoursFromCtx(ctx),
+      deducedPhone: next === "phone" ? callbackPhone(ctx) : undefined,
+    },
+    { ctx },
+  );
+}
+
 /** The lead's still-relevant meeting, loaded by this capability's `loadState` hook. */
 export function recentMeeting(ctx: TurnContext): RecentMeetingSnapshot | undefined {
   return capabilityState<RecentMeetingSnapshot>(ctx, "booking") ?? undefined;
@@ -839,7 +860,7 @@ export function registerBookingCapability(): void {
               if (key === "need") {
                 const mergedForNeed = { ...fieldsForTurn, ...collected.fields, ...fields };
                 const gathered = storedUnderstanding(mergedForNeed, ctx.messages);
-                const resolved = resolveNeedFromReply(value, gathered);
+                const resolved = resolveNeedFromReply(value, gathered, ctx.messages);
                 if ("reject" in resolved) {
                   collected.askFieldUsed = true;
                   collected.replyLocked = true;
