@@ -1,8 +1,9 @@
 /**
- * Booking "need" / פרטי הפגישה helpers: early CRM interest, deixis, and soft "nothing to add".
- * Rails only - the talk LLM captures interest via tools in the same turn (no extra extract call).
+ * Booking "need" / פרטי הפגישה helpers.
+ * `interest` is the understanding saved by the talk turn. An exact paste of a lead message is ignored.
  */
 
+import { looksLikeShortAffirmation } from "./affirm";
 import type { LeadFields, MessageSnapshot } from "./types";
 
 /** CRM field: concrete context from early chat, before booking session `need` is filled. */
@@ -10,28 +11,32 @@ export function gatheredInterest(fields: LeadFields): string {
   return String(fields.interest ?? "").trim();
 }
 
-/** Skip short booking answers when mining the transcript for interest. */
-const SHORT_LEAD_RE =
-  /^(כן|לא|ok|okay|yes|no|yep|yeah|טוב|סבבה|יאללה|בסדר)[!?.]*$/iu;
+function compact(text: string): string {
+  return text.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** True when interest is an exact copy of a lead message, not an understanding. */
+export function interestCopiesLeadMessage(
+  interest: string,
+  messages: readonly MessageSnapshot[],
+): boolean {
+  const needle = compact(interest);
+  if (!needle) return false;
+  return messages.some((m) => m.role === "lead" && compact(m.text) === needle);
+}
 
 /**
- * First substantial lead message - fallback when save_interest never ran.
- * No LLM; skips short affirmations and very short time-only replies.
+ * Understanding already stored on the lead.
+ * An exact paste of a lead message does not count and is not rewritten here.
  */
-export function interestFromTranscript(
-  messages: readonly MessageSnapshot[],
-  opts?: { minLength?: number },
+export function storedUnderstanding(
+  fields: LeadFields,
+  messages?: readonly MessageSnapshot[],
 ): string {
-  const minLength = opts?.minLength ?? 40;
-  for (const m of messages) {
-    if (m.role !== "lead") continue;
-    const t = m.text.trim();
-    if (t.length < minLength) continue;
-    if (SHORT_LEAD_RE.test(t)) continue;
-    if (looksLikeNeedDeixis(t) || looksLikeNothingToAdd(t)) continue;
-    return t;
-  }
-  return "";
+  const interest = gatheredInterest(fields);
+  if (!interest) return "";
+  if (messages && interestCopiesLeadMessage(interest, messages)) return "";
+  return interest;
 }
 
 /** Pointer phrases that must not be stored as meeting details. */
@@ -70,7 +75,7 @@ export function resolveNeedFromReply(
     if (gathered) return { need: gathered };
     return { reject: "deixis" };
   }
-  if (looksLikeNothingToAdd(text)) {
+  if (looksLikeNothingToAdd(text) || looksLikeShortAffirmation(text)) {
     if (gathered) return { need: gathered };
     return { reject: "nothing_without_gathered" };
   }

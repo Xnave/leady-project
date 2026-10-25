@@ -57,6 +57,60 @@ export type NormalizedSlot = {
 };
 
 /**
+ * True when the text names a clock (HH:MM, "ב-17", "בשעה 5", "at 3", "5pm").
+ * A bare day ("מחר") does not. Used to reject a saved hour the customer never said.
+ */
+export function messageStatesClock(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (/\d{1,2}\s*:\s*\d{2}/.test(t)) return true;
+  if (/\b\d{1,2}\s*(?:a\.?m\.?|p\.?m\.?)\b/i.test(t)) return true;
+  if (/(?:בשעה|ב־|ב-|at\s+)\s*\d{1,2}/i.test(t)) return true;
+  if (/(?:^|[^\d])ב\s*\d{1,2}(?!\d)/.test(t)) return true;
+  return false;
+}
+
+function hhmm(h: number, m: number): string | null {
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return `${pad2(h)}:${pad2(m)}`;
+}
+
+/** Explicit clocks in the text (HH:MM and am/pm). Bare "ב-10" is not a stated hour. */
+export function clocksInText(text: string): string[] {
+  const found = new Set<string>();
+  const colon = /\b(\d{1,2})\s*:\s*(\d{2})\b/g;
+  let match: RegExpExecArray | null;
+  while ((match = colon.exec(text))) {
+    const clock = hhmm(Number(match[1]), Number(match[2]));
+    if (clock) found.add(clock);
+  }
+  const ampm = /\b(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b/gi;
+  while ((match = ampm.exec(text))) {
+    let h = Number(match[1]);
+    const minute = match[2] ? Number(match[2]) : 0;
+    const afternoon = match[3].toLowerCase().startsWith("p");
+    if (afternoon && h < 12) h += 12;
+    if (!afternoon && h === 12) h = 0;
+    const clock = hhmm(h, minute);
+    if (clock) found.add(clock);
+  }
+  return [...found];
+}
+
+/**
+ * A proposed slot that contains a clock is grounded when that clock appears
+ * in some customer message. A value with no clock is not checked here.
+ */
+export function clockGroundedInLeadText(proposed: string, leadTexts: readonly string[]): boolean {
+  if (!messageStatesClock(proposed)) return true;
+  const wanted = clocksInText(proposed);
+  if (wanted.length === 0) return false;
+  const stated = new Set(leadTexts.flatMap(clocksInText));
+  return wanted.every((clock) => stated.has(clock));
+}
+
+/**
  * True when the text has a bare hour 1–12 with no morning/evening/am/pm marker
  * (e.g. "רביעי ב6"). Callers should ask for clarification instead of assuming AM.
  */

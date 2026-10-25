@@ -1,32 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
   gatheredInterest,
-  interestFromTranscript,
+  interestCopiesLeadMessage,
   looksLikeNeedDeixis,
   looksLikeNothingToAdd,
   resolveNeedFromReply,
+  storedUnderstanding,
 } from "./need-context";
 import { askBookingField } from "./booking";
-import { formatSlotForDisplay, formatSlotPhrase, normalizeSlot } from "./slot";
+import {
+  clockGroundedInLeadText,
+  formatSlotForDisplay,
+  formatSlotPhrase,
+  messageStatesClock,
+  normalizeSlot,
+} from "./slot";
 
 describe("need-context", () => {
   it("reads CRM interest", () => {
     expect(gatheredInterest({})).toBe("");
     expect(gatheredInterest({ interest: "  hours gap  " })).toBe("hours gap");
-  });
-
-  it("mines first substantial lead message from transcript", () => {
-    const opener =
-      "היי Zapidly, סיימתי את מפת ההזדמנויות. עסק: קליניקה. המענה לא מכסה את כל שעות הפניות.";
-    expect(
-      interestFromTranscript([
-        { role: "lead", text: opener },
-        { role: "agent", text: "אשמח לעזור" },
-        { role: "lead", text: "כן" },
-        { role: "lead", text: "מחר ב7" },
-      ]),
-    ).toBe(opener);
-    expect(interestFromTranscript([{ role: "lead", text: "כן" }])).toBe("");
   });
 
   it("detects deixis and soft nothing-to-add", () => {
@@ -48,6 +41,30 @@ describe("need-context", () => {
     });
     expect(resolveNeedFromReply("מה שכתבתי למעלה", "")).toEqual({ reject: "deixis" });
     expect(resolveNeedFromReply("לא", "")).toEqual({ reject: "nothing_without_gathered" });
+    expect(resolveNeedFromReply("כן", gathered)).toEqual({ need: gathered });
+    expect(resolveNeedFromReply("yes", gathered)).toEqual({ need: gathered });
+    expect(resolveNeedFromReply("כן", "")).toEqual({ reject: "nothing_without_gathered" });
+  });
+
+  it("ignores an exact paste and keeps a saved understanding", () => {
+    const opener = "היי Zapidly, אשמח לקבל דמו ולראות איך הסוכן יכול להתאים לעסק שלי";
+    const messages = [{ role: "lead" as const, text: opener }];
+    const understood = "רוצה דמו כדי לראות איך הסוכן מתאים לעסק";
+    expect(interestCopiesLeadMessage(opener, messages)).toBe(true);
+    expect(interestCopiesLeadMessage("אשמח לקבל דמו ולראות איך הסוכן יכול להתאים לעסק שלי", messages)).toBe(
+      false,
+    );
+    expect(interestCopiesLeadMessage(understood, messages)).toBe(false);
+    expect(storedUnderstanding({ interest: opener }, messages)).toBe("");
+    expect(storedUnderstanding({ interest: understood }, messages)).toBe(understood);
+  });
+
+  it("accepts a clock the customer named earlier in the thread", () => {
+    expect(messageStatesClock("מחר")).toBe(false);
+    expect(messageStatesClock("מחר ב-17:00")).toBe(true);
+    expect(clockGroundedInLeadText("23 באוקטובר בשעה 10:00", ["מחר"])).toBe(false);
+    expect(clockGroundedInLeadText("23 באוקטובר בשעה 17:00", ["מחר ב-17:00"])).toBe(true);
+    expect(clockGroundedInLeadText("23 באוקטובר בשעה 17:00", ["ב-17:00", "מחר"])).toBe(true);
   });
 
   it("presents gathered interest when asking need", () => {
