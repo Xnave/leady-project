@@ -5,6 +5,7 @@ import { getCapability } from "./registry";
 import type { TalkStage, TurnContext } from "./types";
 import { defaultHitlPolicy, defaultLeadSchema } from "./validate";
 import { bookingInstance } from "./booking-config";
+import { copyFor, fillTemplate, replyLang } from "@/lib/copy";
 
 function ctxWithFields(fields: Record<string, unknown>): TurnContext {
   const flow = flowForCapabilities({ capabilities: ["booking"] });
@@ -119,7 +120,7 @@ describe("booking confirm_details rails", () => {
       phone: "0526595639",
     };
     const ctx = ctxWithFields(fields);
-    ctx.tenant = { ...ctx.tenant, chatLanguage: "multi" };
+    if (ctx.tenant) ctx.tenant.chatLanguage = "multi";
     ctx.messages = [
       { role: "lead", text: "היי, אשמח לקבל דמו לעסק שיפוצים" },
       { role: "agent", text: "איזה יום ושעה יתאימו לך?" },
@@ -138,6 +139,44 @@ describe("booking confirm_details rails", () => {
     await confirm.execute({});
     expect(collected.reply).toMatch(/הנה פרטי הפגישה/);
     expect(collected.reply).not.toMatch(/Perfect/);
+  });
+
+  it("keeps the saved-visit line in Hebrew when the latest message is a phone number", () => {
+    const ctx = ctxWithFields({});
+    if (ctx.tenant) ctx.tenant.chatLanguage = "multi";
+    ctx.messages = [
+      { role: "lead", text: "מאשר" },
+      { role: "agent", text: "באיזה מספר טלפון נוח לך שניצור קשר?" },
+      { role: "lead", text: "0526595639" },
+    ];
+    const lang = replyLang(ctx, "0526595639");
+    expect(lang).toBe("he");
+    const text = fillTemplate(copyFor(lang).chat.bookingRequestTemplate, {
+      date: "26 באוקטובר",
+      time: "18:00",
+      business: "Zapidly",
+    });
+    expect(text).toContain("רשמתי בקשה");
+    expect(text).not.toContain("Got it");
+  });
+
+  it("keeps a saved Hebrew thread when the latest message is a phone number", () => {
+    const ctx = ctxWithFields({});
+    if (ctx.tenant) ctx.tenant.chatLanguage = "multi";
+    ctx.conversation = { ...ctx.conversation, replyLanguage: "he" };
+    ctx.messages = [{ role: "lead", text: "0526595639" }];
+    expect(replyLang(ctx, "0526595639")).toBe("he");
+  });
+
+  it("switches a saved Hebrew thread when the lead writes ok", () => {
+    const ctx = ctxWithFields({});
+    if (ctx.tenant) ctx.tenant.chatLanguage = "multi";
+    ctx.conversation = { ...ctx.conversation, replyLanguage: "he" };
+    ctx.messages = [
+      { role: "lead", text: "מאשר" },
+      { role: "lead", text: "ok" },
+    ];
+    expect(replyLang(ctx, "ok")).toBe("en");
   });
 
   it("confirm_details while pending appends a תוסיף extra instead of skip", async () => {

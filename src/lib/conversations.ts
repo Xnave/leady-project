@@ -310,6 +310,7 @@ export async function loadTurnContext(
           nudgeCountByStage: true,
           summary: true,
           lifecycleReason: true,
+          replyLanguage: true,
           session: true,
           lead: { select: { id: true, externalUserId: true, fields: true } },
           agent: {
@@ -445,6 +446,7 @@ export async function loadTurnContext(
       nudgeCountByStage: (conversation.nudgeCountByStage as Record<string, number>) ?? {},
       summary: conversation.summary ?? "",
       lifecycleReason: conversation.lifecycleReason || undefined,
+      replyLanguage: conversation.replyLanguage ?? "",
     },
     lead: {
       id: conversation.lead.id,
@@ -505,6 +507,17 @@ export async function persistStage(tenantId: string, conversationId: string, sta
   await prisma.conversation.update({
     where: { id: conversationId },
     data: { flowState: stageId },
+  });
+}
+
+export async function persistReplyLanguage(
+  tenantId: string,
+  conversationId: string,
+  lang: "en" | "he",
+) {
+  await prisma.conversation.updateMany({
+    where: { id: conversationId, tenantId },
+    data: { replyLanguage: lang },
   });
 }
 
