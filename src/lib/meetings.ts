@@ -21,11 +21,11 @@ import {
   callbackPhone,
   savedPhone,
 } from "@/lib/flow/booking-collect";
-import { isChatLanguage, savedReplyLanguage } from "@/lib/flow/locale";
+import { isChatLanguage } from "@/lib/flow/locale";
 import { normalizeSlot, weekdayLabelForSlot } from "@/lib/flow/slot";
 import { summarizeConversation } from "@/lib/flow/summarize";
 import type { TurnContext } from "@/lib/flow/types";
-import { persistTurnFields } from "@/lib/conversations";
+import { persistTurnFields, replyLanguageWhenUnset } from "@/lib/conversations";
 import {
   createRequestWithApprovalTask,
   decideRequest,
@@ -303,7 +303,12 @@ export async function markMeetingDecision(opts: {
     }).then(parseBookingConfig),
   ]);
   const policy = isChatLanguage(tenant.chatLanguage) ? tenant.chatLanguage : "multi";
-  const lang = savedReplyLanguage(policy, conversation.replyLanguage);
+  const lang = await replyLanguageWhenUnset(
+    opts.tenantId,
+    request.conversationId,
+    policy,
+    conversation.replyLanguage,
+  );
   const chat = copyFor(lang).chat;
   const data = visitData(request);
   const previousSlot = request.timeText;
@@ -372,8 +377,12 @@ export async function markMeetingDecision(opts: {
   });
 
   const lead = await prisma.lead.findFirstOrThrow({ where: { id: request.leadId } });
+  const freshSession = await prisma.conversation.findFirst({
+    where: { id: request.conversationId, tenantId: opts.tenantId },
+    select: { session: true },
+  });
   const crm = { ...((lead.fields as Record<string, unknown>) ?? {}) };
-  const session = { ...((conversation.session as Record<string, unknown>) ?? {}) };
+  const session = { ...((freshSession?.session as Record<string, unknown>) ?? {}) };
   const fields = { ...crm, ...session };
   const nextFields: Record<string, unknown> = { ...fields, booking_confirm: "" };
   delete nextFields.time_preference;

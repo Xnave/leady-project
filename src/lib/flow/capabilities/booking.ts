@@ -323,7 +323,7 @@ export function reconcileBooking(
   {
     const bag = { ...fields, ...nextFields };
     const usable = storedUnderstanding(bag, ctx.messages);
-    const needEmpty = !String(fields.need ?? nextFields.need ?? "").trim();
+    const needEmpty = !String(fields.need || nextFields.need || "").trim();
     const prompted = String(fields.need_prompted ?? nextFields.need_prompted ?? "").trim() === "1";
     const acceptsGathered =
       looksLikeNothingToAdd(last) ||

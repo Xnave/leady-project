@@ -1,10 +1,10 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { copyFor, replyLang } from "@/lib/copy";
-import { isChatLanguage, savedReplyLanguage } from "@/lib/flow/locale";
+import { isChatLanguage } from "@/lib/flow/locale";
 import { summarizeConversation } from "@/lib/flow/summarize";
 import type { LeadFields, TurnContext } from "@/lib/flow/types";
-import { persistTurnFields } from "@/lib/conversations";
+import { persistTurnFields, replyLanguageWhenUnset } from "@/lib/conversations";
 import {
   parseReservationConfig,
   renderReservationTemplate,
@@ -436,13 +436,17 @@ export async function markReservationDecision(opts: {
     }),
     prisma.conversation.findFirst({
       where: { id: reservation.conversationId, tenantId: opts.tenantId },
-      select: { replyLanguage: true, session: true },
+      select: { replyLanguage: true },
     }),
     configForTenant(opts.tenantId),
   ]);
   const policy = isChatLanguage(tenant.chatLanguage) ? tenant.chatLanguage : "multi";
-  const lang = savedReplyLanguage(policy, conversation?.replyLanguage);
-  const savedSession = (conversation?.session as LeadFields) ?? {};
+  const lang = await replyLanguageWhenUnset(
+    opts.tenantId,
+    reservation.conversationId,
+    policy,
+    conversation?.replyLanguage,
+  );
   const checkIn = reservation.startAt ? utcToIsoDate(reservation.startAt) : "";
   const checkOut = reservation.endAt ? utcToIsoDate(reservation.endAt) : "";
   const details = reservation.data as Record<string, string>;
@@ -506,9 +510,15 @@ export async function markReservationDecision(opts: {
         : undefined,
   });
 
+  const freshSession =
+    ((await prisma.conversation.findFirst({
+      where: { id: reservation.conversationId, tenantId: opts.tenantId },
+      select: { session: true },
+    }))?.session as LeadFields) ?? {};
+
   if (reschedule && altIn && altOut) {
     const session = {
-      ...savedSession,
+      ...freshSession,
       staff_date_offer: {
         reservationId: reservation.id,
         checkIn: altIn,
@@ -538,7 +548,7 @@ export async function markReservationDecision(opts: {
   }
 
   if (!approved) {
-    const currentSession = savedSession;
+    const currentSession = freshSession;
     await prisma.conversation.update({
       where: { id: reservation.conversationId },
       data: {

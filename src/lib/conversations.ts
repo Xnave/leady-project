@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { decryptSecret } from "@/lib/crypto";
 import { resolveActorLabel } from "@/lib/admin-decisions";
-import { isChatLanguage } from "@/lib/flow/locale";
+import { isChatLanguage, stickyReplyLanguage, type ChatLanguage } from "@/lib/flow/locale";
 import { defaultFlow, defaultHitlPolicy, defaultLeadSchema } from "@/lib/flow/validate";
 import type { AgentSnapshot, TurnContext } from "@/lib/flow/types";
 import type { FlowDefinition, HitlPolicy, LeadFields, LeadSchema } from "@/lib/flow/types";
@@ -508,6 +508,30 @@ export async function persistStage(tenantId: string, conversationId: string, sta
     where: { id: conversationId },
     data: { flowState: stageId },
   });
+}
+
+/**
+ * A saved he/en wins. An empty column is seeded from lead messages already in the thread,
+ * so an existing Hebrew conversation is not treated as English.
+ */
+export async function replyLanguageWhenUnset(
+  tenantId: string,
+  conversationId: string,
+  policy: ChatLanguage | undefined,
+  saved: string | null | undefined,
+): Promise<"en" | "he"> {
+  if (policy === "he" || policy === "en") return policy;
+  if (saved === "he" || saved === "en") return saved;
+  const rows = await prisma.message.findMany({
+    where: { tenantId, conversationId, role: "lead" },
+    orderBy: { createdAt: "desc" },
+    take: 16,
+    select: { text: true },
+  });
+  return stickyReplyLanguage(
+    "",
+    rows.reverse().map((row) => row.text),
+  );
 }
 
 export async function persistReplyLanguage(

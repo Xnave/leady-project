@@ -52,12 +52,3 @@ export function stickyReplyLanguage(
   }
   return current ?? "en";
 }
-
-/** A decision reads the column already loaded with the conversation. Empty stays English. */
-export function savedReplyLanguage(
-  policy: ChatLanguage | undefined,
-  saved: string | null | undefined,
-): "en" | "he" {
-  if (policy === "he" || policy === "en") return policy;
-  return saved === "he" ? "he" : "en";
-}

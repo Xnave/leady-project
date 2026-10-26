@@ -144,6 +144,11 @@ export { introGreeting } from "@/lib/copy";
 /**
  * Safe degrade when the LLM is unavailable - never invent booking decisions.
  */
+/** True only when model text was cleared and an earlier outbound reply can stay. */
+export function keepClearedTalk(opts: { producedText: boolean; hasPriorReply: boolean }): boolean {
+  return opts.producedText && opts.hasPriorReply;
+}
+
 export function degradeTalk(ctx: TurnContext, _stage: TalkStage): TalkOutcome {
   const last = lastLeadText(ctx);
   const lang = replyLang(ctx, last);
@@ -367,14 +372,18 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
     if (!collected.reply && result.text?.trim()) {
       collected.reply = outboundReply(result.text.trim(), ctx);
     }
-    modelProducedText = (result.text?.trim() ?? "") !== "" || toolsUsed.length > 0;
+    const producedText = (result.text?.trim() ?? "") !== "" || toolsUsed.includes("reply");
+    modelProducedText = keepClearedTalk({
+      producedText,
+      hasPriorReply: hasAgentReplied(ctx),
+    });
   } catch (err) {
     console.error("talkTurn LLM failed, degrading", err);
     return degradeTalk(ctx, stage);
   }
 
-  // A cleared model message is not a model failure. Send nothing new so the
-  // last reply stays, instead of escalating to a human.
+  // A cleared model message keeps the previous reply. Tool calls with no text,
+  // or a cleared first message, still fall back instead of sending nothing.
   if (
     !collected.reply &&
     !(collected.effects?.length) &&
