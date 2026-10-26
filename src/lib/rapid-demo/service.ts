@@ -16,9 +16,11 @@ import {
   demoTtlMs,
   fileHost,
   generateDemoCode,
-  hashIp,
+  demoDraftOwnedBy,
   isActiveDemo,
   rateLimitDecision,
+  resolveDemoIdentity,
+  type DemoIdentity,
   type DemoReuseRow,
 } from "./guards";
 import { activationPrefill, type DemoLang } from "./copy";
@@ -67,13 +69,10 @@ export type RapidDemoFailure = {
 
 export type RapidDemoResult = RapidDemoSuccess | RapidDemoFailure;
 
-type Identity = { ipHash: string; browserId: string };
+type Identity = DemoIdentity;
 
-function identityOf(input: { clientIp?: string; browserId?: string }): Identity | null {
-  const ip = input.clientIp?.trim() ?? "";
-  const browserId = input.browserId?.trim().slice(0, 80) ?? "";
-  if (!ip && !browserId) return null;
-  return { ipHash: ip ? hashIp(ip) : "", browserId };
+function identityOf(input: { clientIp?: string; browserId?: string; bypass?: string }): Identity | null {
+  return resolveDemoIdentity(input);
 }
 
 function visitorOr(identity: Identity): Prisma.RapidDemoWhereInput[] {
@@ -84,9 +83,7 @@ function visitorOr(identity: Identity): Prisma.RapidDemoWhereInput[] {
 }
 
 function ownsDraft(row: { ipHash: string; browserId: string }, identity: Identity): boolean {
-  if (identity.ipHash && row.ipHash === identity.ipHash) return true;
-  if (identity.browserId && row.browserId === identity.browserId) return true;
-  return false;
+  return demoDraftOwnedBy(row, identity);
 }
 
 function isIdentityConflict(err: unknown): boolean {
@@ -190,6 +187,8 @@ export async function previewRapidDemo(input: {
   capabilities?: unknown;
   clientIp?: string;
   browserId?: string;
+  /** Admin key from https://zapidly.com/demo?key=… — lifts the one-demo-per-visitor limit. */
+  bypass?: string;
 }): Promise<RapidDemoResult> {
   const identity = identityOf(input);
   if (!identity) return { ok: false, error: "missing_identity" };
@@ -259,6 +258,8 @@ export async function createRapidDemoFromDraft(input: {
   capabilities?: unknown;
   clientIp?: string;
   browserId?: string;
+  /** Same admin key sent on preview, so this call can finish that draft. */
+  bypass?: string;
 }): Promise<RapidDemoResult> {
   const identity = identityOf(input);
   if (!identity) return { ok: false, error: "missing_identity" };
