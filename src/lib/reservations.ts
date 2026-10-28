@@ -1,10 +1,10 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { copyFor } from "@/lib/copy";
-import { isChatLanguage, resolveReplyLanguage } from "@/lib/flow/locale";
+import { copyFor, replyLang } from "@/lib/copy";
+import { isChatLanguage } from "@/lib/flow/locale";
 import { summarizeConversation } from "@/lib/flow/summarize";
 import type { LeadFields, TurnContext } from "@/lib/flow/types";
-import { persistTurnFields } from "@/lib/conversations";
+import { persistTurnFields, replyLanguageWhenUnset } from "@/lib/conversations";
 import {
   parseReservationConfig,
   renderReservationTemplate,
@@ -43,8 +43,7 @@ export const STAY_KIND = "stay";
 export const RESERVATION_LINK_SENT_TASK = "reservation_link_sent";
 
 function replyLangFromCtx(ctx: TurnContext): "en" | "he" {
-  const last = [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
-  return resolveReplyLanguage(ctx.tenant?.chatLanguage, last);
+  return replyLang(ctx);
 }
 
 async function configForTenant(tenantId: string): Promise<ReservationConfig> {
@@ -431,18 +430,23 @@ export async function markReservationDecision(opts: {
   });
   if (!reservation) throw new Error("reservation_not_found");
 
-  const tenant = await prisma.tenant.findFirstOrThrow({
-    where: { id: opts.tenantId },
-  });
-  const lastLead = await prisma.message.findFirst({
-    where: { conversationId: reservation.conversationId, role: "lead" },
-    orderBy: { createdAt: "desc" },
-    select: { text: true },
-  });
-
-  const config = await configForTenant(opts.tenantId);
+  const [tenant, conversation, config] = await Promise.all([
+    prisma.tenant.findFirstOrThrow({
+      where: { id: opts.tenantId },
+    }),
+    prisma.conversation.findFirst({
+      where: { id: reservation.conversationId, tenantId: opts.tenantId },
+      select: { replyLanguage: true },
+    }),
+    configForTenant(opts.tenantId),
+  ]);
   const policy = isChatLanguage(tenant.chatLanguage) ? tenant.chatLanguage : "multi";
-  const lang = resolveReplyLanguage(policy, lastLead?.text ?? "");
+  const lang = await replyLanguageWhenUnset(
+    opts.tenantId,
+    reservation.conversationId,
+    policy,
+    conversation?.replyLanguage,
+  );
   const checkIn = reservation.startAt ? utcToIsoDate(reservation.startAt) : "";
   const checkOut = reservation.endAt ? utcToIsoDate(reservation.endAt) : "";
   const details = reservation.data as Record<string, string>;
@@ -506,12 +510,15 @@ export async function markReservationDecision(opts: {
         : undefined,
   });
 
+  const freshSession =
+    ((await prisma.conversation.findFirst({
+      where: { id: reservation.conversationId, tenantId: opts.tenantId },
+      select: { session: true },
+    }))?.session as LeadFields) ?? {};
+
   if (reschedule && altIn && altOut) {
     const session = {
-      ...((await prisma.conversation.findFirst({
-        where: { id: reservation.conversationId },
-        select: { session: true },
-      }))?.session as LeadFields) ?? {},
+      ...freshSession,
       staff_date_offer: {
         reservationId: reservation.id,
         checkIn: altIn,
@@ -541,11 +548,7 @@ export async function markReservationDecision(opts: {
   }
 
   if (!approved) {
-    const currentSession =
-      ((await prisma.conversation.findFirst({
-        where: { id: reservation.conversationId },
-        select: { session: true },
-      }))?.session as LeadFields) ?? {};
+    const currentSession = freshSession;
     await prisma.conversation.update({
       where: { id: reservation.conversationId },
       data: {

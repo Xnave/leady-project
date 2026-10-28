@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bookingInstance } from "./booking-config";
-import { degradeTalk } from "./llm";
+import { degradeTalk, keepClearedTalk } from "./llm";
 import { flowForCatalog } from "./catalog";
 import type { TalkStage, TurnContext } from "./types";
 import { defaultLeadSchema, defaultHitlPolicy } from "./validate";
@@ -74,5 +74,13 @@ describe("degradeTalk", () => {
     expect(out.book).toBeUndefined();
     expect(out.effects?.some((e) => e.type === "request_human")).toBe(true);
     expect(out.nextStage).toBe(stage.on_escalate);
+  });
+});
+
+describe("keepClearedTalk", () => {
+  it("keeps a previous reply only when the model wrote text that was then cleared", () => {
+    expect(keepClearedTalk({ producedText: true, hasPriorReply: true })).toBe(true);
+    expect(keepClearedTalk({ producedText: true, hasPriorReply: false })).toBe(false);
+    expect(keepClearedTalk({ producedText: false, hasPriorReply: true })).toBe(false);
   });
 });
