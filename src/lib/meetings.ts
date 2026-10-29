@@ -10,6 +10,7 @@ import {
   bookingVars,
   copyFor,
   renderBookingMessage,
+  replyLang,
 } from "@/lib/copy";
 import { askBookingField, bookingFieldGaps } from "@/lib/flow/booking";
 import { bookingConfigFromCtx, parseBookingConfig } from "@/lib/flow/booking-config";
@@ -20,11 +21,11 @@ import {
   callbackPhone,
   savedPhone,
 } from "@/lib/flow/booking-collect";
-import { isChatLanguage, resolveReplyLanguage } from "@/lib/flow/locale";
+import { isChatLanguage } from "@/lib/flow/locale";
 import { normalizeSlot, weekdayLabelForSlot } from "@/lib/flow/slot";
 import { summarizeConversation } from "@/lib/flow/summarize";
 import type { TurnContext } from "@/lib/flow/types";
-import { persistTurnFields } from "@/lib/conversations";
+import { persistTurnFields, replyLanguageWhenUnset } from "@/lib/conversations";
 import {
   createRequestWithApprovalTask,
   decideRequest,
@@ -47,8 +48,7 @@ function venueFromConfig(ctx: TurnContext): { address: string; hours: string } {
 }
 
 function replyLangFromCtx(ctx: TurnContext): "en" | "he" {
-  const last = [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
-  return resolveReplyLanguage(ctx.tenant?.chatLanguage, last);
+  return replyLang(ctx);
 }
 
 /** Typed values a visit request stores in `Request.data`. */
@@ -290,26 +290,28 @@ export async function markMeetingDecision(opts: {
   });
   if (!request) throw new Error("meeting_not_found");
 
-  const tenant = await prisma.tenant.findFirstOrThrow({
-    where: { id: opts.tenantId },
-  });
-  const lastLead = await prisma.message.findFirst({
-    where: { conversationId: request.conversationId, role: "lead" },
-    orderBy: { createdAt: "desc" },
-    select: { text: true },
-  });
-
+  const [tenant, conversation, config] = await Promise.all([
+    prisma.tenant.findFirstOrThrow({
+      where: { id: opts.tenantId },
+    }),
+    prisma.conversation.findFirstOrThrow({
+      where: { id: request.conversationId, tenantId: opts.tenantId },
+    }),
+    loadInstanceConfig({
+      tenantId: opts.tenantId,
+      capabilityId: BOOKING_CAPABILITY,
+    }).then(parseBookingConfig),
+  ]);
   const policy = isChatLanguage(tenant.chatLanguage) ? tenant.chatLanguage : "multi";
-  const lang = resolveReplyLanguage(policy, lastLead?.text ?? "");
+  const lang = await replyLanguageWhenUnset(
+    opts.tenantId,
+    request.conversationId,
+    policy,
+    conversation.replyLanguage,
+  );
   const chat = copyFor(lang).chat;
   const data = visitData(request);
   const previousSlot = request.timeText;
-  const config = parseBookingConfig(
-    await loadInstanceConfig({
-      tenantId: opts.tenantId,
-      capabilityId: BOOKING_CAPABILITY,
-    }),
-  );
   const business = tenant.name?.trim() || chat.fallbackTeamName;
   const address = data.venue || config.venueAddress;
   const hours = data.hours || config.venueHours;
@@ -375,11 +377,12 @@ export async function markMeetingDecision(opts: {
   });
 
   const lead = await prisma.lead.findFirstOrThrow({ where: { id: request.leadId } });
-  const conversation = await prisma.conversation.findFirstOrThrow({
-    where: { id: request.conversationId },
+  const freshSession = await prisma.conversation.findFirst({
+    where: { id: request.conversationId, tenantId: opts.tenantId },
+    select: { session: true },
   });
   const crm = { ...((lead.fields as Record<string, unknown>) ?? {}) };
-  const session = { ...((conversation.session as Record<string, unknown>) ?? {}) };
+  const session = { ...((freshSession?.session as Record<string, unknown>) ?? {}) };
   const fields = { ...crm, ...session };
   const nextFields: Record<string, unknown> = { ...fields, booking_confirm: "" };
   delete nextFields.time_preference;

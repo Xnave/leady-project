@@ -15,6 +15,7 @@ export async function POST(req: Request) {
     company?: string;
     clientIp?: string;
     browserId?: string;
+    bypass?: string;
   };
   try {
     body = await req.json();

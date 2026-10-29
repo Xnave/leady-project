@@ -57,6 +57,125 @@ export type NormalizedSlot = {
 };
 
 /**
+ * True when the text names a clock (HH:MM, "ב-17", "בשעה 5", "at 3", "5pm").
+ * A bare day ("מחר") does not. Used to reject a saved hour the customer never said.
+ */
+export function messageStatesClock(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (/\d{1,2}\s*:\s*\d{2}/.test(t)) return true;
+  if (/\b\d{1,2}\s*(?:a\.?m\.?|p\.?m\.?)\b/i.test(t)) return true;
+  if (/(?:בשעה|ב־|ב-|at\s+)\s*\d{1,2}/i.test(t)) return true;
+  if (/(?:^|[^\d])ב\s*\d{1,2}(?!\d)/.test(t)) return true;
+  return false;
+}
+
+function hhmm(h: number, m: number): string | null {
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return `${pad2(h)}:${pad2(m)}`;
+}
+
+/** Explicit clocks in the text (HH:MM and am/pm). Bare "ב-10" is not a stated hour. */
+export function clocksInText(text: string): string[] {
+  return explicitClockHits(text).map((hit) => hit.clock);
+}
+
+/** Words that sit between "לא" / "עד" and the hour ("בשעה", "ב-", "at"). */
+const CLOCK_LEAD_IN = String.raw`(?:בשעה|ב־|ב-|at\s+)?`;
+
+/** A clock after לא/not, עד/until, or a prior HH:MM dash is not a visit hour. */
+function clockDiscarded(text: string, index: number): boolean {
+  const before = text.slice(Math.max(0, index - 40), index);
+  if (new RegExp(`(?:לא|not)\\s+${CLOCK_LEAD_IN}\\s*$`, "i").test(before)) return true;
+  if (new RegExp(`(?:עד|until)\\s+${CLOCK_LEAD_IN}\\s*$`, "i").test(before)) return true;
+  if (new RegExp(`\\d{1,2}\\s*:\\s*\\d{2}\\s*[-–—]\\s*${CLOCK_LEAD_IN}\\s*$`).test(before)) {
+    return true;
+  }
+  return false;
+}
+
+function explicitClockHits(text: string): { clock: string; index: number }[] {
+  const hits: { clock: string; index: number }[] = [];
+  const colon = /\b(\d{1,2})\s*:\s*(\d{2})\b/g;
+  let match: RegExpExecArray | null;
+  while ((match = colon.exec(text))) {
+    const clock = hhmm(Number(match[1]), Number(match[2]));
+    if (clock) hits.push({ clock, index: match.index });
+  }
+  const ampm = /\b(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b/gi;
+  while ((match = ampm.exec(text))) {
+    let h = Number(match[1]);
+    const minute = match[2] ? Number(match[2]) : 0;
+    const afternoon = match[3].toLowerCase().startsWith("p");
+    if (afternoon && h < 12) h += 12;
+    if (!afternoon && h === 12) h = 0;
+    const clock = hhmm(h, minute);
+    if (clock) hits.push({ clock, index: match.index });
+  }
+  return hits;
+}
+
+/** Clocks the model put on the saved slot, including בשעה 17 → 17:00. */
+function proposedClocks(text: string): string[] {
+  const found = new Set(clocksInText(text));
+  const parsed = parseTime(text);
+  if (parsed) found.add(parsed);
+  return [...found];
+}
+
+/**
+ * Clocks a lead message actually offered.
+ * Uses the same hour reading as parseTime, and skips negated or range-end hours.
+ */
+function statedClocks(text: string): string[] {
+  const found = new Set<string>();
+  for (const hit of explicitClockHits(text)) {
+    if (!clockDiscarded(text, hit.index)) found.add(hit.clock);
+  }
+  for (const hit of bareMeridianClocks(text)) {
+    if (!clockDiscarded(text, hit.index)) found.add(hit.clock);
+  }
+  const parsed = parseTime(text);
+  if (parsed && !found.has(parsed)) {
+    const idx = text.indexOf(parsed);
+    const at = idx >= 0 ? idx : text.search(new RegExp(`(?<!\\d)${Number(parsed.slice(0, 2))}(?!\\d)`));
+    if (at >= 0 && !clockDiscarded(text, at)) found.add(parsed);
+  }
+  return [...found];
+}
+
+/** "ב6 בערב" is 18:00. The discard check uses the digit the customer typed. */
+function bareMeridianClocks(text: string): { clock: string; index: number }[] {
+  const hits: { clock: string; index: number }[] = [];
+  const re = /(?:ב־|ב-|at\s+|בשעה\s+|ב\s*)(\d{1,2})(?!\d)(?!\s*:)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    let h = Number(match[1]);
+    const hasMeridian = /ערב|בוקר|צהריים|a\.?m\.?|p\.?m\.?/i.test(text);
+    if (!hasMeridian && h >= 1 && h <= 12) continue;
+    if (/ערב|pm/i.test(text) && h < 12) h += 12;
+    if (/בוקר|am/i.test(text) && h === 12) h = 0;
+    const clock = hhmm(h, 0);
+    const digitAt = match.index + match[0].lastIndexOf(match[1]);
+    if (clock) hits.push({ clock, index: digitAt });
+  }
+  return hits;
+}
+
+/**
+ * A proposed slot that contains a clock is grounded when that clock appears
+ * in some customer message. A value with no clock is not checked here.
+ */
+export function clockGroundedInLeadText(proposed: string, leadTexts: readonly string[]): boolean {
+  if (!messageStatesClock(proposed)) return true;
+  const wanted = proposedClocks(proposed);
+  if (wanted.length === 0) return false;
+  const stated = new Set(leadTexts.flatMap(statedClocks));
+  return wanted.every((clock) => stated.has(clock));
+}
+
+/**
  * True when the text has a bare hour 1–12 with no morning/evening/am/pm marker
  * (e.g. "רביעי ב6"). Callers should ask for clarification instead of assuming AM.
  */

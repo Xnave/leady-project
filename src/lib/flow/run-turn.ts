@@ -4,6 +4,7 @@ import {
   insertAgentMessage,
   loadTurnContext,
   pauseForHuman,
+  persistReplyLanguage,
   persistStage,
   persistTurnFields,
 } from "@/lib/conversations";
@@ -313,6 +314,15 @@ export async function runTurnNow(opts: RunTurnOpts) {
   return { ...result, ownerAlertEvents };
 }
 
+async function rememberReplyLanguage(ctx: TurnContext) {
+  const policy = ctx.tenant?.chatLanguage;
+  if (policy === "he" || policy === "en") return;
+  const next = replyLang(ctx);
+  if (ctx.conversation.replyLanguage === next) return;
+  await persistReplyLanguage(ctx.tenantId, ctx.conversation.id, next);
+  ctx.conversation.replyLanguage = next;
+}
+
 async function runTurn(opts: RunTurnOpts) {
   ensureFlowRegistry();
   let ctx: Awaited<ReturnType<typeof loadTurnContext>>;
@@ -338,6 +348,7 @@ async function runTurn(opts: RunTurnOpts) {
   }
 
   const rapidDemo = ctx.lead.fields.rapidDemo === true;
+  await rememberReplyLanguage(ctx);
   if (!agentRepliesAllowed(ctx)) {
     return {
       skipped: "agent_replies_disabled",

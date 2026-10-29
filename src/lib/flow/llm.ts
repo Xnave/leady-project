@@ -25,6 +25,7 @@ import type {
   TurnContext,
 } from "./types";
 import type { TalkCollected } from "./capabilities/booking";
+import { outboundReply, sanitizeModelOutbound } from "./outbound-guard";
 
 function lastLeadText(ctx: TurnContext): string {
   const last = [...ctx.messages].reverse().find((m) => m.role === "lead");
@@ -143,6 +144,11 @@ export { introGreeting } from "@/lib/copy";
 /**
  * Safe degrade when the LLM is unavailable - never invent booking decisions.
  */
+/** True only when model text was cleared and an earlier outbound reply can stay. */
+export function keepClearedTalk(opts: { producedText: boolean; hasPriorReply: boolean }): boolean {
+  return opts.producedText && opts.hasPriorReply;
+}
+
 export function degradeTalk(ctx: TurnContext, _stage: TalkStage): TalkOutcome {
   const last = lastLeadText(ctx);
   const lang = replyLang(ctx, last);
@@ -195,7 +201,7 @@ export async function draftNudgeReply(
   const hint =
     instruction.trim() || copyFor(lang).prompts.nudgeDefaultInstruction;
   if (!llmConfigured()) {
-    return hint;
+    return sanitizeModelOutbound(hint, ctx);
   }
   try {
     const business = ctx.tenant?.name?.trim() || "the business";
@@ -210,10 +216,10 @@ export async function draftNudgeReply(
       ].join("\n"),
       maxRetries: 2,
     });
-    return text || hint;
+    return sanitizeModelOutbound(text || hint, ctx);
   } catch (err) {
     console.error("draftNudgeReply failed, using instruction fallback", err);
-    return hint;
+    return sanitizeModelOutbound(hint, ctx);
   }
 }
 
@@ -253,7 +259,7 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
         intent?: "sales" | "support" | "other";
       }) => {
         if (!collected.replyLocked) {
-          collected.reply = text.trim();
+          collected.reply = outboundReply(text.trim(), ctx);
         }
         if (intent) collected.intent = intent;
         return "ok";
@@ -336,6 +342,7 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
     }
   }
 
+  let modelProducedText = false;
   try {
     const system = buildTalkSystemPrompt(ctx, stage, fieldsForTurn);
     // Cap talk transcript at 8 (load may keep more for clocks/helpers).
@@ -363,17 +370,25 @@ export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<Talk
     addTurnPerf({ talk_steps: result.steps?.length ?? 1, tools_used: toolsUsed });
 
     if (!collected.reply && result.text?.trim()) {
-      collected.reply = result.text.trim();
+      collected.reply = outboundReply(result.text.trim(), ctx);
     }
+    const producedText = (result.text?.trim() ?? "") !== "" || toolsUsed.includes("reply");
+    modelProducedText = keepClearedTalk({
+      producedText,
+      hasPriorReply: hasAgentReplied(ctx),
+    });
   } catch (err) {
     console.error("talkTurn LLM failed, degrading", err);
     return degradeTalk(ctx, stage);
   }
 
+  // A cleared model message keeps the previous reply. Tool calls with no text,
+  // or a cleared first message, still fall back instead of sending nothing.
   if (
     !collected.reply &&
     !(collected.effects?.length) &&
-    !collected.nextStage
+    !collected.nextStage &&
+    !modelProducedText
   ) {
     return degradeTalk(ctx, stage);
   }

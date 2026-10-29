@@ -302,6 +302,7 @@ describe("capability tools surface", () => {
     expect(names).toEqual(
       expect.arrayContaining([
         "ask_field",
+        "save_interest",
         "save_fields",
         "confirm_details",
         "book_meeting",

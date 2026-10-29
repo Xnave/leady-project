@@ -219,6 +219,8 @@ model Conversation {
   session          Json     @default("{}")
   /** Why this thread opened/closed: idle | admin | done | hitl_resume | approve | inbound_create | … */
   lifecycleReason  String   @default("")
+  /** Reply language for a multi tenant. Empty until a lead message uses Hebrew or Latin. */
+  replyLanguage    String   @default("")
   nudgeCountByStage Json    @default("{}")
   summary          String   @default("")
   createdAt        DateTime @default(now())

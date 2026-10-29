@@ -23,19 +23,26 @@ import {
   ipSalt,
   isBlockedHostname,
   isPublicIpAddress,
+  BYPASS_BROWSER_PREFIX,
+  demoDraftOwnedBy,
   parseDemoCode,
   parseDemoCommand,
   rapidDemoAuthorized,
+  rapidDemoBypassAuthorized,
   rateLimitDecision,
+  resolveDemoIdentity,
 } from "./guards";
 
 describe("rapid demo guards", () => {
   const prevSecret = process.env.RAPID_DEMO_API_SECRET;
+  const prevBypass = process.env.RAPID_DEMO_BYPASS_SECRET;
   const prevHour = process.env.RAPID_DEMO_HOURLY_CAP;
   const prevDay = process.env.RAPID_DEMO_DAILY_CAP;
 
   afterEach(() => {
     process.env.RAPID_DEMO_API_SECRET = prevSecret;
+    if (prevBypass === undefined) delete process.env.RAPID_DEMO_BYPASS_SECRET;
+    else process.env.RAPID_DEMO_BYPASS_SECRET = prevBypass;
     process.env.RAPID_DEMO_HOURLY_CAP = prevHour;
     process.env.RAPID_DEMO_DAILY_CAP = prevDay;
   });
@@ -47,6 +54,33 @@ describe("rapid demo guards", () => {
     expect(rapidDemoAuthorized(null)).toBe(false);
     delete process.env.RAPID_DEMO_API_SECRET;
     expect(rapidDemoAuthorized("Bearer top-secret")).toBe(false);
+  });
+
+  it("accepts only the admin bypass key and gives each use its own identity", () => {
+    process.env.RAPID_DEMO_BYPASS_SECRET = "admin-key";
+    expect(rapidDemoBypassAuthorized("admin-key")).toBe(true);
+    expect(rapidDemoBypassAuthorized("admin-key ")).toBe(true);
+    expect(rapidDemoBypassAuthorized("nope")).toBe(false);
+    expect(rapidDemoBypassAuthorized("")).toBe(false);
+    delete process.env.RAPID_DEMO_BYPASS_SECRET;
+    expect(rapidDemoBypassAuthorized("admin-key")).toBe(false);
+
+    process.env.RAPID_DEMO_BYPASS_SECRET = "admin-key";
+    const first = resolveDemoIdentity({ clientIp: "203.0.113.8", browserId: "browser-1", bypass: "admin-key" });
+    const second = resolveDemoIdentity({ clientIp: "203.0.113.8", browserId: "browser-1", bypass: "admin-key" });
+    expect(first?.bypass).toBe(true);
+    expect(first?.ipHash).toBe("");
+    expect(first?.browserId.startsWith(BYPASS_BROWSER_PREFIX)).toBe(true);
+    expect(second?.browserId).not.toBe(first?.browserId);
+    expect(first && second && demoDraftOwnedBy({ ipHash: "", browserId: first.browserId }, second)).toBe(true);
+    expect(demoDraftOwnedBy({ ipHash: "hashed", browserId: "browser-1" }, first!)).toBe(false);
+
+    const visitor = resolveDemoIdentity({ clientIp: "203.0.113.8", browserId: "browser-1", bypass: "nope" });
+    expect(visitor?.bypass).toBe(false);
+    expect(visitor?.ipHash).toBe(hashIp("203.0.113.8"));
+    expect(visitor?.browserId).toBe("browser-1");
+    expect(visitor && first && demoDraftOwnedBy({ ipHash: "", browserId: first.browserId }, visitor)).toBe(false);
+    expect(resolveDemoIdentity({})).toBeNull();
   });
 
   it("hashes an IP with the salt", () => {

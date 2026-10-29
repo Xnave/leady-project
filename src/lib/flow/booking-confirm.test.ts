@@ -5,6 +5,7 @@ import { getCapability } from "./registry";
 import type { TalkStage, TurnContext } from "./types";
 import { defaultHitlPolicy, defaultLeadSchema } from "./validate";
 import { bookingInstance } from "./booking-config";
+import { copyFor, fillTemplate, replyLang } from "@/lib/copy";
 
 function ctxWithFields(fields: Record<string, unknown>): TurnContext {
   const flow = flowForCapabilities({ capabilities: ["booking"] });
@@ -110,6 +111,74 @@ describe("booking confirm_details rails", () => {
     expect(collected2.reply).toBe(before);
   });
 
+  it("keeps Hebrew when the latest message is only a phone number", async () => {
+    const fields = {
+      booking_flow: "active",
+      time_preference: "מחר ב-18:00",
+      name: "נווה עיני",
+      need: "בדיקת סוכן לעסק שיפוצים",
+      phone: "0526595639",
+    };
+    const ctx = ctxWithFields(fields);
+    if (ctx.tenant) ctx.tenant.chatLanguage = "multi";
+    ctx.messages = [
+      { role: "lead", text: "היי, אשמח לקבל דמו לעסק שיפוצים" },
+      { role: "agent", text: "איזה יום ושעה יתאימו לך?" },
+      { role: "lead", text: "0526595639" },
+    ];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const confirm = tools.confirm_details as {
+      execute: (args: Record<string, unknown>) => Promise<unknown>;
+    };
+    await confirm.execute({});
+    expect(collected.reply).toMatch(/הנה פרטי הפגישה/);
+    expect(collected.reply).not.toMatch(/Perfect/);
+  });
+
+  it("keeps the saved-visit line in Hebrew when the latest message is a phone number", () => {
+    const ctx = ctxWithFields({});
+    if (ctx.tenant) ctx.tenant.chatLanguage = "multi";
+    ctx.messages = [
+      { role: "lead", text: "מאשר" },
+      { role: "agent", text: "באיזה מספר טלפון נוח לך שניצור קשר?" },
+      { role: "lead", text: "0526595639" },
+    ];
+    const lang = replyLang(ctx, "0526595639");
+    expect(lang).toBe("he");
+    const text = fillTemplate(copyFor(lang).chat.bookingRequestTemplate, {
+      date: "26 באוקטובר",
+      time: "18:00",
+      business: "Zapidly",
+    });
+    expect(text).toContain("רשמתי בקשה");
+    expect(text).not.toContain("Got it");
+  });
+
+  it("keeps a saved Hebrew thread when the latest message is a phone number", () => {
+    const ctx = ctxWithFields({});
+    if (ctx.tenant) ctx.tenant.chatLanguage = "multi";
+    ctx.conversation = { ...ctx.conversation, replyLanguage: "he" };
+    ctx.messages = [{ role: "lead", text: "0526595639" }];
+    expect(replyLang(ctx, "0526595639")).toBe("he");
+  });
+
+  it("switches a saved Hebrew thread when the lead writes ok", () => {
+    const ctx = ctxWithFields({});
+    if (ctx.tenant) ctx.tenant.chatLanguage = "multi";
+    ctx.conversation = { ...ctx.conversation, replyLanguage: "he" };
+    ctx.messages = [
+      { role: "lead", text: "מאשר" },
+      { role: "lead", text: "ok" },
+    ];
+    expect(replyLang(ctx, "ok")).toBe("en");
+  });
+
   it("confirm_details while pending appends a תוסיף extra instead of skip", async () => {
     const fields = {
       booking_flow: "active",
@@ -141,12 +210,13 @@ describe("booking confirm_details rails", () => {
     expect(collected.replyLocked).toBe(true);
   });
 
-  it("ask_field need presents transcript interest when CRM interest is empty", async () => {
+  it("ask_field need waits for a saved understanding instead of pasting the opener", async () => {
     const fields = {
       booking_flow: "active",
       time_preference: "8 באוקטובר 2026 בשעה 17:00",
       name: "נווה עיני",
       name_collected_by_agent: "1",
+      interest: "היי, סיימתי מפת הזדמנויות. המענה לא מכסה את כל שעות הפניות אצלנו בקליניקה.",
     };
     const ctx = ctxWithFields(fields);
     const stage = ctx.agent.flow.stages.talk as TalkStage;
@@ -159,11 +229,195 @@ describe("booking confirm_details rails", () => {
     } = { reply: "", fields: {}, effects: [] };
     const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
     const ask = tools.ask_field as {
+      execute: (args: { field: string }) => Promise<string>;
+    };
+    const result = JSON.parse(await ask.execute({ field: "need" }));
+    expect(result.error).toBe("missing_interest");
+    expect(result.hint).toMatch(/save_interest/);
+    expect(collected.reply).toBe("");
+    expect(collected.replyLocked).toBeUndefined();
+  });
+
+  it("ask_field need presents the understanding already saved on interest", async () => {
+    const understood = "רוצה דמו כדי לראות איך הסוכן מתאים לעסק";
+    const fields = {
+      booking_flow: "active",
+      time_preference: "8 באוקטובר 2026 בשעה 17:00",
+      name: "נווה עיני",
+      name_collected_by_agent: "1",
+      interest: understood,
+    };
+    const ctx = ctxWithFields(fields);
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const ask = tools.ask_field as {
       execute: (args: { field: string }) => Promise<unknown>;
     };
     await ask.execute({ field: "need" });
     expect(collected.reply).toMatch(/פרטי הפגישה/);
-    expect(collected.reply).toMatch(/שעות הפניות|מפת הזדמנויות/);
-    expect(String(collected.fields.interest ?? "")).toMatch(/שעות הפניות|מפת הזדמנויות/);
+    expect(collected.reply).toMatch(new RegExp(understood));
+    expect(collected.reply).toMatch(/לאשר או שתרצה להוסיף/);
+  });
+
+  it("save_fields yes keeps the understanding and does not append כן", async () => {
+    const understood = "רוצה דמו כדי לראות התאמה לעסק";
+    const fields = {
+      booking_flow: "active",
+      time_preference: "8 באוקטובר 2026 בשעה 17:00",
+      name: "נווה עיני",
+      interest: understood,
+    };
+    const ctx = ctxWithFields(fields);
+    ctx.messages = [{ role: "lead", text: "כן" }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const save = tools.save_fields as {
+      execute: (args: Record<string, string>) => Promise<unknown>;
+    };
+    await save.execute({ need: "כן" });
+    expect(collected.fields.need).toBe(understood);
+  });
+
+  it("does not store the opener when save_fields pastes it as need", async () => {
+    const opener = "היי Zapidly, אשמח לקבל דמו ולראות איך הסוכן יכול להתאים לעסק שלי";
+    const ctx = ctxWithFields({ booking_flow: "active" });
+    ctx.messages = [{ role: "lead", text: opener }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const save = tools.save_fields as {
+      execute: (args: Record<string, string>) => Promise<string>;
+    };
+    const result = JSON.parse(await save.execute({ need: opener }));
+    expect(result.error).toBe("verbatim");
+    expect(collected.fields.need).toBeUndefined();
+  });
+
+  it("rejects a clock the customer did not say", async () => {
+    const ctx = ctxWithFields({ booking_flow: "active" });
+    ctx.messages = [{ role: "lead", text: "מחר" }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+      replyLocked?: boolean;
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const save = tools.save_fields as {
+      execute: (args: Record<string, string>) => Promise<string>;
+    };
+    const result = JSON.parse(await save.execute({ time_preference: "23 באוקטובר בשעה 10:00" }));
+    expect(result.error).toBe("unclear_time");
+    expect(collected.reply).toMatch(/יום ושעה/);
+    expect(collected.fields.time_preference).toBeUndefined();
+  });
+
+  it("saves a clock the customer named", async () => {
+    const ctx = ctxWithFields({ booking_flow: "active" });
+    ctx.messages = [{ role: "lead", text: "מחר ב-17:00" }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const save = tools.save_fields as {
+      execute: (args: Record<string, string>) => Promise<unknown>;
+    };
+    await save.execute({ time_preference: "מחר ב-17:00" });
+    expect(String(collected.fields.time_preference ?? "")).toMatch(/17:00/);
+  });
+
+  it("saves מחר ב6 בערב as 18:00", async () => {
+    const ctx = ctxWithFields({ booking_flow: "active" });
+    ctx.messages = [{ role: "lead", text: "מחר ב6 בערב" }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const save = tools.save_fields as {
+      execute: (args: Record<string, string>) => Promise<string>;
+    };
+    const result = await save.execute({ time_preference: "מחר ב6 בערב" });
+    expect(result).not.toMatch(/unclear_time/);
+    expect(String(collected.fields.time_preference ?? "")).toMatch(/18:00/);
+  });
+
+  it("saves בשעה 17 as 17:00 and ignores a closing hour the lead only quoted", async () => {
+    const ctx = ctxWithFields({ booking_flow: "active" });
+    ctx.messages = [{ role: "lead", text: "מחר בשעה 17" }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const save = tools.save_fields as {
+      execute: (args: Record<string, string>) => Promise<string>;
+    };
+    await save.execute({ time_preference: "מחר בשעה 17:00" });
+    expect(String(collected.fields.time_preference ?? "")).toMatch(/17:00/);
+
+    const quoted = ctxWithFields({ booking_flow: "active" });
+    quoted.messages = [{ role: "lead", text: "ראיתי שאתם פתוחים עד 19:00" }];
+    const quotedCollected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const quotedTools = getCapability("booking")!.tools!({
+      ctx: quoted,
+      stage,
+      collected: quotedCollected,
+    });
+    const quotedSave = quotedTools.save_fields as {
+      execute: (args: Record<string, string>) => Promise<string>;
+    };
+    const rejected = JSON.parse(
+      await quotedSave.execute({ time_preference: "מחר בשעה 19:00" }),
+    );
+    expect(rejected.error).toBe("unclear_time");
+    expect(quotedCollected.fields.time_preference).toBeUndefined();
+  });
+
+  it("keeps a clock the customer named earlier when the latest message is only a day", async () => {
+    const ctx = ctxWithFields({ booking_flow: "active" });
+    ctx.messages = [
+      { role: "lead", text: "אפשר ב-17:00" },
+      { role: "agent", text: "איזה יום?" },
+      { role: "lead", text: "מחר" },
+    ];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const save = tools.save_fields as {
+      execute: (args: Record<string, string>) => Promise<unknown>;
+    };
+    await save.execute({ time_preference: "26 באוקטובר בשעה 17:00" });
+    expect(String(collected.fields.time_preference ?? "")).toMatch(/17:00/);
   });
 });

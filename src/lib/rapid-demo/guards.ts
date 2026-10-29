@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { isProductionRuntime } from "@/lib/dev-auth-bypass";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -26,11 +26,62 @@ export function rapidDemoSecret(): string {
 }
 
 export function rapidDemoAuthorized(authorization: string | null): boolean {
-  const secret = rapidDemoSecret();
-  if (!secret) return false;
   const token = authorization?.replace(/^Bearer\s+/i, "").trim() ?? "";
-  if (!token || token.length !== secret.length) return false;
-  return timingSafeEqual(Buffer.from(token), Buffer.from(secret));
+  return secretEquals(rapidDemoSecret(), token);
+}
+
+/**
+ * Admin key for https://zapidly.com/demo?key=… so a shared browser/IP can open
+ * more than one live demo. Distinct from RAPID_DEMO_API_SECRET.
+ */
+export function rapidDemoBypassSecret(): string {
+  // Bracket access so Next does not inline an empty value at build time.
+  return process.env["RAPID_DEMO_BYPASS_SECRET"]?.trim() ?? "";
+}
+
+export function rapidDemoBypassAuthorized(token: string | null | undefined): boolean {
+  return secretEquals(rapidDemoBypassSecret(), token?.trim() ?? "");
+}
+
+function secretEquals(secret: string, presented: string): boolean {
+  const a = Buffer.from(secret);
+  const b = Buffer.from(presented);
+  if (a.length === 0 || a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+/** Stored browser id for an admin bypass demo. Empty ipHash stays off the one-active-IP index. */
+export const BYPASS_BROWSER_PREFIX = "bypass:";
+
+export type DemoIdentity = { ipHash: string; browserId: string; bypass: boolean };
+
+/**
+ * A valid bypass key gets a fresh browser id and no IP hash, so it does not
+ * collide with the visitor's one-active demo (or with another admin demo).
+ */
+export function resolveDemoIdentity(input: {
+  clientIp?: string;
+  browserId?: string;
+  bypass?: string;
+}): DemoIdentity | null {
+  if (rapidDemoBypassAuthorized(input.bypass)) {
+    return { ipHash: "", browserId: `${BYPASS_BROWSER_PREFIX}${randomUUID()}`, bypass: true };
+  }
+  const ip = input.clientIp?.trim() ?? "";
+  const browserId = input.browserId?.trim().slice(0, 80) ?? "";
+  if (!ip && !browserId) return null;
+  return { ipHash: ip ? hashIp(ip) : "", browserId, bypass: false };
+}
+
+/** Bypass may finish only a draft that was itself created with the admin key. */
+export function demoDraftOwnedBy(
+  row: { ipHash: string; browserId: string },
+  identity: DemoIdentity,
+): boolean {
+  if (identity.bypass) return row.browserId.startsWith(BYPASS_BROWSER_PREFIX);
+  if (identity.ipHash && row.ipHash === identity.ipHash) return true;
+  if (identity.browserId && row.browserId === identity.browserId) return true;
+  return false;
 }
 
 /** Local only. Production must set RAPID_DEMO_IP_SALT; a public salt makes IPv4 hashes reversible. */

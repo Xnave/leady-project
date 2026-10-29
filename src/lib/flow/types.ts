@@ -109,6 +109,8 @@ export type ConversationSnapshot = {
   summary?: string;
   /** Why this thread opened/closed/reopened (inbound_reopen, approve, admin, …). */
   lifecycleReason?: string;
+  /** Saved reply language for a multi tenant. Empty until a lead message sets it. */
+  replyLanguage?: string;
 };
 
 export type AgentSnapshot = {

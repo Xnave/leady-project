@@ -3,7 +3,7 @@ import { chat as chatEn, prompts as promptsEn } from "./en";
 import { chat as chatHe, prompts as promptsHe } from "./he";
 import type { BookingVars } from "./types";
 import type { ChatLanguage } from "@/lib/flow/locale";
-import { resolveReplyLanguage } from "@/lib/flow/locale";
+import { stickyReplyLanguage } from "@/lib/flow/locale";
 import type { TurnContext } from "@/lib/flow/types";
 import { formatPhoneDisplay } from "@/lib/leads";
 
@@ -26,7 +26,13 @@ export function copyFor(lang: "en" | "he", opts?: { gender?: PersonaGender }) {
 }
 
 export function replyLang(ctx: TurnContext, lastCustomer = ""): "en" | "he" {
-  return resolveReplyLanguage(ctx.tenant?.chatLanguage, lastCustomer);
+  const policy = ctx.tenant?.chatLanguage;
+  if (policy === "he" || policy === "en") return policy;
+  const leads = ctx.messages
+    .filter((message) => message.role === "lead")
+    .map((message) => message.text);
+  if (lastCustomer && leads[leads.length - 1] !== lastCustomer) leads.push(lastCustomer);
+  return stickyReplyLanguage(ctx.conversation.replyLanguage, leads);
 }
 
 export function languageSystemRule(policy: ChatLanguage | undefined): string {
