@@ -38,6 +38,7 @@ import {
   formatSlotForDisplay,
   formatSlotPhrase,
   messageStatesClock,
+  normalizeSlot,
   proposesDifferentSlot,
 } from "../slot";
 import {
@@ -47,10 +48,17 @@ import {
   venueScheduleFromCtx,
   venueTimezoneFromCtx,
 } from "../booking-config";
+import { zonedToday } from "../clock";
 import {
   evaluateTimePreference,
   timePreferenceNormalizeError,
 } from "../time-preference-gate";
+import {
+  checkBookableSlot,
+  normalizeVenueSchedule,
+  resolvedBareHourClock,
+  type VenueScheduleSegment,
+} from "../venue-hours";
 import {
   formatPhoneDisplay,
   isCustomerNameSatisfied,
@@ -131,9 +139,51 @@ function markNeedPrompted(collected: TalkCollected, field: string): void {
 function displayTimePreference(
   raw: string,
   lang: "en" | "he",
-  now?: Date,
+  opts?: { now?: Date; schedule?: VenueScheduleSegment[] },
 ): string {
-  return formatSlotForDisplay(raw, { lang, now });
+  const now = opts?.now;
+  const schedule = opts?.schedule ?? [];
+  const clock =
+    now && schedule.length > 0
+      ? resolvedBareHourClock({ slotText: raw, schedule, now, lang })
+      : null;
+  return formatSlotForDisplay(clock ? `${raw} ${clock}` : raw, { lang, now });
+}
+
+/**
+ * A bookable time in the latest lead message, in the same display form save_fields uses.
+ * Older lines are left alone, so a thank-you after approve does not restore a finished visit.
+ */
+function rememberStatedVisitTime(
+  ctx: TurnContext,
+  collected: TalkCollected,
+  opts: {
+    lang: "en" | "he";
+    hours: string;
+    schedule: VenueScheduleSegment[];
+    timeZone: string;
+  },
+): void {
+  const existing = String(
+    collected.fields?.time_preference ?? ctx.lead.fields.time_preference ?? "",
+  ).trim();
+  if (existing) return;
+  const text = [...ctx.messages].reverse().find((m) => m.role === "lead" && m.text.trim())?.text.trim() ?? "";
+  if (!text || !messageStatesClock(text)) return;
+  const status = checkBookableSlot({
+    slotText: text,
+    hoursLabel: opts.hours,
+    schedule: opts.schedule,
+    lang: opts.lang,
+    timeZone: opts.timeZone,
+  }).status;
+  if (status !== "ok") return;
+  const display = displayTimePreference(text, opts.lang, {
+    now: zonedToday(new Date(), opts.timeZone),
+    schedule: opts.schedule,
+  });
+  if (!display.trim()) return;
+  collected.fields = { ...collected.fields, time_preference: display };
 }
 
 /** Deterministic confirm body - used by confirm_details and reconcileBooking. */
@@ -209,6 +259,13 @@ export function recentMeeting(ctx: TurnContext): RecentMeetingSnapshot | undefin
 /** Short customer affirmations after confirm_details. */
 function looksLikeBookingAffirmation(text: string): boolean {
   return looksLikeShortAffirmation(text);
+}
+
+/** A short no to saving the visit. "אין מה להוסיף" is not a no. */
+function looksLikeBookingDecline(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length > 40) return false;
+  return /^(לא|לא תודה|לא רוצה|לא מאשר|לא מאשרת|no|nope|no thanks)[!?.]*$/iu.test(t);
 }
 
 const BOOKING_CONFIRM_AMEND_KEYS = [
@@ -347,8 +404,20 @@ export function reconcileBooking(
   }
 
   const gapsAfter = bookingFieldGaps({ ...fields, ...nextFields }, required);
+  const priorConfirm = bookingConfirmStatus(ctx.lead.fields);
+  const decline =
+    looksLikeBookingDecline(last) &&
+    priorConfirm !== "confirmed" &&
+    (priorConfirm === "pending" || gapsAfter.length === 0);
 
-  if (gapsAfter.length === 0 && confirm === "pending" && affirmed && !committedNeed) {
+  // A same-turn "confirmed" without a short yes is not agreement. "לא" is a no.
+  if (!affirmed && priorConfirm !== "confirmed" && (confirm === "confirmed" || decline)) {
+    effects = effects.filter((e) => e.type !== "book_meeting");
+    confirm = priorConfirm === "pending" ? "pending" : "";
+    nextFields.booking_confirm = confirm;
+  }
+
+  if (!decline && gapsAfter.length === 0 && confirm === "pending" && affirmed && !committedNeed) {
     nextFields.booking_confirm = "confirmed";
     confirm = "confirmed";
   }
@@ -377,6 +446,7 @@ export function reconcileBooking(
   }
 
   if (
+    !decline &&
     gapsAfter.length === 0 &&
     confirm === "confirmed" &&
     !effects.some((e) => e.type === "book_meeting")
@@ -397,9 +467,18 @@ export function reconcileBooking(
 
   // Gaps filled but confirm never started - rails own the one confirm message.
   // כן that just accepted the understanding also lands here (confirm was not pending yet).
-  if (gapsAfter.length === 0 && confirm === "" && (!affirmed || committedNeed)) {
+  if (!decline && gapsAfter.length === 0 && confirm === "" && (!affirmed || committedNeed)) {
     nextFields.booking_confirm = "pending";
     confirm = "pending";
+    reply = railsConfirmReply(ctx, { ...fields, ...nextFields });
+  }
+
+  // The model asked "approve or add something?" on the turn the gaps closed.
+  // Replace that with the save question, so "לא" is a no to saving.
+  const pendingSetThisTurn =
+    confirm === "pending" && priorConfirm !== "pending" && priorConfirm !== "confirmed";
+  if (!decline && !affirmed && gapsAfter.length === 0 && pendingSetThisTurn) {
+    nextFields.booking_confirm = "pending";
     reply = railsConfirmReply(ctx, { ...fields, ...nextFields });
   }
 
@@ -425,6 +504,10 @@ export function reconcileBooking(
     }
   }
 
+  if (decline) {
+    reply = copyFor(replyLang(ctx, last)).chat.bookingDeclineAsk;
+  }
+
   // Never mark the talk goal complete while booking is still in progress.
   if (
     nextStage === stage.on_complete ||
@@ -440,7 +523,11 @@ export function reconcileBooking(
     fields: Object.keys(nextFields).length ? { ...out.fields, ...nextFields } : out.fields,
     effects,
     nextStage,
-    book: gapsAfter.length === 0 && confirm === "confirmed" ? true : out.book,
+    book: decline
+      ? false
+      : gapsAfter.length === 0 && confirm === "confirmed"
+        ? true
+        : out.book,
   };
 }
 
@@ -631,6 +718,17 @@ export function registerBookingCapability(): void {
       const hours = venueHoursFromCtx(ctx);
       const schedule = venueScheduleFromCtx(ctx);
       const timeZone = venueTimezoneFromCtx(ctx);
+      const bookableSchedule =
+        schedule.length > 0 ? schedule : normalizeVenueSchedule(hours);
+      const slotNow = zonedToday(new Date(), timeZone);
+      if (!getStaffSlotOffer({ ...ctx.lead.fields, ...collected.fields })) {
+        rememberStatedVisitTime(ctx, collected, {
+          lang,
+          hours,
+          schedule: bookableSchedule,
+          timeZone,
+        });
+      }
       const required = effectiveBookingRequired(ctx);
       const fieldsForTurn = { ...ctx.lead.fields, ...collected.fields };
       const offered = getStaffSlotOffer(fieldsForTurn);
@@ -734,7 +832,6 @@ export function registerBookingCapability(): void {
                 ),
             }),
             execute: async ({ interest }: { reason?: string; interest?: string }) => {
-              const first = required[0] ?? "time_preference";
               const fromArg = interest?.trim() ?? "";
               const existing = storedUnderstanding(fieldsForTurn, ctx.messages);
               const fromArgOk =
@@ -748,6 +845,15 @@ export function registerBookingCapability(): void {
                 ...(seeded ? { interest: seeded } : {}),
               };
               const merged = { ...fieldsForTurn, ...collected.fields };
+              const first = bookingFieldGaps(merged, required)[0];
+              if (!first) {
+                const storedInterest = storedUnderstanding(merged, ctx.messages);
+                return JSON.stringify({
+                  ok: true,
+                  active: true,
+                  ...(storedInterest ? { interest: storedInterest } : {}),
+                });
+              }
               if (first === "need" && !storedUnderstanding(merged, ctx.messages)) {
                 return JSON.stringify({
                   ok: true,
@@ -810,20 +916,36 @@ export function registerBookingCapability(): void {
               ) {
                 return `invalid phone: ${value}`;
               }
+              if (
+                key === "booking_confirm" &&
+                value.trim().toLowerCase() === "confirmed" &&
+                !looksLikeBookingAffirmation(lastLeadText(ctx))
+              ) {
+                continue;
+              }
               if (key === "time_preference") {
                 const already = String(
                   fieldsForTurn.time_preference ?? collected.fields?.time_preference ?? "",
                 );
                 if (clockNotStated(value, ctx.messages, already)) {
-                  collected.askFieldUsed = true;
-                  collected.replyLocked = true;
-                  collected.timeRejected = true;
-                  collected.reply = copyFor(lang).chat.askTimeUnclear;
-                  return JSON.stringify({
-                    ok: false,
-                    error: "unclear_time",
-                    hint: "The customer did not name a clock time. Ask for a day and time. Do not invent an hour.",
-                  });
+                  const proposedTime = normalizeSlot(value, { lang, now: slotNow }).time;
+                  const savedTime = already
+                    ? normalizeSlot(already, { lang, now: slotNow }).time
+                    : undefined;
+                  const sameClock = Boolean(
+                    proposedTime && savedTime && proposedTime === savedTime,
+                  );
+                  if (!sameClock) {
+                    collected.askFieldUsed = true;
+                    collected.replyLocked = true;
+                    collected.timeRejected = true;
+                    collected.reply = copyFor(lang).chat.askTimeUnclear;
+                    return JSON.stringify({
+                      ok: false,
+                      error: "unclear_time",
+                      hint: "The customer did not name a clock time. Ask for a day and time. Do not invent an hour.",
+                    });
+                  }
                 }
               }
               if (key === "time_preference" && (hours || schedule.length)) {
@@ -879,7 +1001,10 @@ export function registerBookingCapability(): void {
                 continue;
               }
               if (key === "time_preference") {
-                fields.time_preference = displayTimePreference(value, lang);
+                fields.time_preference = displayTimePreference(value, lang, {
+                  now: slotNow,
+                  schedule: bookableSchedule,
+                });
                 continue;
               }
               fields[key] = value.trim();
@@ -1058,6 +1183,7 @@ export function registerBookingCapability(): void {
             const slotNormalized = displayTimePreference(
               String(merged.time_preference ?? ""),
               lang,
+              { now: slotNow, schedule: bookableSchedule },
             );
             if (
               slotNormalized &&
@@ -1100,6 +1226,17 @@ export function registerBookingCapability(): void {
             const gated = gateBookOnGaps({ book: true, gaps });
             if (!gated.book) {
               return JSON.stringify({ ok: false, missing: gaps });
+            }
+            if (
+              looksLikeBookingDecline(last) ||
+              (bookingConfirmStatus(fieldsForTurn) !== "confirmed" &&
+                !looksLikeBookingAffirmation(last))
+            ) {
+              return JSON.stringify({
+                ok: false,
+                missing: ["booking_confirm"],
+                hint: "Call confirm_details, then save_fields booking_confirm=confirmed only after a short yes.",
+              });
             }
             if (bookingConfirmStatus(merged) !== "confirmed") {
               return JSON.stringify({

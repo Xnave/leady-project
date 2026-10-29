@@ -40,6 +40,7 @@ export const chat: ChatCopy = {
     ].join("\n"),
   bookingConfirmIntro: "הנה פרטי הפגישה, כדי שנוכל לוודא שהכול נכון:",
   bookingConfirmAsk: "ודא שהכול נכון, לשמור את הבקשה?",
+  bookingDeclineAsk: "בסדר, לא שומרים את הבקשה. לשנות את המועד, או לעצור כאן?",
   askVisitKind: "איזה סוג ביקור יתאים לך?",
   askTime: (hours) =>
     hours

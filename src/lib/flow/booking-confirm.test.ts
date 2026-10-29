@@ -420,4 +420,83 @@ describe("booking confirm_details rails", () => {
     await save.execute({ time_preference: "26 באוקטובר בשעה 17:00" });
     expect(String(collected.fields.time_preference ?? "")).toMatch(/17:00/);
   });
+
+  it("stores מחר ב-10 from the opener and asks the next gap", async () => {
+    const ctx = ctxWithFields({});
+    ctx.tenant = {
+      ...ctx.tenant,
+      capabilityInstances: [
+        bookingInstance({ venueHours: "09:00-19:00", venueAddress: "1 Main" }),
+      ],
+    };
+    ctx.messages = [{ role: "lead", text: "היי, אפשר לקבוע ביקור מחר ב-10?" }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+      replyLocked?: boolean;
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const start = tools.start_booking as {
+      execute: (args: { interest?: string }) => Promise<string>;
+    };
+    const result = JSON.parse(await start.execute({}));
+    expect(String(collected.fields.time_preference ?? "")).toMatch(/10:00/);
+    expect(result.next_field).toBe("name");
+    expect(collected.reply).not.toMatch(/איזה יום ושעה/);
+  });
+
+  it("stores a corrected מחר ב-10 even when ask_field names time", async () => {
+    const ctx = ctxWithFields({ booking_flow: "active" });
+    ctx.tenant = {
+      ...ctx.tenant,
+      capabilityInstances: [
+        bookingInstance({ venueHours: "09:00-19:00", venueAddress: "1 Main" }),
+      ],
+    };
+    ctx.messages = [
+      { role: "lead", text: "אפשר לקבוע ביקור ב-25:00" },
+      { role: "agent", text: "השעה 25:00 פחות עובדת לנו" },
+      { role: "lead", text: "סליחה, התכוונתי למחר ב-10" },
+    ];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+      replyLocked?: boolean;
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const ask = tools.ask_field as {
+      execute: (args: { field: string }) => Promise<string>;
+    };
+    const result = JSON.parse(await ask.execute({ field: "time_preference" }));
+    expect(String(collected.fields.time_preference ?? "")).toMatch(/10:00/);
+    expect(result.asked).toBe("name");
+    expect(collected.reply).not.toMatch(/איזה יום ושעה/);
+  });
+
+  it("does not restore an earlier visit time from a thank-you", () => {
+    const ctx = ctxWithFields({});
+    ctx.tenant = {
+      ...ctx.tenant,
+      capabilityInstances: [
+        bookingInstance({ venueHours: "09:00-19:00", venueAddress: "1 Main" }),
+      ],
+    };
+    ctx.messages = [
+      { role: "lead", text: "היי, אפשר לקבוע ביקור מחר ב-10?" },
+      { role: "agent", text: "רשמתי בקשה לפגישה" },
+      { role: "lead", text: "תודה רבה, זה הכל" },
+    ];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    getCapability("booking")!.tools!({ ctx, stage, collected });
+    expect(collected.fields.time_preference).toBeUndefined();
+  });
 });

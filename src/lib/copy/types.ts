@@ -46,6 +46,8 @@ export type ChatCopy = {
   bookingConfirmIntro: string;
   /** Closing ask after the booking confirm fact block. */
   bookingConfirmAsk: string;
+  /** Customer said no to saving the visit. Ask whether to change the time or stop. */
+  bookingDeclineAsk: string;
   askVisitKind: string;
   askTime: (hours: string) => string;
   /** When a proposed time is outside venue hours. */
