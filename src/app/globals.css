@@ -4122,7 +4122,9 @@ button.crm-stage { cursor: pointer; }
 /* The chat keeps the shared WhatsApp replica; the tab only gives it a height. */
 .crm-lv-chat { display: flex; flex-direction: column; height: min(560px, 70dvh); }
 .crm-lv-chat-loading { padding: var(--space-4); flex: 1; }
-.crm-full-main .crm-lv-chat { height: auto; flex: 1; min-height: 480px; }
+/* Bounded so the thread scrolls inside itself and opens on the latest message with the
+   composer in reach; unbounded, a long thread stretched the page and opened on the oldest. */
+.crm-full-main .crm-lv-chat { flex: none; height: clamp(420px, calc(100dvh - 280px), 900px); }
 .crm-full-main .crm-lv-panel { flex: 1; display: flex; flex-direction: column; }
 .crm-composer-closed { justify-content: space-between; }
 /* R8: the follow-up bar holds the lead view's one primary action, so the shared composer's
@@ -4378,10 +4380,9 @@ button.crm-stage { cursor: pointer; }
   .crm-lv > .crm-sec { order: 2; }
 }
 
-/* Single-column full page: the chat is a bounded box, so the composer stays in reach
-   instead of sitting under the whole thread. */
+/* Single-column full page: the head stacks above the chat, so cap it lower. */
 @media (max-width: 900px) {
-  .crm-full-main .crm-lv-chat { flex: none; height: min(640px, 75dvh); min-height: 0; }
+  .crm-full-main .crm-lv-chat { height: min(640px, 75dvh); }
 }
 
 /* --------------------------------------------------------------------------
