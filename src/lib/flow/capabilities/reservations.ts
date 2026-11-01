@@ -156,8 +156,15 @@ export function reconcileReservations(
     nextStage = undefined;
   }
 
+  const firstGap = gapsAfter[0];
+  const reply =
+    out.reply?.trim() || shouldSubmit || !firstGap
+      ? out.reply
+      : askReservationField(replyLang(ctx, lastLeadText(ctx)), firstGap, config);
+
   return {
     ...out,
+    reply,
     fields: Object.keys(nextFields).length ? { ...out.fields, ...nextFields } : out.fields,
     effects,
     nextStage,
@@ -235,19 +242,13 @@ function askReservationField(
   );
 }
 
-/** Ask the first missing field and keep that question. A later field is not asked yet. */
-function lockNextStayQuestion(
-  collected: TalkOutcome & { askFieldUsed?: boolean; replyLocked?: boolean },
-  fields: LeadFields,
-  config: ReservationConfig,
-  lang: "en" | "he",
-): string | null {
-  const first = reservationFieldGaps(fields, config)[0];
-  if (!first) return null;
-  collected.reply = askReservationField(lang, first, config);
-  collected.replyLocked = true;
-  collected.askFieldUsed = true;
-  return first;
+/** The only field that may be asked now. The model writes the sentence. */
+function nextStayGap(fields: LeadFields, config: ReservationConfig): string | null {
+  return reservationFieldGaps(fields, config)[0] ?? null;
+}
+
+function stayAskHint(field: string): string {
+  return `Call reply now. Ask only for ${field}, in your own words, as a person at this business. Use the customer's name when you know it. If this field has choices, offer those choices in the sentence. Do not use a form line such as "הפרט הבא".`;
 }
 
 function hasRates(config: ReservationConfig): boolean {
@@ -287,7 +288,7 @@ export function registerReservationsCapability(): void {
     closingLines: () => [
       "Prefer reply for informational turns. Call ask_field only while a date-span request is in progress.",
       "Never say a request is confirmed or booked - create_reservation_hold only stores a tentative request for a human; send_reservation_link only shares a self-serve URL.",
-      "Call reply unless ask_field already set the outbound text.",
+      "After save_fields or ask_field, call reply yourself. The tool names the only field you may ask for. Phrase it as a person at this business, not as a form.",
     ],
     promptSection: ({ ctx, fields }) => {
       const config = reservationConfigFromCtx(ctx);
@@ -320,7 +321,7 @@ export function registerReservationsCapability(): void {
         const lines = [
           `${noun} request is in progress. Collect fields: ${collectList}. Gaps: ${gaps.join(", ") || "none"}. reservation_confirm=${confirm || "(none)"}.`,
           "Save dates as YYYY-MM-DD (check_in / check_out). check_out must be after check_in.",
-          "Ask only the first gap. Do not ask for a later field, such as the unit, while name or phone is still missing.",
+          "Ask only the first gap, in reply, the way a person at this business would. Use their name when you know it, and offer real choices when the field has them. Do not ask for a later field, such as the unit, while name or phone is still missing. Never send a form line such as \"הפרט הבא\".",
           linkMode
             ? "Do not call check_availability - this tenant finishes by sending a booking link."
             : "After dates are saved, call check_availability before finishing the hold when possible.",
@@ -400,14 +401,9 @@ export function registerReservationsCapability(): void {
               reservation_flow: "active",
               reservation_confirm: String(collected.fields?.reservation_confirm ?? ""),
             };
-            const first = lockNextStayQuestion(
-              collected,
-              { ...ctx.lead.fields, ...collected.fields },
-              config,
-              lang,
-            );
+            const first = nextStayGap({ ...ctx.lead.fields, ...collected.fields }, config);
             if (!first) return { ok: true, saved, active: true };
-            return { ok: true, next_field: first, saved };
+            return { ok: true, next_field: first, saved, hint: stayAskHint(first) };
           },
         });
         return tools;
@@ -507,13 +503,8 @@ export function registerReservationsCapability(): void {
             fctx,
             collected,
           });
-          const next = lockNextStayQuestion(
-            collected,
-            { ...ctx.lead.fields, ...collected.fields },
-            config,
-            lang,
-          );
-          return { ok: true, saved, ...(next ? { next_field: next } : {}) };
+          const next = nextStayGap({ ...ctx.lead.fields, ...collected.fields }, config);
+          return { ok: true, saved, ...(next ? { next_field: next, hint: stayAskHint(next) } : {}) };
         },
       });
 
@@ -523,16 +514,12 @@ export function registerReservationsCapability(): void {
           field: z.string(),
         }),
         execute: async ({ field }) => {
-          const next = lockNextStayQuestion(
-            collected,
-            { ...ctx.lead.fields, ...collected.fields },
-            config,
-            lang,
-          );
+          const next = nextStayGap({ ...ctx.lead.fields, ...collected.fields }, config);
           if (!next) return { ok: false, skip: true };
           return {
             ok: true,
             field: next,
+            hint: stayAskHint(next),
             ...(next !== field ? { redirected_from: field } : {}),
           };
         },

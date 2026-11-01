@@ -440,6 +440,22 @@ describe("reconcileReservations", () => {
     expect(out.fields?.reservation_flow).toBe("");
   });
 
+  it("keeps a written question and only fills a form line when reply is empty", () => {
+    ensureFlowRegistry();
+    const state = ctx(
+      { reservation_flow: "active", check_in: "2026-11-05", check_out: "2026-11-08" },
+      "דנה כהן",
+      { collect: ["name", "phone", "unit", "guests"] },
+    );
+    const friendly = reconcileReservations(state, stage, {
+      reply: "נעים להכיר, דנה! מה מספר הטלפון שלך?",
+      fields: { name: "דנה כהן" },
+    });
+    expect(friendly.reply).toBe("נעים להכיר, דנה! מה מספר הטלפון שלך?");
+    const quiet = reconcileReservations(state, stage, { reply: "", fields: { name: "דנה כהן" } });
+    expect(quiet.reply).toMatch(/טלפון/);
+  });
+
   it("stores מיום חמישי עד יום ראשון from the opener and asks the next gap", async () => {
     ensureFlowRegistry();
     const text = "היי, אשמח להזמין מיום חמישי עד יום ראשון ל-5 אנשים";
@@ -467,7 +483,7 @@ describe("reconcileReservations", () => {
     expect(collected.fields.check_in).toBe(expected?.start);
     expect(collected.fields.check_out).toBe(expected?.end);
     expect(result.next_field).toBe("guests");
-    expect(collected.reply).not.toMatch(/תאריך/);
+    expect(collected.reply).toBe("");
   });
 
   it("stores guests and a name passed on start and asks the next empty field", async () => {
@@ -495,8 +511,7 @@ describe("reconcileReservations", () => {
     expect(collected.fields.name).toBe("דנה כהן");
     expect(String(collected.fields.check_in ?? "")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(result.next_field).toBe("phone");
-    expect(collected.reply).toMatch(/טלפון/);
-    expect(collected.reply).not.toMatch(/תאריך/);
+    expect(collected.reply).toBe("");
   });
 
   it("replaces a half-saved checkout with the spoken Thursday–Sunday pair", async () => {
@@ -556,9 +571,8 @@ describe("reconcileReservations", () => {
     const result = await ask.execute({ field: "unit" });
     expect(result.field).toBe("name");
     expect(result.redirected_from).toBe("unit");
-    expect(collected.reply).toMatch(/שם/);
-    expect(collected.reply).not.toMatch(/יחיד/);
-    expect(collected.replyLocked).toBe(true);
+    expect(collected.reply).toBe("");
+    expect(collected.replyLocked).toBeUndefined();
   });
 
   it("strips start_new_conversation while collect is active", () => {

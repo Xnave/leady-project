@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { ensureFlowRegistry } from "./capabilities";
+import { reconcileBooking } from "./capabilities/booking";
 import { flowForCapabilities } from "./catalog";
 import { getCapability } from "./registry";
 import type { TalkStage, TurnContext } from "./types";
@@ -264,6 +265,28 @@ describe("booking confirm_details rails", () => {
     expect(collected.reply).toMatch(/לאשר או שתרצה להוסיף/);
   });
 
+  it("an added meeting detail commits the understanding and asks for the phone", () => {
+    const understood = "קביעת ביקור למחר בשעה 10:00";
+    const ctx = ctxWithFields({
+      booking_flow: "active",
+      time_preference: "מחר ב-10",
+      name: "דנה כהן",
+      name_collected_by_agent: "1",
+      interest: understood,
+      need_prompted: "1",
+    });
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    stage.required_for_book = ["time_preference", "name", "need", "phone"];
+    ctx.messages = [{ role: "lead", text: "פגישת ייעוץ" }];
+    const out = reconcileBooking(ctx, stage, {
+      reply: "פרטי הפגישה: קביעת ביקור למחר בשעה 10:00\nלאשר או שתרצה להוסיף משהו?",
+      fields: {},
+      effects: [],
+    });
+    expect(String(out.fields?.need ?? "")).toMatch(/פגישת ייעוץ/);
+    expect(out.reply).toMatch(/טלפון/);
+  });
+
   it("save_fields yes keeps the understanding and does not append כן", async () => {
     const understood = "רוצה דמו כדי לראות התאמה לעסק";
     const fields = {
@@ -271,6 +294,7 @@ describe("booking confirm_details rails", () => {
       time_preference: "8 באוקטובר 2026 בשעה 17:00",
       name: "נווה עיני",
       interest: understood,
+      need_prompted: "1",
     };
     const ctx = ctxWithFields(fields);
     ctx.messages = [{ role: "lead", text: "כן" }];
@@ -290,7 +314,7 @@ describe("booking confirm_details rails", () => {
 
   it("does not store the opener when save_fields pastes it as need", async () => {
     const opener = "היי Zapidly, אשמח לקבל דמו ולראות איך הסוכן יכול להתאים לעסק שלי";
-    const ctx = ctxWithFields({ booking_flow: "active" });
+    const ctx = ctxWithFields({ booking_flow: "active", need_prompted: "1" });
     ctx.messages = [{ role: "lead", text: opener }];
     const stage = ctx.agent.flow.stages.talk as TalkStage;
     const collected: {
@@ -484,9 +508,49 @@ describe("booking confirm_details rails", () => {
     expect(String(collected.fields.time_preference ?? "")).not.toMatch(/18:00/);
     expect(collected.fields.name).toBe("דנה כהן");
     expect(collected.fields.phone).toBe("0501234567");
-    expect(collected.fields.need).toBe("לראות מטבחים");
-    expect(result.next_field).toBeUndefined();
-    expect(result.active).toBe(true);
+    expect(collected.fields.need).toBeUndefined();
+    expect(result.next_field).toBe("need");
+  });
+
+  it("does not store a meeting purpose the customer has not said yet", async () => {
+    const ctx = ctxWithFields({
+      booking_flow: "active",
+      time_preference: "מחר ב-10",
+      name: "דנה כהן",
+      name_collected_by_agent: "1",
+      interest: "קביעת ביקור למחר בשעה 10:00",
+    });
+    ctx.messages = [{ role: "lead", text: "דנה כהן" }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const save = tools.save_fields as {
+      execute: (args: Record<string, string>) => Promise<string>;
+    };
+    await save.execute({ need: "קביעת ביקור למחר בשעה 10:00" });
+    expect(collected.fields.need).toBeUndefined();
+
+    const opener = ctxWithFields({ booking_flow: "active" });
+    opener.messages = [{ role: "lead", text: "היי, אפשר לקבוע ביקור מחר ב-10?" }];
+    const openerCollected: { reply: string; fields: Record<string, unknown>; effects: [] } = {
+      reply: "",
+      fields: {},
+      effects: [],
+    };
+    const openerTools = getCapability("booking")!.tools!({
+      ctx: opener,
+      stage,
+      collected: openerCollected,
+    });
+    const openerSave = openerTools.save_fields as {
+      execute: (args: Record<string, string>) => Promise<string>;
+    };
+    await openerSave.execute({ need: "ביקור מחר ב-10" });
+    expect(openerCollected.fields.need).toBeUndefined();
   });
 
   it("stores a corrected מחר ב-10 even when ask_field names time", async () => {

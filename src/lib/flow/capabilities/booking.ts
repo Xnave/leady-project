@@ -381,7 +381,8 @@ export function reconcileBooking(
     const bag = { ...fields, ...nextFields };
     const usable = storedUnderstanding(bag, ctx.messages);
     const needEmpty = !String(fields.need || nextFields.need || "").trim();
-    const prompted = String(fields.need_prompted ?? nextFields.need_prompted ?? "").trim() === "1";
+    // Only a question already shown on an earlier turn. Asking this turn must not consume this message.
+    const prompted = String(ctx.lead.fields.need_prompted ?? "").trim() === "1";
     const acceptsGathered =
       looksLikeNothingToAdd(last) ||
       looksLikeNeedDeixis(last) ||
@@ -393,6 +394,14 @@ export function reconcileBooking(
         committedNeed = true;
       } else {
         reaskUnusableNeed = true;
+      }
+    } else if (needEmpty && prompted && usable && !looksLikeBookingDecline(last)) {
+      // They added a detail instead of saying yes. Keep the understanding and move on.
+      const addition = applyPendingNeedAmendment(last, usable);
+      if (addition) {
+        nextFields.need = addition;
+        nextFields.need_prompted = "";
+        committedNeed = true;
       }
     }
   }
@@ -822,6 +831,13 @@ export function registerBookingCapability(): void {
             });
           }
           if (key === "need") {
+            const prompted =
+              String(fieldsForTurn.need_prompted ?? collected.fields?.need_prompted ?? "").trim() ===
+              "1";
+            // Need stays a gap until the agent has asked and the customer answers.
+            if (!prompted) {
+              continue;
+            }
             const mergedForNeed = { ...fieldsForTurn, ...collected.fields, ...fields };
             const gathered = storedUnderstanding(mergedForNeed, ctx.messages);
             const resolved = resolveNeedFromReply(value, gathered, ctx.messages);

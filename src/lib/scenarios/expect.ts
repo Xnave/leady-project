@@ -150,6 +150,22 @@ export function evaluateScenario(
       detail: hit ? `contains "${hit}"` : last ? "ok" : "no agent reply",
     });
   }
+  if (expect.agentAskedBefore?.length) {
+    const thread = snapshot.messages.filter((message) => message.conversationId === snapshot.conversationId);
+    for (const item of expect.agentAskedBefore) {
+      const at = thread.findIndex(
+        (message) => message.role === "lead" && message.text.includes(item.customerIncludes),
+      );
+      const earlier = at > 0 ? thread.slice(0, at).filter((message) => message.role === "agent") : [];
+      const asked = earlier.map((message) => message.text).join("\n");
+      const hit = item.anyOf.find((phrase) => asked.includes(phrase));
+      checks.push({
+        name: `${phase}: agent asked before "${item.customerIncludes}"`,
+        ok: Boolean(hit),
+        detail: hit ? `asked "${hit}"` : at < 0 ? "customer line missing" : "not asked",
+      });
+    }
+  }
   if (expect.replyIncludes?.length) {
     const last = lastAgentReply(snapshot);
     const missing = expect.replyIncludes.find((phrase) => !last.includes(phrase));

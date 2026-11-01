@@ -6,10 +6,18 @@ const visit = [...visitDetails, "כן"];
 /** Visit state that should be gone once the thread is approved. The name flag stays with the lead. */
 const clearedVisit = ["booking_flow", "booking_confirm", "booking", "time_preference", "need", "visit_kind"];
 
+/** The script answers these only after the agent has asked for them. */
+const askedForVisit: NonNullable<Scenario["expect"]["agentAskedBefore"]> = [
+  { customerIncludes: "דנה כהן", anyOf: ["שמך", "השם"] },
+  { customerIncludes: "פגישת ייעוץ", anyOf: ["פרטי הפגישה", "מה חשוב לך"] },
+  { customerIncludes: "0501234567", anyOf: ["טלפון"] },
+];
+
 const booked: Scenario["expect"] = {
   request: "pending",
   hitlOpen: true,
   sessionPresent: ["time_preference"],
+  agentAskedBefore: askedForVisit,
 };
 
 /** A valid time was given. Asking for a day and time again means it was ignored. */
@@ -96,7 +104,7 @@ export const bookingScenarios: Scenario[] = [
     suite: "smoke",
     capability: "booking",
     review: "אחרי שהפרטים נאספו הלקוחה אומרת לא. לא נפתחת בקשה ולא נפתחת משימת אישור.",
-    expect: { request: "none", hitlOpen: false },
+    expect: { request: "none", hitlOpen: false, agentAskedBefore: askedForVisit },
     variants: [{ id: "no", primary: true, turns: [...visitDetails, "לא"] }],
   },
   {

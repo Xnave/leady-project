@@ -150,6 +150,24 @@ describe("scenario checks", () => {
       { phase: "after turns", capability: "reservations" },
     );
     expect(thursday[0]?.ok).toBe(false);
+    const asked = evaluateScenario(
+      snapshot({
+        messages: [
+          { conversationId: "c1", role: "agent", text: "מה שמך המלא?" },
+          { conversationId: "c1", role: "lead", text: "דנה כהן" },
+          { conversationId: "c1", role: "lead", text: "0501234567" },
+        ],
+      }),
+      {
+        agentAskedBefore: [
+          { customerIncludes: "דנה כהן", anyOf: ["שמך"] },
+          { customerIncludes: "0501234567", anyOf: ["טלפון"] },
+        ],
+      },
+      { phase: "after turns", capability: "booking" },
+    );
+    expect(asked[0]?.ok).toBe(true);
+    expect(asked[1]?.ok).toBe(false);
     expect(
       predominantlyHebrew(
         "אפשר להשלים את הבקשה עבור אירוח כאן: https://app.b-on.co.il/online/order-v2/plaza-boutique?dateFrom=2026-10-29&dateTo=2026-11-01",

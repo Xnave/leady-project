@@ -26,6 +26,11 @@ export type ScenarioPhaseExpect = {
   replyAvoids?: string[];
   /** Substrings that must appear in the last agent reply of the current thread. */
   replyIncludes?: string[];
+  /**
+   * The customer line must come after an agent message that asked for it.
+   * `anyOf` matches if one phrase appears in an earlier agent reply.
+   */
+  agentAskedBefore?: { customerIncludes: string; anyOf: string[] }[];
   sessionEmpty?: boolean;
   /** Latest conversation id differs from the one before this phase. */
   freshConversation?: boolean;

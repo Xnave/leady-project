@@ -10,10 +10,10 @@ The link suite is not part of the default smoke run. Use `--suite link`.
 | booking-bad-time | hour-25 |  | 2026-10-29 16:56 | pass |  | [2026-10-29-1656](../../scenario-runs/test-conversations-2026-10-29-1656.md) |
 | booking-bad-time | yesterday |  |  |  |  |  |
 | booking-closed-day | saturday-then-tomorrow |  | 2026-10-29 17:02 | pass |  | [2026-10-29-1702](../../scenario-runs/test-conversations-2026-10-29-1702.md) |
-| booking-decline | no |  | 2026-10-29 17:15 | pass |  | [2026-10-29-1715](../../scenario-runs/test-conversations-2026-10-29-1715.md) |
+| booking-decline | no |  | 2026-11-01 13:58 | pass |  | [2026-11-01-1358](../../scenario-runs/test-conversations-2026-11-01-1358.md) |
 | booking-fresh-thread | tomorrow-10 |  | 2026-10-29 16:56 | pass |  | [2026-10-29-1656](../../scenario-runs/test-conversations-2026-10-29-1656.md) |
 | booking-handoff | person |  |  |  |  |  |
-| booking-happy-approve-reopen | tomorrow-10 |  | 2026-10-29 16:56 | pass |  | [2026-10-29-1656](../../scenario-runs/test-conversations-2026-10-29-1656.md) |
+| booking-happy-approve-reopen | tomorrow-10 |  | 2026-11-01 13:58 | pass |  | [2026-11-01-1358](../../scenario-runs/test-conversations-2026-11-01-1358.md) |
 | booking-happy-approve-reopen | tuesday-morning |  |  |  |  |  |
 | booking-nonsense | gibberish |  | 2026-10-29 16:56 | pass |  | [2026-10-29-1656](../../scenario-runs/test-conversations-2026-10-29-1656.md) |
 | booking-not-a-booking | hours-and-price |  |  |  |  |  |
