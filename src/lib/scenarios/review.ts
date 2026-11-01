@@ -79,7 +79,7 @@ export function renderReview(input: {
   }
   lines.push(
     "",
-    "Delete every scenario lead on this target with `npm run scenarios -- --purge`.",
+    "Delete every scenario lead on this target with `npm run scenarios -- --purge`. Delete leads created before a day with `npm run scenarios -- --purge-before YYYY-MM-DD`.",
     "",
   );
   return lines.join("\n");

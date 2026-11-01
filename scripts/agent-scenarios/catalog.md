@@ -27,7 +27,22 @@ Sample variants (only with `--sample`):
 - Booking bad time, "אתמול" instead of "25:00".
 - Reservation happy, "שני עד רביעי" plus "אני לא בטוחה". Same pending request. Review the feminine address.
 
-Full suite (`--suite full` also runs smoke):
+Extra (`npm run scenarios -- --suite extra`, not part of smoke, full, or link):
+
+- `reservation-declined` — the Thursday–Sunday stay is collected, then declined. A thank-you does not open another request. Name and phone stay.
+- `reservation-change-dates` — Thursday–Sunday, then "בעצם לא חמישי, מיום שישי עד יום ראשון". The pending stay starts on Friday.
+- `reservation-offer-accept` — staff offers 13–15 Nov. The lead agrees. The stay is approved on those dates and the thread closes.
+- `reservation-offer-decline` — the same offer. "לא תודה" leaves the request pending and asks which dates would work.
+- `reservation-offer-other-dates` — the same offer. The lead asks for Monday–Wednesday instead. The pending stay moves to Monday.
+
+These three are separate scenarios because each customer reply has its own follow-up and its own result row. A variant would share one follow-up.
+
+Link suite (`npm run scenarios -- --suite link`, not part of smoke or full). Needs `SCENARIO_RESERVATION_LINK_TENANT_ID`. A passing run waits 7 days before `--due` selects it again. Results land in [results.md](results.md).
+
+- `reservation-link-stay` — Thursday to Sunday, name, phone, הוילה הראשית, then a booking link. No request and no approval task. A thank-you does not send another link.
+- `reservation-link-fresh-thread` — the same link, then a new conversation that does not know the old dates.
+
+Full suite (`--suite full` also runs smoke, and does not run the link suite):
 
 - Question that must not open a request, for a visit and for a stay.
 - Complaint that asks for a person.

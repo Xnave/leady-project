@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import { evaluateScenario, genderWarnings, predominantlyHebrew, replyChecks } from "./expect";
 import {
   isScenarioSender,
+  parseScenarioBefore,
   readScenarioEnv,
   scenarioAuthorized,
+  scenarioLeadPurgeWhere,
   scenarioSender,
   scenarioTenantIds,
 } from "./guard";
 import { renderReview } from "./review";
+import { mergeResults, parseResults, scenarioDue } from "./results";
 import { planRuns } from "./select";
 import type { Scenario, ScenarioSnapshot } from "./types";
 
@@ -73,6 +76,19 @@ describe("scenario guard", () => {
     expect(resolved).toEqual({ ok: false, status: 503, error: "empty_allowlist" });
   });
 
+  it("allows the pinned link reservation tenant", () => {
+    const pinned = env(
+      { SCENARIO_RESERVATION_TENANT_ID: "hold", SCENARIO_RESERVATION_LINK_TENANT_ID: "link-tenant" },
+      false,
+    );
+    expect(
+      scenarioTenantIds(pinned, { target: "local", capability: "reservations", tenantId: "link-tenant" }),
+    ).toEqual({ ok: true, tenantIds: ["link-tenant"] });
+    expect(
+      scenarioTenantIds(pinned, { target: "local", capability: "reservations", tenantId: "other" }),
+    ).toMatchObject({ ok: false, status: 403 });
+  });
+
   it("allows a live tenant only from the allowlist", () => {
     const pinned = env({ SCENARIO_TENANT_ALLOWLIST: "live-1", SCENARIO_CANARY_BOOKING_TENANT_ID: "canary-b" }, true);
     expect(scenarioTenantIds(pinned, { target: "live", tenantId: "other" })).toMatchObject({ ok: false, status: 403 });
@@ -107,6 +123,38 @@ describe("scenario checks", () => {
   it("treats a Hebrew reply as Hebrew and an English reply as not", () => {
     expect(predominantlyHebrew("שלום, נקבע לך ביקור")).toBe(true);
     expect(predominantlyHebrew("Sure, booked")).toBe(false);
+    const linked = evaluateScenario(
+      snapshot({
+        messages: [
+          { conversationId: "c1", role: "lead", text: "הוילה הראשית" },
+          { conversationId: "c1", role: "agent", text: "אפשר להשלים את הבקשה כאן: https://app.example/book" },
+        ],
+      }),
+      { replyIncludes: ["http"], request: "none" },
+      { phase: "after turns", capability: "reservations" },
+    );
+    expect(linked.every((check) => check.ok)).toBe(true);
+    const friday = evaluateScenario(
+      snapshot({
+        requests: [{ id: "r", capabilityId: "reservations", status: "pending", timeText: "2026-10-30 → 2026-11-01" }],
+      }),
+      { requestStartsOn: "friday" },
+      { phase: "after turns", capability: "reservations" },
+    );
+    expect(friday[0]?.ok).toBe(true);
+    const thursday = evaluateScenario(
+      snapshot({
+        requests: [{ id: "r", capabilityId: "reservations", status: "pending", timeText: "2026-10-29 → 2026-11-01" }],
+      }),
+      { requestStartsOn: "friday" },
+      { phase: "after turns", capability: "reservations" },
+    );
+    expect(thursday[0]?.ok).toBe(false);
+    expect(
+      predominantlyHebrew(
+        "אפשר להשלים את הבקשה עבור אירוח כאן: https://app.b-on.co.il/online/order-v2/plaza-boutique?dateFrom=2026-10-29&dateTo=2026-11-01",
+      ),
+    ).toBe(true);
   });
 
   it("warns when the agent speaks about itself in the other gender", () => {
@@ -119,7 +167,7 @@ describe("scenario checks", () => {
   it("fails a request that should not exist and a session key that survived", () => {
     const checks = evaluateScenario(
       snapshot({
-        requests: [{ id: "r", capabilityId: "booking", status: "approved" }],
+        requests: [{ id: "r", capabilityId: "booking", status: "approved", timeText: "" }],
         session: { time_preference: "מחר" },
         crm: { name: "דנה" },
       }),
@@ -193,10 +241,108 @@ describe("scenario selection", () => {
     ]);
   });
 
+  it("keeps the link suite out of smoke and full", () => {
+    const link: Scenario = {
+      ...booking,
+      id: "reservation-link-stay",
+      suite: "link",
+      capability: "reservations",
+      pool: "link",
+      cadenceDays: 7,
+      variants: [{ id: "thu-sun", primary: true, turns: ["היי"] }],
+    };
+    expect(planRuns([booking, link], { suite: "smoke" }).runs.map((run) => run.scenario.id)).toEqual([
+      "booking-happy",
+    ]);
+    expect(planRuns([booking, link], { suite: "full" }).runs.map((run) => run.scenario.id)).toEqual([
+      "booking-happy",
+    ]);
+    expect(planRuns([booking, link], { suite: "link" }).runs.map((run) => run.scenario.id)).toEqual([
+      "reservation-link-stay",
+    ]);
+    const extra: Scenario = { ...booking, id: "reservation-offer-accept", suite: "extra" };
+    expect(planRuns([booking, extra], { suite: "smoke" }).runs.map((run) => run.scenario.id)).toEqual([
+      "booking-happy",
+    ]);
+    expect(planRuns([booking, extra], { suite: "extra" }).runs.map((run) => run.scenario.id)).toEqual([
+      "reservation-offer-accept",
+    ]);
+  });
+
   it("runs one id even when it is outside the suite", () => {
     const planned = planRuns([booking, full], { suite: "smoke", only: ["booking-handoff", "missing"] });
     expect(planned.unknownIds).toEqual(["missing"]);
     expect(planned.runs.map((run) => run.scenario.id)).toEqual(["booking-handoff"]);
+  });
+});
+
+describe("scenario results", () => {
+  it("keeps an older row and replaces the one that just ran", () => {
+    const first = mergeResults("", [
+      {
+        scenario: "reservation-link-stay",
+        variant: "thu-sun",
+        cadence: "7d",
+        lastRun: "2026-10-29 18:13",
+        result: "pass",
+        wrong: "",
+      },
+      {
+        scenario: "booking-happy",
+        variant: "tomorrow",
+        cadence: "",
+        lastRun: "2026-10-29 16:48",
+        result: "pass",
+        wrong: "",
+      },
+    ]);
+    const second = mergeResults(first, [
+      {
+        scenario: "reservation-link-stay",
+        variant: "thu-sun",
+        cadence: "7d",
+        lastRun: "2026-10-30 09:00",
+        result: "fail",
+        wrong: "after turns: request pending — none",
+      },
+    ]);
+    const rows = parseResults(second);
+    expect(rows.map((row) => `${row.scenario}:${row.result}`)).toEqual([
+      "booking-happy:pass",
+      "reservation-link-stay:fail",
+    ]);
+    expect(rows[1]?.wrong).toMatch(/request pending/);
+    expect(second).toMatch(/\| Conversation \|/);
+  });
+
+  it("treats a recent pass as not due and a failure as due", () => {
+    const passed = {
+      scenario: "reservation-link-stay",
+      variant: "thu-sun",
+      cadence: "7d",
+      lastRun: "2026-10-29 18:13",
+      result: "pass" as const,
+      wrong: "",
+    };
+    expect(scenarioDue(7, passed, new Date(2026, 9, 30, 18, 13))).toBe(false);
+    expect(scenarioDue(7, passed, new Date(2026, 10, 6, 18, 13))).toBe(true);
+    expect(scenarioDue(7, { ...passed, result: "fail" }, new Date(2026, 9, 30, 18, 13))).toBe(true);
+    expect(scenarioDue(undefined, undefined, new Date())).toBe(true);
+  });
+});
+
+describe("scenario purge", () => {
+  it("deletes only scenario senders, and only those created before the given local day", () => {
+    expect(parseScenarioBefore("2026-11-01")?.getTime()).toBe(new Date(2026, 10, 1).getTime());
+    expect(parseScenarioBefore("2026-02-31")).toBeNull();
+    expect(parseScenarioBefore("yesterday")).toBeNull();
+    const day = parseScenarioBefore("2026-11-01")!;
+    expect(scenarioLeadPurgeWhere(["t1"], day)).toEqual({
+      tenantId: { in: ["t1"] },
+      externalUserId: { startsWith: "demo-scenario-" },
+      createdAt: { lt: day },
+    });
+    expect(scenarioLeadPurgeWhere(["t1"])).not.toHaveProperty("createdAt");
   });
 });
 

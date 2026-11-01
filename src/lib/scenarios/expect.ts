@@ -7,8 +7,9 @@ const MALE_SELF = [/אני יכול(?!ה)/, /אני שמח(?!ה)/, /העוזר �
 const FEMALE_SELF = [/אני יכולה/, /אני שמחה/, /העוזרת הדיגיטלית/];
 
 export function predominantlyHebrew(text: string): boolean {
-  const hebrew = text.match(HEBREW)?.length ?? 0;
-  const latin = text.match(LATIN)?.length ?? 0;
+  const prose = text.replace(/https?:\/\/\S+/gi, " ");
+  const hebrew = prose.match(HEBREW)?.length ?? 0;
+  const latin = prose.match(LATIN)?.length ?? 0;
   if (hebrew === 0) return false;
   return hebrew >= latin;
 }
@@ -50,6 +51,23 @@ export function evaluateScenario(
       name: `${phase}: request ${expect.request}`,
       ok,
       detail: requests.map((request) => request.status).join(", ") || "none",
+    });
+  }
+  if (expect.requestStartsOn) {
+    const wanted = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"].indexOf(
+      expect.requestStartsOn,
+    );
+    const dates = requests
+      .map((request) => request.timeText.match(/\d{4}-\d{2}-\d{2}/)?.[0])
+      .filter((iso): iso is string => Boolean(iso));
+    const matched = dates.some((iso) => {
+      const [year, month, day] = iso.split("-").map(Number);
+      return new Date(year!, month! - 1, day).getDay() === wanted;
+    });
+    checks.push({
+      name: `${phase}: stay starts on ${expect.requestStartsOn}`,
+      ok: matched,
+      detail: dates.join(", ") || "no date",
     });
   }
   if (expect.requestNot) {
@@ -130,6 +148,15 @@ export function evaluateScenario(
       name: `${phase}: last reply does not re-ask`,
       ok: Boolean(last) && !hit,
       detail: hit ? `contains "${hit}"` : last ? "ok" : "no agent reply",
+    });
+  }
+  if (expect.replyIncludes?.length) {
+    const last = lastAgentReply(snapshot);
+    const missing = expect.replyIncludes.find((phrase) => !last.includes(phrase));
+    checks.push({
+      name: `${phase}: last reply includes a link`,
+      ok: Boolean(last) && !missing,
+      detail: missing ? `missing "${missing}"` : "ok",
     });
   }
   return checks;

@@ -103,6 +103,8 @@ export const chat: ChatCopy = {
     offerAltDates: (from, to) =>
       `Those dates are not available. Does ${from} to ${to} work instead?`,
     offerDeclineAsk: "No problem - which other dates work for you?",
+    offerReplacement: (from, to) =>
+      `Noted ${from} to ${to} instead of the offered dates. A teammate will confirm them.`,
     offerUnclearAsk: "Just to confirm - do the offered dates work for you?",
   },
 };

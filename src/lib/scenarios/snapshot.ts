@@ -24,7 +24,7 @@ export async function loadScenarioSnapshot(tenantId: string, leadId: string): Pr
             orderBy: { createdAt: "asc" },
             select: { role: true, text: true, conversationId: true },
           },
-          requests: { select: { id: true, capabilityId: true, status: true } },
+          requests: { select: { id: true, capabilityId: true, status: true, timeText: true } },
           hitlTasks: { select: { id: true, type: true, status: true, reason: true } },
         },
       },

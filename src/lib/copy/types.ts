@@ -105,6 +105,7 @@ export type RequestChatCopy = {
   sendBookingLink: (noun: string, url: string) => string;
   offerAltDates: (from: string, to: string) => string;
   offerDeclineAsk: string;
+  offerReplacement: (from: string, to: string) => string;
   offerUnclearAsk: string;
 };
 

@@ -7,7 +7,13 @@ import {
   ScenarioHttpError,
   sendScenarioTurn,
 } from "@/lib/scenarios/actions";
-import { isScenarioSender, readScenarioEnv, scenarioAuthorized, scenarioTenantIds } from "@/lib/scenarios/guard";
+import {
+  isScenarioSender,
+  parseScenarioBefore,
+  readScenarioEnv,
+  scenarioAuthorized,
+  scenarioTenantIds,
+} from "@/lib/scenarios/guard";
 import { loadScenarioSnapshot } from "@/lib/scenarios/snapshot";
 import type { ScenarioCapability, ScenarioTarget } from "@/lib/scenarios/types";
 
@@ -23,7 +29,11 @@ type Body = {
   scenarioId?: string;
   runId?: string;
   requestId?: string;
-  decision?: "approve" | "decline";
+  decision?: "approve" | "decline" | "reschedule";
+  alternativeStart?: string;
+  alternativeEnd?: string;
+  /** `YYYY-MM-DD`. Purge deletes scenario leads created before local midnight of this day. */
+  before?: string;
 };
 
 function jsonError(status: number, error: string) {
@@ -36,6 +46,7 @@ export async function POST(req: Request) {
       SCENARIO_RUNNER_SECRET: process.env["SCENARIO_RUNNER_SECRET"],
       SCENARIO_BOOKING_TENANT_ID: process.env["SCENARIO_BOOKING_TENANT_ID"],
       SCENARIO_RESERVATION_TENANT_ID: process.env["SCENARIO_RESERVATION_TENANT_ID"],
+      SCENARIO_RESERVATION_LINK_TENANT_ID: process.env["SCENARIO_RESERVATION_LINK_TENANT_ID"],
       SCENARIO_CANARY_BOOKING_TENANT_ID: process.env["SCENARIO_CANARY_BOOKING_TENANT_ID"],
       SCENARIO_CANARY_RESERVATION_TENANT_ID: process.env["SCENARIO_CANARY_RESERVATION_TENANT_ID"],
       SCENARIO_TENANT_ALLOWLIST: process.env["SCENARIO_TENANT_ALLOWLIST"],
@@ -89,13 +100,20 @@ export async function POST(req: Request) {
     }
     if (body.action === "decide") {
       if (!tenantId || !body.requestId) return jsonError(400, "request_required");
-      if (body.decision !== "approve" && body.decision !== "decline") {
+      if (body.decision !== "approve" && body.decision !== "decline" && body.decision !== "reschedule") {
         return jsonError(400, "bad_decision");
+      }
+      const alternativeStart = body.alternativeStart?.trim() ?? "";
+      const alternativeEnd = body.alternativeEnd?.trim() ?? "";
+      if (body.decision === "reschedule" && !alternativeStart) {
+        return jsonError(400, "alternative_required");
       }
       const snapshot = await decideScenarioRequest({
         tenantId,
         requestId: body.requestId,
         decision: body.decision,
+        alternativeStart: alternativeStart || undefined,
+        alternativeEnd: alternativeEnd || undefined,
       });
       return NextResponse.json({ ok: true, snapshot });
     }
@@ -105,7 +123,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, snapshot });
     }
     if (body.action === "purge") {
-      const result = await purgeScenarioLeads(resolved.tenantIds, body.leadId);
+      const before = body.before ? parseScenarioBefore(body.before) : undefined;
+      if (body.before && !before) return jsonError(400, "bad_before");
+      const result = await purgeScenarioLeads(resolved.tenantIds, { leadId: body.leadId, before });
       return NextResponse.json({ ok: true, ...result });
     }
     return jsonError(400, "bad_action");

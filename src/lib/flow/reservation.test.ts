@@ -22,9 +22,10 @@ import {
 import { flowForCapabilities, isCapabilityId } from "./catalog";
 import { getCapability } from "./registry";
 import { ensureFlowRegistry } from "./capabilities";
-import { reconcileReservations } from "./capabilities/reservations";
+import { reconcileReservations, spokenReplacementStay } from "./capabilities/reservations";
 import { resolveCalendarDateRange } from "./slot";
 import { copyFor } from "@/lib/copy";
+import { zonedToday } from "./clock";
 import type { TalkStage, TurnContext } from "./types";
 import { defaultHitlPolicy, defaultLeadSchema } from "./validate";
 
@@ -427,6 +428,139 @@ describe("reconcileReservations", () => {
     expect(out.effects?.some((e) => e.type === "start_new_conversation")).toBe(false);
   });
 
+  it("does not open a second hold when the customer accepts the staff dates", () => {
+    ensureFlowRegistry();
+    const state = ctx(complete, "כן, התאריכים שהצעתם מתאימים");
+    const out = reconcileReservations(state, stage, {
+      reply: "הבקשה אושרה",
+      fields: { reservation_flow: "active", reservation_confirm: "confirmed" },
+      effects: [{ type: "accept_offered_slot" }],
+    });
+    expect(out.effects?.some((e) => e.type === "create_reservation_hold")).toBe(false);
+    expect(out.fields?.reservation_flow).toBe("");
+  });
+
+  it("stores מיום חמישי עד יום ראשון from the opener and asks the next gap", async () => {
+    ensureFlowRegistry();
+    const text = "היי, אשמח להזמין מיום חמישי עד יום ראשון ל-5 אנשים";
+    const state = ctx({}, text);
+    const stageTalk = state.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+      askFieldUsed?: boolean;
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("reservations")!.tools!({
+      ctx: state,
+      stage: stageTalk,
+      collected,
+    });
+    const start = tools.start_reservation as {
+      execute: (args: { fields?: Record<string, string> }) => Promise<{
+        next_field?: string;
+      }>;
+    };
+    const result = await start.execute({});
+    const expected = resolveCalendarDateRange(text, zonedToday(), "he");
+    expect(expected).not.toBeNull();
+    expect(collected.fields.check_in).toBe(expected?.start);
+    expect(collected.fields.check_out).toBe(expected?.end);
+    expect(result.next_field).toBe("guests");
+    expect(collected.reply).not.toMatch(/תאריך/);
+  });
+
+  it("stores guests and a name passed on start and asks the next empty field", async () => {
+    ensureFlowRegistry();
+    const text = "היי, אשמח להזמין מיום חמישי עד יום ראשון ל-5 אנשים";
+    const state = ctx({}, text);
+    const stageTalk = state.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("reservations")!.tools!({
+      ctx: state,
+      stage: stageTalk,
+      collected,
+    });
+    const start = tools.start_reservation as {
+      execute: (args: { fields?: Record<string, string> }) => Promise<{
+        next_field?: string;
+      }>;
+    };
+    const result = await start.execute({ fields: { guests: "5", name: "דנה כהן" } });
+    expect(collected.fields.guests).toBe("5");
+    expect(collected.fields.name).toBe("דנה כהן");
+    expect(String(collected.fields.check_in ?? "")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(result.next_field).toBe("phone");
+    expect(collected.reply).toMatch(/טלפון/);
+    expect(collected.reply).not.toMatch(/תאריך/);
+  });
+
+  it("replaces a half-saved checkout with the spoken Thursday–Sunday pair", async () => {
+    ensureFlowRegistry();
+    const text = "היי, אשמח להזמין מיום חמישי עד יום ראשון ל-5 אנשים";
+    const state = ctx({}, text);
+    const stageTalk = state.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("reservations")!.tools!({
+      ctx: state,
+      stage: stageTalk,
+      collected,
+    });
+    const start = tools.start_reservation as {
+      execute: (args: { fields?: Record<string, string> }) => Promise<{ next_field?: string }>;
+    };
+    const result = await start.execute({
+      fields: { check_in: "2026-10-29", check_out: "יום ראשון" },
+    });
+    const expected = resolveCalendarDateRange(text, zonedToday(), "he");
+    expect(collected.fields.check_in).toBe(expected?.start);
+    expect(collected.fields.check_out).toBe(expected?.end);
+    expect(result.next_field).not.toBe("check_out");
+  });
+
+  it("asks for the name when ask_field names the unit too early", async () => {
+    ensureFlowRegistry();
+    const state = ctx(
+      {
+        reservation_flow: "active",
+        check_in: "2026-11-05",
+        check_out: "2026-11-08",
+        guests: "5",
+      },
+      "דנה כהן",
+      { collect: ["name", "phone", "unit", "guests"] },
+    );
+    const stageTalk = state.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+      replyLocked?: boolean;
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("reservations")!.tools!({
+      ctx: state,
+      stage: stageTalk,
+      collected,
+    });
+    const ask = tools.ask_field as {
+      execute: (args: { field: string }) => Promise<{ field?: string; redirected_from?: string }>;
+    };
+    const result = await ask.execute({ field: "unit" });
+    expect(result.field).toBe("name");
+    expect(result.redirected_from).toBe("unit");
+    expect(collected.reply).toMatch(/שם/);
+    expect(collected.reply).not.toMatch(/יחיד/);
+    expect(collected.replyLocked).toBe(true);
+  });
+
   it("strips start_new_conversation while collect is active", () => {
     ensureFlowRegistry();
     const state = ctx(complete, "כבר אמרתי לך");
@@ -435,5 +569,22 @@ describe("reconcileReservations", () => {
       effects: [{ type: "start_new_conversation", args: { intro: "fresh" } }],
     });
     expect(out.effects?.some((e) => e.type === "start_new_conversation")).toBe(false);
+  });
+
+  it("reads a different spoken stay and ignores the staff offer repeated back", () => {
+    const now = new Date(2026, 9, 29);
+    const offer = { checkIn: "2026-11-13", checkOut: "2026-11-15" };
+    expect(
+      spokenReplacementStay(
+        "לא, התאריכים שהצעתם לא מתאימים. אפשר מיום שני עד יום רביעי?",
+        offer,
+        now,
+        "he",
+      ),
+    ).toEqual({ checkIn: "2026-11-02", checkOut: "2026-11-04" });
+    expect(spokenReplacementStay("לא תודה, זה לא מתאים לי", offer, now, "he")).toBeNull();
+    expect(
+      spokenReplacementStay("מיום 2026-11-13 עד 2026-11-15", offer, now, "he"),
+    ).toBeNull();
   });
 });

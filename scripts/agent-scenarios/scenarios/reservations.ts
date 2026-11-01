@@ -1,12 +1,99 @@
 import type { Scenario } from "@/lib/scenarios/types";
 import { RESERVATION_SESSION_FIELD_KEYS } from "@/lib/flow/reservation-config";
 
-const stay = ["היי, אשמח להזמין מיום חמישי עד יום ראשון ל-5 אנשים", "דנה כהן", "0501234567"];
+export const stayTurns = [
+  "היי, אשמח להזמין מיום חמישי עד יום ראשון ל-5 אנשים",
+  "דנה כהן",
+  "0501234567",
+  "הוילה הראשית",
+];
 
 const held: Scenario["expect"] = {
   request: "pending",
   hitlOpen: true,
 };
+
+/** Friday 13 Nov 2026 through Sunday 15 Nov. Staff offers this after the Thursday stay is pending. */
+const STAFF_OFFER = {
+  alternativeStart: "2026-11-13",
+  alternativeEnd: "2026-11-15",
+};
+
+function staffOfferScenarios(turns: string[]): Scenario[] {
+  const offered: Scenario["decide"] = {
+    decision: "reschedule",
+    alternativeStart: STAFF_OFFER.alternativeStart,
+    alternativeEnd: STAFF_OFFER.alternativeEnd,
+    then: {
+      request: "pending",
+      hitlOpen: true,
+      requestStartsOn: "friday",
+      conversationStatus: "open",
+      sessionPresent: ["staff_date_offer"],
+      replyIncludes: [STAFF_OFFER.alternativeStart, STAFF_OFFER.alternativeEnd],
+    },
+  };
+  const shared = {
+    suite: "extra" as const,
+    capability: "reservations" as const,
+    expect: held,
+    decide: offered,
+    variants: [{ id: "thu-sun", primary: true, turns }],
+  };
+  return [
+    {
+      ...shared,
+      id: "reservation-offer-accept",
+      review: "הנציג מציע שישי עד ראשון. הלקוחה מסכימה, וההזמנה מאושרת על התאריכים האלה.",
+      followUp: {
+        turns: ["כן, התאריכים שהצעתם מתאימים"],
+        expect: {
+          request: "approved",
+          requestStartsOn: "friday",
+          hitlOpen: false,
+          conversationStatus: "closed",
+          sessionAbsent: ["staff_date_offer"],
+          crmPresent: ["name", "phone"],
+        },
+        review: "ההסכמה סוגרת את השיחה על התאריכים שהוצעו. השם והטלפון נשארים.",
+      },
+    },
+    {
+      ...shared,
+      id: "reservation-offer-decline",
+      review: "הנציג מציע שישי עד ראשון. הלקוחה מסרבת בלי לבקש תאריך אחר.",
+      followUp: {
+        turns: ["לא תודה, זה לא מתאים לי"],
+        expect: {
+          request: "pending",
+          requestNot: "approved",
+          hitlOpen: true,
+          conversationStatus: "open",
+          sessionAbsent: ["staff_date_offer"],
+          replyIncludes: ["תאריכים אחרים"],
+        },
+        review: "הסירוב לא מאשר את ההצעה. הסוכנת שואלת אילו תאריכים כן מתאימים.",
+      },
+    },
+    {
+      ...shared,
+      id: "reservation-offer-other-dates",
+      review: "הנציג מציע שישי עד ראשון. הלקוחה מבקשת שני עד רביעי במקום.",
+      followUp: {
+        turns: ["לא, התאריכים שהצעתם לא מתאימים. אפשר מיום שני עד יום רביעי?"],
+        expect: {
+          request: "pending",
+          requestStartsOn: "monday",
+          requestNot: "approved",
+          hitlOpen: true,
+          conversationStatus: "open",
+          sessionAbsent: ["staff_date_offer"],
+        },
+        review: "הבקשה נשארת ממתינה, אבל על שני עד רביעי ולא על ההצעה.",
+      },
+    },
+  ];
+}
 
 const approved: Scenario["decide"] = {
   decision: "approve",
@@ -37,7 +124,7 @@ export const reservationScenarios: Scenario[] = [
       review: "אחרי האישור השם והטלפון נשארים. תאריכים, אורחים ויחידה לא אמורים להישאר.",
     },
     variants: [
-      { id: "thu-sun", primary: true, turns: stay },
+      { id: "thu-sun", primary: true, turns: stayTurns },
       {
         id: "couple-and-child",
         sample: true,
@@ -88,6 +175,57 @@ export const reservationScenarios: Scenario[] = [
       },
       review: "שיחה חדשה. לא אמורה כבר להכיר את התאריכים או את מספר האורחים מההזמנה שאושרה.",
     },
-    variants: [{ id: "thu-sun", primary: true, turns: stay }],
+    variants: [{ id: "thu-sun", primary: true, turns: stayTurns }],
   },
+  {
+    id: "reservation-declined",
+    suite: "extra",
+    capability: "reservations",
+    review: "ההזמנה נאספת ואז נדחית. לא נשארת משימת אישור.",
+    expect: held,
+    decide: {
+      decision: "decline",
+      then: {
+        request: "rejected",
+        hitlOpen: false,
+        conversationStatus: "open",
+      },
+    },
+    followUp: {
+      turns: ["תודה רבה, זה הכל"],
+      expect: {
+        request: "rejected",
+        requestNot: "pending",
+        hitlOpen: false,
+        crmPresent: ["name", "phone"],
+      },
+      review: "אחרי הסירוב תודה לא פותחת הזמנה חדשה. השם והטלפון נשארים.",
+    },
+    variants: [{ id: "thu-sun", primary: true, turns: stayTurns }],
+  },
+  {
+    id: "reservation-change-dates",
+    suite: "extra",
+    capability: "reservations",
+    review: "הלקוחה מתקנת מחמישי לשישי. ההזמנה נשמרת על יום שישי, לא על היום הראשון.",
+    expect: {
+      request: "pending",
+      hitlOpen: true,
+      requestStartsOn: "friday",
+    },
+    variants: [
+      {
+        id: "fri-sun",
+        primary: true,
+        turns: [
+          "היי, אשמח להזמין מיום חמישי עד יום ראשון ל-5 אנשים",
+          "בעצם לא חמישי, מיום שישי עד יום ראשון",
+          "דנה כהן",
+          "0501234567",
+          "הוילה הראשית",
+        ],
+      },
+    ],
+  },
+  ...staffOfferScenarios(stayTurns),
 ];

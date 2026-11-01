@@ -6,6 +6,13 @@ export type PlannedRun = {
   sampled: boolean;
 };
 
+function inSuite(scenarioSuite: Scenario["suite"], selected: "smoke" | "full" | "link" | "extra"): boolean {
+  if (selected === "extra") return scenarioSuite === "extra";
+  if (selected === "link") return scenarioSuite === "link";
+  if (selected === "full") return scenarioSuite === "smoke" || scenarioSuite === "full";
+  return scenarioSuite === "smoke";
+}
+
 function primaryVariant(scenario: Scenario): ScenarioVariant {
   return scenario.variants.find((variant) => variant.primary) ?? scenario.variants[0]!;
 }
@@ -27,12 +34,12 @@ function shuffle<T>(items: T[], rng: () => number): T[] {
  */
 export function planRuns(
   scenarios: Scenario[],
-  opts: { suite: "smoke" | "full"; only?: string[]; sample?: number; rng?: () => number },
+  opts: { suite: "smoke" | "full" | "link" | "extra"; only?: string[]; sample?: number; rng?: () => number },
 ): { runs: PlannedRun[]; unknownIds: string[] } {
   const only = opts.only?.filter(Boolean) ?? [];
   const selected = only.length
     ? scenarios.filter((scenario) => only.includes(scenario.id))
-    : scenarios.filter((scenario) => opts.suite === "full" || scenario.suite === "smoke");
+    : scenarios.filter((scenario) => inSuite(scenario.suite, opts.suite));
   const known = new Set(scenarios.map((scenario) => scenario.id));
   const unknownIds = only.filter((id) => !known.has(id));
 

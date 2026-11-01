@@ -5,13 +5,17 @@
  *   npm run scenarios
  *   npm run scenarios -- --only booking-bad-time
  *   npm run scenarios -- --suite full
+ *   npm run scenarios -- --suite link
+ *   npm run scenarios -- --due
  *   npm run scenarios -- --sample 2
  *   npm run scenarios -- --purge
+ *   npm run scenarios -- --purge-before YYYY-MM-DD
  *   npm run scenarios -- --purge-lead <leadId>
  *
  * Local is the default (`http://localhost:3000`). Set `SCENARIO_RUNNER_SECRET` in `.env`
  * (the dev server reads the same file). Booking uses `SCENARIO_BOOKING_TENANT_ID` or
  * `DEV_TENANT_ID`. Reservations run only when `SCENARIO_RESERVATION_TENANT_ID` is set.
+ * The link suite (`--suite link`) uses `SCENARIO_RESERVATION_LINK_TENANT_ID` and is not part of smoke.
  *
  * Production is opt-in:
  *   npm run scenarios -- --base-url https://app.zapidly.com
@@ -31,6 +35,8 @@ import { join } from "node:path";
 import { genderWarnings, replyChecks, evaluateScenario } from "@/lib/scenarios/expect";
 import { readScenarioEnv } from "@/lib/scenarios/guard";
 import { renderReview, type ReviewSection } from "@/lib/scenarios/review";
+import { parseScenarioBefore } from "@/lib/scenarios/guard";
+import { conversationLink, mergeResults, parseResults, scenarioDue, type ResultRow } from "@/lib/scenarios/results";
 import { planRuns } from "@/lib/scenarios/select";
 import type {
   CheckResult,
@@ -46,6 +52,7 @@ const ENV_KEYS = [
   "SCENARIO_RUNNER_SECRET",
   "SCENARIO_BOOKING_TENANT_ID",
   "SCENARIO_RESERVATION_TENANT_ID",
+  "SCENARIO_RESERVATION_LINK_TENANT_ID",
   "SCENARIO_CANARY_BOOKING_TENANT_ID",
   "SCENARIO_CANARY_RESERVATION_TENANT_ID",
   "SCENARIO_TENANT_ALLOWLIST",
@@ -169,6 +176,8 @@ async function play(opts: {
           tenantId: opts.tenantId,
           requestId: pending.id,
           decision: scenario.decide.decision,
+          alternativeStart: scenario.decide.alternativeStart,
+          alternativeEnd: scenario.decide.alternativeEnd,
         })) as DecideResult;
         snapshot = decided.snapshot;
         if (scenario.decide.then) {
@@ -234,24 +243,49 @@ async function play(opts: {
   return { checks, warnings, snapshot };
 }
 
-function localTenant(capability: ScenarioCapability, booking: string, reservation: string): string | undefined {
-  return capability === "booking" ? booking || undefined : reservation || undefined;
+function resultRow(
+  run: { scenario: { id: string; cadenceDays?: number }; variant: { id: string } },
+  lastRun: string,
+  result: ResultRow["result"],
+  wrong: string,
+): ResultRow {
+  return {
+    scenario: run.scenario.id,
+    variant: run.variant.id,
+    cadence: run.scenario.cadenceDays ? `${run.scenario.cadenceDays}d` : "",
+    lastRun,
+    result,
+    wrong,
+  };
+}
+
+function localTenant(
+  scenario: { capability: ScenarioCapability; pool?: "link" },
+  booking: string,
+  reservation: string,
+  link: string,
+): string | undefined {
+  if (scenario.capability === "booking") return booking || undefined;
+  if (scenario.pool === "link") return link || undefined;
+  return reservation || undefined;
 }
 
 async function main() {
   loadDotEnv();
   const baseUrl = option("base-url") ?? "http://localhost:3000";
   const suite = option("suite") ?? "smoke";
-  if (suite !== "smoke" && suite !== "full") {
-    console.error('Suite must be "smoke" or "full".');
+  if (suite !== "smoke" && suite !== "full" && suite !== "link" && suite !== "extra") {
+    console.error('Suite must be "smoke", "full", "link", or "extra".');
     process.exit(1);
   }
+  const dueOnly = process.argv.includes("--due");
   const only = option("only")?.split(",").map((id) => id.trim()).filter(Boolean);
   const sample = Number(option("sample") ?? "0");
   const live = process.argv.includes("--live");
   const liveTenant = option("tenant");
   const purgeLead = option("purge-lead");
-  const purge = process.argv.includes("--purge") || Boolean(purgeLead);
+  const purgeBefore = option("purge-before");
+  const purge = process.argv.includes("--purge") || Boolean(purgeLead) || Boolean(purgeBefore);
   const hostname = new URL(baseUrl).hostname;
   const localHost = hostname === "localhost" || hostname === "127.0.0.1";
   const target: ScenarioTarget = live ? "live" : localHost ? "local" : "canary";
@@ -267,11 +301,20 @@ async function main() {
   }
 
   if (purge) {
+    if (purgeLead && purgeBefore) {
+      console.error("Pass either --purge-lead or --purge-before, not both.");
+      process.exit(1);
+    }
+    if (purgeBefore && !parseScenarioBefore(purgeBefore)) {
+      console.error("--purge-before needs a date, YYYY-MM-DD.");
+      process.exit(1);
+    }
     const result = (await post(baseUrl, secret, {
       action: "purge",
       target,
       tenantId: target === "live" ? liveTenant : undefined,
       leadId: purgeLead,
+      before: purgeBefore,
     })) as { deleted?: number };
     console.log(`Deleted ${result.deleted ?? 0} scenario lead${result.deleted === 1 ? "" : "s"}.`);
     return;
@@ -279,6 +322,11 @@ async function main() {
 
   const bookingTenant = env.bookingTenantId || env.devTenantId;
   const reservationTenant = env.reservationTenantId;
+  const linkTenant = env.reservationLinkTenantId;
+  const resultsPath = join(process.cwd(), "scripts/agent-scenarios/results.md");
+  const previousResults = existsSync(resultsPath) ? readFileSync(resultsPath, "utf8") : "";
+  const knownResults = parseResults(previousResults);
+  const now = new Date();
   const { runs, unknownIds } = planRuns(SCENARIOS, {
     suite,
     only,
@@ -286,6 +334,7 @@ async function main() {
   });
   const blocked = new Set<ScenarioCapability>();
   const sections: ReviewSection[] = [];
+  const recorded: ResultRow[] = [];
 
   if (unknownIds.length > 0) {
     sections.push({
@@ -298,29 +347,44 @@ async function main() {
 
   for (const run of runs) {
     const title = `${run.scenario.id} · ${run.variant.id}${run.sampled ? " (sample)" : ""}`;
-    const tenantId =
-      target === "live" ? liveTenant : target === "canary" ? undefined : localTenant(run.scenario.capability, bookingTenant, reservationTenant);
-    if (target === "local" && !tenantId) {
+    if (
+      dueOnly &&
+      !scenarioDue(
+        run.scenario.cadenceDays,
+        knownResults.find((row) => row.scenario === run.scenario.id && row.variant === run.variant.id),
+        now,
+      )
+    ) {
       sections.push({
         title,
-        skipped:
-          run.scenario.capability === "reservations"
-            ? "SCENARIO_RESERVATION_TENANT_ID is not set, so this reservation scenario was skipped."
-            : "No booking tenant. Set SCENARIO_BOOKING_TENANT_ID or DEV_TENANT_ID.",
+        skipped: `Passed within the last ${run.scenario.cadenceDays} days.`,
         checks: [],
         warnings: [],
         messages: [],
       });
       continue;
     }
+    const tenantId =
+      target === "live"
+        ? liveTenant
+        : target === "canary"
+          ? undefined
+          : localTenant(run.scenario, bookingTenant, reservationTenant, linkTenant);
+    if (target === "local" && !tenantId) {
+      const skipped =
+        run.scenario.pool === "link"
+          ? "SCENARIO_RESERVATION_LINK_TENANT_ID is not set, so this link scenario was skipped."
+          : run.scenario.capability === "reservations"
+            ? "SCENARIO_RESERVATION_TENANT_ID is not set, so this reservation scenario was skipped."
+            : "No booking tenant. Set SCENARIO_BOOKING_TENANT_ID or DEV_TENANT_ID.";
+      sections.push({ title, skipped, checks: [], warnings: [], messages: [] });
+      recorded.push(resultRow(run, stamp(now).heading, "skip", skipped));
+      continue;
+    }
     if (blocked.has(run.scenario.capability)) {
-      sections.push({
-        title,
-        skipped: "The server has no tenant for this capability.",
-        checks: [],
-        warnings: [],
-        messages: [],
-      });
+      const skipped = "The server has no tenant for this capability.";
+      sections.push({ title, skipped, checks: [], warnings: [], messages: [] });
+      recorded.push(resultRow(run, stamp(now).heading, "skip", skipped));
       continue;
     }
     try {
@@ -337,6 +401,7 @@ async function main() {
       if (played.skip) {
         blocked.add(run.scenario.capability);
         sections.push({ title, skipped: played.skip, checks: [], warnings: [], messages: [] });
+        recorded.push(resultRow(run, stamp(now).heading, "skip", played.skip));
         continue;
       }
       sections.push({
@@ -348,11 +413,17 @@ async function main() {
         warnings: played.warnings,
         messages: played.snapshot?.messages ?? [],
       });
+      const wrong = played.checks
+        .filter((check) => !check.ok)
+        .map((check) => `${check.name} — ${check.detail}`)
+        .join("; ");
+      recorded.push(resultRow(run, stamp(now).heading, wrong ? "fail" : "pass", wrong));
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       if (detail === "missing_tenant" || detail === "missing_canary") {
         blocked.add(run.scenario.capability);
         sections.push({ title, skipped: detail, checks: [], warnings: [], messages: [] });
+        recorded.push(resultRow(run, stamp(now).heading, "skip", detail));
         continue;
       }
       sections.push({
@@ -361,6 +432,7 @@ async function main() {
         warnings: [],
         messages: [],
       });
+      recorded.push(resultRow(run, stamp(now).heading, "fail", detail));
     }
   }
 
@@ -370,7 +442,7 @@ async function main() {
       ? "canary tenants pinned on the server"
       : target === "live"
         ? `live ${liveTenant}`
-        : `booking=${bookingTenant || "missing"}, reservations=${reservationTenant || "skipped"}`;
+        : `booking=${bookingTenant || "missing"}, reservations=${reservationTenant || "skipped"}, link=${linkTenant || "skipped"}`;
   const markdown = renderReview({
     when: when.heading,
     target,
@@ -384,8 +456,12 @@ async function main() {
   if (existsSync(join(dir, filename))) filename = `test-conversations-${when.file}-${pad(new Date().getSeconds())}.md`;
   const path = join(dir, filename);
   writeFileSync(path, markdown);
+  const link = conversationLink(filename);
+  for (const row of recorded) row.file = link;
+  writeFileSync(resultsPath, mergeResults(previousResults, recorded));
   const failed = sections.some((section) => section.checks.some((check) => !check.ok));
   console.log(path);
+  console.log(resultsPath);
   if (failed) process.exit(1);
 }
 

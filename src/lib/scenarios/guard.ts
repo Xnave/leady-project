@@ -8,6 +8,7 @@ export type ScenarioEnv = {
   secret: string;
   bookingTenantId: string;
   reservationTenantId: string;
+  reservationLinkTenantId: string;
   canaryBookingTenantId: string;
   canaryReservationTenantId: string;
   devTenantId: string;
@@ -23,6 +24,7 @@ export function readScenarioEnv(
     secret: source.SCENARIO_RUNNER_SECRET?.trim() ?? "",
     bookingTenantId: source.SCENARIO_BOOKING_TENANT_ID?.trim() ?? "",
     reservationTenantId: source.SCENARIO_RESERVATION_TENANT_ID?.trim() ?? "",
+    reservationLinkTenantId: source.SCENARIO_RESERVATION_LINK_TENANT_ID?.trim() ?? "",
     canaryBookingTenantId: source.SCENARIO_CANARY_BOOKING_TENANT_ID?.trim() ?? "",
     canaryReservationTenantId: source.SCENARIO_CANARY_RESERVATION_TENANT_ID?.trim() ?? "",
     devTenantId: source.DEV_TENANT_ID?.trim() ?? "",
@@ -47,6 +49,27 @@ export function scenarioSender(scenarioId: string, runId: string): string {
 
 export function isScenarioSender(externalUserId: string): boolean {
   return externalUserId.startsWith(SCENARIO_SENDER_PREFIX);
+}
+
+/** Local midnight of `YYYY-MM-DD`. Leads created earlier than this are "before" that day. */
+export function parseScenarioBefore(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return date;
+}
+
+/** Scenario senders only. `before` keeps leads created on that local day and later. */
+export function scenarioLeadPurgeWhere(tenantIds: string[], before?: Date) {
+  return {
+    tenantId: { in: tenantIds },
+    externalUserId: { startsWith: SCENARIO_SENDER_PREFIX },
+    ...(before ? { createdAt: { lt: before } } : {}),
+  };
 }
 
 export type TenantResolve =
@@ -108,6 +131,7 @@ function localTenants(
 ): TenantResolve {
   const booking = localBooking(env);
   const reservation = env.reservationTenantId;
+  const link = env.reservationLinkTenantId;
   if (input.target === "live") {
     if (!input.tenantId || !env.allowlist.includes(input.tenantId)) {
       return { ok: false, status: 403, error: "forbidden_tenant" };
@@ -117,20 +141,28 @@ function localTenants(
   if (input.target === "canary") {
     const canaryBooking = env.canaryBookingTenantId || booking;
     const canaryReservation = env.canaryReservationTenantId || reservation;
-    return oneOrAll(input.capability, canaryBooking, canaryReservation);
+    return oneOrAll(input.capability, canaryBooking, canaryReservation, link);
   }
   if (input.tenantId) {
-    const known = unique([booking, reservation, env.canaryBookingTenantId, env.canaryReservationTenantId, ...env.allowlist]);
+    const known = unique([
+      booking,
+      reservation,
+      link,
+      env.canaryBookingTenantId,
+      env.canaryReservationTenantId,
+      ...env.allowlist,
+    ]);
     if (!known.includes(input.tenantId)) return { ok: false, status: 403, error: "forbidden_tenant" };
     return { ok: true, tenantIds: [input.tenantId] };
   }
-  return oneOrAll(input.capability, booking, reservation);
+  return oneOrAll(input.capability, booking, reservation, link);
 }
 
 function oneOrAll(
   capability: ScenarioCapability | undefined,
   booking: string,
   reservation: string,
+  link = "",
 ): TenantResolve {
   if (capability === "booking") {
     return booking ? { ok: true, tenantIds: [booking] } : { ok: false, status: 503, error: "missing_tenant" };
@@ -140,7 +172,7 @@ function oneOrAll(
       ? { ok: true, tenantIds: [reservation] }
       : { ok: false, status: 503, error: "missing_tenant" };
   }
-  const ids = unique([booking, reservation]);
+  const ids = unique([booking, reservation, link]);
   if (ids.length === 0) return { ok: false, status: 503, error: "missing_tenant" };
   return { ok: true, tenantIds: ids };
 }

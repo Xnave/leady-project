@@ -447,6 +447,48 @@ describe("booking confirm_details rails", () => {
     expect(collected.reply).not.toMatch(/איזה יום ושעה/);
   });
 
+  it("stores a name passed on start and keeps the visit time already saved", async () => {
+    const ctx = ctxWithFields({});
+    ctx.tenant = {
+      ...ctx.tenant,
+      capabilityInstances: [
+        bookingInstance({ venueHours: "09:00-19:00", venueAddress: "1 Main" }),
+      ],
+    };
+    ctx.messages = [{ role: "lead", text: "היי, אני דנה כהן, אפשר לקבוע ביקור מחר ב-10?" }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const collected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+      replyLocked?: boolean;
+    } = { reply: "", fields: {}, effects: [] };
+    const tools = getCapability("booking")!.tools!({ ctx, stage, collected });
+    const start = tools.start_booking as {
+      execute: (args: {
+        name?: string;
+        phone?: string;
+        need?: string;
+        time_preference?: string;
+      }) => Promise<string>;
+    };
+    const result = JSON.parse(
+      await start.execute({
+        name: "דנה כהן",
+        phone: "0501234567",
+        need: "לראות מטבחים",
+        time_preference: "מחר ב-18",
+      }),
+    );
+    expect(String(collected.fields.time_preference ?? "")).toMatch(/10:00/);
+    expect(String(collected.fields.time_preference ?? "")).not.toMatch(/18:00/);
+    expect(collected.fields.name).toBe("דנה כהן");
+    expect(collected.fields.phone).toBe("0501234567");
+    expect(collected.fields.need).toBe("לראות מטבחים");
+    expect(result.next_field).toBeUndefined();
+    expect(result.active).toBe(true);
+  });
+
   it("stores a corrected מחר ב-10 even when ask_field names time", async () => {
     const ctx = ctxWithFields({ booking_flow: "active" });
     ctx.tenant = {

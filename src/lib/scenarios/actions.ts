@@ -8,7 +8,7 @@ import { decideRegisteredRequest } from "@/lib/flow/registry";
 import { runTurnNow, sendAndSave, tryDispatchNudgeEvent, tryDispatchOwnerAlertEvents, tryEnqueueAgentTurn } from "@/lib/flow/run-turn";
 import { ensureLocalDemoChannel } from "@/lib/provision-tenant";
 import { getRequest, REQUEST_APPROVAL_TASK } from "@/lib/requests";
-import { isScenarioSender, scenarioSender } from "./guard";
+import { isScenarioSender, scenarioLeadPurgeWhere, scenarioSender } from "./guard";
 import { loadScenarioSnapshot } from "./snapshot";
 import type { ScenarioSnapshot } from "./types";
 
@@ -128,7 +128,9 @@ export async function sendScenarioTurn(opts: {
 export async function decideScenarioRequest(opts: {
   tenantId: string;
   requestId: string;
-  decision: "approve" | "decline";
+  decision: "approve" | "decline" | "reschedule";
+  alternativeStart?: string;
+  alternativeEnd?: string;
 }): Promise<ScenarioSnapshot> {
   return batchLeadRefreshes(async () => {
     const request = await getRequest({ tenantId: opts.tenantId, requestId: opts.requestId });
@@ -159,6 +161,8 @@ export async function decideScenarioRequest(opts: {
       requestId: request.id,
       actorUserId: "scenario_runner",
       decision: opts.decision,
+      alternativeStart: opts.alternativeStart,
+      alternativeEnd: opts.alternativeEnd,
     });
     const ctx = await loadTurnContext(opts.tenantId, result.conversationId);
     await sendAndSave(ctx, result.text);
@@ -192,7 +196,11 @@ export async function endScenarioThread(tenantId: string, leadId: string): Promi
   });
 }
 
-export async function purgeScenarioLeads(tenantIds: string[], leadId?: string): Promise<{ deleted: number }> {
+export async function purgeScenarioLeads(
+  tenantIds: string[],
+  opts?: { leadId?: string; before?: Date },
+): Promise<{ deleted: number }> {
+  const leadId = opts?.leadId;
   if (leadId) {
     const lead = await prisma.lead.findFirst({
       where: { id: leadId, tenantId: { in: tenantIds } },
@@ -203,10 +211,7 @@ export async function purgeScenarioLeads(tenantIds: string[], leadId?: string): 
     return { deleted: 1 };
   }
   const result = await prisma.lead.deleteMany({
-    where: {
-      tenantId: { in: tenantIds },
-      externalUserId: { startsWith: "demo-scenario-" },
-    },
+    where: scenarioLeadPurgeWhere(tenantIds, opts?.before),
   });
   return { deleted: result.count };
 }
