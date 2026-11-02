@@ -32,7 +32,7 @@ export type StoredAttachment = {
 export type DocumentsTurnState = {
   configured: boolean;
   runIngest: boolean;
-  /** Every new file on the latest message is a type Smart NPV will not store. */
+  /** Every unfinished file on this turn is a type Smart NPV will not store. */
   unsupportedOnly: boolean;
   status: string;
   activeStage: string;
@@ -115,46 +115,150 @@ function stateOf(row: {
   };
 }
 
+/** How many lead messages, ending at the trigger, a turn will scan for unfinished files. */
+export const INGEST_MESSAGE_WINDOW = 20;
+
+export type InboundFile = {
+  messageId: string;
+  attachment: StoredAttachment;
+};
+
+type LeadMessageRow = {
+  id: string;
+  text: string;
+  metadata: unknown;
+  createdAt: Date;
+};
+
+/**
+ * The triggering message, then older ones. A newer lead message is left for its own turn
+ * so a text reply cannot hide the file that started this turn.
+ */
+export function selectIngestMessages<T extends { id: string; createdAt: Date }>(
+  newestFirst: T[],
+  trigger: T | null,
+): T[] {
+  const eligible = trigger
+    ? newestFirst.filter((message) => message.createdAt.getTime() <= trigger.createdAt.getTime())
+    : newestFirst;
+  const window = eligible.slice(0, INGEST_MESSAGE_WINDOW);
+  if (trigger && !window.some((message) => message.id === trigger.id)) window.push(trigger);
+  return [...window].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+}
+
+function finishedKey(messageId: string, filename: string): string {
+  return `${messageId}\0${filename}`;
+}
+
+/** Attachments that do not yet have a rejected or uploaded row for that message. */
+export function pendingFiles(
+  messages: { id: string; metadata: unknown }[],
+  finished: { messageId: string; filename: string }[],
+): InboundFile[] {
+  const done = new Set(finished.map((row) => finishedKey(row.messageId, row.filename)));
+  const files: InboundFile[] = [];
+  for (const message of messages) {
+    for (const attachment of attachmentsOf(message.metadata)) {
+      if (done.has(finishedKey(message.id, attachment.filename))) continue;
+      files.push({ messageId: message.id, attachment });
+    }
+  }
+  return files;
+}
+
+function nationalIdFromTexts(texts: string[]): string {
+  for (const text of texts) {
+    const id = nationalIdFromText(text);
+    if (id) return id;
+  }
+  return "";
+}
+
+function sameNeedsId(row: { status: string; profile: unknown; slots: unknown }, typedId: string): boolean {
+  if (row.status !== "needs_id") return false;
+  if (asSlots(row.slots).length > 0) return false;
+  return String(asProfile(row.profile).lookupId ?? "") === typedId;
+}
+
+function warnDocuments(msg: string, fields: Record<string, string | number>): void {
+  console.warn(JSON.stringify({ msg, ...fields }));
+}
+
+async function loadIngestWindow(args: {
+  tenantId: string;
+  conversationId: string;
+  triggerMessageId?: string;
+}): Promise<{ messages: LeadMessageRow[]; newestText: string; files: InboundFile[] }> {
+  const trigger = args.triggerMessageId
+    ? await prisma.message.findFirst({
+        where: {
+          id: args.triggerMessageId,
+          tenantId: args.tenantId,
+          conversationId: args.conversationId,
+          role: "lead",
+        },
+        select: { id: true, text: true, metadata: true, createdAt: true },
+      })
+    : null;
+  const [rows, newest] = await Promise.all([
+    prisma.message.findMany({
+      where: {
+        tenantId: args.tenantId,
+        conversationId: args.conversationId,
+        role: "lead",
+        ...(trigger ? { createdAt: { lte: trigger.createdAt } } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: INGEST_MESSAGE_WINDOW,
+      select: { id: true, text: true, metadata: true, createdAt: true },
+    }),
+    prisma.message.findFirst({
+      where: { tenantId: args.tenantId, conversationId: args.conversationId, role: "lead" },
+      orderBy: { createdAt: "desc" },
+      select: { text: true },
+    }),
+  ]);
+  const messages = selectIngestMessages(rows, trigger);
+  const finished =
+    messages.length === 0
+      ? []
+      : await prisma.leadDocument.findMany({
+          where: {
+            tenantId: args.tenantId,
+            messageId: { in: messages.map((message) => message.id) },
+            status: { in: ["rejected", "uploaded"] },
+          },
+          select: { messageId: true, filename: true },
+        });
+  return { messages, newestText: newest?.text ?? "", files: pendingFiles(messages, finished) };
+}
+
 export async function loadDocumentsTurnState(args: {
   tenantId: string;
   leadId: string;
   conversationId: string;
+  triggerMessageId?: string;
 }): Promise<DocumentsTurnState> {
   const config = await readConfig(args.tenantId);
   if (!config) {
     return { configured: false, runIngest: false, unsupportedOnly: false, status: "", activeStage: "", missing: [] };
   }
-  const [dossier, latest, stored] = await Promise.all([
+  const [dossier, inbound, stored] = await Promise.all([
     prisma.dossier.findFirst({
       where: { tenantId: args.tenantId, leadId: args.leadId },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.message.findFirst({
-      where: { tenantId: args.tenantId, conversationId: args.conversationId, role: "lead" },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, metadata: true },
-    }),
+    loadIngestWindow(args),
     prisma.leadDocument.count({
       where: { tenantId: args.tenantId, leadId: args.leadId, status: "stored" },
     }),
   ]);
-  const attachments = latest ? attachmentsOf(latest.metadata) : [];
-  const finished = latest
-    ? await prisma.leadDocument.count({
-        where: {
-          tenantId: args.tenantId,
-          messageId: latest.id,
-          status: { in: ["rejected", "uploaded"] },
-        },
-      })
-    : 0;
   const state = dossier ? stateOf(dossier) : null;
   const unsupportedOnly =
     stored === 0 &&
-    finished === 0 &&
-    attachments.length > 0 &&
-    attachments.every((item) => !isUploadableFile(item.mime, item.filename));
-  const runIngest = !state || state.status === "needs_id" || attachments.length > finished || stored > 0;
+    inbound.files.length > 0 &&
+    inbound.files.every((file) => !isUploadableFile(file.attachment.mime, file.attachment.filename));
+  const runIngest = !state || state.status === "needs_id" || inbound.files.length > 0 || stored > 0;
   return {
     configured: true,
     runIngest,
@@ -169,20 +273,22 @@ function reasonText(chat: ReturnType<typeof copyFor>["chat"], reason: string): s
   return chat.documents.reasons[reason] ?? chat.documents.reasons.unreadable ?? reason;
 }
 
-async function markUnsupported(opts: {
+async function markRejected(opts: {
   tenantId: string;
   leadId: string;
   dossierId: string;
   messageId: string;
   filename: string;
   mime: string;
+  reason: string;
   existingId?: string;
+  docType?: string;
 }): Promise<void> {
   const data = {
     status: "rejected" as const,
     bytesEnc: null,
-    docType: "",
-    validation: { reason: "unsupported_type" } as Prisma.InputJsonValue,
+    docType: opts.docType ?? "",
+    validation: { reason: opts.reason } as Prisma.InputJsonValue,
   };
   if (opts.existingId) {
     await prisma.leadDocument.update({ where: { id: opts.existingId }, data });
@@ -201,6 +307,438 @@ async function markUnsupported(opts: {
   });
 }
 
+type DossierRow = {
+  id: string;
+  status: string;
+  smartClientId: string;
+  profile: unknown;
+  slots: unknown;
+  activeStage: string;
+};
+
+type IngestJob = {
+  id?: string;
+  messageId: string;
+  filename: string;
+  mime: string;
+  bytes: Buffer;
+  resume?: { slotId: string; docType: string };
+};
+
+type IngestLines = {
+  ctx: TurnContext;
+  chat: ReturnType<typeof copyFor>["chat"];
+  lines: string[];
+};
+
+function phoneOf(ctx: TurnContext): string {
+  return (
+    ctx.channel?.customerPhone ||
+    (typeof ctx.lead.fields.phone === "string" ? ctx.lead.fields.phone : "") ||
+    ctx.lead.externalUserId
+  );
+}
+
+/** Bad file types only. Skips the model path's lookup when every new file is one Smart NPV will refuse. */
+async function rejectUnsupportedFiles(opts: IngestLines & { row: DossierRow | null; files: InboundFile[] }): Promise<{ ok: boolean; reply: string } | null> {
+  const open = !opts.row || (opts.row.status !== "blocked" && opts.row.status !== "complete");
+  const flagged = capabilityState<DocumentsTurnState>(opts.ctx, "documents")?.unsupportedOnly === true;
+  if (!open || !flagged || opts.files.length === 0) return null;
+  if (!opts.files.every((file) => !isUploadableFile(file.attachment.mime, file.attachment.filename))) return null;
+  let row = opts.row;
+  if (!row) {
+    row = await prisma.dossier.create({
+      data: {
+        tenantId: opts.ctx.tenantId,
+        leadId: opts.ctx.lead.id,
+        conversationId: opts.ctx.conversation.id,
+        status: "needs_id",
+        profile: {} as Prisma.InputJsonValue,
+        slots: [] as Prisma.InputJsonValue,
+        activeStage: "",
+        smartClientId: "",
+      },
+    });
+  }
+  for (const file of opts.files) {
+    await markRejected({
+      tenantId: opts.ctx.tenantId,
+      leadId: opts.ctx.lead.id,
+      dossierId: row.id,
+      messageId: file.messageId,
+      filename: file.attachment.filename,
+      mime: file.attachment.mime,
+      reason: "unsupported_type",
+    });
+    opts.lines.push(
+      opts.chat.documents.rejected(file.attachment.filename, reasonText(opts.chat, "unsupported_type")),
+    );
+  }
+  await safeRefreshLeadState(opts.ctx.tenantId, opts.ctx.lead.id);
+  return { ok: true, reply: opts.lines.filter(Boolean).join("\n") };
+}
+
+/** Find the Smart NPV client, or leave the dossier on needs_id. */
+async function matchClient(opts: IngestLines & {
+  config: DocumentConfig;
+  client: SmartClient;
+  lang: "en" | "he";
+  row: DossierRow | null;
+  typedId: string;
+  hasFiles: boolean;
+}): Promise<{ row: DossierRow | null; done?: { ok: boolean; reply: string } }> {
+  let { row } = opts;
+  if (row && row.status !== "needs_id") return { row };
+  const found =
+    (await opts.client.findClient({ phone: phoneOf(opts.ctx) })) ||
+    (opts.typedId ? await opts.client.findClient({ nationalId: opts.typedId }) : null);
+  if (!found) {
+    const reply = opts.typedId ? opts.chat.documents.notFound : opts.chat.documents.askId;
+    if (row && sameNeedsId(row, opts.typedId)) return { row, done: { ok: true, reply } };
+    const data = {
+      tenantId: opts.ctx.tenantId,
+      leadId: opts.ctx.lead.id,
+      conversationId: opts.ctx.conversation.id,
+      status: "needs_id",
+      profile: { lookupId: opts.typedId } as Prisma.InputJsonValue,
+      slots: [] as Prisma.InputJsonValue,
+      activeStage: "",
+      smartClientId: "",
+    };
+    row = row
+      ? await prisma.dossier.update({ where: { id: row.id }, data })
+      : await prisma.dossier.create({ data });
+    await safeRefreshLeadState(opts.ctx.tenantId, opts.ctx.lead.id);
+    return { row, done: { ok: true, reply } };
+  }
+  const opened = freshDossier({
+    smartClientId: found.clientId,
+    profile: found.profile,
+    slots: requiredSlots(found.profile, opts.config.rules),
+  });
+  const data = {
+    status: opened.status,
+    smartClientId: opened.smartClientId,
+    profile: opened.profile as Prisma.InputJsonValue,
+    slots: opened.slots as unknown as Prisma.InputJsonValue,
+    activeStage: opened.activeStage,
+    conversationId: opts.ctx.conversation.id,
+  };
+  row = row
+    ? await prisma.dossier.update({ where: { id: row.id }, data })
+    : await prisma.dossier.create({
+        data: { tenantId: opts.ctx.tenantId, leadId: opts.ctx.lead.id, ...data },
+      });
+  if (!opts.hasFiles) {
+    opts.lines.push(opts.chat.documents.askStage(missingLabels(opened, opts.config.rules, opts.lang).join(", ")));
+  }
+  return { row };
+}
+
+async function rejectEmptyStored(tenantId: string, dossierId: string): Promise<void> {
+  const cleared = await prisma.leadDocument.updateMany({
+    where: {
+      tenantId,
+      dossierId,
+      status: "stored",
+      OR: [{ bytesEnc: null }, { bytesEnc: "" }],
+    },
+    data: {
+      status: "rejected",
+      bytesEnc: null,
+      validation: { reason: "missing_bytes" } as Prisma.InputJsonValue,
+    },
+  });
+  if (cleared.count > 0) {
+    warnDocuments("documents.empty_stored", { tenantId, dossierId, count: cleared.count });
+  }
+}
+
+/** Download new files and reload ciphertext that is still waiting. Unsupported types are rejected here. */
+async function collectJobs(opts: IngestLines & { row: DossierRow; files: InboundFile[] }): Promise<IngestJob[]> {
+  await rejectEmptyStored(opts.ctx.tenantId, opts.row.id);
+  const pendingDocs = await prisma.leadDocument.findMany({
+    where: { tenantId: opts.ctx.tenantId, dossierId: opts.row.id, status: "stored" },
+    orderBy: { createdAt: "asc" },
+  });
+  const jobs: IngestJob[] = [];
+  for (const doc of pendingDocs) {
+    if (!doc.bytesEnc) continue;
+    let bytes: Buffer;
+    try {
+      bytes = decryptBytes(doc.bytesEnc);
+    } catch (err) {
+      warnDocuments("documents.empty_stored", {
+        tenantId: opts.ctx.tenantId,
+        filename: doc.filename,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await markRejected({
+        tenantId: opts.ctx.tenantId,
+        leadId: opts.ctx.lead.id,
+        dossierId: opts.row.id,
+        messageId: doc.messageId,
+        filename: doc.filename,
+        mime: doc.mime,
+        reason: "missing_bytes",
+        existingId: doc.id,
+      });
+      continue;
+    }
+    if (bytes.length === 0) {
+      await markRejected({
+        tenantId: opts.ctx.tenantId,
+        leadId: opts.ctx.lead.id,
+        dossierId: opts.row.id,
+        messageId: doc.messageId,
+        filename: doc.filename,
+        mime: doc.mime,
+        reason: "missing_bytes",
+        existingId: doc.id,
+      });
+      continue;
+    }
+    const validation = isRecord(doc.validation) ? doc.validation : {};
+    jobs.push({
+      id: doc.id,
+      messageId: doc.messageId,
+      filename: doc.filename,
+      mime: doc.mime,
+      bytes,
+      resume:
+        validation.accepted === true && typeof validation.slotId === "string"
+          ? { slotId: validation.slotId, docType: String(validation.docType ?? "") }
+          : undefined,
+    });
+  }
+  for (const file of opts.files) {
+    const { attachment } = file;
+    if (jobs.some((job) => job.messageId === file.messageId && job.filename === attachment.filename)) continue;
+    if (!isUploadableFile(attachment.mime, attachment.filename)) {
+      opts.lines.push(opts.chat.documents.rejected(attachment.filename, reasonText(opts.chat, "unsupported_type")));
+      await markRejected({
+        tenantId: opts.ctx.tenantId,
+        leadId: opts.ctx.lead.id,
+        dossierId: opts.row.id,
+        messageId: file.messageId,
+        filename: attachment.filename,
+        mime: attachment.mime,
+        reason: "unsupported_type",
+      });
+      continue;
+    }
+    let bytes: Buffer | null = null;
+    try {
+      bytes = attachment.bytesEnc
+        ? decryptBytes(attachment.bytesEnc)
+        : attachment.url
+          ? await downloadUrl(attachment.url)
+          : null;
+    } catch (err) {
+      const reason = err instanceof Error && err.message === "too_large" ? "too_large" : "unreadable";
+      warnDocuments("documents.download_failed", {
+        filename: attachment.filename,
+        mime: attachment.mime,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      opts.lines.push(opts.chat.documents.rejected(attachment.filename, reasonText(opts.chat, reason)));
+      continue;
+    }
+    if (!bytes) continue;
+    jobs.push({ messageId: file.messageId, filename: attachment.filename, mime: attachment.mime, bytes });
+  }
+  return jobs;
+}
+
+/** Read the file against the open slots. A rejection is one write. */
+async function judgeFileJob(opts: IngestLines & {
+  config: DocumentConfig;
+  extract: ExtractFn;
+  lang: "en" | "he";
+  row: DossierRow;
+  state: DossierState;
+  job: IngestJob;
+}): Promise<{ state: DossierState; escalated: boolean; accepted: { slotId: string; docType: string } | null }> {
+  if (opts.job.resume) {
+    return {
+      state: opts.state,
+      escalated: false,
+      accepted: { slotId: opts.job.resume.slotId, docType: opts.job.resume.docType },
+    };
+  }
+  const open = opts.state.slots
+    .filter((slot) => slot.status === "missing")
+    .map((slot) => ({
+      docType: slot.docType,
+      label: docLabel(opts.config.rules, slot.docType, "en"),
+      fields: opts.config.rules.documents[slot.docType]?.fields ?? [],
+    }));
+  const extracted: DocExtraction = await opts.extract({
+    bytes: opts.job.bytes,
+    mime: opts.job.mime,
+    filename: opts.job.filename,
+    open,
+  });
+  const judged = judgeFile(opts.state, opts.config.rules, extracted);
+  if (judged.kind !== "reject") {
+    return { state: opts.state, escalated: false, accepted: { slotId: judged.slotId, docType: judged.docType } };
+  }
+  const state = judged.state;
+  const label = docLabel(
+    opts.config.rules,
+    state.slots.find((slot) => slot.id === judged.slotId)?.docType ?? "",
+    opts.lang,
+  );
+  opts.lines.push(opts.chat.documents.rejected(label || opts.job.filename, reasonText(opts.chat, judged.reason)));
+  if (opts.job.id) {
+    await prisma.leadDocument.update({
+      where: { id: opts.job.id },
+      data: { status: "rejected", bytesEnc: null, validation: { reason: judged.reason } },
+    });
+  } else {
+    await prisma.leadDocument.create({
+      data: {
+        tenantId: opts.ctx.tenantId,
+        leadId: opts.ctx.lead.id,
+        dossierId: opts.row.id,
+        messageId: opts.job.messageId,
+        filename: opts.job.filename,
+        mime: opts.job.mime,
+        docType: extracted.docType,
+        status: "rejected",
+        validation: { reason: judged.reason } as Prisma.InputJsonValue,
+        bytesEnc: null,
+      },
+    });
+  }
+  if (!judged.escalated) return { state, escalated: false, accepted: null };
+  await prisma.$transaction([
+    prisma.hitlTask.create({
+      data: {
+        tenantId: opts.ctx.tenantId,
+        conversationId: opts.ctx.conversation.id,
+        leadId: opts.ctx.lead.id,
+        type: "more_info",
+        reason: "document_review",
+        payload: { summary: judged.reason },
+        status: "open",
+      },
+    }),
+    prisma.conversation.update({
+      where: { id: opts.ctx.conversation.id },
+      data: { status: "waiting_human", flowState: "waiting_human" },
+    }),
+  ]);
+  opts.ctx.conversation.status = "waiting_human";
+  opts.ctx.conversation.flowState = "waiting_human";
+  opts.lines.push(opts.chat.documents.escalated);
+  return { state, escalated: true, accepted: null };
+}
+
+/** Send an accepted file to Smart NPV, or keep the ciphertext when the upload fails. */
+async function uploadAcceptedFile(opts: IngestLines & {
+  config: DocumentConfig;
+  client: SmartClient;
+  lang: "en" | "he";
+  row: DossierRow;
+  state: DossierState;
+  job: IngestJob;
+  slotId: string;
+  docType: string;
+}): Promise<{ state: DossierState; accepted: boolean }> {
+  const { job, slotId, docType } = opts;
+  let state = opts.state;
+  const target = state.slots.find((slot) => slot.id === slotId);
+  if (target && !slotNeedsUpload(target)) {
+    if (target.status !== "uploaded") state = commitSlot(state, slotId, target.remoteId, job.filename);
+    if (job.id) {
+      await prisma.leadDocument.update({
+        where: { id: job.id },
+        data: { status: "uploaded", remoteId: target.remoteId, bytesEnc: null, docType },
+      });
+    } else {
+      await prisma.leadDocument.create({
+        data: {
+          tenantId: opts.ctx.tenantId,
+          leadId: opts.ctx.lead.id,
+          dossierId: opts.row.id,
+          messageId: job.messageId,
+          filename: job.filename,
+          mime: job.mime,
+          docType,
+          status: "uploaded",
+          remoteId: target.remoteId,
+          validation: { accepted: true } as Prisma.InputJsonValue,
+          bytesEnc: null,
+        },
+      });
+    }
+    opts.lines.push(opts.chat.documents.received(docLabel(opts.config.rules, docType, opts.lang)));
+    return { state, accepted: false };
+  }
+
+  const docRow = job.id
+    ? { id: job.id }
+    : await prisma.leadDocument.create({
+        data: {
+          tenantId: opts.ctx.tenantId,
+          leadId: opts.ctx.lead.id,
+          dossierId: opts.row.id,
+          messageId: job.messageId,
+          filename: job.filename,
+          mime: job.mime,
+          docType,
+          status: "stored",
+          validation: { accepted: true, slotId, docType } as Prisma.InputJsonValue,
+          bytesEnc: encryptBytes(job.bytes),
+        },
+      });
+  try {
+    const uploaded = await opts.client.upload({
+      clientId: state.smartClientId,
+      docType,
+      filename: job.filename,
+      mime: job.mime,
+      bytes: job.bytes,
+    });
+    state = commitSlot(state, slotId, uploaded.remoteId, job.filename);
+    await prisma.leadDocument.update({
+      where: { id: docRow.id },
+      data: {
+        status: "uploaded",
+        docType,
+        remoteId: uploaded.remoteId,
+        bytesEnc: null,
+        validation: { accepted: true } as Prisma.InputJsonValue,
+      },
+    });
+    opts.lines.push(opts.chat.documents.received(docLabel(opts.config.rules, docType, opts.lang)));
+    return { state, accepted: true };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    if (error === "unsupported_type") {
+      await prisma.leadDocument.update({
+        where: { id: docRow.id },
+        data: { status: "rejected", bytesEnc: null, validation: { reason: "unsupported_type" } },
+      });
+      opts.lines.push(opts.chat.documents.rejected(job.filename, reasonText(opts.chat, "unsupported_type")));
+      return { state, accepted: false };
+    }
+    warnDocuments("documents.upload_failed", { filename: job.filename, error });
+    await prisma.leadDocument.update({
+      where: { id: docRow.id },
+      data: {
+        status: "stored",
+        docType,
+        bytesEnc: encryptBytes(job.bytes),
+        validation: { accepted: true, slotId, docType } as Prisma.InputJsonValue,
+      },
+    });
+    opts.lines.push(opts.chat.documents.uploadFailed);
+    return { state, accepted: false };
+  }
+}
+
 export async function runDocumentsIngest(
   ctx: TurnContext,
   deps?: { extract?: ExtractFn; client?: SmartClient },
@@ -216,100 +754,38 @@ export async function runDocumentsIngest(
   });
   const extract = deps?.extract ?? extractDocument;
   const lines: string[] = [];
-
-  const latest = await prisma.message.findFirst({
-    where: { tenantId: ctx.tenantId, conversationId: ctx.conversation.id, role: "lead" },
-    orderBy: { createdAt: "desc" },
+  const inbound = await loadIngestWindow({
+    tenantId: ctx.tenantId,
+    conversationId: ctx.conversation.id,
+    triggerMessageId: ctx.triggerMessageId,
   });
-  const typedId = nationalIdFromText(latest?.text ?? "");
-  const phone =
-    ctx.channel?.customerPhone ||
-    (typeof ctx.lead.fields.phone === "string" ? ctx.lead.fields.phone : "") ||
-    ctx.lead.externalUserId;
-
-  let row = await prisma.dossier.findFirst({
+  const typedId = nationalIdFromTexts([
+    inbound.newestText,
+    ...[...inbound.messages].reverse().map((message) => message.text),
+  ]);
+  let row: DossierRow | null = await prisma.dossier.findFirst({
     where: { tenantId: ctx.tenantId, leadId: ctx.lead.id },
     orderBy: { createdAt: "desc" },
   });
 
-  const openForTypes = !row || (row.status !== "blocked" && row.status !== "complete");
-  const incoming = latest ? attachmentsOf(latest.metadata) : [];
-  const unsupportedOnly = capabilityState<DocumentsTurnState>(ctx, "documents")?.unsupportedOnly === true;
-  if (openForTypes && unsupportedOnly) {
-    if (!row) {
-      row = await prisma.dossier.create({
-        data: {
-          tenantId: ctx.tenantId,
-          leadId: ctx.lead.id,
-          conversationId: ctx.conversation.id,
-          status: "needs_id",
-          profile: {} as Prisma.InputJsonValue,
-          slots: [] as Prisma.InputJsonValue,
-          activeStage: "",
-          smartClientId: "",
-        },
-      });
-    }
-    for (const attachment of incoming) {
-      await markUnsupported({
-        tenantId: ctx.tenantId,
-        leadId: ctx.lead.id,
-        dossierId: row.id,
-        messageId: latest?.id ?? "",
-        filename: attachment.filename,
-        mime: attachment.mime,
-      });
-      lines.push(chat.documents.rejected(attachment.filename, reasonText(chat, "unsupported_type")));
-    }
-    await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
-    return { ok: true, reply: lines.filter(Boolean).join("\n") };
-  }
+  const rejectedTypes = await rejectUnsupportedFiles({ ctx, chat, lines, row, files: inbound.files });
+  if (rejectedTypes) return rejectedTypes;
 
-  if (!row || row.status === "needs_id") {
-    const found =
-      (await client.findClient({ phone })) ||
-      (typedId ? await client.findClient({ nationalId: typedId }) : null);
-    if (!found) {
-      const data = {
-        tenantId: ctx.tenantId,
-        leadId: ctx.lead.id,
-        conversationId: ctx.conversation.id,
-        status: "needs_id",
-        profile: { lookupId: typedId } as Prisma.InputJsonValue,
-        slots: [] as Prisma.InputJsonValue,
-        activeStage: "",
-        smartClientId: "",
-      };
-      row = row
-        ? await prisma.dossier.update({ where: { id: row.id }, data })
-        : await prisma.dossier.create({ data });
-      await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
-      return { ok: true, reply: typedId ? chat.documents.notFound : chat.documents.askId };
-    }
-    const opened = freshDossier({
-      smartClientId: found.clientId,
-      profile: found.profile,
-      slots: requiredSlots(found.profile, config.rules),
-    });
-    const data = {
-      status: opened.status,
-      smartClientId: opened.smartClientId,
-      profile: opened.profile as Prisma.InputJsonValue,
-      slots: opened.slots as unknown as Prisma.InputJsonValue,
-      activeStage: opened.activeStage,
-      conversationId: ctx.conversation.id,
-    };
-    row = row
-      ? await prisma.dossier.update({ where: { id: row.id }, data })
-      : await prisma.dossier.create({
-          data: { tenantId: ctx.tenantId, leadId: ctx.lead.id, ...data },
-        });
-    if (!latest || attachmentsOf(latest.metadata).length === 0) {
-      lines.push(chat.documents.askStage(missingLabels(opened, config.rules, lang).join(", ")));
-    }
-  }
-
+  const matched = await matchClient({
+    ctx,
+    chat,
+    lines,
+    config,
+    client,
+    lang,
+    row,
+    typedId,
+    hasFiles: inbound.files.length > 0,
+  });
+  if (matched.done) return matched.done;
+  row = matched.row;
   if (!row) return { ok: false, reply: chat.documents.notConfigured };
+
   let state = stateOf(row);
   if (state.status === "blocked" || state.status === "complete") {
     await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
@@ -319,245 +795,42 @@ export async function runDocumentsIngest(
     };
   }
 
-  const pendingDocs = await prisma.leadDocument.findMany({
-    where: { tenantId: ctx.tenantId, dossierId: row.id, status: "stored" },
-    orderBy: { createdAt: "asc" },
-  });
-  const seenNames = new Set(
-    (
-      await prisma.leadDocument.findMany({
-        where: { tenantId: ctx.tenantId, messageId: latest?.id ?? "", status: { not: "stored" } },
-        select: { filename: true },
-      })
-    ).map((doc) => doc.filename),
-  );
-
+  const jobs = await collectJobs({ ctx, chat, lines, row, files: inbound.files });
   let acceptedAny = false;
-  type Job = { id?: string; filename: string; mime: string; bytes: Buffer | null; resume?: { slotId: string; docType: string } };
-  const jobs: Job[] = [];
-  for (const doc of pendingDocs) {
-    if (!doc.bytesEnc) continue;
-    const validation = isRecord(doc.validation) ? doc.validation : {};
-    jobs.push({
-      id: doc.id,
-      filename: doc.filename,
-      mime: doc.mime,
-      bytes: decryptBytes(doc.bytesEnc),
-      resume:
-        validation.accepted === true && typeof validation.slotId === "string"
-          ? { slotId: validation.slotId, docType: String(validation.docType ?? "") }
-          : undefined,
-    });
-  }
-  if (latest) {
-    for (const attachment of attachmentsOf(latest.metadata)) {
-      if (seenNames.has(attachment.filename)) continue;
-      if (jobs.some((job) => job.filename === attachment.filename && !job.id)) continue;
-      if (!isUploadableFile(attachment.mime, attachment.filename)) {
-        lines.push(chat.documents.rejected(attachment.filename, reasonText(chat, "unsupported_type")));
-        await markUnsupported({
-          tenantId: ctx.tenantId,
-          leadId: ctx.lead.id,
-          dossierId: row.id,
-          messageId: latest.id,
-          filename: attachment.filename,
-          mime: attachment.mime,
-        });
-        continue;
-      }
-      let bytes: Buffer | null = null;
-      try {
-        bytes = attachment.bytesEnc ? decryptBytes(attachment.bytesEnc) : attachment.url ? await downloadUrl(attachment.url) : null;
-      } catch (err) {
-        const reason = err instanceof Error && err.message === "too_large" ? "too_large" : "unreadable";
-        lines.push(chat.documents.rejected(attachment.filename, reasonText(chat, reason)));
-        continue;
-      }
-      if (!bytes) continue;
-      jobs.push({ filename: attachment.filename, mime: attachment.mime, bytes });
-    }
-  }
-
   for (const job of jobs) {
-    if (!job.bytes && !job.resume) continue;
-    if (job.bytes && !isUploadableFile(job.mime, job.filename)) {
+    if (!isUploadableFile(job.mime, job.filename)) {
       lines.push(chat.documents.rejected(job.filename, reasonText(chat, "unsupported_type")));
-      await markUnsupported({
+      await markRejected({
         tenantId: ctx.tenantId,
         leadId: ctx.lead.id,
         dossierId: row.id,
-        messageId: latest?.id ?? "",
+        messageId: job.messageId,
         filename: job.filename,
         mime: job.mime,
+        reason: "unsupported_type",
         existingId: job.id,
       });
       continue;
     }
-    const open = state.slots
-      .filter((slot) => slot.status === "missing")
-      .map((slot) => ({
-        docType: slot.docType,
-        label: docLabel(config.rules, slot.docType, "en"),
-        fields: config.rules.documents[slot.docType]?.fields ?? [],
-      }));
-    let slotId = job.resume?.slotId ?? "";
-    let docType = job.resume?.docType ?? "";
-    if (!job.resume) {
-      if (!job.bytes) continue;
-      const extracted: DocExtraction = await extract({
-        bytes: job.bytes,
-        mime: job.mime,
-        filename: job.filename,
-        open,
-      });
-      const judged = judgeFile(state, config.rules, extracted);
-      if (judged.kind === "reject") {
-        state = judged.state;
-        const label = docLabel(config.rules, state.slots.find((slot) => slot.id === judged.slotId)?.docType ?? "", lang);
-        lines.push(chat.documents.rejected(label || job.filename, reasonText(chat, judged.reason)));
-        const saved = job.id
-          ? job.id
-          : (
-              await prisma.leadDocument.create({
-                data: {
-                  tenantId: ctx.tenantId,
-                  leadId: ctx.lead.id,
-                  dossierId: row.id,
-                  messageId: latest?.id ?? "",
-                  filename: job.filename,
-                  mime: job.mime,
-                  docType: extracted.docType,
-                  status: "rejected",
-                  validation: { reason: judged.reason } as Prisma.InputJsonValue,
-                  bytesEnc: null,
-                },
-              })
-            ).id;
-        if (job.id) {
-          await prisma.leadDocument.update({
-            where: { id: saved },
-            data: { status: "rejected", bytesEnc: null, validation: { reason: judged.reason } },
-          });
-        }
-        if (judged.escalated) {
-          await prisma.$transaction([
-            prisma.hitlTask.create({
-              data: {
-                tenantId: ctx.tenantId,
-                conversationId: ctx.conversation.id,
-                leadId: ctx.lead.id,
-                type: "more_info",
-                reason: "document_review",
-                payload: { summary: judged.reason },
-                status: "open",
-              },
-            }),
-            prisma.conversation.update({
-              where: { id: ctx.conversation.id },
-              data: { status: "waiting_human", flowState: "waiting_human" },
-            }),
-          ]);
-          ctx.conversation.status = "waiting_human";
-          ctx.conversation.flowState = "waiting_human";
-          lines.push(chat.documents.escalated);
-          break;
-        }
-        continue;
-      }
-      slotId = judged.slotId;
-      docType = judged.docType;
-    }
-
-    const target = state.slots.find((slot) => slot.id === slotId);
-    if (target && !slotNeedsUpload(target)) {
-      if (target.status !== "uploaded") state = commitSlot(state, slotId, target.remoteId, job.filename);
-      const keptId = job.id
-        ? job.id
-        : (
-            await prisma.leadDocument.create({
-              data: {
-                tenantId: ctx.tenantId,
-                leadId: ctx.lead.id,
-                dossierId: row.id,
-                messageId: latest?.id ?? "",
-                filename: job.filename,
-                mime: job.mime,
-                docType,
-                status: "uploaded",
-                remoteId: target.remoteId,
-                validation: { accepted: true } as Prisma.InputJsonValue,
-                bytesEnc: null,
-              },
-            })
-          ).id;
-      if (job.id) {
-        await prisma.leadDocument.update({
-          where: { id: keptId },
-          data: { status: "uploaded", remoteId: target.remoteId, bytesEnc: null, docType },
-        });
-      }
-      lines.push(chat.documents.received(docLabel(config.rules, docType, lang)));
-      continue;
-    }
-
-    const docRow = job.id
-      ? { id: job.id }
-      : await prisma.leadDocument.create({
-          data: {
-            tenantId: ctx.tenantId,
-            leadId: ctx.lead.id,
-            dossierId: row.id,
-            messageId: latest?.id ?? "",
-            filename: job.filename,
-            mime: job.mime,
-            docType,
-            status: "stored",
-            validation: { accepted: true, slotId, docType } as Prisma.InputJsonValue,
-            bytesEnc: job.bytes ? encryptBytes(job.bytes) : null,
-          },
-        });
-    try {
-      if (!job.bytes) throw new Error("missing bytes");
-      const uploaded = await client.upload({
-        clientId: state.smartClientId,
-        docType,
-        filename: job.filename,
-        mime: job.mime,
-        bytes: job.bytes,
-      });
-      state = commitSlot(state, slotId, uploaded.remoteId, job.filename);
-      await prisma.leadDocument.update({
-        where: { id: docRow.id },
-        data: {
-          status: "uploaded",
-          docType,
-          remoteId: uploaded.remoteId,
-          bytesEnc: null,
-          validation: { accepted: true } as Prisma.InputJsonValue,
-        },
-      });
-      lines.push(chat.documents.received(docLabel(config.rules, docType, lang)));
-      acceptedAny = true;
-    } catch (err) {
-      if (err instanceof Error && err.message === "unsupported_type") {
-        await prisma.leadDocument.update({
-          where: { id: docRow.id },
-          data: { status: "rejected", bytesEnc: null, validation: { reason: "unsupported_type" } },
-        });
-        lines.push(chat.documents.rejected(job.filename, reasonText(chat, "unsupported_type")));
-        continue;
-      }
-      await prisma.leadDocument.update({
-        where: { id: docRow.id },
-        data: {
-          status: "stored",
-          docType,
-          bytesEnc: job.bytes ? encryptBytes(job.bytes) : undefined,
-          validation: { accepted: true, slotId, docType } as Prisma.InputJsonValue,
-        },
-      });
-      lines.push(chat.documents.uploadFailed);
-    }
+    const judged = await judgeFileJob({ ctx, chat, lines, config, extract, lang, row, state, job });
+    state = judged.state;
+    if (judged.escalated) break;
+    if (!judged.accepted) continue;
+    const uploaded = await uploadAcceptedFile({
+      ctx,
+      chat,
+      lines,
+      config,
+      client,
+      lang,
+      row,
+      state,
+      job,
+      slotId: judged.accepted.slotId,
+      docType: judged.accepted.docType,
+    });
+    state = uploaded.state;
+    if (uploaded.accepted) acceptedAny = true;
   }
 
   if (state.status === "complete") lines.push(chat.documents.complete);
@@ -587,9 +860,6 @@ export async function loadDocumentChecklist(tenantId: string, leadId: string, la
     prisma.dossier.findFirst({
       where: { tenantId, leadId },
       orderBy: { createdAt: "desc" },
-      include: {
-        documents: { orderBy: { createdAt: "desc" }, take: 20 },
-      },
     }),
   ]);
   if (!dossier) return null;

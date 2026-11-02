@@ -297,6 +297,7 @@ const TURN_MESSAGE_TAKE = 16;
 export async function loadTurnContext(
   tenantId: string,
   conversationId: string,
+  opts?: { triggerMessageId?: string },
 ): Promise<TurnContext & { connection: ConnectionView }> {
   const loadStarted = Date.now();
   ensureFlowRegistry();
@@ -418,6 +419,7 @@ export async function loadTurnContext(
         tenantId,
         leadId: conversation.lead.id,
         conversationId: conversation.id,
+        triggerMessageId: opts?.triggerMessageId,
       });
       if (state !== undefined) capabilityState[id] = state;
     }),
@@ -468,6 +470,7 @@ export async function loadTurnContext(
       customerPhone: leadPhone,
       agentRepliesEnabled: conversation.channel.agentRepliesEnabled !== false,
     },
+    triggerMessageId: opts?.triggerMessageId,
     capabilityState,
     connection: {
       id: conversation.channel.id,

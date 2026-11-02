@@ -24,6 +24,8 @@ export type CapabilityStateLoader = (args: {
   tenantId: string;
   leadId: string;
   conversationId: string;
+  /** Lead message that started this turn, when the caller has one. */
+  triggerMessageId?: string;
 }) => Promise<unknown>;
 
 /**

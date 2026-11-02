@@ -327,7 +327,9 @@ async function runTurn(opts: RunTurnOpts) {
   ensureFlowRegistry();
   let ctx: Awaited<ReturnType<typeof loadTurnContext>>;
   try {
-    ctx = await loadTurnContext(opts.tenantId, opts.conversationId);
+    ctx = await loadTurnContext(opts.tenantId, opts.conversationId, {
+      triggerMessageId: opts.triggerMessageId,
+    });
   } catch (err) {
     // Conversation deleted between enqueue and worker - same skip as the old load-context step.
     const code =
