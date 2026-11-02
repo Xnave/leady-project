@@ -1,8 +1,47 @@
 import { describe, expect, it, vi } from "vitest";
-import { createHttpSmartClient, mapSmartProfile } from "./smart-npv";
+import {
+  createHttpSmartClient,
+  isUploadableFile,
+  mapSmartProfile,
+  slotNeedsUpload,
+  toSmartPhone,
+  uploadFileName,
+} from "./smart-npv";
+
+const CLIENT = {
+  uuid: "12345678-1234-1234-1234-1234567891099",
+  firstname_1: "Dana",
+  lastname_1: "Levi",
+  id_1: "123456782",
+  phone_1: "0500000000",
+  firstname_2: "Noam",
+  lastname_2: "Levi",
+  id_2: "209876543",
+  phone_2: "0521111111",
+  liabilities: [{ balance: "300000" }],
+  current_mortgage: "0",
+};
 
 describe("mapSmartProfile", () => {
-  it("reads the field names SmartNPV is likely to send", () => {
+  it("reads borrower 1 from a clients/get record", () => {
+    expect(mapSmartProfile(CLIENT)).toMatchObject({
+      nationalId: "123456782",
+      fullName: "Dana Levi",
+      phone: "0500000000",
+      hasLoans: true,
+      employment: "",
+    });
+  });
+
+  it("uses borrower 2 when the looked-up id is theirs", () => {
+    expect(mapSmartProfile(CLIENT, "209876543")).toMatchObject({
+      nationalId: "209876543",
+      fullName: "Noam Levi",
+      phone: "0521111111",
+    });
+  });
+
+  it("still reads the older field names", () => {
     expect(
       mapSmartProfile({
         tz: "123456782",
@@ -19,35 +58,116 @@ describe("mapSmartProfile", () => {
   });
 });
 
+describe("upload rules", () => {
+  it("allows pdf, png, jpg, and jpeg only", () => {
+    expect(isUploadableFile("application/pdf", "id.pdf")).toBe(true);
+    expect(isUploadableFile("image/jpeg", "scan.jpg")).toBe(true);
+    expect(isUploadableFile("image/png", "scan.png")).toBe(true);
+    expect(isUploadableFile("image/heic", "scan.heic")).toBe(false);
+    expect(isUploadableFile("application/zip", "docs.zip")).toBe(false);
+  });
+
+  it("names the uploaded file with an allowed extension", () => {
+    expect(uploadFileName("id card.pdf", "application/pdf")).toBe("id card.pdf");
+    expect(uploadFileName("scan", "image/png")).toBe("scan.png");
+  });
+
+  it("refuses a second upload once a slot has a remote id", () => {
+    expect(slotNeedsUpload({ status: "missing", remoteId: "" })).toBe(true);
+    expect(slotNeedsUpload({ status: "uploaded", remoteId: "id.pdf" })).toBe(false);
+    expect(slotNeedsUpload({ status: "missing", remoteId: "id.pdf" })).toBe(false);
+    expect(toSmartPhone("+972 50-000-0000")).toBe("0500000000");
+  });
+});
+
 describe("createHttpSmartClient", () => {
-  it("posts lookup and upload to the configured base URL", async () => {
-    const fetchImpl = vi.fn(async (url: string) => {
-      if (String(url).endsWith("/clients/lookup")) {
-        return new Response(JSON.stringify({ clientId: "s1", profile: { tz: "123456782", name: "Dana" } }), {
+  it("gets a client, lists clients, and uploads file_name plus the file", async () => {
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      const href = String(url);
+      if (href.includes("/clients/get")) {
+        expect(href).toContain("type=phone");
+        expect(href).toContain("phone=0500000000");
+        expect(href).toContain("api_key=secret");
+        expect(init?.body).toBeUndefined();
+        return new Response(JSON.stringify({ response: true, responseCode: 0, responseClientFields: CLIENT }), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
       }
-      return new Response(JSON.stringify({ remoteId: "file-9" }), {
+      if (href.includes("/clients/list")) {
+        expect(href).toContain("limit=1");
+        expect(href).toContain("range_type=2");
+        return new Response(JSON.stringify({ response: true, responseCode: 0, responseClients: [CLIENT] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      expect(href).toContain("/api/v2/clients/upload_document");
+      expect(init?.method).toBe("POST");
+      const form = init?.body as FormData;
+      expect(form.get("file_name")).toBe("id.pdf");
+      expect(form.get("uuid")).toBe(CLIENT.uuid);
+      expect(form.get("docType")).toBeNull();
+      expect(form.get("file")).toBeTruthy();
+      expect(JSON.stringify(init?.headers ?? {})).not.toContain("docType");
+      return new Response(JSON.stringify({ response: true, responseCode: 0, message: "File saved successfully" }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
     });
     const client = createHttpSmartClient({
-      baseUrl: "https://smart.example",
+      baseUrl: "https://www.snpv.co.il",
       apiKey: "secret",
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
     const found = await client.findClient({ phone: "+972500000000" });
-    expect(found?.clientId).toBe("s1");
-    expect(found?.profile.nationalId).toBe("123456782");
+    expect(found?.clientId).toBe(CLIENT.uuid);
+    expect(found?.profile.fullName).toBe("Dana Levi");
+    const listed = await client.listClients({ limit: 1, rangeType: 2 });
+    expect(listed).toHaveLength(1);
     const uploaded = await client.upload({
-      clientId: "s1",
+      clientId: CLIENT.uuid,
       docType: "id_card",
       filename: "id.pdf",
       mime: "application/pdf",
       bytes: Buffer.from("pdf"),
     });
-    expect(uploaded.remoteId).toBe("file-9");
+    expect(uploaded.remoteId).toBe("id.pdf");
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not call the API for a file type SmartNPV cannot delete", async () => {
+    const fetchImpl = vi.fn();
+    const client = createHttpSmartClient({
+      baseUrl: "https://www.snpv.co.il/api/v2",
+      apiKey: "secret",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await expect(
+      client.upload({
+        clientId: CLIENT.uuid,
+        docType: "id_card",
+        filename: "scan.heic",
+        mime: "image/heic",
+        bytes: Buffer.from("heic"),
+      }),
+    ).rejects.toThrow("unsupported_type");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("returns null when clients/get says the client is missing", async () => {
+    let href = "";
+    const fetchImpl = vi.fn(async (url: string) => {
+      href = url;
+      return new Response(JSON.stringify({ response: false, responseCode: 1 }), { status: 200 });
+    });
+    const client = createHttpSmartClient({
+      baseUrl: "https://www.snpv.co.il",
+      apiKey: "secret",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(await client.findClient({ nationalId: "123456782" })).toBeNull();
+    expect(href).toContain("type=id_number");
+    expect(href).toContain("id_number=123456782");
   });
 });

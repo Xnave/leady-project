@@ -125,6 +125,7 @@ export const chat: ChatCopy = {
         wrong_type: "this isn't one of the documents we still need",
         unreadable: "I couldn't read the file",
         too_large: "the file is too large",
+        unsupported_type: "send a PDF, PNG, or JPEG",
       },
     },
 };

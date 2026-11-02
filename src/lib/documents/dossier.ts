@@ -8,7 +8,7 @@ import { documentApiKey, parseDocumentConfig, type DocumentConfig } from "@/lib/
 import type { TurnContext } from "@/lib/flow/types";
 import { extractDocument, type DocExtraction } from "./extract";
 import { docLabel, requiredSlots, type Profile, type RulesDocument } from "./rules";
-import { smartClientFor, type SmartClient } from "./smart-npv";
+import { isUploadableFile, slotNeedsUpload, smartClientFor, type SmartClient } from "./smart-npv";
 import {
   commitSlot,
   freshDossier,
@@ -297,6 +297,31 @@ export async function runDocumentsIngest(
 
   for (const job of jobs) {
     if (!job.bytes && !job.resume) continue;
+    if (job.bytes && !isUploadableFile(job.mime, job.filename)) {
+      lines.push(chat.documents.rejected(job.filename, reasonText(chat, "unsupported_type")));
+      if (job.id) {
+        await prisma.leadDocument.update({
+          where: { id: job.id },
+          data: { status: "rejected", bytesEnc: null, validation: { reason: "unsupported_type" } },
+        });
+      } else {
+        await prisma.leadDocument.create({
+          data: {
+            tenantId: ctx.tenantId,
+            leadId: ctx.lead.id,
+            dossierId: row.id,
+            messageId: latest?.id ?? "",
+            filename: job.filename,
+            mime: job.mime,
+            docType: "",
+            status: "rejected",
+            validation: { reason: "unsupported_type" } as Prisma.InputJsonValue,
+            bytesEnc: null,
+          },
+        });
+      }
+      continue;
+    }
     const open = state.slots
       .filter((slot) => slot.status === "missing")
       .map((slot) => ({
@@ -372,6 +397,38 @@ export async function runDocumentsIngest(
       docType = judged.docType;
     }
 
+    const target = state.slots.find((slot) => slot.id === slotId);
+    if (target && !slotNeedsUpload(target)) {
+      if (target.status !== "uploaded") state = commitSlot(state, slotId, target.remoteId, job.filename);
+      const keptId = job.id
+        ? job.id
+        : (
+            await prisma.leadDocument.create({
+              data: {
+                tenantId: ctx.tenantId,
+                leadId: ctx.lead.id,
+                dossierId: row.id,
+                messageId: latest?.id ?? "",
+                filename: job.filename,
+                mime: job.mime,
+                docType,
+                status: "uploaded",
+                remoteId: target.remoteId,
+                validation: { accepted: true } as Prisma.InputJsonValue,
+                bytesEnc: null,
+              },
+            })
+          ).id;
+      if (job.id) {
+        await prisma.leadDocument.update({
+          where: { id: keptId },
+          data: { status: "uploaded", remoteId: target.remoteId, bytesEnc: null, docType },
+        });
+      }
+      lines.push(chat.documents.received(docLabel(config.rules, docType, lang)));
+      continue;
+    }
+
     const docRow = job.id
       ? { id: job.id }
       : await prisma.leadDocument.create({
@@ -410,7 +467,15 @@ export async function runDocumentsIngest(
       });
       lines.push(chat.documents.received(docLabel(config.rules, docType, lang)));
       acceptedAny = true;
-    } catch {
+    } catch (err) {
+      if (err instanceof Error && err.message === "unsupported_type") {
+        await prisma.leadDocument.update({
+          where: { id: docRow.id },
+          data: { status: "rejected", bytesEnc: null, validation: { reason: "unsupported_type" } },
+        });
+        lines.push(chat.documents.rejected(job.filename, reasonText(chat, "unsupported_type")));
+        continue;
+      }
       await prisma.leadDocument.update({
         where: { id: docRow.id },
         data: {

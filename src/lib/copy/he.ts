@@ -120,6 +120,7 @@ export const chat: ChatCopy = {
         wrong_type: "זה לא אחד המסמכים שעדיין חסרים",
         unreadable: "לא הצלחתי לקרוא את הקובץ",
         too_large: "הקובץ גדול מדי",
+        unsupported_type: "אפשר לשלוח PDF, PNG או JPEG",
       },
     },
 };
