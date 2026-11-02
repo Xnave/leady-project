@@ -8,6 +8,13 @@ function documentsState(ctx: TurnContext): DocumentsTurnState | undefined {
   return capabilityState<DocumentsTurnState>(ctx, "documents");
 }
 
+/** Skip the model when the only new files are types Smart NPV will not store. */
+export function documentsBeforeTalk(ctx: TurnContext): TalkOutcome | undefined {
+  const state = documentsState(ctx);
+  if (!state?.unsupportedOnly) return undefined;
+  return { reply: "", effects: [{ type: "ingest_document" }] };
+}
+
 /** Drop a "received" claim and force ingest when a file or a new checklist is waiting. */
 export function reconcileDocuments(opts: {
   ctx: TurnContext;
@@ -69,5 +76,6 @@ export function registerDocumentsCapability(): void {
       }),
     }),
     reconcile: ({ ctx, outcome }) => reconcileDocuments({ ctx, outcome }),
+    beforeTalk: ({ ctx }) => documentsBeforeTalk(ctx),
   });
 }

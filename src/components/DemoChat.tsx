@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ChatThread } from "@/components/ChatThread";
 import { shouldResetThread, threadKey } from "@/components/demo-chat-state";
+import { supportedFileAccept } from "@/lib/documents/file-types";
 
 type Msg = {
   id: string;
@@ -157,7 +158,7 @@ export function DemoChat({
             <input
               key={fileKey}
               type="file"
-              accept="image/*,.pdf,.docx"
+            accept={supportedFileAccept()}
               disabled={pending || disabled || !ready}
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />

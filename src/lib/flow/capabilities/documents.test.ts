@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TalkOutcome, TurnContext } from "../types";
-import { reconcileDocuments } from "./documents";
+import { documentsBeforeTalk, reconcileDocuments } from "./documents";
 
 function ctx(runIngest: boolean): TurnContext {
   return {
@@ -25,9 +25,10 @@ function ctx(runIngest: boolean): TurnContext {
     lead: { id: "l1", externalUserId: "+1", fields: {} },
     messages: [],
     capabilityState: {
-      documents: {
-        configured: true,
-        runIngest,
+        documents: {
+          configured: true,
+          runIngest,
+          unsupportedOnly: false,
         status: "gathering",
         activeStage: "identity",
         missing: ["ID card"],
@@ -52,5 +53,18 @@ describe("reconcileDocuments", () => {
   it("leaves an ordinary reply alone when nothing is waiting", () => {
     const outcome: TalkOutcome = { reply: "What else can I help with?" };
     expect(reconcileDocuments({ ctx: ctx(false), outcome })).toEqual(outcome);
+  });
+});
+
+describe("documentsBeforeTalk", () => {
+  it("skips the model when every new file is an unsupported type", () => {
+    const state = ctx(true);
+    const documents = state.capabilityState.documents as { unsupportedOnly: boolean };
+    documents.unsupportedOnly = true;
+    expect(documentsBeforeTalk(state)?.effects?.map((effect) => effect.type)).toEqual(["ingest_document"]);
+  });
+
+  it("lets the model run when a file still needs reading", () => {
+    expect(documentsBeforeTalk(ctx(true))).toBeUndefined();
   });
 });

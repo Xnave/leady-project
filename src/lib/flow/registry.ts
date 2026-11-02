@@ -81,6 +81,14 @@ export type CapabilityDefinition = {
     stage: TalkStage;
     outcome: import("./types").TalkOutcome;
   }) => import("./types").TalkOutcome;
+  /**
+   * A deterministic talk outcome that skips the model. Used when the inbound
+   * message can be answered from data already on it, such as a file type.
+   */
+  beforeTalk?: (opts: {
+    ctx: TurnContext;
+    stage: TalkStage;
+  }) => import("./types").TalkOutcome | undefined;
   /** Durable state to hang on `TurnContext.capabilityState[id]`. */
   loadState?: CapabilityStateLoader;
   /**
@@ -262,6 +270,18 @@ export function reconcileTalkOutcome(opts: {
     }
   }
   return outcome;
+}
+
+/** First active capability that can answer without a model call. */
+export function runBeforeTalk(
+  ctx: TurnContext,
+  stage: TalkStage,
+): import("./types").TalkOutcome | undefined {
+  for (const cap of activeCapabilities(stage)) {
+    const outcome = cap.beforeTalk?.({ ctx, stage });
+    if (outcome) return outcome;
+  }
+  return undefined;
 }
 
 /** Session field keys for active capabilities on a talk stage, including dynamic ones. */

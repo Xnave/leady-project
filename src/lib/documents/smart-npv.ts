@@ -1,4 +1,7 @@
+import { isUploadableFile, uploadFileName } from "./file-types";
 import type { Profile } from "./rules";
+
+export { isUploadableFile, uploadFileName };
 
 export type SmartClientHit = { clientId: string; profile: Profile };
 
@@ -10,9 +13,6 @@ export type SmartListQuery = {
   from?: string;
   until?: string;
 };
-
-const UPLOAD_EXTENSIONS = new Set(["pdf", "png", "jpg", "jpeg"]);
-const UPLOAD_MIMES = new Set(["application/pdf", "image/png", "image/jpeg", "image/jpg"]);
 
 /**
  * The only module that speaks HTTP to SmartNPV.
@@ -57,30 +57,6 @@ export function toSmartPhone(raw: string): string {
   if (compact.startsWith("+972")) return `0${compact.slice(4)}`;
   if (compact.startsWith("972")) return `0${compact.slice(3)}`;
   return digits(raw);
-}
-
-function fileExtension(filename: string): string {
-  const base = filename.split(/[/\\]/).pop() ?? "";
-  const dot = base.lastIndexOf(".");
-  if (dot <= 0) return "";
-  return base.slice(dot + 1).toLowerCase();
-}
-
-export function isUploadableFile(mime: string, filename: string): boolean {
-  const ext = fileExtension(filename);
-  const normalized = mime.toLowerCase();
-  if (ext && !UPLOAD_EXTENSIONS.has(ext)) return false;
-  if (normalized && normalized !== "application/octet-stream" && !UPLOAD_MIMES.has(normalized)) return false;
-  return UPLOAD_EXTENSIONS.has(ext) || UPLOAD_MIMES.has(normalized);
-}
-
-export function uploadFileName(filename: string, mime: string): string {
-  const base = filename.split(/[/\\]/).pop()?.trim() || "document";
-  const ext = fileExtension(base);
-  if (UPLOAD_EXTENSIONS.has(ext)) return base;
-  const normalized = mime.toLowerCase();
-  const suffix = normalized === "image/png" ? "png" : normalized === "application/pdf" ? "pdf" : "jpg";
-  return `${base}.${suffix}`;
 }
 
 /** A slot that already has a remote id must not be sent again. */

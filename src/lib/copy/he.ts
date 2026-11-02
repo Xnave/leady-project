@@ -1,3 +1,4 @@
+import { supportedTypeLabels } from "@/lib/documents/file-types";
 import type { ChatCopy, PromptCopy } from "./types";
 import { prompts as enPrompts } from "./en";
 
@@ -120,7 +121,7 @@ export const chat: ChatCopy = {
         wrong_type: "זה לא אחד המסמכים שעדיין חסרים",
         unreadable: "לא הצלחתי לקרוא את הקובץ",
         too_large: "הקובץ גדול מדי",
-        unsupported_type: "אפשר לשלוח PDF, PNG או JPEG",
+        unsupported_type: `אפשר לשלוח ${supportedTypeLabels("או")}`,
       },
     },
 };

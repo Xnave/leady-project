@@ -5,10 +5,12 @@ import { copyFor, replyLang } from "@/lib/copy";
 import { safeRefreshLeadState } from "@/lib/crm/refresh";
 import { loadInstanceConfig } from "@/lib/capability-instances";
 import { documentApiKey, parseDocumentConfig, type DocumentConfig } from "@/lib/flow/document-config";
+import { capabilityState } from "@/lib/flow/registry";
 import type { TurnContext } from "@/lib/flow/types";
 import { extractDocument, type DocExtraction } from "./extract";
 import { docLabel, requiredSlots, type Profile, type RulesDocument } from "./rules";
-import { isUploadableFile, slotNeedsUpload, smartClientFor, type SmartClient } from "./smart-npv";
+import { isUploadableFile } from "./file-types";
+import { slotNeedsUpload, smartClientFor, type SmartClient } from "./smart-npv";
 import {
   commitSlot,
   freshDossier,
@@ -30,6 +32,8 @@ export type StoredAttachment = {
 export type DocumentsTurnState = {
   configured: boolean;
   runIngest: boolean;
+  /** Every new file on the latest message is a type Smart NPV will not store. */
+  unsupportedOnly: boolean;
   status: string;
   activeStage: string;
   missing: string[];
@@ -118,7 +122,7 @@ export async function loadDocumentsTurnState(args: {
 }): Promise<DocumentsTurnState> {
   const config = await readConfig(args.tenantId);
   if (!config) {
-    return { configured: false, runIngest: false, status: "", activeStage: "", missing: [] };
+    return { configured: false, runIngest: false, unsupportedOnly: false, status: "", activeStage: "", missing: [] };
   }
   const [dossier, latest, stored] = await Promise.all([
     prisma.dossier.findFirst({
@@ -145,14 +149,16 @@ export async function loadDocumentsTurnState(args: {
       })
     : 0;
   const state = dossier ? stateOf(dossier) : null;
-  const runIngest =
-    !state ||
-    state.status === "needs_id" ||
-    attachments.length > finished ||
-    stored > 0;
+  const unsupportedOnly =
+    stored === 0 &&
+    finished === 0 &&
+    attachments.length > 0 &&
+    attachments.every((item) => !isUploadableFile(item.mime, item.filename));
+  const runIngest = !state || state.status === "needs_id" || attachments.length > finished || stored > 0;
   return {
     configured: true,
     runIngest,
+    unsupportedOnly,
     status: state?.status ?? "",
     activeStage: state?.activeStage ?? "",
     missing: state ? missingLabels(state, config.rules, "en") : [],
@@ -161,6 +167,38 @@ export async function loadDocumentsTurnState(args: {
 
 function reasonText(chat: ReturnType<typeof copyFor>["chat"], reason: string): string {
   return chat.documents.reasons[reason] ?? chat.documents.reasons.unreadable ?? reason;
+}
+
+async function markUnsupported(opts: {
+  tenantId: string;
+  leadId: string;
+  dossierId: string;
+  messageId: string;
+  filename: string;
+  mime: string;
+  existingId?: string;
+}): Promise<void> {
+  const data = {
+    status: "rejected" as const,
+    bytesEnc: null,
+    docType: "",
+    validation: { reason: "unsupported_type" } as Prisma.InputJsonValue,
+  };
+  if (opts.existingId) {
+    await prisma.leadDocument.update({ where: { id: opts.existingId }, data });
+    return;
+  }
+  await prisma.leadDocument.create({
+    data: {
+      tenantId: opts.tenantId,
+      leadId: opts.leadId,
+      dossierId: opts.dossierId,
+      messageId: opts.messageId,
+      filename: opts.filename,
+      mime: opts.mime,
+      ...data,
+    },
+  });
 }
 
 export async function runDocumentsIngest(
@@ -193,6 +231,39 @@ export async function runDocumentsIngest(
     where: { tenantId: ctx.tenantId, leadId: ctx.lead.id },
     orderBy: { createdAt: "desc" },
   });
+
+  const openForTypes = !row || (row.status !== "blocked" && row.status !== "complete");
+  const incoming = latest ? attachmentsOf(latest.metadata) : [];
+  const unsupportedOnly = capabilityState<DocumentsTurnState>(ctx, "documents")?.unsupportedOnly === true;
+  if (openForTypes && unsupportedOnly) {
+    if (!row) {
+      row = await prisma.dossier.create({
+        data: {
+          tenantId: ctx.tenantId,
+          leadId: ctx.lead.id,
+          conversationId: ctx.conversation.id,
+          status: "needs_id",
+          profile: {} as Prisma.InputJsonValue,
+          slots: [] as Prisma.InputJsonValue,
+          activeStage: "",
+          smartClientId: "",
+        },
+      });
+    }
+    for (const attachment of incoming) {
+      await markUnsupported({
+        tenantId: ctx.tenantId,
+        leadId: ctx.lead.id,
+        dossierId: row.id,
+        messageId: latest?.id ?? "",
+        filename: attachment.filename,
+        mime: attachment.mime,
+      });
+      lines.push(chat.documents.rejected(attachment.filename, reasonText(chat, "unsupported_type")));
+    }
+    await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
+    return { ok: true, reply: lines.filter(Boolean).join("\n") };
+  }
 
   if (!row || row.status === "needs_id") {
     const found =
@@ -282,6 +353,18 @@ export async function runDocumentsIngest(
     for (const attachment of attachmentsOf(latest.metadata)) {
       if (seenNames.has(attachment.filename)) continue;
       if (jobs.some((job) => job.filename === attachment.filename && !job.id)) continue;
+      if (!isUploadableFile(attachment.mime, attachment.filename)) {
+        lines.push(chat.documents.rejected(attachment.filename, reasonText(chat, "unsupported_type")));
+        await markUnsupported({
+          tenantId: ctx.tenantId,
+          leadId: ctx.lead.id,
+          dossierId: row.id,
+          messageId: latest.id,
+          filename: attachment.filename,
+          mime: attachment.mime,
+        });
+        continue;
+      }
       let bytes: Buffer | null = null;
       try {
         bytes = attachment.bytesEnc ? decryptBytes(attachment.bytesEnc) : attachment.url ? await downloadUrl(attachment.url) : null;
@@ -299,27 +382,15 @@ export async function runDocumentsIngest(
     if (!job.bytes && !job.resume) continue;
     if (job.bytes && !isUploadableFile(job.mime, job.filename)) {
       lines.push(chat.documents.rejected(job.filename, reasonText(chat, "unsupported_type")));
-      if (job.id) {
-        await prisma.leadDocument.update({
-          where: { id: job.id },
-          data: { status: "rejected", bytesEnc: null, validation: { reason: "unsupported_type" } },
-        });
-      } else {
-        await prisma.leadDocument.create({
-          data: {
-            tenantId: ctx.tenantId,
-            leadId: ctx.lead.id,
-            dossierId: row.id,
-            messageId: latest?.id ?? "",
-            filename: job.filename,
-            mime: job.mime,
-            docType: "",
-            status: "rejected",
-            validation: { reason: "unsupported_type" } as Prisma.InputJsonValue,
-            bytesEnc: null,
-          },
-        });
-      }
+      await markUnsupported({
+        tenantId: ctx.tenantId,
+        leadId: ctx.lead.id,
+        dossierId: row.id,
+        messageId: latest?.id ?? "",
+        filename: job.filename,
+        mime: job.mime,
+        existingId: job.id,
+      });
       continue;
     }
     const open = state.slots

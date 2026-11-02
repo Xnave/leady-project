@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { supportedFileAccept } from "@/lib/documents/file-types";
 
 type Labels = {
   placeholder: string;
@@ -93,7 +94,7 @@ export function ChatComposer({
           {labels.attach}
           <input
             type="file"
-            accept="image/*,.pdf,.docx"
+            accept={supportedFileAccept()}
             disabled={pending || disabled}
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />

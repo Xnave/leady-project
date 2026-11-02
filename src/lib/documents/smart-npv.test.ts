@@ -1,12 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  createHttpSmartClient,
-  isUploadableFile,
-  mapSmartProfile,
-  slotNeedsUpload,
-  toSmartPhone,
-  uploadFileName,
-} from "./smart-npv";
+import { createHttpSmartClient, mapSmartProfile, slotNeedsUpload, toSmartPhone } from "./smart-npv";
 
 const CLIENT = {
   uuid: "12345678-1234-1234-1234-1234567891099",
@@ -59,19 +52,6 @@ describe("mapSmartProfile", () => {
 });
 
 describe("upload rules", () => {
-  it("allows pdf, png, jpg, and jpeg only", () => {
-    expect(isUploadableFile("application/pdf", "id.pdf")).toBe(true);
-    expect(isUploadableFile("image/jpeg", "scan.jpg")).toBe(true);
-    expect(isUploadableFile("image/png", "scan.png")).toBe(true);
-    expect(isUploadableFile("image/heic", "scan.heic")).toBe(false);
-    expect(isUploadableFile("application/zip", "docs.zip")).toBe(false);
-  });
-
-  it("names the uploaded file with an allowed extension", () => {
-    expect(uploadFileName("id card.pdf", "application/pdf")).toBe("id card.pdf");
-    expect(uploadFileName("scan", "image/png")).toBe("scan.png");
-  });
-
   it("refuses a second upload once a slot has a remote id", () => {
     expect(slotNeedsUpload({ status: "missing", remoteId: "" })).toBe(true);
     expect(slotNeedsUpload({ status: "uploaded", remoteId: "id.pdf" })).toBe(false);
