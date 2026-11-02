@@ -19,3 +19,4 @@ marketing-materials/
 .env*
 eval-out/
 tsconfig.tsbuildinfo
+scenario-runs/
