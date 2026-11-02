@@ -51,6 +51,7 @@
  * Current packs:
  * - `booking` - point-in-time requests (`Request` with `kind` from the instance, default "visit")
  * - `reservations` - date-span requests + configurable link-probe availability (nouns from instance config)
- * - `documents` - SmartNPV profile, JSON checklist, file validation, upload
+ * - `documents` - SmartNPV profile, JSON checklist, file validation, upload.
+ *   New types and checks: `docs/documents.md`.
  */
 export {};

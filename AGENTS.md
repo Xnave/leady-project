@@ -121,3 +121,4 @@ Dev: `npm run dev` (demo turn is sync; Inngest only for nudges).
 | [docs/agent-flow-as-data.md](docs/agent-flow-as-data.md) | Flow JSON rationale |
 | [docs/agent-state-flow-concurrency.md](docs/agent-state-flow-concurrency.md) | Concurrency / state |
 | [src/lib/flow/capabilities/README.md](src/lib/flow/capabilities/README.md) | Capability OCP cheat sheet |
+| [docs/documents.md](docs/documents.md) | Document types, checklist rules, and checks |
