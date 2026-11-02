@@ -1,0 +1,145 @@
+{
+  "key": "booking",
+  "clerkOrgId": "scenario-booking",
+  "tenant": {
+    "name": "מטבחי הזהב בע\"מ",
+    "phone": "03-9876543",
+    "intro": "שלום ברוך הבא למטבחי הזהב. שמח שאתה כאן. במה אוכל לעזור?",
+    "ownerEmail": "",
+    "chatLanguage": "he",
+    "idleResetDays": 5,
+    "timezone": "Asia/Jerusalem",
+    "digestEnabled": false,
+    "digestHour": 8,
+    "digestSector": "",
+    "agentRepliesEnabled": true,
+    "mediaAnalysisEnabled": false
+  },
+  "agent": {
+    "name": "סוכן תיבה",
+    "catalogId": "inbox",
+    "systemPrompt": "Reply only in Hebrew. Never mix in English filler.\nYou represent מטבחי הזהב בע\"מ as a front-desk assistant only - not a professional.\nשלום ברוך הבא למטבחי הזהב. שמח שאתה כאן. במה אוכל לעזור?\nPublic phone: 03-9876543",
+    "knowledgeText": "# מטבחי הזהב\n\n## פרטי העסק\n- **שם העסק:** מטבחי הזהב בע\"מ\n- **תחום פעילות:** תכנון, עיצוב וייצור מטבחים בהתאמה אישית\n- **שנת הקמה:** 2011\n- **מספר עוסק מורשה (פיקטיבי):** 51-2345678\n- **בעלים ומנהל כללי:** יוסי גולדברג\n\n## פרטי התקשרות\n- **כתובת:** רחוב הרוגוזין 14, אזור התעשייה חולון\n- **טלפון:** 03-9876543\n- **נייד:** 054-1234567\n- **דוא\"ל:** info@goldenkitchens-demo.co.il\n- **אתר:** www.goldenkitchens-demo.co.il\n- **שעות פתיחה:** ימים א'-ה' 09:00-19:00, יום ו' 09:00-13:00\n\n## תיאור העסק\nמטבחי הזהב הוא עסק משפחתי המתמחה בתכנון וייצור מטבחים מותאמים אישית לבתים פרטיים ודירות. העסק פועל מתוך מפעל נגרות מתקדם ומעניק שירות מקצה לקצה — החל מתכנון תלת-ממדי, עבור בייצור בסדנת הנגרות ועד להתקנה מלאה בבית הלקוח.\n\n## שירותים\n- תכנון מטבחים בתלת מימד\n- ייצור מטבחים בהתאמה אישית מעץ, MDF ולמינציה\n- שיפוץ והחלפת חיפויי מטבח קיימים\n- התקנת משטחי עבודה מקוריאן, קוורץ וגרניט\n- שילוב מכשירי חשמל מובנים ומערכות אחסון חכמות\n\n## צוות (פיקטיבי)\n| שם | תפקיד | שנות ניסיון |\n|---|---|---|\n| יוסי גולדברג | מנכ\"ל ומעצב ראשי | 18 |\n| מיכל לוי | מנהלת פרויקטים | 9 |\n| דניאל אזולאי | ראש צוות נגרות | 12 |\n| נועה שמש | מעצבת פנים | 6 |\n\n## חוות דעת לקוחות (פיקטיביות)\n- \"התהליך היה מקצועי מהתחלה עד הסוף, המטבח בדיוק כמו שדמיינו\" — רונית כ.\n- \"עמידה מדויקת בלוחות זמנים ותקציב, ממליצה בחום\" — אבי ש.\n- \"צוות אדיב ושירותי, ליווי צמוד גם אחרי ההתקנה\" — שירה מ.\n\n## נתונים כלליים (פיקטיביים)\n- **מספר פרויקטים שהושלמו:** כ-1,240\n- **דירוג ממוצע:** 4.8/5 (312 חוות דעת)\n- **אחוז לקוחות חוזרים:** 34%\n- **תחומי שירות:** תל אביב, גוש דן, שרון\n\n---\n*כל הפרטים במסמך זה פיקטיביים ונוצרו לצרכי הדגמה בלבד. אין להסתמך עליהם כמידע עסקי אמיתי.*\n",
+    "persona": {},
+    "flow": {
+      "start": "talk",
+      "stages": {
+        "done": {
+          "type": "terminal"
+        },
+        "talk": {
+          "type": "talk",
+          "nudge": {
+            "after": "PT23H",
+            "maxTimes": 1,
+            "template": "עדיין כאן? נשמח לעזור להמשיך."
+          },
+          "prompt": "Front-desk chat: answer from knowledge first with the reply tool. Product interest (e.g. \"I want a WhatsApp agent\", \"how does it work\", pricing, features) is NOT a booking request — explain the offering, then ask if they want to schedule a call/visit. Never call ask_field, start_booking, or collect booking details until they explicitly ask to schedule a meeting/visit/demo/call or clearly accept an offer to book. Do not push a visit on a plain question. Only after an explicit schedule request collect: time_preference, name, need. Never say the visit is confirmed - book_meeting only stores a tentative request.",
+          "allowBook": true,
+          "on_complete": "done",
+          "on_escalate": "escalate",
+          "capabilities": [
+            "booking"
+          ],
+          "required_for_book": [
+            "time_preference",
+            "name",
+            "need",
+            "phone"
+          ]
+        },
+        "escalate": {
+          "type": "action",
+          "action": "request_human",
+          "on_fail": "talk",
+          "on_complete": "waiting_human"
+        },
+        "waiting_human": {
+          "type": "terminal"
+        }
+      },
+      "displayOrder": [
+        "talk",
+        "escalate",
+        "waiting_human",
+        "done"
+      ],
+      "restartPolicy": {
+        "onNewMessage": "fallback",
+        "fallbackStage": "talk"
+      }
+    },
+    "leadSchema": {
+      "fields": {
+        "name": {
+          "type": "string"
+        },
+        "need": {
+          "type": "string"
+        },
+        "email": {
+          "type": "email"
+        },
+        "phone": {
+          "type": "string"
+        },
+        "budget": {
+          "type": "string"
+        },
+        "intent": {
+          "enum": [
+            "sales",
+            "support",
+            "other"
+          ],
+          "type": "enum"
+        },
+        "booking": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "visit_kind": {
+          "type": "string"
+        },
+        "booking_confirm": {
+          "type": "string"
+        },
+        "time_preference": {
+          "type": "string"
+        }
+      }
+    },
+    "hitlPolicy": {
+      "minConfidence": 0.4,
+      "allowedIntents": [
+        "sales",
+        "support",
+        "other"
+      ],
+      "allowRequestHuman": true,
+      "allowedFromStages": [
+        "talk",
+        "escalate"
+      ]
+    },
+    "mediaAnalysis": false
+  },
+  "capabilityInstances": [
+    {
+      "capabilityId": "booking",
+      "kind": "visit",
+      "enabled": true,
+      "config": {
+        "venueHours": "ימים א'-ה' 09:00-19:00, יום ו' 09:00-13:00",
+        "venueAddress": "רחוב הרוגוזין 14, אזור התעשייה חולון",
+        "messageTemplates": {
+          "request": "",
+          "approved": "",
+          "rejected": ""
+        }
+      }
+    }
+  ]
+}
