@@ -10,6 +10,12 @@ const extractSchema = z.object({
 export type DocExtraction = {
   docType: string;
   fields: Record<string, string>;
+  /**
+   * Set when the file was not shown to the model. An empty docType without this
+   * means the model ran and the file matched none of the open types.
+   */
+  unread?: "no_model" | "extract_failed";
+  error?: string;
 };
 
 /**
@@ -22,7 +28,16 @@ export async function extractDocument(opts: {
   filename: string;
   open: { docType: string; label: string; fields: string[] }[];
 }): Promise<DocExtraction> {
-  if (!opts.open.length || !llmConfigured()) return { docType: "", fields: {} };
+  if (!opts.open.length) return { docType: "", fields: {} };
+  if (!llmConfigured()) {
+    console.warn(JSON.stringify({
+      msg: "documents.extract_skipped",
+      filename: opts.filename,
+      mime: opts.mime,
+      reason: "no_model",
+    }));
+    return { docType: "", fields: {}, unread: "no_model" };
+  }
   const catalog = opts.open
     .map((item) => `${item.docType} (${item.label}): ${item.fields.join(", ") || "no fields"}`)
     .join("\n");
@@ -53,11 +68,19 @@ export async function extractDocument(opts: {
       ],
     });
     const allowed = new Set(opts.open.map((item) => item.docType));
+    const named = object.docType.trim();
     return {
-      docType: allowed.has(object.docType) ? object.docType : object.docType.trim() ? object.docType.trim() : "",
+      docType: allowed.has(object.docType) ? object.docType : named,
       fields: object.fields,
     };
-  } catch {
-    return { docType: "", fields: {} };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.warn(JSON.stringify({
+      msg: "documents.extract_failed",
+      filename: opts.filename,
+      mime: opts.mime,
+      error,
+    }));
+    return { docType: "", fields: {}, unread: "extract_failed", error };
   }
 }

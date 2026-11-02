@@ -125,6 +125,8 @@ export const chat: ChatCopy = {
         min_items: "it doesn't include enough items",
         wrong_type: "this isn't one of the documents we still need",
         unreadable: "I couldn't read the file",
+        no_model: "I couldn't read the file",
+        extract_failed: "I couldn't read the file",
         too_large: "the file is too large",
         unsupported_type: `send a ${supportedTypeLabels("or")}`,
       },

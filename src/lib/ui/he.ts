@@ -907,6 +907,8 @@ export const he: UiCopy = {
       min_items: "אין מספיק פריטים",
       wrong_type: "מסמך לא מתאים",
       unreadable: "לא ניתן לקרוא את הקובץ",
+      no_model: "אין מודל מוגדר",
+      extract_failed: "בדיקת הקובץ נכשלה",
       too_large: "הקובץ גדול מדי",
     },
   },

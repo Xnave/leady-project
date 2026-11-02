@@ -154,14 +154,15 @@ function withFailure(state: DossierState, slotId: string, reason: string): FileJ
 export function judgeFile(
   state: DossierState,
   rules: RulesDocument,
-  extracted: { docType: string; fields: Record<string, unknown> },
+  extracted: { docType: string; fields: Record<string, unknown>; unread?: "no_model" | "extract_failed" },
   now: Date = new Date(),
 ): FileJudgement {
   const open = state.slots.filter((slot) => slot.status === "missing");
   const fallback = open.find((slot) => slot.stage === state.activeStage) ?? open[0];
   if (!extracted.docType) {
-    if (!fallback) return { kind: "reject", state, slotId: "", reason: "unreadable", escalated: false };
-    return withFailure(state, fallback.id, "unreadable");
+    const reason = extracted.unread ?? "wrong_type";
+    if (!fallback) return { kind: "reject", state, slotId: "", reason, escalated: false };
+    return withFailure(state, fallback.id, reason);
   }
   const slot = open.find((item) => item.docType === extracted.docType);
   if (!slot) {

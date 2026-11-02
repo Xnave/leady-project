@@ -907,6 +907,8 @@ export const en: UiCopy = {
       min_items: "Not enough items",
       wrong_type: "Wrong document",
       unreadable: "Couldn't read the file",
+      no_model: "No model configured",
+      extract_failed: "The file check failed",
       too_large: "File is too large",
     },
   },

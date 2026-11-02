@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { chat as en } from "@/lib/copy/en";
+import { chat as he } from "@/lib/copy/he";
+import { uiCopy } from "@/lib/ui";
 import { MORTGAGE_RULES } from "./mortgage-rules";
 import { requiredSlots } from "./rules";
 import { commitSlot, freshDossier, judgeFile, runChecks } from "./validate";
@@ -54,6 +57,27 @@ describe("document checks", () => {
     const judged = judgeFile(dossier(), MORTGAGE_RULES, { docType: "passport", fields: {} }, NOW);
     expect(judged.kind).toBe("reject");
     if (judged.kind === "reject") expect(judged.reason).toBe("wrong_type");
+  });
+
+  it("treats an empty type from a completed read as the wrong document", () => {
+    const judged = judgeFile(dossier(), MORTGAGE_RULES, { docType: "", fields: {} }, NOW);
+    expect(judged.kind).toBe("reject");
+    if (judged.kind !== "reject") return;
+    expect(judged.reason).toBe("wrong_type");
+    expect(judged.state.slots.find((slot) => slot.id === judged.slotId)?.lastReason).toBe("wrong_type");
+  });
+
+  it("keeps a skipped or failed read off the wrong-document reason", () => {
+    const skipped = judgeFile(dossier(), MORTGAGE_RULES, { docType: "", fields: {}, unread: "no_model" }, NOW);
+    const failed = judgeFile(dossier(), MORTGAGE_RULES, { docType: "", fields: {}, unread: "extract_failed" }, NOW);
+    expect(skipped.kind === "reject" && skipped.reason).toBe("no_model");
+    expect(failed.kind === "reject" && failed.reason).toBe("extract_failed");
+    expect(en.documents.reasons.no_model).toBe(en.documents.reasons.unreadable);
+    expect(en.documents.reasons.extract_failed).toBe(en.documents.reasons.unreadable);
+    expect(he.documents.reasons.no_model).toBe(he.documents.reasons.unreadable);
+    expect(he.documents.reasons.extract_failed).toBe(he.documents.reasons.unreadable);
+    expect(uiCopy("en").documentsUi.reasons.no_model).toBe("No model configured");
+    expect(uiCopy("he").documentsUi.reasons.extract_failed).toBe("בדיקת הקובץ נכשלה");
   });
 
   it("escalates after three failures on the same slot and commits an accepted upload", () => {

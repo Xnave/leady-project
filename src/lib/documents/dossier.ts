@@ -590,10 +590,14 @@ async function judgeFileJob(opts: IngestLines & {
     opts.lang,
   );
   opts.lines.push(opts.chat.documents.rejected(label || opts.job.filename, reasonText(opts.chat, judged.reason)));
+  const validation = {
+    reason: judged.reason,
+    ...(extracted.error ? { error: extracted.error } : {}),
+  } as Prisma.InputJsonValue;
   if (opts.job.id) {
     await prisma.leadDocument.update({
       where: { id: opts.job.id },
-      data: { status: "rejected", bytesEnc: null, validation: { reason: judged.reason } },
+      data: { status: "rejected", bytesEnc: null, validation },
     });
   } else {
     await prisma.leadDocument.create({
@@ -606,7 +610,7 @@ async function judgeFileJob(opts: IngestLines & {
         mime: opts.job.mime,
         docType: extracted.docType,
         status: "rejected",
-        validation: { reason: judged.reason } as Prisma.InputJsonValue,
+        validation,
         bytesEnc: null,
       },
     });
