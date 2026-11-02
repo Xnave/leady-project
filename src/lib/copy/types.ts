@@ -72,6 +72,18 @@ export type ChatCopy = {
   notePrefix: string;
   /** Span-request mechanics (dates, availability, approvals) - nouns come from config. */
   request: RequestChatCopy;
+  documents: {
+    askId: string;
+    notFound: string;
+    notConfigured: string;
+    askStage: (docs: string) => string;
+    received: (doc: string) => string;
+    rejected: (doc: string, reason: string) => string;
+    complete: string;
+    escalated: string;
+    uploadFailed: string;
+    reasons: Record<string, string>;
+  };
 };
 
 /**

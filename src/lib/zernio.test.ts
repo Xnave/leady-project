@@ -146,6 +146,28 @@ describe("parseZernioMessageReceived", () => {
     });
   });
 
+  it("keeps file attachments on an inbound message", () => {
+    const parsed = parseZernioMessageReceived({
+      event: "message.received",
+      id: "evt_file",
+      account: { id: "acc_1", platform: "whatsapp" },
+      message: {
+        direction: "incoming",
+        text: "",
+        platformMessageId: "msg_file",
+        conversationId: "conv_1",
+        sender: { phoneNumber: "+972500000000" },
+        attachments: [
+          { url: "https://cdn.example/id.pdf", mime: "application/pdf", filename: "id.pdf" },
+        ],
+      },
+    });
+    expect(parsed?.attachments).toEqual([
+      { url: "https://cdn.example/id.pdf", mime: "application/pdf", filename: "id.pdf" },
+    ]);
+    expect(parsed?.text).toBe("");
+  });
+
   it("ignores outgoing echoes", () => {
     expect(
       parseZernioMessageReceived({

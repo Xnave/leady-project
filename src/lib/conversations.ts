@@ -94,6 +94,8 @@ export async function persistInboundIfNew(opts: {
   text: string;
   displayName?: string;
   extraFields?: Record<string, unknown>;
+  /** Files on this inbound message. Bytes, when present, are already encrypted. */
+  attachments?: { url?: string; mime: string; filename: string; bytesEnc?: string }[];
   /** Skip a second channel+agent+tenant read when the webhook already loaded them. */
   channel?: InboundChannel;
 }): Promise<{ conversationId: string; messageId: string; leadId: string } | null> {
@@ -267,6 +269,9 @@ export async function persistInboundIfNew(opts: {
           role: "lead",
           text: opts.text,
           providerMessageId: opts.providerMessageId,
+          metadata: opts.attachments?.length
+            ? { attachments: opts.attachments }
+            : {},
           createdAt: now,
         },
       }),

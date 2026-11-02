@@ -6,7 +6,7 @@ export type LeadStatusId = "new" | "open" | "in_progress" | "won" | "lost";
 
 export type CatalogUiId = "inbox" | "faq";
 
-export type CapabilityUiId = "booking" | "reservations";
+export type CapabilityUiId = "booking" | "reservations" | "documents";
 
 export type BookingStanceUiId = "passive" | "proactive";
 
@@ -65,6 +65,7 @@ export type UiCopy = {
     team: string;
     digest: string;
     agent: string;
+    documents: string;
   };
   langToggle: { he: string; en: string; uiLanguage: string };
   themeToggle: { appearance: string; system: string; light: string; dark: string };
@@ -606,5 +607,28 @@ export type UiCopy = {
     /** Demo → settings: strip showing which persona is live. */
     liveStyle: string;
     changeStyle: string;
+  };
+  documentsUi: {
+    title: string;
+    settingsTitle: string;
+    settingsBlurb: string;
+    enabled: string;
+    baseUrl: string;
+    apiKey: string;
+    apiKeyHint: string;
+    rules: string;
+    rulesHint: string;
+    testPhone: string;
+    test: string;
+    testOk: string;
+    testMissing: string;
+    saved: string;
+    failed: string;
+    missing: string;
+    uploaded: string;
+    reason: string;
+    remote: string;
+    attach: string;
+    reasons: Record<string, string>;
   };
 };

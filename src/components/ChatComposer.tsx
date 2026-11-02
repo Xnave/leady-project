@@ -9,6 +9,7 @@ type Labels = {
   send: string;
   sending: string;
   sendFailed: string;
+  attach?: string;
 };
 
 /** Customer simulator - used on /demo only. */
@@ -25,23 +26,44 @@ export function ChatComposer({
 }) {
   const router = useRouter();
   const [text, setText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!text.trim()) return;
+    if (!text.trim() && !file) return;
     setPending(true);
     setError(null);
     try {
+      let attached: { filename: string; mime: string; base64: string } | undefined;
+      if (file) {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result ?? ""));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(file);
+        });
+        attached = {
+          filename: file.name,
+          mime: file.type || "application/octet-stream",
+          base64: dataUrl.slice(dataUrl.indexOf(",") + 1),
+        };
+      }
       const res = await fetch("/api/demo/message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leadId, from: from || undefined, text: text.trim() }),
+        body: JSON.stringify({
+          leadId,
+          from: from || undefined,
+          text: text.trim(),
+          file: attached,
+        }),
       });
       const data = (await res.json()) as { error?: string; leadId?: string };
       if (!res.ok) throw new Error(data.error ?? labels.sendFailed);
       setText("");
+      setFile(null);
       if (data.leadId && data.leadId !== leadId) {
         router.push(`/demo?leadId=${data.leadId}`);
       } else {
@@ -66,7 +88,18 @@ export function ChatComposer({
         enterKeyHint="send"
         autoComplete="off"
       />
-      <button type="submit" disabled={pending || disabled}>
+      {labels.attach ? (
+        <label className="muted">
+          {labels.attach}
+          <input
+            type="file"
+            accept="image/*,.pdf,.docx"
+            disabled={pending || disabled}
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          />
+        </label>
+      ) : null}
+      <button type="submit" disabled={pending || disabled || (!text.trim() && !file)}>
         {pending ? labels.sending : labels.send}
       </button>
       {error ? <p className="muted">{error}</p> : null}

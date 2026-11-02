@@ -295,6 +295,46 @@ function asTrimmedString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function attachmentFrom(raw: unknown): ZernioAttachment | null {
+  if (!raw || typeof raw !== "object") return null;
+  const item = raw as Record<string, unknown>;
+  const url =
+    asTrimmedString(item.url) ||
+    asTrimmedString(item.link) ||
+    asTrimmedString(item.downloadUrl);
+  if (!url) return null;
+  const filename =
+    asTrimmedString(item.filename) ||
+    asTrimmedString(item.fileName) ||
+    asTrimmedString(item.name) ||
+    "file";
+  const mime =
+    asTrimmedString(item.mime) ||
+    asTrimmedString(item.mimeType) ||
+    asTrimmedString(item.contentType) ||
+    "application/octet-stream";
+  return { url, mime, filename };
+}
+
+/** Read every file on a Zernio message. Text-only messages return an empty list. */
+export function parseZernioAttachments(message: Record<string, unknown>): ZernioAttachment[] {
+  const found: ZernioAttachment[] = [];
+  const push = (raw: unknown) => {
+    const attachment = attachmentFrom(raw);
+    if (attachment) found.push(attachment);
+  };
+  if (Array.isArray(message.attachments)) message.attachments.forEach(push);
+  if (Array.isArray(message.files)) message.files.forEach(push);
+  if (message.media && typeof message.media === "object") push(message.media);
+  return found;
+}
+
+export type ZernioAttachment = {
+  url: string;
+  mime: string;
+  filename: string;
+};
+
 export type ZernioInbound = {
   eventId: string;
   platformMessageId: string;
@@ -305,6 +345,7 @@ export type ZernioInbound = {
   platform?: string;
   senderName?: string;
   senderUsername?: string;
+  attachments: ZernioAttachment[];
 };
 
 export type ZernioInboxContact = {
@@ -407,5 +448,6 @@ export function parseZernioMessageReceived(payload: unknown): ZernioInbound | nu
     platform,
     senderName: senderName || undefined,
     senderUsername: senderUsername || undefined,
+    attachments: parseZernioAttachments(message),
   };
 }

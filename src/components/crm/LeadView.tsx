@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { LeadViewDTO, LeadViewScope } from "@/lib/crm/view";
 import type { UiCopy } from "@/lib/ui";
+import { DocumentChecklist } from "./DocumentChecklist";
 import { FollowUpBar } from "./FollowUpBar";
 import { initials } from "./format";
 import { LeadChat } from "./LeadChat";
@@ -114,6 +115,8 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
     />
   ) : null;
 
+  const documents = <DocumentChecklist checklist={d.documents} ui={ui} />;
+
   const next = (
     <NextStepEditor
       text={d.nextStepText}
@@ -161,6 +164,7 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
         <div className="crm-full-main">
           {head}
           {task}
+          {documents}
           {fubar}
           {tabs}
         </div>
@@ -178,6 +182,7 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
     <div ref={rootRef} className="crm-lv">
       {head}
       {task}
+      {documents}
       {fubar}
       {stand}
       {next}

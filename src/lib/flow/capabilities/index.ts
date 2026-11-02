@@ -6,6 +6,7 @@ import {
   registerSelfServeEffect,
 } from "../effects";
 import { registerBookingCapability } from "./booking";
+import { registerDocumentsCapability } from "./documents";
 import { registerReservationsCapability } from "./reservations";
 
 let registered = false;
@@ -18,6 +19,7 @@ export function ensureFlowRegistry(): void {
   registerBuiltinTalkEffects();
   registerBookingCapability();
   registerReservationsCapability();
+  registerDocumentsCapability();
 
   // Durable side effects. Each capability owns its implementation; the interpreter
   // reaches them through the single generic `runEffect` port.
@@ -43,6 +45,15 @@ export function ensureFlowRegistry(): void {
   registerSelfServeEffect({
     effectId: "send_reservation_link",
     capabilityId: "reservations",
+  });
+
+  registerAction("ingest_document", async (ctx: TurnContext) => {
+    const { runDocumentsIngest } = await import("@/lib/documents/dossier");
+    return runDocumentsIngest(ctx);
+  });
+  registerSelfServeEffect({
+    effectId: "ingest_document",
+    capabilityId: "documents",
   });
 
   // Legacy TalkOutcome booleans, declared here rather than hardcoded in the kernel.

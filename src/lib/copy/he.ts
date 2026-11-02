@@ -102,6 +102,26 @@ export const chat: ChatCopy = {
       `רשמתי ${from} עד ${to} במקום התאריכים שהוצעו. נציג יאשר אותם.`,
     offerUnclearAsk: "רק לוודא שהבנתי — התאריכים שהצענו מתאימים לך, או שנחפש אפשרות אחרת?",
   },
+  documents: {
+      askId: "כדי לאתר את התיק צריך את מספר תעודת הזהות (9 ספרות).",
+      notFound: "לא מצאתי תיק לפי המספר הזה. אפשר לבדוק ולשלוח שוב?",
+      notConfigured: "איסוף המסמכים עוד לא הוגדר. נציג יחזור אליך.",
+      askStage: (docs) => `אפשר לשלוח עכשיו: ${docs}. קובץ אחד בכל הודעה, או כמה ברצף.`,
+      received: (doc) => `${doc} נקלט.`,
+      rejected: (doc, reason) => `${doc} לא התקבל: ${reason}`,
+      complete: "כל המסמכים התקבלו. תודה.",
+      escalated: "לא הצלחתי לאשר את המסמך אחרי כמה ניסיונות, אז אני מעביר את זה ליועץ.",
+      uploadFailed: "הקובץ אצלי, אבל עוד לא עלה למערכת. אנסה שוב בהודעה הבאה.",
+      reasons: {
+        field_present: "חסר פרט שחייב להופיע במסמך",
+        matches_profile: "הפרטים לא תואמים לתיק",
+        date_within_months: "התאריך ישן מדי",
+        min_items: "אין במסמך מספיק פריטים",
+        wrong_type: "זה לא אחד המסמכים שעדיין חסרים",
+        unreadable: "לא הצלחתי לקרוא את הקובץ",
+        too_large: "הקובץ גדול מדי",
+      },
+    },
 };
 
 /** System prompts stay in English so the model follows tools reliably. */

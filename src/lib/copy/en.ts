@@ -107,6 +107,26 @@ export const chat: ChatCopy = {
       `Noted ${from} to ${to} instead of the offered dates. A teammate will confirm them.`,
     offerUnclearAsk: "Just to confirm - do the offered dates work for you?",
   },
+  documents: {
+      askId: "To find your file I need your ID number (9 digits).",
+      notFound: "I couldn't find a file for that ID. Want to check the number and send it again?",
+      notConfigured: "Document collection isn't set up yet. A teammate will follow up.",
+      askStage: (docs) => `Please send: ${docs}. One file per message is fine, or several in a row.`,
+      received: (doc) => `${doc} was received.`,
+      rejected: (doc, reason) => `${doc} wasn't accepted: ${reason}`,
+      complete: "All the documents were received. Thank you.",
+      escalated: "I couldn't confirm that document after a few tries, so I'm handing this to the consultant.",
+      uploadFailed: "I have the file, but it hasn't reached the office system yet. I'll try again on your next message.",
+      reasons: {
+        field_present: "a required detail is missing",
+        matches_profile: "the details don't match the file we have",
+        date_within_months: "the date is too old",
+        min_items: "it doesn't include enough items",
+        wrong_type: "this isn't one of the documents we still need",
+        unreadable: "I couldn't read the file",
+        too_large: "the file is too large",
+      },
+    },
 };
 
 export const prompts: PromptCopy = {
