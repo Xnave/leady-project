@@ -1,6 +1,7 @@
 import { EnsureActiveOrg } from "@/components/EnsureActiveOrg";
 import { SidebarNav } from "@/components/SidebarNav";
 import { absTime } from "@/components/crm/format";
+import { campaignsEnabled } from "@/lib/campaigns/store";
 import { adminBypass, impersonatedTenantId, isAdminSession } from "@/lib/admin";
 import { isClerkConfigured } from "@/lib/clerk";
 import { getUiLang, getUiTheme } from "@/lib/cookies";
@@ -25,18 +26,21 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   let tenantName: string | null = null;
   let showTeam = false;
   let showSettings = false;
+  let showCampaigns = false;
   try {
     const tenantId = await requireTenantId();
-    const [nav, shell, team, manager] = await Promise.all([
+    const [nav, shell, team, manager, campaigns] = await Promise.all([
       getNavCounts(tenantId),
       getTenantShell(tenantId),
       canManageTeamNav(tenantId),
       canManageTenant(),
+      campaignsEnabled(tenantId),
     ]);
     counts = nav;
     tenantName = shell?.name ?? null;
     showTeam = team;
     showSettings = manager;
+    showCampaigns = manager && campaigns;
   } catch {
     counts = null;
   }
@@ -53,6 +57,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
         theme={theme}
         showTeam={showTeam}
         showSettings={showSettings}
+        showCampaigns={showCampaigns}
         showAccount={clerkOn}
       />
       <div className="app-main">
