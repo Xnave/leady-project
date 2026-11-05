@@ -20,56 +20,44 @@ Null id and empty title: do not close a slot, even when the file name is סיכ�
 
 `uploaded_by=system` does not close a borrower requirement.
 
-## Public library categories, not seen on uploaded files
+## Public library categories
 
-These labels come from the public form library only. They were not returned by `get_uploaded_documents` on this account, so they must not be used to close a slot until an uploaded file actually carries them.
+The public-library labels live in [smartnpv-document-mappings.json](smartnpv-document-mappings.json). Do not copy them into a second table. Id `67` there is בקשה לבקשת הלוואה, a loan-application category, not an ID card.
 
-| Id | Library title |
-|---|---|
-| 5 | אישור ניהול חשבון |
-| 30 | הסכם |
-| 40 | נסח טאבו |
-| 64 | שמאות |
-| 67 | תעודת זהות |
-
-Library id 67 is תעודת זהות. Uploaded id 1 is also תעודת זהות in the vendor's Postman example, and that example was not present in this account. Until an uploaded file returns id 1 with title תעודת זהות, do not close `id_card` from either number.
-
-Library ids 15, 28, and 31 match the uploaded titles above. That overlap is verified. It does not license copying the other library ids onto uploaded files.
+None of these ids, and none of the uploaded ids above, close a borrower slot. Upload accepts `file_name` and `file` only, so a file we send has no category. A title such as תעודת זהות on a file already stored in Smart NPV does not close `id_card`.
 
 ## Scanner, not verified
 
 `ai_scan.document_type` was empty on all 99 files. Do not read `ai_scan` as the file category. The vendor example, where category 1 was תעודת זהות and the scan said eligibility, remains the only evidence that the two can disagree.
 
-## Borrower checklist, not yet mapped to a Smart NPV id
+## Borrower checklist
 
-These are the files the advisor asks the lead for. None of them appeared in the 99 uploaded files, so there is no verified id to match.
+These are the files the advisor asks the lead for. None of them appeared in the 99 uploaded files. There is no Smart NPV id to match, and this checklist does not close a slot from an id or a title.
 
-| Our slot | Expected Hebrew document | Smart NPV id |
-|---|---|---|
-| `id_card` | תעודת זהות, including the other side of a biometric card | Unverified. Example says uploaded id 1. Library says id 67. Neither was seen. |
-| `id_appendix` | ספח תעודת זהות | No id. |
-| `payslip` | תלוש שכר | No id. |
-| `bank_statement` | דפי בנק / עובר ושב, last 3 months | No id. Library id 5 is an account-management confirmation, which is a different document. |
-| `loan_balance` | יתרת הלוואה | No id. |
-| `tax_assessment` | שומת מס | No id. |
-| `accountant_letter` | אישור רואה חשבון | No id. |
-
-Until those ids are observed, a file already on the client can only close a slot when its title clearly says so. The ids in the table above never close one.
+| Our slot | Expected Hebrew document |
+|---|---|
+| `id_card` | תעודת זהות, including the other side of a biometric card |
+| `id_appendix` | ספח תעודת זהות |
+| `payslip` | תלוש שכר |
+| `bank_statement` | דפי בנק / עובר ושב, last 3 months, one per known account |
+| `loan_balances` | יתרת הלוואה |
+| `tax_assessment` | שומת מס |
+| `accountant_letter` | אישור רואה חשבון |
 
 ## Client facts
 
 | Need | Read it from | Do not read it from |
 |---|---|---|
-| Which borrower | `id_1`. A second borrower only when `id_2` is present and different. A second phone or name without a distinct id is unknown: ask. | A copied `id_1` in `id_2`. None of the 30 clients did this, but the vendor example does. |
-| Employment | Ask the lead, per borrower. | `status_report_1` / `status_report_2`. Observed codes were 1, 2, 5, and empty, with no label. Workplace and income do not decide salaried vs self-employed. |
-| First home | Ask the lead. | `transaction_type`. Observed 1, 3, 5, 6, 16, 22, 28, and empty, with no label. |
+| Which borrower | `id_1`. A second borrower when `id_2` is different, or when `phone_2` is set and `id_2` is empty. | A copied `id_1` in `id_2`. |
+| Employment | `status_report_1` / `status_report_2`, using the מעמד תעסוקתי table. `1`, `2`, and `3` are the salaried list. The string `"0"` is self-employed. `5` is both and flags the advisor. `4` and `6`–`9`, and empty, ask the client. | An empty value as code `0`. Workplace, income, and gender. |
+| First home | Ask the lead. `false` flags the advisor and drops income and banking. | `transaction_type`. In the same lookup file, `1` is שיפוצים. |
 | Bank accounts | One statement slot per `banks_accounts` row that has its own id. Zero rows means unknown, so ask whether there are accounts. | A fixed count of three files. |
 | Loans | `liabilities` nonempty, or `current_mortgage` above 0, means loans are known. Otherwise unknown, so ask. | An empty `liabilities` array as "no loans". |
 
 ## Still unresolved
 
-- What `status_report` 1, 2, and 5 mean.
-- What each `transaction_type` means, including the single client with `"1"`.
-- Whether uploaded id 1 is תעודת זהות on this account.
+- Confirm the מעמד תעסוקתי table on this account: it is a third-party copy of the logged-in guide. Empty `status_report` still needs one client opened on screen, in case this account sends code `0` as an empty string.
+- Confirm `transaction_type` the same way. The lookup file says empty is מחזור, and `1` is שיפוצים. Neither is first-home.
+- Whether uploaded id 1 is תעודת זהות on this account. It does not close a slot either way.
 - The uploaded ids for payslips, statements, tax assessments, the ID appendix, loan balances, and the accountant letter.
 - Whether `extension` is ever populated. It was empty on the named files inspected.

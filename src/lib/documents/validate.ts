@@ -1,4 +1,5 @@
-import type { Check, Profile, RulesDocument } from "./rules";
+import { borrowersOf } from "./facts";
+import type { Check, Profile, RulesDocument, Slot } from "./rules";
 
 export type CheckFailure = { op: Check["op"]; field?: string };
 
@@ -78,6 +79,10 @@ export type SlotState = {
   docType: string;
   stage: string;
   index: number;
+  borrower?: string;
+  accountId?: string;
+  year?: number;
+  altGroup?: string;
   status: "missing" | "uploaded";
   failCount: number;
   lastReason: string;
@@ -102,7 +107,7 @@ const FAIL_LIMIT = 3;
 export function freshDossier(opts: {
   smartClientId: string;
   profile: Profile;
-  slots: { id: string; docType: string; stage: string; index: number }[];
+  slots: Slot[];
 }): DossierState {
   const slots: SlotState[] = opts.slots.map((slot) => ({
     ...slot,
@@ -121,8 +126,39 @@ export function freshDossier(opts: {
   };
 }
 
+/** An alt-group slot is outstanding only while none of its siblings is uploaded. */
+export function isOutstanding(slot: SlotState, slots: SlotState[]): boolean {
+  if (slot.status !== "missing") return false;
+  if (!slot.altGroup) return true;
+  return !slots.some((other) => other.altGroup === slot.altGroup && other.status === "uploaded");
+}
+
+export function dossierDone(slots: SlotState[]): boolean {
+  return slots.length > 0 && slots.every((slot) => !isOutstanding(slot, slots));
+}
+
 export function activeStageOf(slots: SlotState[]): string {
-  return slots.find((slot) => slot.status === "missing")?.stage ?? "";
+  return slots.find((slot) => isOutstanding(slot, slots))?.stage ?? "";
+}
+
+function yearOf(fields: Record<string, unknown>): number | null {
+  const raw = fields.year ?? fields.taxYear ?? fields.periodEnd ?? "";
+  const match = String(raw).match(/20\d{2}/);
+  return match ? Number(match[0]) : null;
+}
+
+/** When two slots share a type, a year written on the file picks its slot. Otherwise the earlier slot wins. */
+function orderByYear(slots: SlotState[], fields: Record<string, unknown>): SlotState[] {
+  const year = yearOf(fields);
+  if (!year) return slots;
+  return [...slots.filter((slot) => slot.year === year), ...slots.filter((slot) => slot.year !== year)];
+}
+
+function profileForSlot(profile: Profile, slot: { borrower?: string }): Profile {
+  if (!slot.borrower) return profile;
+  const borrower = borrowersOf(profile).find((item) => item.slot === slot.borrower);
+  if (!borrower) return profile;
+  return { ...profile, nationalId: borrower.nationalId, fullName: borrower.fullName, phone: borrower.phone };
 }
 
 function withFailure(state: DossierState, slotId: string, reason: string): FileJudgement {
@@ -164,15 +200,22 @@ export function judgeFile(
     if (!fallback) return { kind: "reject", state, slotId: "", reason, escalated: false };
     return withFailure(state, fallback.id, reason);
   }
-  const slot = open.find((item) => item.docType === extracted.docType);
-  if (!slot) {
+  const candidates = orderByYear(
+    open.filter((item) => item.docType === extracted.docType),
+    extracted.fields,
+  );
+  if (!candidates.length) {
     if (!fallback) return { kind: "reject", state, slotId: "", reason: "wrong_type", escalated: false };
     return withFailure(state, fallback.id, "wrong_type");
   }
-  const checks = rules.documents[slot.docType]?.checks ?? [];
-  const failure = runChecks(checks, extracted.fields, state.profile, now);
-  if (failure) return withFailure(state, slot.id, failure.op);
-  return { kind: "accept", slotId: slot.id, docType: slot.docType };
+  let failed: { id: string; op: Check["op"] } | null = null;
+  for (const candidate of candidates) {
+    const checks = rules.documents[candidate.docType]?.checks ?? [];
+    const failure = runChecks(checks, extracted.fields, profileForSlot(state.profile, candidate), now);
+    if (!failure) return { kind: "accept", slotId: candidate.id, docType: candidate.docType };
+    if (!failed) failed = { id: candidate.id, op: failure.op };
+  }
+  return withFailure(state, failed?.id ?? candidates[0].id, failed?.op ?? "wrong_type");
 }
 
 export function commitSlot(
@@ -186,7 +229,7 @@ export function commitSlot(
       ? { ...slot, status: "uploaded" as const, remoteId, filename, lastReason: "" }
       : slot,
   );
-  const done = slots.every((slot) => slot.status === "uploaded");
+  const done = dossierDone(slots);
   return {
     ...state,
     slots,
@@ -203,13 +246,32 @@ export function missingLabels(
 ): string[] {
   const stage = stageId || state.activeStage;
   const seen = new Set<string>();
+  const seenGroups = new Set<string>();
   const labels: string[] = [];
+  const joiner = lang === "he" ? " או " : " or ";
   for (const slot of state.slots) {
-    if (slot.status !== "missing" || slot.stage !== stage) continue;
-    const label = rules.documents[slot.docType]?.labels[lang] ?? slot.docType;
+    if (!isOutstanding(slot, state.slots) || slot.stage !== stage) continue;
+    if (slot.altGroup) {
+      if (seenGroups.has(slot.altGroup)) continue;
+      seenGroups.add(slot.altGroup);
+      const alternatives = state.slots
+        .filter((other) => other.altGroup === slot.altGroup && isOutstanding(other, state.slots))
+        .map((other) => slotLabel(rules, other, lang));
+      const label = alternatives.join(joiner);
+      if (!label || seen.has(label)) continue;
+      seen.add(label);
+      labels.push(label);
+      continue;
+    }
+    const label = slotLabel(rules, slot, lang);
     if (seen.has(label)) continue;
     seen.add(label);
     labels.push(label);
   }
   return labels;
+}
+
+function slotLabel(rules: RulesDocument, slot: SlotState, lang: "en" | "he"): string {
+  const base = rules.documents[slot.docType]?.labels[lang] ?? slot.docType;
+  return slot.year ? `${base} ${slot.year}` : base;
 }

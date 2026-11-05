@@ -44,6 +44,9 @@ export type RulesDocument = {
   stages: StageDef[];
   requirements: Requirement[];
   documents: Record<string, DocTypeDef>;
+  /** Label years for the self-employed list. Defaults live on the mortgage rules. */
+  taxYear?: number;
+  accountantYear?: number;
 };
 
 export type Slot = {
@@ -51,6 +54,14 @@ export type Slot = {
   docType: string;
   stage: string;
   index: number;
+  /** Borrower slot (`1` or `2`) when the file belongs to one person. */
+  borrower?: string;
+  /** Bank account id when the file is that account's statement. */
+  accountId?: string;
+  /** Calendar year this file covers, when the same type is asked for two years. */
+  year?: number;
+  /** Slots that share a group are satisfied once any one of them is uploaded. */
+  altGroup?: string;
 };
 
 export const CHECK_OPS = ["field_present", "matches_profile", "date_within_months", "min_items"] as const;
@@ -219,7 +230,13 @@ export function parseRules(raw: unknown): RulesDocument {
     });
   }
   if (errors.length) throw new RulesError(errors);
-  return { stages, requirements, documents };
+  return {
+    stages,
+    requirements,
+    documents,
+    ...(typeof raw.taxYear === "number" ? { taxYear: raw.taxYear } : {}),
+    ...(typeof raw.accountantYear === "number" ? { accountantYear: raw.accountantYear } : {}),
+  };
 }
 
 export function conditionMatches(condition: Condition | undefined, profile: Profile): boolean {

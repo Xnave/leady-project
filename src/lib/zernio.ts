@@ -88,7 +88,7 @@ async function zernio<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!key) throw new Error("Set ZERNIO_API_KEY or zerino_api_key in .env");
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${key}`);
-  if (init.body && !headers.has("Content-Type")) {
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   const res = await fetch(`${API}${path}`, { ...init, headers });
@@ -281,14 +281,25 @@ export async function sendZernioInboxMessage(opts: {
   accountId: string;
   conversationId: string;
   text: string;
+  file?: { filename: string; mime: string; bytes: Buffer };
 }): Promise<void> {
-  await zernio(`/inbox/conversations/${encodeURIComponent(opts.conversationId)}/messages`, {
-    method: "POST",
-    body: JSON.stringify({
-      accountId: opts.accountId,
-      message: opts.text,
-    }),
-  });
+  const route = `/inbox/conversations/${encodeURIComponent(opts.conversationId)}/messages`;
+  if (!opts.file) {
+    await zernio(route, {
+      method: "POST",
+      body: JSON.stringify({ accountId: opts.accountId, message: opts.text }),
+    });
+    return;
+  }
+  const form = new FormData();
+  form.append("accountId", opts.accountId);
+  form.append("message", opts.text);
+  form.append(
+    "file",
+    new Blob([new Uint8Array(opts.file.bytes)], { type: opts.file.mime || "application/pdf" }),
+    opts.file.filename,
+  );
+  await zernio(route, { method: "POST", body: form });
 }
 
 function asTrimmedString(value: unknown): string {

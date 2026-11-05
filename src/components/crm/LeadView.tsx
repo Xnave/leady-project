@@ -115,7 +115,7 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
     />
   ) : null;
 
-  const documents = <DocumentChecklist checklist={d.documents} ui={ui} />;
+  const documents = <DocumentChecklist leadId={d.id} checklist={d.documents} ui={ui} />;
 
   const next = (
     <NextStepEditor

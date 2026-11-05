@@ -34,6 +34,32 @@ describe("mapSmartProfile", () => {
     });
   });
 
+  it("decodes status_report and keeps empty liabilities unknown", () => {
+    const profile = mapSmartProfile({
+      ...CLIENT,
+      status_report_1: "2",
+      status_report_2: "0",
+      liabilities: [],
+      current_mortgage: "0",
+    });
+    expect(profile).toMatchObject({
+      employment: "salaried",
+      employmentLabel: "מגזר ציבורי",
+      loans: "unknown",
+      hasLoans: false,
+    });
+    expect(profile.borrowers).toEqual([
+      expect.objectContaining({ slot: "1", employment: "salaried" }),
+      expect.objectContaining({ slot: "2", employment: "self_employed", statusReport: "0" }),
+    ]);
+  });
+
+  it("does not read an empty status report as self-employed", () => {
+    expect(mapSmartProfile({ ...CLIENT, status_report_1: "", liabilities: [] }).employment).toBe("");
+    expect(mapSmartProfile({ ...CLIENT, status_report_1: "0" }).employment).toBe("self_employed");
+    expect(mapSmartProfile({ ...CLIENT, id_2: CLIENT.id_1 }).borrowers).toHaveLength(1);
+  });
+
   it("still reads the older field names", () => {
     expect(
       mapSmartProfile({

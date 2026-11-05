@@ -1,20 +1,49 @@
 "use client";
 
+import { useState } from "react";
 import type { LeadViewDTO } from "@/lib/crm/view";
 import type { UiCopy } from "@/lib/ui";
 
 export function DocumentChecklist({
+  leadId,
   checklist,
   ui,
 }: {
+  leadId: string;
   checklist: LeadViewDTO["documents"];
   ui: UiCopy;
 }) {
+  const [released, setReleased] = useState(checklist?.nextStageReleased ?? false);
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
   if (!checklist || checklist.slots.length === 0) return null;
   const copy = ui.documentsUi;
+  async function release() {
+    setPending(true);
+    setFailed(false);
+    try {
+      const res = await fetch(`/api/leads/${leadId}/documents/next-stage`, { method: "POST" });
+      if (!res.ok) {
+        setFailed(true);
+        return;
+      }
+      setReleased(true);
+    } catch {
+      setFailed(true);
+    } finally {
+      setPending(false);
+    }
+  }
   return (
     <section className="crm-sec" aria-label={copy.title}>
       <div className="crm-sec-h">{copy.title}</div>
+      {checklist.canReleaseNext && !released ? (
+        <button type="button" className="crm-btn-quiet" disabled={pending} onClick={() => void release()}>
+          {copy.releaseNext}
+        </button>
+      ) : null}
+      {released ? <p className="muted">{copy.nextStageReleased}</p> : null}
+      {failed ? <p className="muted">{copy.releaseFailed}</p> : null}
       <ul className="crm-doc-list">
         {checklist.slots.map((slot) => {
           const status = slot.status === "uploaded" ? copy.uploaded : copy.missing;

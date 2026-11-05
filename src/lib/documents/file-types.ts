@@ -46,6 +46,40 @@ export function isUploadableFile(mime: string, filename: string): boolean {
   return extOk || mimeOk;
 }
 
+export function isImageFile(mime: string, filename: string): boolean {
+  if (!isUploadableFile(mime, filename)) return false;
+  const ext = fileExtension(filename);
+  if (ext === "png" || ext === "jpg" || ext === "jpeg") return true;
+  const normalized = canonicalMime(mime);
+  return normalized === "image/png" || normalized === "image/jpeg";
+}
+
+function filePart(value: string): string {
+  const cleaned = value.trim().replace(/[\\/:*?"<>|]+/g, "").replace(/\s+/g, "_");
+  return cleaned || "document";
+}
+
+/** `<borrower>_<Hebrew label>_<yyyy-mm-dd>_<version>.pdf` */
+export function smartUploadName(opts: {
+  borrowerName: string;
+  docLabel: string;
+  date: string;
+  version: number;
+}): string {
+  const version = String(Math.max(1, opts.version)).padStart(2, "0");
+  return `${filePart(opts.borrowerName)}_${filePart(opts.docLabel)}_${opts.date}_${version}.pdf`;
+}
+
+/** Upload day in Asia/Jerusalem, as yyyy-mm-dd. */
+export function uploadDay(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
 export function uploadFileName(filename: string, mime: string): string {
   const base = filename.split(/[/\\]/).pop()?.trim() || "document";
   const ext = fileExtension(base);

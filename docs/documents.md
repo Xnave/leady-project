@@ -28,10 +28,10 @@ A slot is one item the client still owes. A `LeadDocument` is one file that arri
 | Stage | A named group of documents, such as identity, then income, then banking. The `stages` array is the ask order. |
 | `activeStage` | The stage of the first slot that is still missing. The agent asks for that stage's missing documents together. |
 | Document type (`docType`) | A kind of document the checklist knows, such as `id_card` or `bank_statement`. It has labels, fields, and checks. This is separate from the file format. |
-| Requirement | One line that opens slots: which document type, which stage, how many files (`count`, default 1), and an optional `when`. Two requirements can name the same type with different `when` clauses. Employed income asks for one file. Self-employed income asks for two. |
+| Requirement | One line that opens slots: which document type, which stage, how many files (`count`, default 1), and an optional `when`. The mortgage generator does this from borrower facts instead of two income rows. |
 | `when` | A condition on the profile. Omitted means the requirement always opens. Ops are `eq`, `neq`, `gt`, `truthy`, and `all` / `any`. |
 | Slot | One file the client owes. `count: 3` on bank statements opens `bank_statement#0`, `#1`, and `#2`. Status is `missing` or `uploaded`. |
-| Slot id | `<docType>#<index>`, starting at 0. |
+| Slot id | `<docType>#<scope>#<index>` when the checklist is built from borrower facts. Scope is the borrower (`1` or `2`) or the bank-account id. A saved requirements list that has no borrower facts still uses `<docType>#<index>`. |
 | Check | A rule on one extracted field. Checks run in order. The first failure rejects the file. The reason key is the op: `field_present`, `matches_profile`, `date_within_months`, `min_items`. |
 | Field | A name the vision step copies off the file before checks run, such as `nationalId` or `periodEnd`. Dates are `YYYY-MM-DD`. |
 | `lastReason` | Why the latest file for that slot was rejected. The sender hears the lead sentence. The CRM checklist shows the operator label. |
@@ -61,7 +61,8 @@ A slot is one item the client still owes. A `LeadDocument` is one file that arri
 | Piece | File |
 |---|---|
 | Rules shape, conditions, `parseRules`, `requiredSlots` | `src/lib/documents/rules.ts` |
-| Default mortgage checklist | `src/lib/documents/mortgage-rules.ts` |
+| Default mortgage checklist and per-borrower slots | `src/lib/documents/mortgage-rules.ts` |
+| Employment codes, loans, accounts, customer answers | `src/lib/documents/facts.ts` |
 | Saved config (URL, encrypted key, rules) | `src/lib/flow/document-config.ts` → `CapabilityInstance` |
 | Check execution and slot judgement | `src/lib/documents/validate.ts` |
 | Vision extract (names the type, pulls fields) | `src/lib/documents/extract.ts` |
@@ -76,11 +77,30 @@ Ops paste the rules JSON in the document settings on the agent. Blank rules on f
 
 | Key | Meaning |
 |---|---|
-| `employment` | `employed` or `self_employed` when the client record has it. The published Smart NPV record has no employment enum, so this is often empty and neither income requirement opens. |
-| `hasLoans` | True when the record has liabilities, a loans array, or `current_mortgage` greater than 0. |
+| `employment` | First borrower's decoded employment: `salaried`, `self_employed`, or `both`. Empty when `status_report_1` is empty or is a code the two lists do not use. |
+| `employmentCode` | The raw `status_report` code for that borrower. |
+| `employmentLabel` | The Hebrew label for that code, from the logged-in Smart NPV guide (מעמד תעסוקתי). |
+| `borrowers` | One entry per borrower. A second person counts when `id_2` differs from `id_1`, or when `id_2` is empty and `phone_2` is set. Each entry has its own code, employment, and, after the customer answers, `employmentSource: "customer"` and `employmentAnsweredAt`. |
+| `loans` | `known`, `none`, or `unknown`. Nonempty `liabilities`, or `current_mortgage` above 0, is `known`. An empty `liabilities` array is `unknown`, so the agent asks. `none` is only a customer answer, or an explicit `hasLoans: false`. |
+| `hasLoans` | True only when `loans` is `known`. |
+| `accounts` | One `{ id }` per `banks_accounts` row that has an id. |
+| `accountsKnown` | `known` when those rows exist or the customer says there are accounts. `none` when the customer says there are none. Otherwise `unknown`, and the agent asks. |
+| `firstHome` | `true`, `false`, or `unknown`. Smart NPV's `transaction_type` does not set this. Unknown still opens the income list; `false` removes income and banking and flags the advisor. |
+| `advisorFlag` | Set for employment `both` (code `5`) or `firstHome: false`. The dossier opens one advisor task. |
 | `nationalId` | Borrower id (`id_1`, or `id_2` when the sender's id matches borrower 2). |
 | `fullName` | That borrower's name. |
 | `phone` | That borrower's phone. |
+
+Employment codes, from the guide table copied in `haiku-code/cia-knowledge` `snpv_lookups.md`. An empty value is not code `0`. That empty-string quirk is documented for `transaction_type` (מחזור) only.
+
+| Code | Meaning | Checklist |
+|---|---|---|
+| 1, 2, 3 | שכיר/ה, מגזר ציבורי, שכיר/ה בעל שליטה | Three payslips. Codes 2 and 3 stay on this list until the advisor says otherwise. |
+| 0 | עצמאי/ת, only the string `"0"` | Current calendar year: the accountant letter only. Previous calendar year: שומת מס or a second accountant letter. Either prior-year file satisfies that pair; the other stays open. |
+| 5 | שכיר ועצמאי | Advisor flag. No payslips and no accountant letter. |
+| 4, 6, 7, 8, 9, empty | לא מועסק/ת, מלגה, קצבה, פנסיונר/ית, אישור מוסד תורני, or blank | The agent asks. |
+
+Uploads to Smart NPV send `file_name` and `file` only, so they arrive with no category. A `document_type_id` on a file already stored there does not close a slot. The file sent there is a PDF named `<borrower>_<Hebrew label>_<yyyy-mm-dd>_<version>.pdf`. A customer PDF is uploaded on its own. Photos are held until the customer says there are no more, then embedded into one PDF. The accountant PDF, and the controlling-shareholder PDF when the salary is not deposited to the borrower's account, are each sent once; the next customer file fills that slot when the reader cannot tell it is a different open document. Code `3` is asked that deposit question before any payslip. After each accepted loan balance the customer is asked whether another is needed. Finishing stage 1 does not open a later list; the advisor releases the next stage from the checklist, which sends one message and adds no document types.
 
 A new profile key means extending `mapSmartProfile` and then using it from JSON. Do not read Smart NPV fields from the rules file.
 
@@ -111,13 +131,13 @@ Add an entry under `documents`, then a `requirements` row that names it. Labels 
 { "docType": "payslip", "stage": "income", "count": 3 }
 ```
 
-`count` defaults to 1. `count: 3` opens `payslip#0`, `#1`, and `#2`. `when` omitted means the slot always opens. Stage order is the `stages` array, and that is the order the agent asks in.
+`count` defaults to 1. On a saved requirements list, `count: 3` opens `payslip#0`, `#1`, and `#2`. The mortgage generator opens `payslip#1#0` for borrower 1 instead, so two people do not share a slot. `when` omitted means the requirement always opens. Stage order is the `stages` array, and that is the order the agent asks in.
 
 ```json
 { "op": "eq", "key": "employment", "value": "employed" }
 ```
 
-Condition ops: `eq`, `neq`, `gt` (number), `truthy`, and `all` / `any` with an `of` list. An employed profile gets the employed requirement. A self-employed profile gets the self-employed one. Any other employment gets neither, when those are the only two income rows.
+Condition ops: `eq`, `neq`, `gt` (number), `truthy`, and `all` / `any` with an `of` list. The default mortgage list does not use them for income. `checklistSlots` opens three payslips for salaried borrowers (codes 1 and 2, and code 3 after the salary is deposited to their account). Code `3` with the salary deposited elsewhere also gets one controlling-shareholder letter, which is not checked. A borrower whose code is the string `0` gets the current-year accountant letter, plus a prior-year pair that is satisfied by either the tax assessment or a second letter.
 
 Update `MORTGAGE_RULES` when the default checklist should include the type for tenants that have not saved their own rules. A tenant that already saved rules keeps the saved JSON until ops save again.
 

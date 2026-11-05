@@ -1,7 +1,13 @@
+import { borrowersOf, factsFromClient } from "./facts";
 import { isUploadableFile, uploadFileName } from "./file-types";
 import type { Profile } from "./rules";
 
 export { isUploadableFile, uploadFileName };
+
+/** Smart NPV stores a PDF. Customer images are merged before they reach this call. */
+function isPdfUpload(mime: string, filename: string): boolean {
+  return mime.toLowerCase() === "application/pdf" || filename.toLowerCase().endsWith(".pdf");
+}
 
 export type SmartClientHit = { clientId: string; profile: Profile };
 
@@ -66,41 +72,24 @@ export function slotNeedsUpload(slot: { status: string; remoteId?: string } | un
   return true;
 }
 
-function personName(raw: Record<string, unknown>, slot: "1" | "2"): string {
-  const joined = `${text(raw[`firstname_${slot}`])} ${text(raw[`lastname_${slot}`])}`.trim();
-  return joined || text(raw.fullName) || text(raw.full_name) || text(raw.name);
-}
-
-function hasLoans(raw: Record<string, unknown>): boolean {
-  if (typeof raw.hasLoans === "boolean") return raw.hasLoans;
-  if (typeof raw.has_loans === "boolean") return raw.has_loans;
-  if (Array.isArray(raw.loans) && raw.loans.length > 0) return true;
-  if (Array.isArray(raw.liabilities) && raw.liabilities.length > 0) return true;
-  const current = text(raw.current_mortgage).replace(/,/g, "");
-  const amount = Number(current);
-  return Number.isFinite(amount) && amount > 0;
-}
-
 /**
- * Map a clients/get record onto the keys the rules document reads.
- * The published client has borrower fields (`id_1`, `firstname_1`, `liabilities`)
- * and no employment enum. `status_report_1` is a numeric code, left untranslated.
+ * Map a clients/get record onto checklist facts.
+ * `status_report_1` / `status_report_2` choose employment. An empty code stays unknown.
+ * Empty `liabilities` stays unknown loans, not "no loans".
  */
 export function mapSmartProfile(raw: Record<string, unknown>, preferId = ""): Profile {
+  const profile = factsFromClient(raw);
   const wanted = digits(preferId);
-  const id1 = text(raw.id_1) || text(raw.nationalId) || text(raw.national_id) || text(raw.tz) || text(raw.idNumber);
-  const id2 = text(raw.id_2);
-  const useSecond = Boolean(wanted && digits(id2) === wanted && digits(id1) !== wanted);
-  const slot = useSecond ? "2" : "1";
-  const nationalId = (useSecond ? id2 : id1) || id2;
-  const employment = raw.employment ?? raw.employmentType ?? raw.employment_type ?? "";
-  const phone = text(raw[`phone_${slot}`]) || text(raw.phone);
+  const chosen = borrowersOf(profile).find((borrower) => wanted && digits(borrower.nationalId) === wanted);
+  if (!chosen) return profile;
   return {
-    employment: typeof employment === "string" ? employment : String(employment ?? ""),
-    hasLoans: hasLoans(raw),
-    nationalId,
-    fullName: personName(raw, slot),
-    phone,
+    ...profile,
+    nationalId: chosen.nationalId,
+    fullName: chosen.fullName,
+    phone: chosen.phone,
+    employment: chosen.employment === "unknown" ? "" : chosen.employment,
+    employmentCode: chosen.statusReport,
+    employmentLabel: chosen.employmentLabel,
   };
 }
 
@@ -124,7 +113,9 @@ export function createFakeSmartClient(profile: Profile = FAKE_SMART_PROFILE): Sm
       return [hit()];
     },
     async upload(opts) {
-      if (!isUploadableFile(opts.mime, opts.filename)) throw new Error("unsupported_type");
+      if (!isUploadableFile(opts.mime, opts.filename) || !isPdfUpload(opts.mime, opts.filename)) {
+        throw new Error("unsupported_type");
+      }
       return { remoteId: `fake-${uploadFileName(opts.filename, opts.mime)}` };
     },
   };
@@ -198,7 +189,9 @@ export function createHttpSmartClient(opts: { baseUrl: string; apiKey: string; f
         .filter((hit): hit is SmartClientHit => hit !== null);
     },
     async upload(input) {
-      if (!isUploadableFile(input.mime, input.filename)) throw new Error("unsupported_type");
+      if (!isUploadableFile(input.mime, input.filename) || !isPdfUpload(input.mime, input.filename)) {
+        throw new Error("unsupported_type");
+      }
       const fileName = uploadFileName(input.filename, input.mime);
       const form = new FormData();
       form.append("api_key", opts.apiKey);

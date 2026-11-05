@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { capabilityState, registerCapability } from "../registry";
 import type { TalkOutcome, TurnContext } from "../types";
+import { copyFor, replyLang } from "@/lib/copy";
 import { loadDocumentsTurnState, type DocumentsTurnState } from "@/lib/documents/dossier";
 
 function documentsState(ctx: TurnContext): DocumentsTurnState | undefined {
@@ -53,13 +54,24 @@ export function registerDocumentsCapability(): void {
       if (state.status === "complete") {
         return ["The document checklist is complete. Do not ask for those documents again."];
       }
+      const chat = copyFor(replyLang(ctx), { gender: ctx.agent.persona?.gender }).chat;
+      const asks = (state.asks ?? []).map((question) => {
+        if (question.kind === "employment") return chat.documents.askEmployment(question.name || "the borrower");
+        if (question.kind === "salary_deposit") return chat.documents.askSalaryDeposit(question.name || "the borrower");
+        if (question.kind === "first_home") return chat.documents.askFirstHome;
+        if (question.kind === "loans") return chat.documents.askLoans;
+        if (question.kind === "more_loans") return chat.documents.askMoreLoans;
+        if (question.kind === "more_photos") return chat.documents.askMorePhotos;
+        return chat.documents.askAccounts;
+      });
       return [
         `Document checklist is in progress (${state.status}). Still missing at this stage: ${state.missing.join(", ") || "none"}.`,
+        asks.length ? `Ask these before treating the list as settled:\n${asks.join("\n")}` : "",
         "A file the customer sends is handled by ingest_document, including a file for a later stage.",
         "Ask for the current stage's documents together. One file per message is fine; several in a row are fine.",
         "Never tell the customer a document was received unless ingest_document ran on this turn.",
         "After a side question, answer it and then ask again for the missing documents in the agent's voice.",
-      ];
+      ].filter(Boolean);
     },
     tools: ({ ctx }) => ({
       ask_missing: tool({

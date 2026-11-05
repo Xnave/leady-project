@@ -92,6 +92,8 @@ export type LeadViewDTO = LeadRowDTO & {
   documents: {
     status: string;
     activeStage: string;
+    canReleaseNext: boolean;
+    nextStageReleased: boolean;
     slots: {
       id: string;
       label: string;

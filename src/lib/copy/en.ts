@@ -113,6 +113,21 @@ export const chat: ChatCopy = {
       notFound: "I couldn't find a file for that ID. Want to check the number and send it again?",
       notConfigured: "Document collection isn't set up yet. A teammate will follow up.",
       askStage: (docs) => `Please send: ${docs}. One file per message is fine, or several in a row.`,
+      askEmployment: (name) =>
+        `To ask only for the relevant documents, what is ${name}'s employment — salaried, self-employed, or both?`,
+      askFirstHome: "Is this mortgage for your first home?",
+      askLoans: "Are there loans we should collect a balance for?",
+      askMoreLoans: "Do you have another loan document to upload?",
+      askAccounts: "Are there bank accounts we should collect the last 3 months of statements for?",
+      askSalaryDeposit: (name) =>
+        `Is the salary on ${name}'s payslip deposited into their own bank account?`,
+      askMorePhotos: "Are there more photos of this same document?",
+      accountantForm: "The accountant confirmation form is attached. Please fill it in and send it back.",
+      controllingForm:
+        "The controlling-shareholder accountant form is attached. Please fill it in and send it back.",
+      nextStage: "We're starting the next set of documents. I'll ask for them as soon as that list is ready.",
+      advisorFlag: (label) =>
+        `${label} needs the consultant. You can still send the ID and the appendix.`,
       received: (doc) => `${doc} was received.`,
       rejected: (doc, reason) => `${doc} wasn't accepted: ${reason}`,
       complete: "All the documents were received. Thank you.",

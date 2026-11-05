@@ -626,6 +626,9 @@ export type UiCopy = {
     failed: string;
     missing: string;
     uploaded: string;
+    releaseNext: string;
+    nextStageReleased: string;
+    releaseFailed: string;
     reason: string;
     remote: string;
     attach: string;

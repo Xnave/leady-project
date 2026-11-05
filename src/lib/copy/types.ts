@@ -77,6 +77,17 @@ export type ChatCopy = {
     notFound: string;
     notConfigured: string;
     askStage: (docs: string) => string;
+    askEmployment: (name: string) => string;
+    askFirstHome: string;
+    askLoans: string;
+    askMoreLoans: string;
+    askAccounts: string;
+    askSalaryDeposit: (name: string) => string;
+    askMorePhotos: string;
+    accountantForm: string;
+    controllingForm: string;
+    nextStage: string;
+    advisorFlag: (label: string) => string;
     received: (doc: string) => string;
     rejected: (doc: string, reason: string) => string;
     complete: string;

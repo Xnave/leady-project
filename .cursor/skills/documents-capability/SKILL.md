@@ -21,7 +21,7 @@ A new document type that uses `field_present`, `matches_profile`, `date_within_m
 4. Extend `requiredSlots` coverage in `src/lib/documents/rules.test.ts` when the default checklist changed.
 5. Run `npx vitest run src/lib/documents/rules.test.ts src/lib/documents/validate.test.ts`.
 
-`when` can only read profile keys `mapSmartProfile` writes: `employment`, `hasLoans`, `nationalId`, `fullName`, `phone`. A new key is a change to `mapSmartProfile` in `src/lib/documents/smart-npv.ts`, then JSON.
+`when` can only read profile keys `mapSmartProfile` writes. The mortgage checklist does not use `when` for income: `checklistSlots` in `src/lib/documents/mortgage-rules.ts` reads borrower facts (`employment`, `loans`, `accounts`, `firstHome`, `borrowers`) from `src/lib/documents/facts.ts`. A new profile key is a change to `factsFromClient`, then the generator or the JSON. Empty `status_report` is unknown, not self-employed. Empty `liabilities` is unknown loans, not none. Code `3` waits for whether the payslip salary is deposited before payslips open. A self-employed prior year is an alt group: one of שומת מס or the accountant letter satisfies it. Smart NPV receives a PDF only; photos are merged first. The advisor, not a full checklist, releases the next stage. Smart NPV type ids do not close slots.
 
 Slot id is `<docType>#<index>`. Stage order is the `stages` array.
 

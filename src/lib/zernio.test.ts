@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { createZernioProfile, parseZernioInboxContact, parseZernioMessageReceived, zernioProfileName } from "./zernio";
+import { createZernioProfile, parseZernioInboxContact, parseZernioMessageReceived, sendZernioInboxMessage, zernioProfileName } from "./zernio";
 
 describe("zernioProfileName", () => {
   it("includes tenant id suffix for uniqueness", () => {
@@ -175,6 +175,27 @@ describe("parseZernioMessageReceived", () => {
         message: { direction: "outgoing", text: "hi", sender: { id: "1" } },
       }),
     ).toBeNull();
+  });
+
+  it("uploads a file on the same messages route", async () => {
+    process.env.ZERNIO_API_KEY = "sk_test_key";
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(init?.body).toBeInstanceOf(FormData);
+      const form = init?.body as FormData;
+      expect(form.get("accountId")).toBe("acc_1");
+      expect(form.get("message")).toBe("fill this in");
+      expect(form.get("file")).toBeTruthy();
+      expect(new Headers(init?.headers).get("content-type")).toBeNull();
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+    await sendZernioInboxMessage({
+      accountId: "acc_1",
+      conversationId: "conv_1",
+      text: "fill this in",
+      file: { filename: "form.pdf", mime: "application/pdf", bytes: Buffer.from("pdf") },
+    });
+    expect(fetchImpl).toHaveBeenCalledOnce();
   });
 
   it("ignores payloads with no inbound direction", () => {
