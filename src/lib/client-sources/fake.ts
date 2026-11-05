@@ -59,6 +59,7 @@ export function createFakeConnector(
     parseConfig: (raw) => configSchema.parse(raw ?? {}) as FakeConfig,
     sessionTtlSeconds: 60,
     fieldCatalog: FAKE_FIELDS,
+    archivedField: "archived",
     async authenticate(credentials) {
       opts.onAuthenticate?.();
       if (credentials.token === "wrong") throw new ConnectorAuthError();

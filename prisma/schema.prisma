@@ -53,6 +53,12 @@ model Tenant {
   alertSettings        TenantAlertSettings?
   clientSources        ClientSource[]
   contacts             Contact[]
+  campaignSettings     TenantCampaignSettings?
+  whatsAppTemplates    WhatsAppTemplate[]
+  campaigns            Campaign[]
+  campaignSends        CampaignSend[]
+  suppressions         Suppression[]
+  ownerDeclarations    OwnerDeclaration[]
 }
 
 /**
@@ -198,6 +204,7 @@ model Lead {
   stageEvents   LeadStageEvent[]
   notes         LeadNote[]
   contacts      Contact[]
+  campaignSends CampaignSend[]
 
   @@unique([tenantId, channelId, externalUserId])
   @@index([tenantId])
@@ -575,5 +582,176 @@ model Contact {
   @@unique([tenantId, sourceId, externalId])
   @@index([tenantId, phone])
   @@index([tenantId, dealDate])
+  campaignSends      CampaignSend[]
+
   @@index([leadId])
+}
+
+/// Client campaigns add-on (business-initiated WhatsApp templates to the tenant's own
+/// clients). Only platform admins change the add-on and legal fields; the tenant
+/// records terms acceptance.
+model TenantCampaignSettings {
+  tenantId          String    @id
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enabled           Boolean   @default(false)
+  /// "פרסומת" prefix on marketing templates (Communications Law 30A(e)). Off only with a recorded legal note.
+  adPrefixEnabled   Boolean   @default(true)
+  adPrefixOffNote   String    @default("")
+  adPrefixOffBy     String    @default("")
+  adPrefixOffAt     DateTime?
+  /// Unique recipients per day from the tenant's number. Meta starts new portfolios at 250.
+  dailySendCeiling  Int       @default(200)
+  termsVersion      String    @default("")
+  termsAcceptedAt   DateTime?
+  termsAcceptedBy   String    @default("")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+/// A tenant's own WhatsApp template, submitted to Meta through Zernio on the tenant's
+/// connected number. `body` is what the owner wrote; `text`, `footer` and `buttons`
+/// are what Meta received, including the locked additions.
+model WhatsAppTemplate {
+  id             String    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Zernio account id of the WhatsApp number it was submitted on.
+  accountId      String
+  /// Owner-facing title; `name` is the Meta template name.
+  title          String
+  name           String
+  language       String
+  /// "MARKETING" | "UTILITY"
+  category       String
+  body           String
+  /// Example value per {{n}} variable, in order.
+  examples       Json      @default("[]")
+  text           String
+  footer         String    @default("")
+  buttons        Json      @default("[]")
+  /// DRAFT | PENDING | APPROVED | REJECTED | IN_APPEAL | PAUSED | DISABLED | PENDING_DELETION | FAILED
+  status         String    @default("DRAFT")
+  statusReason   String    @default("")
+  providerId     String    @default("")
+  submittedAt    DateTime?
+  submittedBy    String    @default("")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  campaigns      Campaign[]
+
+  @@unique([tenantId, name, language])
+  @@index([tenantId, status])
+  @@index([accountId, name, language])
+}
+
+/// One campaign: an approved template sent to an audience. Owners create and
+/// confirm it; the send worker (`campaign-run`) does the rest.
+model Campaign {
+  id            String            @id @default(cuid())
+  tenantId      String
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name          String
+  templateId    String
+  template      WhatsAppTemplate  @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  /// draft | scheduled | sending | paused | done | canceled
+  status        String            @default("draft")
+  /// Why it is paused: owner | batch_done | template_not_approved | addon_off | no_whatsapp.
+  pauseReason   String            @default("")
+  /// "scheduled" now; "smart" comes with PR 5.
+  trigger       String            @default("scheduled")
+  /// handoff | book
+  goal          String            @default("handoff")
+  brief         String            @default("")
+  /// { kind: "clients", ... filters } | { kind: "leads", leadIds: [...] }
+  audience      Json              @default("{}")
+  /// One entry per template variable: { source, fallback, value? }.
+  params        Json              @default("[]")
+  /// Sends per batch; the campaign pauses after each batch until the owner resumes. Null = no batches.
+  batchSize     Int?
+  /// Sent count when the current batch started.
+  batchStartAt  Int               @default(0)
+  /// Set when the audience was turned into CampaignSend rows (first run).
+  materializedAt DateTime?
+  /// Last time the worker stopped early and why (quiet_hours, daily_ceiling), for the screen.
+  waitReason    String            @default("")
+  scheduledAt   DateTime?
+  confirmedAt   DateTime?
+  confirmedBy   String            @default("")
+  createdBy     String            @default("")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  sends       CampaignSend[]
+  declaration OwnerDeclaration?
+
+  @@index([tenantId, status])
+  @@index([status, scheduledAt])
+}
+
+/// One recipient of one campaign. Unique on campaign + phone, so a retry or a
+/// person who is both a client and a lead is sent to once.
+model CampaignSend {
+  id                     String    @id @default(cuid())
+  tenantId               String
+  tenant                 Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaignId             String
+  campaign               Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  /// Digits with country code, no "+".
+  phone                  String
+  name                   String    @default("")
+  contactId              String?
+  contact                Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  leadId                 String?
+  lead                   Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  /// queued | sending | sent | failed | skipped. "sending" that never finished is left alone, never resent.
+  status                 String    @default("queued")
+  skipReason             String    @default("")
+  error                  String    @default("")
+  /// Template variable values actually sent.
+  params                 Json      @default("[]")
+  providerConversationId String    @default("")
+  sentAt                 DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@unique([campaignId, phone])
+  @@index([tenantId, phone, sentAt])
+  @@index([tenantId, sentAt])
+  @@index([campaignId, status])
+  @@index([leadId])
+}
+
+/// People who must not get campaign messages from this tenant (opt-out, manual).
+model Suppression {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  phone     String
+  /// opt_out | manual
+  reason    String
+  source    String   @default("")
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, phone])
+}
+
+/// The owner's responsibility declaration, ticked when confirming a campaign.
+/// No campaign sends without one.
+model OwnerDeclaration {
+  id             String   @id @default(cuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaignId     String   @unique
+  campaign       Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  actorUserId    String
+  actorLabel     String
+  textVersion    String
+  /// The declaration exactly as shown, in the language shown.
+  text           String
+  language       String
+  recipientCount Int
+  createdAt      DateTime @default(now())
+
+  @@index([tenantId])
 }
