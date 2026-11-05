@@ -54,6 +54,7 @@ export async function extractDocument(opts: {
               text: [
                 "Identify this file as one of the open document types, or an empty docType if it is none of them.",
                 "Extract only the listed fields. Dates as YYYY-MM-DD. Leave unknown fields empty.",
+                "For months, list every YYYY-MM the file covers, comma-separated. One file may cover several months. Never include the current calendar month.",
                 catalog,
               ].join("\n"),
             },

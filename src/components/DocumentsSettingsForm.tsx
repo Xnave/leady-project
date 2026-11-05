@@ -8,6 +8,7 @@ type Props = {
   enabled: boolean;
   baseUrl: string;
   hasKey: boolean;
+  testPhones: string;
   rules: string;
 };
 
@@ -17,6 +18,7 @@ export function DocumentsSettingsForm(props: Props) {
   const [baseUrl, setBaseUrl] = useState(props.baseUrl);
   const [apiKey, setApiKey] = useState("");
   const [rules, setRules] = useState(props.rules);
+  const [testPhones, setTestPhones] = useState(props.testPhones);
   const [phone, setPhone] = useState("");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -31,7 +33,7 @@ export function DocumentsSettingsForm(props: Props) {
       const res = await fetch("/api/settings/documents", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled, baseUrl, apiKey, rules }),
+        body: JSON.stringify({ enabled, baseUrl, apiKey, rules, testPhones }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? copy.failed);
@@ -85,6 +87,12 @@ export function DocumentsSettingsForm(props: Props) {
         />
       </label>
       <p className="muted">{copy.apiKeyHint}</p>
+      {!props.hasKey && !apiKey.trim() ? <p className="muted">{copy.testOnlyWarning}</p> : null}
+      <label>
+        {copy.testPhones}
+        <textarea rows={3} value={testPhones} onChange={(e) => setTestPhones(e.target.value)} />
+      </label>
+      <p className="muted">{copy.testPhonesHint}</p>
       <label>
         {copy.rules}
         <textarea rows={16} value={rules} onChange={(e) => setRules(e.target.value)} />

@@ -3,6 +3,7 @@ import {
   accountsOf,
   advisorReason,
   borrowersOf,
+  factsOpen,
   firstHomeOf,
   loanCountOf,
   loansOf,
@@ -10,6 +11,7 @@ import {
   type BorrowerFact,
 } from "./facts";
 import { requiredSlots, type Profile, type RulesDocument, type Slot } from "./rules";
+import { priorCalendarMonths } from "./validate";
 
 /** Current calendar year is the accountant letter. The year before it is the prior-year pair. */
 export function collectionYears(now: Date = new Date()): { taxYear: number; accountantYear: number } {
@@ -30,6 +32,7 @@ export const MORTGAGE_RULES: RulesDocument = {
     { id: "income", labels: { he: "הכנסה", en: "Income" } },
     { id: "banking", labels: { he: "עו״ש והלוואות", en: "Bank activity and loans" } },
   ],
+  collectionStages: [{ id: "1", labels: { he: "מסמכים ראשונים", en: "First documents" } }],
   documents: {
     id_card: {
       labels: {
@@ -73,9 +76,9 @@ export const MORTGAGE_RULES: RulesDocument = {
       blankForm: { file: "אישור רואה חשבון לבעל שליטה (1).pdf", once: "conversation" },
     },
     bank_statement: {
-      labels: { he: "תדפיס עו״ש ל-3 חודשים", en: "Bank statement, last 3 months" },
-      fields: ["periodEnd"],
-      checks: [{ op: "date_within_months", field: "periodEnd", months: 3 }],
+      labels: { he: "תדפיס עו״ש", en: "Bank statement" },
+      fields: ["months"],
+      checks: [{ op: "prior_calendar_months", field: "months", months: 3 }],
     },
     loan_balances: {
       labels: { he: "יתרת הלוואות", en: "Loan balance" },
@@ -96,17 +99,19 @@ function slot(
   index: number,
   borrower?: string,
   accountId?: string,
-  extra?: { year?: number; altGroup?: string },
+  extra?: { year?: number; altGroup?: string; months?: string[] },
 ): Slot {
   return {
     id: `${docType}#${scope}#${index}`,
     docType,
     stage,
     index,
+    collectionStage: "1",
     ...(borrower ? { borrower } : {}),
     ...(accountId ? { accountId } : {}),
     ...(extra?.year ? { year: extra.year } : {}),
     ...(extra?.altGroup ? { altGroup: extra.altGroup } : {}),
+    ...(extra?.months ? { months: extra.months } : {}),
   };
 }
 
@@ -136,8 +141,23 @@ function incomeSlots(borrower: BorrowerFact, rules: RulesDocument): Slot[] {
   return [];
 }
 
+export function releasedStageId(profile: Profile): string {
+  const id = profile.releasedStageId;
+  return typeof id === "string" && id.trim() ? id.trim() : "1";
+}
+
+export function nextCollectionStageId(rules: RulesDocument, current: string): string {
+  const stages = rules.collectionStages?.length
+    ? rules.collectionStages
+    : [{ id: "1", labels: { he: "שלב 1", en: "Stage 1" } }];
+  const index = stages.findIndex((stage) => stage.id === current);
+  if (index < 0) return "";
+  return stages[index + 1]?.id ?? "";
+}
+
 /** Slots for a profile that already carries borrower facts. */
 export function mortgageSlots(profile: Profile, rules: RulesDocument): Slot[] {
+  if (factsOpen(profile)) return [];
   const borrowers = borrowersOf(profile);
   const identity = borrowers.flatMap((borrower) => [
     slot("id_card", "identity", borrower.slot, 0, borrower.slot),
@@ -145,13 +165,16 @@ export function mortgageSlots(profile: Profile, rules: RulesDocument): Slot[] {
   ]);
   if (advisorReason(profile) || firstHomeOf(profile) === "false") return identity;
   const income = borrowers.flatMap((borrower) => incomeSlots(borrower, rules));
+  const months = priorCalendarMonths();
   const statements =
     accountsKnown(profile) === "known"
-      ? accountsOf(profile).map((account) => slot("bank_statement", "banking", account.id, 0, undefined, account.id))
+      ? accountsOf(profile).map((account) =>
+          slot("bank_statement", "banking", account.id, 0, undefined, account.id, { months }),
+        )
       : [];
   const askedAccount =
     accountsKnown(profile) === "known" && accountsOf(profile).length === 0
-      ? [slot("bank_statement", "banking", "asked", 0)]
+      ? [slot("bank_statement", "banking", "asked", 0, undefined, undefined, { months })]
       : [];
   const loans =
     loansOf(profile) === "known"
@@ -165,6 +188,11 @@ export function mortgageSlots(profile: Profile, rules: RulesDocument): Slot[] {
  * still follows the saved requirements list.
  */
 export function checklistSlots(profile: Profile, rules: RulesDocument): Slot[] {
+  if (factsOpen(profile)) return [];
+  const released = releasedStageId(profile);
+  if (released !== "1") {
+    return requiredSlots(profile, rules).filter((slot) => (slot.collectionStage ?? "1") === released);
+  }
   if (Array.isArray(profile.borrowers)) return mortgageSlots(profile, rules);
   return requiredSlots(profile, rules);
 }

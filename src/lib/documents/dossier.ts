@@ -6,16 +6,16 @@ import { decryptBytes, encryptBytes } from "@/lib/crypto";
 import { copyFor, replyLang } from "@/lib/copy";
 import { safeRefreshLeadState } from "@/lib/crm/refresh";
 import { loadInstanceConfig } from "@/lib/capability-instances";
-import { documentApiKey, parseDocumentConfig, type DocumentConfig } from "@/lib/flow/document-config";
+import { documentApiKey, isTestLead, parseDocumentConfig, type DocumentConfig } from "@/lib/flow/document-config";
 import { capabilityState } from "@/lib/flow/registry";
-import type { ConnectionView } from "@/lib/conversations";
+import { loadTurnContext, type ConnectionView } from "@/lib/conversations";
+import { reopenConversation } from "@/lib/flow/rotate-conversation";
 import type { TurnContext } from "@/lib/flow/types";
-import { sendStaffReply } from "@/lib/staff-reply";
 import { sendZernioInboxMessage } from "@/lib/zernio";
 import { extractDocument, type DocExtraction } from "./extract";
-import { applyCustomerAnswers, borrowersOf, openQuestions, type OpenQuestion } from "./facts";
+import { applyCustomerAnswers, borrowersOf, factsOpen, openQuestions, type OpenQuestion } from "./facts";
 import { docLabel, type BlankFormDef, type Profile, type RulesDocument, type Slot } from "./rules";
-import { checklistSlots } from "./mortgage-rules";
+import { checklistSlots, nextCollectionStageId, releasedStageId } from "./mortgage-rules";
 import { isImageFile, isUploadableFile, smartUploadName, uploadDay } from "./file-types";
 import { imagesToPdf, photoDone } from "./images";
 import { slotNeedsUpload, smartClientFor, type SmartClient } from "./smart-npv";
@@ -27,6 +27,8 @@ import {
   isOutstanding,
   judgeFile,
   missingLabels,
+  recordMonths,
+  slotDisplayLabel,
   type DossierState,
   type SlotState,
 } from "./validate";
@@ -76,7 +78,16 @@ function asSlots(value: unknown): SlotState[] {
     ...(typeof slot.accountId === "string" && slot.accountId ? { accountId: slot.accountId } : {}),
     ...(typeof slot.year === "number" ? { year: slot.year } : {}),
     ...(typeof slot.altGroup === "string" && slot.altGroup ? { altGroup: slot.altGroup } : {}),
+    ...(typeof slot.collectionStage === "string" && slot.collectionStage ? { collectionStage: slot.collectionStage } : {}),
+    ...(stringList(slot.months) ? { months: stringList(slot.months) } : {}),
+    ...(stringList(slot.coveredMonths) ? { coveredMonths: stringList(slot.coveredMonths) } : {}),
   }));
+}
+
+function stringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items = value.filter((item): item is string => typeof item === "string" && item.length > 0);
+  return items.length ? items : undefined;
 }
 
 function asProfile(value: unknown): Profile {
@@ -428,6 +439,7 @@ function mergeSlots(previous: SlotState[], next: Slot[]): SlotState[] {
       lastReason: previous.lastReason,
       remoteId: previous.remoteId,
       filename: previous.filename,
+      ...(previous.coveredMonths?.length ? { coveredMonths: previous.coveredMonths } : {}),
     };
   });
   for (const slot of previous) {
@@ -441,10 +453,12 @@ function refreshDossier(state: DossierState, rules: RulesDocument, text: string)
   const profile = applied.profile;
   const next = checklistSlots(profile, rules);
   const slots = mergeSlots(state.slots, next);
+  const shape = (slot: SlotState) =>
+    `${slot.id}|${slot.status}|${slot.collectionStage ?? ""}|${(slot.months ?? []).join(",")}|${(slot.coveredMonths ?? []).join(",")}`;
   const same =
     !applied.changed &&
     slots.length === state.slots.length &&
-    slots.every((slot, index) => slot.id === state.slots[index]?.id && slot.status === state.slots[index]?.status);
+    slots.every((slot, index) => shape(slot) === shape(state.slots[index] ?? slot));
   const loanSlots = slots.filter((slot) => slot.docType === "loan_balances");
   const loansFilled = loanSlots.length > 0 && loanSlots.every((slot) => slot.status === "uploaded");
   let withLoans = profile;
@@ -583,6 +597,23 @@ function assumePendingForm(
   const next = { ...state, profile: { ...state.profile, formPending: "" } };
   if (!slot || namedOther) return { state: next, accepted: null };
   return { state: next, accepted: { slotId: slot.id, docType: pending } };
+}
+
+function offlineSmartClient(): SmartClient {
+  return {
+    async findClient() {
+      return {
+        clientId: "test",
+        profile: { firstHome: "unknown", loans: "unknown", accounts: "unknown" },
+      };
+    },
+    async listClients() {
+      return [];
+    },
+    async upload() {
+      throw new Error("test_mode");
+    },
+  };
 }
 
 function uploadNameFor(state: DossierState, rules: RulesDocument, slotId: string, docType: string, now = new Date()): string {
@@ -783,7 +814,11 @@ async function judgeFileJob(opts: IngestLines & {
   row: DossierRow;
   state: DossierState;
   job: IngestJob;
-}): Promise<{ state: DossierState; escalated: boolean; accepted: { slotId: string; docType: string } | null }> {
+}): Promise<{
+  state: DossierState;
+  escalated: boolean;
+  accepted: { slotId: string; docType: string; coveredMonths?: string[] } | null;
+}> {
   if (opts.job.resume) {
     return {
       state: opts.state,
@@ -811,7 +846,15 @@ async function judgeFileJob(opts: IngestLines & {
   const judged = judgeFile(working, opts.config.rules, extracted);
   if (judged.kind === "unplaced") return { state: judged.state, escalated: false, accepted: null };
   if (judged.kind !== "reject") {
-    return { state: working, escalated: false, accepted: { slotId: judged.slotId, docType: judged.docType } };
+    return {
+      state: working,
+      escalated: false,
+      accepted: {
+        slotId: judged.slotId,
+        docType: judged.docType,
+        ...(judged.coveredMonths?.length ? { coveredMonths: judged.coveredMonths } : {}),
+      },
+    };
   }
   const state = judged.state;
   const label = docLabel(
@@ -869,6 +912,34 @@ async function judgeFileJob(opts: IngestLines & {
   return { state, escalated: true, accepted: null };
 }
 
+function applyAccept(
+  state: DossierState,
+  slotId: string,
+  remoteId: string,
+  filename: string,
+  covered?: string[],
+): DossierState {
+  const slot = state.slots.find((item) => item.id === slotId);
+  if (slot?.months?.length) return recordMonths(state, slotId, covered ?? [], remoteId, filename);
+  return commitSlot(state, slotId, remoteId, filename);
+}
+
+/** One compact line: the document, and the month or year when the file has one. */
+function receiptName(
+  rules: RulesDocument,
+  lang: "en" | "he",
+  state: DossierState,
+  slotId: string,
+  docType: string,
+  covered?: string[],
+): string {
+  const slot = state.slots.find((item) => item.id === slotId);
+  const base = docLabel(rules, docType, lang);
+  if (covered?.length) return `${base} ${covered.join(", ")}`;
+  if (slot?.year) return `${base} ${slot.year}`;
+  return base;
+}
+
 /** Send an accepted file to Smart NPV, or keep the ciphertext when the upload fails. */
 async function uploadAcceptedFile(opts: IngestLines & {
   config: DocumentConfig;
@@ -879,6 +950,7 @@ async function uploadAcceptedFile(opts: IngestLines & {
   job: IngestJob;
   slotId: string;
   docType: string;
+  coveredMonths?: string[];
 }): Promise<{ state: DossierState; accepted: boolean }> {
   const { job, slotId, docType } = opts;
   let state = opts.state;
@@ -907,7 +979,9 @@ async function uploadAcceptedFile(opts: IngestLines & {
         },
       });
     }
-    opts.lines.push(opts.chat.documents.received(docLabel(opts.config.rules, docType, opts.lang)));
+    opts.lines.push(opts.chat.documents.received(
+      receiptName(opts.config.rules, opts.lang, state, slotId, docType, opts.coveredMonths),
+    ));
     return { state, accepted: false };
   }
 
@@ -929,6 +1003,25 @@ async function uploadAcceptedFile(opts: IngestLines & {
       });
   try {
     const filename = uploadNameFor(state, opts.config.rules, slotId, docType);
+    if (isTestLead(opts.config, phoneOf(opts.ctx))) {
+      const remoteId = `local:${filename}`;
+      state = applyAccept(state, slotId, remoteId, filename, opts.coveredMonths);
+      await prisma.leadDocument.update({
+        where: { id: docRow.id },
+        data: {
+          status: "uploaded",
+          docType,
+          filename,
+          remoteId,
+          bytesEnc: encryptBytes(job.bytes),
+          validation: { accepted: true, slotId, docType } as Prisma.InputJsonValue,
+        },
+      });
+      opts.lines.push(opts.chat.documents.received(
+        receiptName(opts.config.rules, opts.lang, opts.state, slotId, docType, opts.coveredMonths),
+      ));
+      return { state, accepted: true };
+    }
     const uploaded = await opts.client.upload({
       clientId: state.smartClientId,
       docType,
@@ -936,18 +1029,34 @@ async function uploadAcceptedFile(opts: IngestLines & {
       mime: "application/pdf",
       bytes: job.bytes,
     });
-    state = commitSlot(state, slotId, uploaded.remoteId, filename);
+    state = applyAccept(state, slotId, uploaded.remoteId, filename, opts.coveredMonths);
+    let savedUrl = "";
+    if (opts.client.listUploads) {
+      try {
+        const listed = await opts.client.listUploads(state.smartClientId, uploadDay(new Date()));
+        savedUrl = listed.find((item) => item.fileName === filename)?.downloadUrl ?? "";
+      } catch (err) {
+        warnDocuments("documents.upload_list_failed", {
+          filename,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
     await prisma.leadDocument.update({
       where: { id: docRow.id },
       data: {
         status: "uploaded",
         docType,
+        filename,
         remoteId: uploaded.remoteId,
+        downloadUrl: savedUrl || null,
         bytesEnc: null,
         validation: { accepted: true } as Prisma.InputJsonValue,
       },
     });
-    opts.lines.push(opts.chat.documents.received(docLabel(opts.config.rules, docType, opts.lang)));
+    opts.lines.push(opts.chat.documents.received(
+      receiptName(opts.config.rules, opts.lang, opts.state, slotId, docType, opts.coveredMonths),
+    ));
     return { state, accepted: true };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
@@ -1036,19 +1145,12 @@ async function closeImageBatch(opts: IngestLines & {
       messageId: doc.messageId,
     });
   }
-  const cleared: DossierState = { ...opts.state, profile: { ...opts.state.profile, imageBatchSlot: "" } };
-  if (!pages.length) return cleared;
-  for (const page of pages) {
-    await prisma.leadDocument.update({
-      where: { id: page.id },
-      data: { status: "rejected", bytesEnc: null, validation: { merged: true } },
-    });
-  }
-  const slot = cleared.slots.find((item) => item.id === slotId);
+  if (!pages.length) return { ...opts.state, profile: { ...opts.state.profile, imageBatchSlot: "" } };
+  const slot = opts.state.slots.find((item) => item.id === slotId);
   const pdf = await imagesToPdf(pages.map((page) => ({ mime: page.mime, bytes: page.bytes })));
   const uploaded = await uploadAcceptedFile({
     ...opts,
-    state: cleared,
+    state: opts.state,
     job: {
       messageId: pages[pages.length - 1]?.messageId ?? "",
       filename: "photos.pdf",
@@ -1058,7 +1160,16 @@ async function closeImageBatch(opts: IngestLines & {
     slotId,
     docType: slot?.docType ?? "",
   });
-  return uploaded.state;
+  if (!uploaded.accepted) return opts.state;
+  await prisma.$transaction(
+    pages.map((page) =>
+      prisma.leadDocument.update({
+        where: { id: page.id },
+        data: { status: "rejected", bytesEnc: null, validation: { merged: true } },
+      }),
+    ),
+  );
+  return { ...uploaded.state, profile: { ...uploaded.state.profile, imageBatchSlot: "" } };
 }
 
 export async function runDocumentsIngest(
@@ -1070,10 +1181,10 @@ export async function runDocumentsIngest(
   const chat = copyFor(lang, { gender: ctx.agent.persona?.gender }).chat;
   if (!config) return { ok: false, reply: chat.documents.notConfigured };
 
-  const client = deps?.client ?? smartClientFor({
-    baseUrl: config.baseUrl,
-    apiKey: documentApiKey(config),
-  });
+  const testing = isTestLead(config, phoneOf(ctx));
+  const client = deps?.client ?? (testing
+    ? offlineSmartClient()
+    : smartClientFor({ baseUrl: config.baseUrl, apiKey: documentApiKey(config) }));
   const extract = deps?.extract ?? extractDocument;
   const lines: string[] = [];
   const inbound = await loadIngestWindow({
@@ -1111,6 +1222,21 @@ export async function runDocumentsIngest(
 
   const closingPhotos = Boolean(stateOf(row).profile.imageBatchSlot && photoDone(inbound.newestText));
   let state = refreshDossier(stateOf(row), config.rules, closingPhotos ? "" : inbound.newestText);
+  if (factsOpen(state.profile)) {
+    lines.push(...gatheringLines(state, config.rules, lang, chat));
+    await prisma.dossier.update({
+      where: { id: row.id },
+      data: {
+        status: "gathering",
+        slots: state.slots as unknown as Prisma.InputJsonValue,
+        activeStage: state.activeStage,
+        profile: state.profile as Prisma.InputJsonValue,
+        smartClientId: state.smartClientId,
+      },
+    });
+    await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
+    return { ok: true, reply: lines.filter(Boolean).join("\n") };
+  }
   if (closingPhotos) {
     state = await closeImageBatch({ ctx, chat, lines, config, client, lang, row, state });
     state = refreshDossier(state, config.rules, "");
@@ -1180,6 +1306,7 @@ export async function runDocumentsIngest(
       job,
       slotId: judged.accepted.slotId,
       docType: judged.accepted.docType,
+      coveredMonths: judged.accepted.coveredMonths,
     });
     state = uploaded.state;
     if (uploaded.accepted && judged.accepted.slotId === batchSlot) {
@@ -1234,40 +1361,54 @@ export async function runDocumentsIngest(
 }
 
 /**
- * The advisor releases the next stage. Stage 1 stays the checklist; no later document types are invented.
- * The lead gets one message that the next documents are starting.
+ * The advisor releases the next collection stage. No document types are invented.
+ * The lead gets one agent message that the next documents are starting.
  */
 export async function releaseNextDocumentStage(
   tenantId: string,
   leadId: string,
   lang: "en" | "he",
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  const config = await readConfig(tenantId);
   const dossier = await prisma.dossier.findFirst({
     where: { tenantId, leadId },
     orderBy: { createdAt: "desc" },
   });
-  if (!dossier) return { ok: false, error: "not_found" };
+  if (!dossier || !config) return { ok: false, error: "not_found" };
   const state = stateOf(dossier);
   if (state.status !== "complete") return { ok: false, error: "incomplete" };
-  if (state.profile.nextStageReleased === true) return { ok: false, error: "released" };
-  const lead = await prisma.lead.findFirst({
-    where: { id: leadId, tenantId },
-    include: {
-      conversations: { where: { status: { not: "closed" } }, orderBy: { createdAt: "desc" }, take: 1 },
-    },
+  const current = releasedStageId(state.profile);
+  const nextId = nextCollectionStageId(config.rules, current);
+  if (!nextId) return { ok: false, error: "no_next_stage" };
+  const open = await prisma.conversation.findFirst({
+    where: { tenantId, leadId, status: { not: "closed" } },
+    orderBy: { updatedAt: "desc" },
   });
-  const conversation = lead?.conversations[0];
-  if (!conversation) return { ok: false, error: "no_open_conversation" };
+  const latest = open ?? await prisma.conversation.findFirst({
+    where: { tenantId, leadId },
+    orderBy: { updatedAt: "desc" },
+  });
+  if (!latest) {
+    console.warn(JSON.stringify({ msg: "documents.next_stage_no_conversation", tenantId, leadId }));
+    return { ok: false, error: "no_open_conversation" };
+  }
+  if (latest.status === "closed") {
+    await reopenConversation({ tenantId, conversationId: latest.id, reason: "documents_next_stage" });
+  }
   const text = copyFor(lang).chat.documents.nextStage;
-  await sendStaffReply({ tenantId, conversationId: conversation.id, text, source: "documents_next_stage" });
+  const { sendAndSave } = await import("@/lib/flow/run-turn");
+  const ctx = await loadTurnContext(tenantId, latest.id, { triggerMessageId: `documents-next-stage-${nextId}` });
+  await sendAndSave(ctx, text, { idempotencyKey: `documents-next-stage-${leadId}-${nextId}` });
+  const profile = { ...state.profile, releasedStageId: nextId };
+  const slots = mergeSlots(state.slots, checklistSlots(profile, config.rules));
+  const done = dossierDone(slots);
   await prisma.dossier.update({
     where: { id: dossier.id },
     data: {
-      profile: {
-        ...state.profile,
-        nextStageReleased: true,
-        nextStageReleasedAt: new Date().toISOString(),
-      } as Prisma.InputJsonValue,
+      profile: profile as Prisma.InputJsonValue,
+      slots: slots as unknown as Prisma.InputJsonValue,
+      status: done ? "complete" : "gathering",
+      activeStage: activeStageOf(slots),
     },
   });
   await safeRefreshLeadState(tenantId, leadId);
@@ -1285,22 +1426,33 @@ export async function loadDocumentChecklist(tenantId: string, leadId: string, la
   if (!dossier) return null;
   const rules: RulesDocument | null = config?.rules ?? null;
   const state = stateOf(dossier);
-  const released = state.profile.nextStageReleased === true;
+  const current = releasedStageId(state.profile);
+  const nextStageId = rules ? nextCollectionStageId(rules, current) : "";
+  const files = await prisma.leadDocument.findMany({
+    where: { tenantId, dossierId: dossier.id, status: "uploaded" },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, filename: true, remoteId: true, downloadUrl: true },
+  });
   return {
     status: state.status,
     activeStage: state.activeStage,
-    canReleaseNext: state.status === "complete" && !released,
-    nextStageReleased: released,
-    slots: state.slots.map((slot) => ({
-      id: slot.id,
-      label: rules
-        ? `${docLabel(rules, slot.docType, lang)}${slot.year ? ` ${slot.year}` : ""}`
-        : slot.docType,
-      stage: slot.stage,
-      status: slot.status,
-      lastReason: slot.lastReason,
-      filename: slot.filename,
-      remoteId: slot.remoteId,
-    })),
+    releasedStageId: current,
+    nextStageId: state.status === "complete" ? nextStageId : "",
+    slots: state.slots.map((slot) => {
+      const file = files.find((item) => item.filename && item.filename === slot.filename);
+      const href = file && (file.downloadUrl || file.remoteId.startsWith("local:"))
+        ? `/api/leads/${leadId}/documents/${file.id}`
+        : "";
+      return {
+        id: slot.id,
+        label: rules ? slotDisplayLabel(rules, slot, lang) : slot.docType,
+        stage: slot.stage,
+        status: slot.status,
+        lastReason: slot.lastReason,
+        filename: slot.filename,
+        remoteId: slot.remoteId,
+        href,
+      };
+    }),
   };
 }

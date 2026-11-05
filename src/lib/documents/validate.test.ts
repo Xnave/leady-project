@@ -4,7 +4,7 @@ import { chat as he } from "@/lib/copy/he";
 import { uiCopy } from "@/lib/ui";
 import { MORTGAGE_RULES } from "./mortgage-rules";
 import { requiredSlots } from "./rules";
-import { commitSlot, freshDossier, judgeFile, runChecks } from "./validate";
+import { commitSlot, freshDossier, judgeFile, priorCalendarMonths, recordMonths, runChecks } from "./validate";
 
 const NOW = new Date("2026-11-02T00:00:00.000Z");
 const profile = {
@@ -43,14 +43,56 @@ describe("document checks", () => {
     expect(failure?.op).toBe("matches_profile");
   });
 
-  it("rejects a statement older than the rule's months", () => {
-    const failure = runChecks(
+  it("rejects a statement outside the three prior calendar months", () => {
+    expect(priorCalendarMonths(NOW)).toEqual(["2026-08", "2026-09", "2026-10"]);
+    const old = runChecks(
       MORTGAGE_RULES.documents.bank_statement.checks,
-      { periodEnd: "2026-01-01" },
+      { months: "2026-01" },
       profile,
       NOW,
     );
-    expect(failure?.op).toBe("date_within_months");
+    expect(old?.op).toBe("prior_calendar_months");
+    const current = runChecks(
+      MORTGAGE_RULES.documents.bank_statement.checks,
+      { months: "2026-11" },
+      profile,
+      NOW,
+    );
+    expect(current?.op).toBe("prior_calendar_months");
+    const partial = runChecks(
+      MORTGAGE_RULES.documents.bank_statement.checks,
+      { months: "2026-08, 2026-09" },
+      profile,
+      NOW,
+    );
+    expect(partial).toBeNull();
+  });
+
+  it("keeps a statement open until one file or several cover the three months", () => {
+    const months = ["2026-08", "2026-09", "2026-10"];
+    let state = freshDossier({
+      smartClientId: "c1",
+      profile,
+      slots: [{
+        id: "bank_statement#a#0",
+        docType: "bank_statement",
+        stage: "banking",
+        index: 0,
+        months,
+      }],
+    });
+    const judged = judgeFile(state, MORTGAGE_RULES, {
+      docType: "bank_statement",
+      fields: { months: "2026-08,2026-09" },
+    }, NOW);
+    expect(judged.kind).toBe("accept");
+    if (judged.kind !== "accept") return;
+    expect(judged.coveredMonths).toEqual(["2026-08", "2026-09"]);
+    state = recordMonths(state, judged.slotId, judged.coveredMonths ?? [], "remote", "a.pdf");
+    expect(state.slots[0]?.status).toBe("missing");
+    state = recordMonths(state, judged.slotId, ["2026-10"], "remote", "b.pdf");
+    expect(state.slots[0]?.status).toBe("uploaded");
+    expect(state.status).toBe("complete");
   });
 
   it("rejects a file that is not one of the open types", () => {

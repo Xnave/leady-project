@@ -13,7 +13,7 @@ export function DocumentChecklist({
   checklist: LeadViewDTO["documents"];
   ui: UiCopy;
 }) {
-  const [released, setReleased] = useState(checklist?.nextStageReleased ?? false);
+  const [sent, setSent] = useState(false);
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
   if (!checklist || checklist.slots.length === 0) return null;
@@ -27,7 +27,7 @@ export function DocumentChecklist({
         setFailed(true);
         return;
       }
-      setReleased(true);
+      setSent(true);
     } catch {
       setFailed(true);
     } finally {
@@ -37,12 +37,12 @@ export function DocumentChecklist({
   return (
     <section className="crm-sec" aria-label={copy.title}>
       <div className="crm-sec-h">{copy.title}</div>
-      {checklist.canReleaseNext && !released ? (
+      {checklist.nextStageId && !sent ? (
         <button type="button" className="crm-btn-quiet" disabled={pending} onClick={() => void release()}>
           {copy.releaseNext}
         </button>
       ) : null}
-      {released ? <p className="muted">{copy.nextStageReleased}</p> : null}
+      {sent ? <p className="muted">{copy.nextStageReleased}</p> : null}
       {failed ? <p className="muted">{copy.releaseFailed}</p> : null}
       <ul className="crm-doc-list">
         {checklist.slots.map((slot) => {
@@ -58,7 +58,15 @@ export function DocumentChecklist({
                   · {copy.reason}: {reason}
                 </span>
               ) : null}
-              {slot.remoteId ? <span className="muted"> · {copy.remote} {slot.remoteId}</span> : null}
+              {slot.href ? (
+                <span className="muted">
+                  {" "}
+                  · <a href={slot.href}>{copy.openFile}</a>
+                </span>
+              ) : null}
+              {slot.remoteId && !slot.remoteId.startsWith("local:") ? (
+                <span className="muted"> · {copy.remote} {slot.remoteId}</span>
+              ) : null}
             </li>
           );
         })}

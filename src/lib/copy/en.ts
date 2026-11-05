@@ -118,7 +118,7 @@ export const chat: ChatCopy = {
       askFirstHome: "Is this mortgage for your first home?",
       askLoans: "Are there loans we should collect a balance for?",
       askMoreLoans: "Do you have another loan document to upload?",
-      askAccounts: "Are there bank accounts we should collect the last 3 months of statements for?",
+      askAccounts: "Are there bank accounts we should collect statements for? We need the three calendar months before this one.",
       askSalaryDeposit: (name) =>
         `Is the salary on ${name}'s payslip deposited into their own bank account?`,
       askMorePhotos: "Are there more photos of this same document?",
@@ -135,6 +135,7 @@ export const chat: ChatCopy = {
         field_present: "a required detail is missing",
         matches_profile: "the details don't match the file we have",
         date_within_months: "the date is too old",
+        prior_calendar_months: "it isn't from one of the three previous months",
         min_items: "it doesn't include enough items",
         wrong_type: "this isn't one of the documents we still need",
         unreadable: "I couldn't read the file",

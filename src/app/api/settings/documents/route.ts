@@ -31,11 +31,19 @@ export async function POST(req: Request) {
     baseUrl?: string;
     apiKey?: string;
     rules?: unknown;
+    testPhones?: string;
   } | null;
   const existing = await loadInstanceConfig({ tenantId, capabilityId: "documents" });
+  const existingPhones = Array.isArray(existing.testPhones)
+    ? existing.testPhones.filter((item): item is string => typeof item === "string")
+    : [];
   let config;
   try {
-    config = parseDocumentConfig(body ?? {}, typeof existing.apiKeyEnc === "string" ? existing.apiKeyEnc : "");
+    config = parseDocumentConfig(
+      body ?? {},
+      typeof existing.apiKeyEnc === "string" ? existing.apiKeyEnc : "",
+      existingPhones,
+    );
   } catch (err) {
     const message = err instanceof FlowConfigError ? err.errors.join("\n") : "Invalid documents config";
     return NextResponse.json({ error: message }, { status: 400 });
@@ -49,5 +57,5 @@ export async function POST(req: Request) {
     config,
   });
   await syncTalkCapability({ tenantId, capabilityId: "documents", enabled });
-  return NextResponse.json({ ok: true, hasKey: true });
+  return NextResponse.json({ ok: true, hasKey: Boolean(config.apiKeyEnc), testOnly: config.testOnly });
 }

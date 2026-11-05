@@ -1,0 +1,26 @@
+import { NextResponse } from "next/server";
+import { decryptBytes } from "@/lib/crypto";
+import { prisma } from "@/lib/db";
+import { requireTenantId } from "@/lib/tenant";
+
+/** CRM download. Local test files are streamed. A real upload redirects to its stored link. */
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string; docId: string }> }) {
+  const { id: leadId, docId } = await params;
+  const tenantId = await requireTenantId();
+  const doc = await prisma.leadDocument.findFirst({
+    where: { id: docId, tenantId, leadId },
+  });
+  if (!doc) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (doc.bytesEnc) {
+    const bytes = decryptBytes(doc.bytesEnc);
+    const filename = doc.filename.replace(/[\r\n"]/g, "") || "document.pdf";
+    return new NextResponse(new Uint8Array(bytes), {
+      headers: {
+        "content-type": doc.mime || "application/pdf",
+        "content-disposition": `inline; filename="${filename}"`,
+      },
+    });
+  }
+  if (doc.downloadUrl?.startsWith("https://")) return NextResponse.redirect(doc.downloadUrl);
+  return NextResponse.json({ error: "not_found" }, { status: 404 });
+}

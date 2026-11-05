@@ -32,6 +32,7 @@ export default async function DocumentsSettingsPage() {
         enabled={enabled}
         baseUrl={pub.baseUrl || "fake://smart"}
         hasKey={pub.hasKey}
+        testPhones={pub.testPhones.join("\n")}
         rules={rules}
       />
     </div>

@@ -423,6 +423,8 @@ model LeadDocument {
   status     String   @default("stored")
   validation Json     @default("{}")
   remoteId   String   @default("")
+  /** Smart NPV file link after a real upload. Never logged. */
+  downloadUrl String? @db.Text
   bytesEnc   String?  @db.Text
   createdAt  DateTime @default(now())
 

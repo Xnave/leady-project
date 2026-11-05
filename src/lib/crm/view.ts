@@ -92,8 +92,8 @@ export type LeadViewDTO = LeadRowDTO & {
   documents: {
     status: string;
     activeStage: string;
-    canReleaseNext: boolean;
-    nextStageReleased: boolean;
+    releasedStageId: string;
+    nextStageId: string;
     slots: {
       id: string;
       label: string;
@@ -102,6 +102,7 @@ export type LeadViewDTO = LeadRowDTO & {
       lastReason: string;
       filename: string;
       remoteId: string;
+      href: string;
     }[];
   } | null;
   /** The open task the owner acts on in the lead view (was the Inbox), or null. */

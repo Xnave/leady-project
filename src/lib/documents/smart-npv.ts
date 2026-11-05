@@ -40,6 +40,8 @@ export type SmartClient = {
     mime: string;
     bytes: Buffer;
   }): Promise<{ remoteId: string }>;
+  /** Files already stored for this client on the upload day. Missing means the caller skips the link. */
+  listUploads?(clientId: string, day: string): Promise<{ fileName: string; downloadUrl: string }[]>;
 };
 
 export const FAKE_SMART_PROFILE: Profile = {
@@ -66,8 +68,17 @@ export function toSmartPhone(raw: string): string {
 }
 
 /** A slot that already has a remote id must not be sent again. */
-export function slotNeedsUpload(slot: { status: string; remoteId?: string } | undefined): boolean {
+export function slotNeedsUpload(slot: {
+  status: string;
+  remoteId?: string;
+  months?: string[];
+  coveredMonths?: string[];
+} | undefined): boolean {
   if (!slot) return false;
+  if (slot.months?.length) {
+    const covered = new Set(slot.coveredMonths ?? []);
+    return slot.months.some((month) => !covered.has(month));
+  }
   if (slot.status === "uploaded" || slot.remoteId) return false;
   return true;
 }
@@ -130,6 +141,7 @@ type Envelope = {
   remoteId?: string;
   responseClientFields?: Record<string, unknown> | null;
   responseClients?: Record<string, unknown>[];
+  responseDocuments?: unknown;
 };
 
 function apiRoot(baseUrl: string): string {
@@ -205,6 +217,21 @@ export function createHttpSmartClient(opts: { baseUrl: string; apiKey: string; f
         throw new Error(body.message || body.responseMessage || "smart upload rejected");
       }
       return { remoteId: text(body.uuid) || text(body.remoteId) || fileName };
+    },
+    async listUploads(clientId, day) {
+      const [year, month, date] = day.split("-");
+      const dmy = year && month && date ? `${date}/${month}/${year}` : day;
+      const body = await get("/clients/get_uploaded_documents", { uuid: clientId, from: dmy, until: dmy });
+      if (body.response === false) return [];
+      const rows = Array.isArray(body.responseDocuments) ? body.responseDocuments : [];
+      return rows.flatMap((row) => {
+        if (!row || typeof row !== "object") return [];
+        const record = row as Record<string, unknown>;
+        const fileName = text(record.file_name) || text(record.fileName) || text(record.name);
+        const downloadUrl = text(record.download_url) || text(record.downloadUrl) || text(record.url) || text(record.file_url);
+        if (!fileName || !downloadUrl.startsWith("https://")) return [];
+        return [{ fileName, downloadUrl }];
+      });
     },
   };
 }

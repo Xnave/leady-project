@@ -69,6 +69,14 @@ export function runChecks(
       if (!date || !withinMonths(date, check.months, now)) return { op: check.op, field: check.field };
       continue;
     }
+    if (check.op === "prior_calendar_months") {
+      const allowed = new Set(priorCalendarMonths(now, check.months));
+      const found = monthsIn(value);
+      if (!found.length || found.some((month) => !allowed.has(month))) {
+        return { op: check.op, field: check.field };
+      }
+      continue;
+    }
     if (itemCount(value) < check.count) return { op: check.op, field: check.field };
   }
   return null;
@@ -83,6 +91,9 @@ export type SlotState = {
   accountId?: string;
   year?: number;
   altGroup?: string;
+  collectionStage?: string;
+  months?: string[];
+  coveredMonths?: string[];
   status: "missing" | "uploaded";
   failCount: number;
   lastReason: string;
@@ -99,7 +110,7 @@ export type DossierState = {
 };
 
 export type FileJudgement =
-  | { kind: "accept"; slotId: string; docType: string }
+  | { kind: "accept"; slotId: string; docType: string; coveredMonths?: string[] }
   | { kind: "reject"; state: DossierState; slotId: string; reason: string; escalated: boolean }
   | { kind: "unplaced"; state: DossierState };
 
@@ -213,10 +224,71 @@ export function judgeFile(
   for (const candidate of candidates) {
     const checks = rules.documents[candidate.docType]?.checks ?? [];
     const failure = runChecks(checks, extracted.fields, profileForSlot(state.profile, candidate), now);
-    if (!failure) return { kind: "accept", slotId: candidate.id, docType: candidate.docType };
+    if (!failure) {
+      const coveredMonths = monthsIn(extracted.fields.months ?? extracted.fields.periodEnd);
+      return {
+        kind: "accept",
+        slotId: candidate.id,
+        docType: candidate.docType,
+        ...(coveredMonths.length ? { coveredMonths } : {}),
+      };
+    }
     if (!failed) failed = { id: candidate.id, op: failure.op };
   }
   return withFailure(state, failed?.id ?? candidates[0].id, failed?.op ?? "wrong_type");
+}
+
+/** The three calendar months before this month, oldest first, in Asia/Jerusalem. */
+export function priorCalendarMonths(now = new Date(), count = 3): string[] {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(now);
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  const out: string[] = [];
+  for (let back = count; back >= 1; back -= 1) {
+    const date = new Date(Date.UTC(year, month - 1 - back, 1));
+    out.push(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+  return out;
+}
+
+/** YYYY-MM values named in a statement field. One file may name several months. */
+export function monthsIn(value: unknown): string[] {
+  return [...new Set(String(value ?? "").match(/\d{4}-\d{2}/g) ?? [])];
+}
+
+/** Add the months a statement covered. The slot stays open until every required month is in. */
+export function recordMonths(
+  state: DossierState,
+  slotId: string,
+  covered: string[],
+  remoteId: string,
+  filename: string,
+): DossierState {
+  const slots = state.slots.map((slot) => {
+    if (slot.id !== slotId) return slot;
+    const next = [...new Set([...(slot.coveredMonths ?? []), ...covered])];
+    const required = slot.months ?? [];
+    const done = required.length > 0 && required.every((month) => next.includes(month));
+    return {
+      ...slot,
+      coveredMonths: next,
+      status: done ? ("uploaded" as const) : ("missing" as const),
+      remoteId,
+      filename,
+      lastReason: "",
+    };
+  });
+  const done = dossierDone(slots);
+  return {
+    ...state,
+    slots,
+    status: done ? "complete" : "gathering",
+    activeStage: activeStageOf(slots),
+  };
 }
 
 export function commitSlot(
@@ -272,7 +344,17 @@ export function missingLabels(
   return labels;
 }
 
-function slotLabel(rules: RulesDocument, slot: SlotState, lang: "en" | "he"): string {
+export function slotDisplayLabel(rules: RulesDocument, slot: SlotState, lang: "en" | "he"): string {
   const base = rules.documents[slot.docType]?.labels[lang] ?? slot.docType;
-  return slot.year ? `${base} ${slot.year}` : base;
+  if (slot.year) return `${base} ${slot.year}`;
+  if (slot.months?.length) {
+    const covered = new Set(slot.coveredMonths ?? []);
+    const missing = slot.months.filter((month) => !covered.has(month));
+    if (missing.length) return `${base} ${missing.join(", ")}`;
+  }
+  return base;
+}
+
+function slotLabel(rules: RulesDocument, slot: SlotState, lang: "en" | "he"): string {
+  return slotDisplayLabel(rules, slot, lang);
 }

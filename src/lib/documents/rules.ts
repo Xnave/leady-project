@@ -18,6 +18,7 @@ export type Check =
   | { op: "field_present"; field: string }
   | { op: "matches_profile"; field: string; profileKey: string }
   | { op: "date_within_months"; field: string; months: number }
+  | { op: "prior_calendar_months"; field: string; months: number }
   | { op: "min_items"; field: string; count: number };
 
 /** A PDF we send once so the customer can fill it and send it back. */
@@ -47,10 +48,14 @@ export type Requirement = {
   when?: Condition;
   /** How many accepted files of this type. Default 1. */
   count?: number;
+  /** Which collection wave this requirement belongs to. Default "1". */
+  collectionStage?: string;
 };
 
 export type RulesDocument = {
   stages: StageDef[];
+  /** Collection waves. Stage 1 is the identity, income, and banking list. */
+  collectionStages?: StageDef[];
   requirements: Requirement[];
   documents: Record<string, DocTypeDef>;
   /** Label years for the self-employed list. Defaults live on the mortgage rules. */
@@ -71,9 +76,19 @@ export type Slot = {
   year?: number;
   /** Slots that share a group are satisfied once any one of them is uploaded. */
   altGroup?: string;
+  /** Collection wave. Missing means stage 1. */
+  collectionStage?: string;
+  /** YYYY-MM months a statement must cover. The current month is never included. */
+  months?: string[];
 };
 
-export const CHECK_OPS = ["field_present", "matches_profile", "date_within_months", "min_items"] as const;
+export const CHECK_OPS = [
+  "field_present",
+  "matches_profile",
+  "date_within_months",
+  "prior_calendar_months",
+  "min_items",
+] as const;
 
 export class RulesError extends Error {
   readonly errors: string[];
@@ -168,11 +183,11 @@ function parseCheck(raw: unknown, path: string, errors: string[]): Check | undef
       profileKey: String(raw.profileKey ?? ""),
     };
   }
-  if (raw.op === "date_within_months") {
+  if (raw.op === "date_within_months" || raw.op === "prior_calendar_months") {
     if (typeof raw.field !== "string" || !raw.field.trim()) errors.push(`${path}.field is required`);
     if (typeof raw.months !== "number" || raw.months < 1) errors.push(`${path}.months must be >= 1`);
     return {
-      op: "date_within_months",
+      op: raw.op,
       field: String(raw.field ?? ""),
       months: typeof raw.months === "number" ? raw.months : 1,
     };
@@ -212,6 +227,23 @@ export function parseRules(raw: unknown): RulesDocument {
     stageIds.add(id);
     stages.push({ id, labels: parseLabels(item.labels, `stages[${i}].labels`, errors) });
   }
+  const collectionStages: StageDef[] = [];
+  const collectionIds = new Set<string>();
+  if (raw.collectionStages !== undefined) {
+    if (!Array.isArray(raw.collectionStages) || raw.collectionStages.length === 0) {
+      errors.push("collectionStages must be a list");
+    }
+    for (const [i, item] of (Array.isArray(raw.collectionStages) ? raw.collectionStages : []).entries()) {
+      if (!isRecord(item) || typeof item.id !== "string" || !item.id.trim()) {
+        errors.push(`collectionStages[${i}].id is required`);
+        continue;
+      }
+      const id = item.id.trim();
+      if (collectionIds.has(id)) errors.push(`collectionStages[${i}] duplicates "${id}"`);
+      collectionIds.add(id);
+      collectionStages.push({ id, labels: parseLabels(item.labels, `collectionStages[${i}].labels`, errors) });
+    }
+  }
   const documents: Record<string, DocTypeDef> = {};
   if (!isRecord(raw.documents)) errors.push("documents must be an object");
   for (const [id, def] of Object.entries(isRecord(raw.documents) ? raw.documents : {})) {
@@ -246,16 +278,22 @@ export function parseRules(raw: unknown): RulesDocument {
     if (!stage || !stageIds.has(stage)) errors.push(`requirements[${i}].stage is not defined`);
     const count = item.count === undefined ? 1 : item.count;
     if (typeof count !== "number" || count < 1) errors.push(`requirements[${i}].count must be >= 1`);
+    const collectionStage = typeof item.collectionStage === "string" ? item.collectionStage.trim() : "";
+    if (collectionStage && collectionIds.size > 0 && !collectionIds.has(collectionStage)) {
+      errors.push(`requirements[${i}].collectionStage is not defined`);
+    }
     requirements.push({
       docType,
       stage,
       count: typeof count === "number" ? count : 1,
       when: parseCondition(item.when, `requirements[${i}].when`, errors),
+      ...(collectionStage ? { collectionStage } : {}),
     });
   }
   if (errors.length) throw new RulesError(errors);
   return {
     stages,
+    ...(collectionStages.length ? { collectionStages } : {}),
     requirements,
     documents,
     ...(typeof raw.taxYear === "number" ? { taxYear: raw.taxYear } : {}),
@@ -290,6 +328,7 @@ export function requiredSlots(profile: Profile, rules: RulesDocument): Slot[] {
         docType: requirement.docType,
         stage: requirement.stage,
         index,
+        collectionStage: requirement.collectionStage ?? "1",
       });
     }
   }

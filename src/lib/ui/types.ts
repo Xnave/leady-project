@@ -616,6 +616,9 @@ export type UiCopy = {
     baseUrl: string;
     apiKey: string;
     apiKeyHint: string;
+    testOnlyWarning: string;
+    testPhones: string;
+    testPhonesHint: string;
     rules: string;
     rulesHint: string;
     testPhone: string;
@@ -629,6 +632,7 @@ export type UiCopy = {
     releaseNext: string;
     nextStageReleased: string;
     releaseFailed: string;
+    openFile: string;
     reason: string;
     remote: string;
     attach: string;

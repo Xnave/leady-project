@@ -147,6 +147,13 @@ export function openQuestions(profile: Profile): OpenQuestion[] {
   return questions;
 }
 
+const FACT_KINDS = new Set(["employment", "salary_deposit", "first_home", "loans", "accounts"]);
+
+/** Employment, salary deposit, first home, loans, and accounts. Photos and extra loans are not in this gate. */
+export function factsOpen(profile: Profile): boolean {
+  return openQuestions(profile).some((question) => FACT_KINDS.has(question.kind));
+}
+
 export function needsSalaryDeposit(borrower: BorrowerFact): boolean {
   return borrower.statusReport === "3" && borrower.salaryDeposit !== "yes" && borrower.salaryDeposit !== "no";
 }

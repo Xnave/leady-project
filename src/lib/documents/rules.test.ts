@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyCustomerAnswers, employmentFromStatusReport, openQuestions } from "./facts";
-import { checklistSlots, collectionYears, MORTGAGE_RULES } from "./mortgage-rules";
+import { checklistSlots, collectionYears, MORTGAGE_RULES, nextCollectionStageId } from "./mortgage-rules";
 import { mapSmartProfile } from "./smart-npv";
 import { parseRules, RulesError } from "./rules";
 import { freshDossier, isOutstanding, judgeFile } from "./validate";
@@ -20,10 +20,14 @@ function client(extra: Record<string, unknown> = {}) {
   });
 }
 
+function ready(extra: Record<string, unknown> = {}) {
+  return { ...client(extra), firstHome: "true" };
+}
+
 describe("mortgage checklist", () => {
   it("builds the salaried list from code 1 or 2", () => {
     for (const code of ["1", "2"]) {
-      const profile = client({ status_report_1: code });
+      const profile = ready({ status_report_1: code });
       const slots = checklistSlots(profile, MORTGAGE_RULES);
       expect(slots.filter((slot) => slot.docType === "payslip")).toHaveLength(3);
       expect(slots.filter((slot) => slot.docType === "bank_statement")).toHaveLength(1);
@@ -33,25 +37,31 @@ describe("mortgage checklist", () => {
       expect(slots.map((slot) => slot.docType)).not.toContain("tax_assessment");
       expect(openQuestions(profile).map((question) => question.kind)).not.toContain("employment");
       expect(slots.map((slot) => slot.id).filter((id) => id.startsWith("payslip#1#"))).toHaveLength(3);
+      const statement = slots.find((slot) => slot.docType === "bank_statement");
+      expect(statement?.months).toHaveLength(3);
+      expect(statement?.collectionStage).toBe("1");
     }
   });
 
   it("asks for employment and skips payslips when the code is empty", () => {
-    const profile = client({ status_report_1: "" });
+    const profile = ready({ status_report_1: "" });
     expect(checklistSlots(profile, MORTGAGE_RULES).map((slot) => slot.docType)).not.toContain("payslip");
     const answered = applyCustomerAnswers(profile, "אני שכירה").profile;
     expect(checklistSlots(answered, MORTGAGE_RULES).filter((slot) => slot.docType === "payslip")).toHaveLength(3);
   });
 
   it("gives the self-employed list only to the borrower whose code is 0", () => {
-    const profile = client({
+    const profile = {
+      ...client({
       status_report_1: "1",
       id_2: "209876543",
       firstname_2: "Noam",
       lastname_2: "Levi",
       phone_2: "0521111111",
       status_report_2: "0",
-    });
+    }),
+      firstHome: "true",
+    };
     const slots = checklistSlots(profile, MORTGAGE_RULES);
     const years = collectionYears();
     expect(slots.filter((slot) => slot.docType === "tax_assessment").map((slot) => slot.borrower)).toEqual(["2"]);
@@ -95,7 +105,7 @@ describe("mortgage checklist", () => {
   });
 
   it("asks a controlling shareholder about the salary deposit before opening payslips", () => {
-    const profile = client({ status_report_1: "3" });
+    const profile = { ...client({ status_report_1: "3" }), firstHome: "true" };
     expect(checklistSlots(profile, MORTGAGE_RULES).map((slot) => slot.docType)).not.toContain("payslip");
     expect(openQuestions(profile).map((question) => question.kind)).toContain("salary_deposit");
     const yes = applyCustomerAnswers(profile, "המשכורת מופקדת לחשבון").profile;
@@ -127,8 +137,9 @@ describe("mortgage checklist", () => {
   });
 
   it("does not open a loan slot while liabilities are empty", () => {
-    const profile = client({ liabilities: [], current_mortgage: "" });
-    expect(profile.loans).toBe("unknown");
+    const base = client({ liabilities: [], current_mortgage: "" });
+    expect(base.loans).toBe("unknown");
+    const profile = { ...base, firstHome: "true" };
     expect(checklistSlots(profile, MORTGAGE_RULES).map((slot) => slot.docType)).not.toContain("loan_balances");
     const answered = applyCustomerAnswers(profile, "יש הלוואות").profile;
     expect(checklistSlots(answered, MORTGAGE_RULES).map((slot) => slot.docType)).toContain("loan_balances");
@@ -140,9 +151,31 @@ describe("mortgage checklist", () => {
   });
 
   it("leaves an ID slot missing when a Smart NPV file is only a title", () => {
-    const slots = checklistSlots(client(), MORTGAGE_RULES);
+    const slots = checklistSlots(ready(), MORTGAGE_RULES);
     expect(slots.find((slot) => slot.docType === "id_card")).toMatchObject({ borrower: "1" });
     expect(slots.every((slot) => !("remoteId" in slot))).toBe(true);
+  });
+
+  it("opens no document slots while a fact question is still open", () => {
+    expect(checklistSlots(client(), MORTGAGE_RULES)).toEqual([]);
+  });
+
+  it("opens only the released collection stage", () => {
+    const rules = parseRules({
+      ...MORTGAGE_RULES,
+      collectionStages: [
+        { id: "1", labels: { he: "א", en: "A" } },
+        { id: "2", labels: { he: "ב", en: "B" } },
+      ],
+      requirements: [
+        ...MORTGAGE_RULES.requirements,
+        { docType: "id_card", stage: "identity", collectionStage: "2" },
+      ],
+    });
+    const slots = checklistSlots({ ...ready(), releasedStageId: "2" }, rules);
+    expect(slots.map((slot) => slot.collectionStage)).toEqual(["2"]);
+    expect(nextCollectionStageId(rules, "1")).toBe("2");
+    expect(nextCollectionStageId(rules, "2")).toBe("");
   });
 
   it("treats a bare no as not a first home only when that is the open question", () => {
@@ -176,6 +209,8 @@ describe("mortgage checklist", () => {
     const parsed = parseRules(MORTGAGE_RULES);
     expect(parsed.taxYear).toBe(collectionYears().taxYear);
     expect(parsed.accountantYear).toBe(collectionYears().accountantYear);
+    expect(parsed.collectionStages?.[0]?.id).toBe("1");
+    expect(nextCollectionStageId(parsed, "1")).toBe("");
     expect(parsed.documents.accountant_letter.blankForm).toEqual({
       file: "אישור רואה חשבון עוסק מורשה.pdf",
       once: "conversation",
