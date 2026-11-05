@@ -38,6 +38,7 @@ import {
   formatSlotForDisplay,
   formatSlotPhrase,
   messageStatesClock,
+  normalizeSlot,
   proposesDifferentSlot,
 } from "../slot";
 import {
@@ -47,10 +48,17 @@ import {
   venueScheduleFromCtx,
   venueTimezoneFromCtx,
 } from "../booking-config";
+import { zonedToday } from "../clock";
 import {
   evaluateTimePreference,
   timePreferenceNormalizeError,
 } from "../time-preference-gate";
+import {
+  checkBookableSlot,
+  normalizeVenueSchedule,
+  resolvedBareHourClock,
+  type VenueScheduleSegment,
+} from "../venue-hours";
 import {
   formatPhoneDisplay,
   isCustomerNameSatisfied,
@@ -131,9 +139,51 @@ function markNeedPrompted(collected: TalkCollected, field: string): void {
 function displayTimePreference(
   raw: string,
   lang: "en" | "he",
-  now?: Date,
+  opts?: { now?: Date; schedule?: VenueScheduleSegment[] },
 ): string {
-  return formatSlotForDisplay(raw, { lang, now });
+  const now = opts?.now;
+  const schedule = opts?.schedule ?? [];
+  const clock =
+    now && schedule.length > 0
+      ? resolvedBareHourClock({ slotText: raw, schedule, now, lang })
+      : null;
+  return formatSlotForDisplay(clock ? `${raw} ${clock}` : raw, { lang, now });
+}
+
+/**
+ * A bookable time in the latest lead message, in the same display form save_fields uses.
+ * Older lines are left alone, so a thank-you after approve does not restore a finished visit.
+ */
+function rememberStatedVisitTime(
+  ctx: TurnContext,
+  collected: TalkCollected,
+  opts: {
+    lang: "en" | "he";
+    hours: string;
+    schedule: VenueScheduleSegment[];
+    timeZone: string;
+  },
+): void {
+  const existing = String(
+    collected.fields?.time_preference ?? ctx.lead.fields.time_preference ?? "",
+  ).trim();
+  if (existing) return;
+  const text = [...ctx.messages].reverse().find((m) => m.role === "lead" && m.text.trim())?.text.trim() ?? "";
+  if (!text || !messageStatesClock(text)) return;
+  const status = checkBookableSlot({
+    slotText: text,
+    hoursLabel: opts.hours,
+    schedule: opts.schedule,
+    lang: opts.lang,
+    timeZone: opts.timeZone,
+  }).status;
+  if (status !== "ok") return;
+  const display = displayTimePreference(text, opts.lang, {
+    now: zonedToday(new Date(), opts.timeZone),
+    schedule: opts.schedule,
+  });
+  if (!display.trim()) return;
+  collected.fields = { ...collected.fields, time_preference: display };
 }
 
 /** Deterministic confirm body - used by confirm_details and reconcileBooking. */
@@ -209,6 +259,13 @@ export function recentMeeting(ctx: TurnContext): RecentMeetingSnapshot | undefin
 /** Short customer affirmations after confirm_details. */
 function looksLikeBookingAffirmation(text: string): boolean {
   return looksLikeShortAffirmation(text);
+}
+
+/** A short no to saving the visit. "אין מה להוסיף" is not a no. */
+function looksLikeBookingDecline(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length > 40) return false;
+  return /^(לא|לא תודה|לא רוצה|לא מאשר|לא מאשרת|no|nope|no thanks)[!?.]*$/iu.test(t);
 }
 
 const BOOKING_CONFIRM_AMEND_KEYS = [
@@ -324,7 +381,8 @@ export function reconcileBooking(
     const bag = { ...fields, ...nextFields };
     const usable = storedUnderstanding(bag, ctx.messages);
     const needEmpty = !String(fields.need || nextFields.need || "").trim();
-    const prompted = String(fields.need_prompted ?? nextFields.need_prompted ?? "").trim() === "1";
+    // Only a question already shown on an earlier turn. Asking this turn must not consume this message.
+    const prompted = String(ctx.lead.fields.need_prompted ?? "").trim() === "1";
     const acceptsGathered =
       looksLikeNothingToAdd(last) ||
       looksLikeNeedDeixis(last) ||
@@ -337,6 +395,14 @@ export function reconcileBooking(
       } else {
         reaskUnusableNeed = true;
       }
+    } else if (needEmpty && prompted && usable && !looksLikeBookingDecline(last)) {
+      // They added a detail instead of saying yes. Keep the understanding and move on.
+      const addition = applyPendingNeedAmendment(last, usable);
+      if (addition) {
+        nextFields.need = addition;
+        nextFields.need_prompted = "";
+        committedNeed = true;
+      }
     }
   }
 
@@ -347,8 +413,20 @@ export function reconcileBooking(
   }
 
   const gapsAfter = bookingFieldGaps({ ...fields, ...nextFields }, required);
+  const priorConfirm = bookingConfirmStatus(ctx.lead.fields);
+  const decline =
+    looksLikeBookingDecline(last) &&
+    priorConfirm !== "confirmed" &&
+    (priorConfirm === "pending" || gapsAfter.length === 0);
 
-  if (gapsAfter.length === 0 && confirm === "pending" && affirmed && !committedNeed) {
+  // A same-turn "confirmed" without a short yes is not agreement. "לא" is a no.
+  if (!affirmed && priorConfirm !== "confirmed" && (confirm === "confirmed" || decline)) {
+    effects = effects.filter((e) => e.type !== "book_meeting");
+    confirm = priorConfirm === "pending" ? "pending" : "";
+    nextFields.booking_confirm = confirm;
+  }
+
+  if (!decline && gapsAfter.length === 0 && confirm === "pending" && affirmed && !committedNeed) {
     nextFields.booking_confirm = "confirmed";
     confirm = "confirmed";
   }
@@ -377,6 +455,7 @@ export function reconcileBooking(
   }
 
   if (
+    !decline &&
     gapsAfter.length === 0 &&
     confirm === "confirmed" &&
     !effects.some((e) => e.type === "book_meeting")
@@ -397,9 +476,18 @@ export function reconcileBooking(
 
   // Gaps filled but confirm never started - rails own the one confirm message.
   // כן that just accepted the understanding also lands here (confirm was not pending yet).
-  if (gapsAfter.length === 0 && confirm === "" && (!affirmed || committedNeed)) {
+  if (!decline && gapsAfter.length === 0 && confirm === "" && (!affirmed || committedNeed)) {
     nextFields.booking_confirm = "pending";
     confirm = "pending";
+    reply = railsConfirmReply(ctx, { ...fields, ...nextFields });
+  }
+
+  // The model asked "approve or add something?" on the turn the gaps closed.
+  // Replace that with the save question, so "לא" is a no to saving.
+  const pendingSetThisTurn =
+    confirm === "pending" && priorConfirm !== "pending" && priorConfirm !== "confirmed";
+  if (!decline && !affirmed && gapsAfter.length === 0 && pendingSetThisTurn) {
+    nextFields.booking_confirm = "pending";
     reply = railsConfirmReply(ctx, { ...fields, ...nextFields });
   }
 
@@ -425,6 +513,10 @@ export function reconcileBooking(
     }
   }
 
+  if (decline) {
+    reply = copyFor(replyLang(ctx, last)).chat.bookingDeclineAsk;
+  }
+
   // Never mark the talk goal complete while booking is still in progress.
   if (
     nextStage === stage.on_complete ||
@@ -440,7 +532,11 @@ export function reconcileBooking(
     fields: Object.keys(nextFields).length ? { ...out.fields, ...nextFields } : out.fields,
     effects,
     nextStage,
-    book: gapsAfter.length === 0 && confirm === "confirmed" ? true : out.book,
+    book: decline
+      ? false
+      : gapsAfter.length === 0 && confirm === "confirmed"
+        ? true
+        : out.book,
   };
 }
 
@@ -615,7 +711,7 @@ export function registerBookingCapability(): void {
       const interest = storedUnderstanding(fields, ctx.messages);
       const idle = [
         `${noun} booking is NOT started. Use reply to answer from knowledge.`,
-        `Only call start_booking if they explicitly ask to schedule a ${noun}, meeting, visit, or call, or clearly accept an offer to book.`,
+        `Only call start_booking if they explicitly ask to schedule a ${noun}, meeting, visit, or call, or clearly accept an offer to book. Pass name, phone, need, and time_preference when that message already states them. Do not invent them.`,
         "When they already shared concrete context (pain, business type, goals), call save_interest with one short sentence of what you understood, in their language, grounded only in what they said across the thread. Do not paste their message or greeting, and do not add facts they did not say. Do not start booking for that alone.",
         "Past/expired meetings are irrelevant - do not mention them, do not say בהמשך לפגישה, and do not reuse their need text unless the customer explicitly brings that meeting up.",
       ];
@@ -631,11 +727,185 @@ export function registerBookingCapability(): void {
       const hours = venueHoursFromCtx(ctx);
       const schedule = venueScheduleFromCtx(ctx);
       const timeZone = venueTimezoneFromCtx(ctx);
+      const bookableSchedule =
+        schedule.length > 0 ? schedule : normalizeVenueSchedule(hours);
+      const slotNow = zonedToday(new Date(), timeZone);
+      if (!getStaffSlotOffer({ ...ctx.lead.fields, ...collected.fields })) {
+        rememberStatedVisitTime(ctx, collected, {
+          lang,
+          hours,
+          schedule: bookableSchedule,
+          timeZone,
+        });
+      }
       const required = effectiveBookingRequired(ctx);
       const fieldsForTurn = { ...ctx.lead.fields, ...collected.fields };
       const offered = getStaffSlotOffer(fieldsForTurn);
       const last = lastLeadText(ctx);
       const active = isBookingCollectActive(fieldsForTurn, required);
+
+      const fieldShape = Object.fromEntries(
+        Object.keys(ctx.agent.leadSchema.fields)
+          .filter((k) => k !== "intent" && k !== "name_collected_by_agent")
+          .map((k) => [k, z.string().optional()]),
+      );
+      fieldShape.booking_confirm = z.string().optional();
+      fieldShape.booking_flow = z.string().optional();
+
+      async function saveBookingFields(raw: Record<string, unknown>): Promise<string> {
+        const fields: LeadFields = {};
+        for (const [key, value] of Object.entries(raw)) {
+          if (typeof value !== "string") continue;
+          if (!value.trim()) {
+            fields[key] = "";
+            continue;
+          }
+          if (
+            key === "phone" &&
+            !looksLikePhoneNumber(value) &&
+            value !== callbackPhone(ctx)
+          ) {
+            return `invalid phone: ${value}`;
+          }
+          if (
+            key === "booking_confirm" &&
+            value.trim().toLowerCase() === "confirmed" &&
+            !looksLikeBookingAffirmation(lastLeadText(ctx))
+          ) {
+            continue;
+          }
+          if (key === "time_preference") {
+            const already = String(
+              fieldsForTurn.time_preference ?? collected.fields?.time_preference ?? "",
+            );
+            if (clockNotStated(value, ctx.messages, already)) {
+              const proposedTime = normalizeSlot(value, { lang, now: slotNow }).time;
+              const savedTime = already
+                ? normalizeSlot(already, { lang, now: slotNow }).time
+                : undefined;
+              const sameClock = Boolean(
+                proposedTime && savedTime && proposedTime === savedTime,
+              );
+              if (!sameClock) {
+                collected.askFieldUsed = true;
+                collected.replyLocked = true;
+                collected.timeRejected = true;
+                collected.reply = copyFor(lang).chat.askTimeUnclear;
+                return JSON.stringify({
+                  ok: false,
+                  error: "unclear_time",
+                  hint: "The customer did not name a clock time. Ask for a day and time. Do not invent an hour.",
+                });
+              }
+            }
+          }
+          if (key === "time_preference" && (hours || schedule.length)) {
+            const result = evaluateTimePreference(value, {
+              lang,
+              hoursLabel: hours,
+              schedule,
+              timeZone,
+            });
+            const failure = timePreferenceNormalizeError(result, lang, hours);
+            if (failure) {
+              collected.askFieldUsed = true;
+              collected.replyLocked = true;
+              collected.timeRejected = true;
+              collected.reply = failure.reask ?? copyFor(lang).chat.askTime(hours);
+              return JSON.stringify({
+                ok: false,
+                error: failure.error,
+                hint: failure.hint,
+              });
+            }
+          }
+          if (key === "email" && value.trim() && !looksLikeEmail(value)) {
+            collected.askFieldUsed = true;
+            collected.replyLocked = true;
+            collected.timeRejected = false;
+            collected.reply = copyFor(lang).chat.askEmail;
+            return JSON.stringify({
+              ok: false,
+              error: "invalid_email",
+              hint: "Ask again for a complete email only. Do not ask name or other fields until email is valid.",
+            });
+          }
+          if (key === "need") {
+            const prompted =
+              String(fieldsForTurn.need_prompted ?? collected.fields?.need_prompted ?? "").trim() ===
+              "1";
+            // Need stays a gap until the agent has asked and the customer answers.
+            if (!prompted) {
+              continue;
+            }
+            const mergedForNeed = { ...fieldsForTurn, ...collected.fields, ...fields };
+            const gathered = storedUnderstanding(mergedForNeed, ctx.messages);
+            const resolved = resolveNeedFromReply(value, gathered, ctx.messages);
+            if ("reject" in resolved) {
+              collected.askFieldUsed = true;
+              collected.replyLocked = true;
+              collected.reply = askNextBookingGap(lang, "need", mergedForNeed, { hours }, { ctx });
+              markNeedPrompted(collected, "need");
+              return JSON.stringify({
+                ok: false,
+                error: resolved.reject,
+                hint: gathered
+                  ? "Need was not saved. Re-ask with the saved understanding; a short yes keeps it as need."
+                  : NEED_INTEREST_HINT,
+              });
+            }
+            fields.need = resolved.need;
+            fields.need_prompted = "";
+            continue;
+          }
+          if (key === "time_preference") {
+            fields.time_preference = displayTimePreference(value, lang, {
+              now: slotNow,
+              schedule: bookableSchedule,
+            });
+            continue;
+          }
+          fields[key] = value.trim();
+          if (key === "name" && value.trim()) {
+            fields.name_collected_by_agent = "1";
+          }
+        }
+        collected.fields = { ...collected.fields, ...fields };
+        // Accepted in-hours time → next gap immediately (no LLM "closing hour" confirm).
+        if (
+          typeof fields.time_preference === "string" &&
+          fields.time_preference.trim() &&
+          !collected.replyLocked
+        ) {
+          const merged = { ...fieldsForTurn, ...collected.fields };
+          const gaps = bookingFieldGaps(merged, required);
+          if (gaps.length > 0) {
+            const next = gaps[0];
+            if (next === "need" && !storedUnderstanding(merged, ctx.messages)) {
+              return JSON.stringify({
+                ok: true,
+                next_field: "need",
+                hint: NEED_INTEREST_HINT,
+              });
+            }
+            collected.askFieldUsed = true;
+            collected.replyLocked = true;
+            collected.reply = askNextBookingGap(
+              lang,
+              next,
+              merged,
+              {
+                hours,
+                deducedPhone: next === "phone" ? callbackPhone(ctx) : undefined,
+              },
+              { ctx },
+            );
+            markNeedPrompted(collected, next);
+            return JSON.stringify({ ok: true, next_field: next });
+          }
+        }
+        return "ok";
+      }
 
       if (offered) {
         return {
@@ -723,7 +993,7 @@ export function registerBookingCapability(): void {
           save_interest: saveInterestTool(ctx, collected),
           start_booking: tool({
             description:
-              "Begin collecting visit/meeting details. Call ONLY when the customer explicitly asks to schedule a meeting, visit, or call - or clearly accepts your offer to book one. Do NOT call for product interest alone (e.g. wanting a WhatsApp agent, asking how it works, pricing, features). Do NOT call when they are only clarifying details for an existing/approved meeting - use update_meeting_details + reply instead. Optional interest: one short sentence of what you understood the visit is about, so the later need ask can present it.",
+              "Begin collecting visit/meeting details. Call ONLY when the customer explicitly asks to schedule a meeting, visit, or call - or clearly accepts your offer to book one. Do NOT call for product interest alone (e.g. wanting a WhatsApp agent, asking how it works, pricing, features). Do NOT call when they are only clarifying details for an existing/approved meeting - use update_meeting_details + reply instead. Pass name, phone, need, and time_preference when this message already states them. Do not invent them. A visit time already stored is kept. Optional interest: one short sentence of what you understood the visit is about, so the later need ask can present it.",
             inputSchema: z.object({
               reason: z.string().optional(),
               interest: z
@@ -732,9 +1002,25 @@ export function registerBookingCapability(): void {
                 .describe(
                   "One short sentence of what the visit is about, in the customer's language. Not a quote of their message. Stored as CRM interest, not yet as need.",
                 ),
+              name: z.string().optional(),
+              phone: z.string().optional(),
+              need: z.string().optional(),
+              time_preference: z.string().optional(),
             }),
-            execute: async ({ interest }: { reason?: string; interest?: string }) => {
-              const first = required[0] ?? "time_preference";
+            execute: async ({
+              interest,
+              name,
+              phone,
+              need,
+              time_preference,
+            }: {
+              reason?: string;
+              interest?: string;
+              name?: string;
+              phone?: string;
+              need?: string;
+              time_preference?: string;
+            }) => {
               const fromArg = interest?.trim() ?? "";
               const existing = storedUnderstanding(fieldsForTurn, ctx.messages);
               const fromArgOk =
@@ -747,7 +1033,39 @@ export function registerBookingCapability(): void {
                 booking_flow: "active",
                 ...(seeded ? { interest: seeded } : {}),
               };
+              const stated: Record<string, string> = {};
+              if (name !== undefined) stated.name = name;
+              if (phone !== undefined) stated.phone = phone;
+              if (need !== undefined) stated.need = need;
+              const timeAlready = String(
+                collected.fields?.time_preference ?? fieldsForTurn.time_preference ?? "",
+              ).trim();
+              if (time_preference !== undefined && !timeAlready) {
+                stated.time_preference = time_preference;
+              }
+              if (Object.keys(stated).length > 0) {
+                const saved = await saveBookingFields(stated);
+                if (collected.replyLocked || collected.timeRejected) return saved;
+                if (saved !== "ok") {
+                  let failed = true;
+                  try {
+                    failed = JSON.parse(saved).ok === false;
+                  } catch {
+                    failed = true;
+                  }
+                  if (failed) return saved;
+                }
+              }
               const merged = { ...fieldsForTurn, ...collected.fields };
+              const first = bookingFieldGaps(merged, required)[0];
+              if (!first) {
+                const storedInterest = storedUnderstanding(merged, ctx.messages);
+                return JSON.stringify({
+                  ok: true,
+                  active: true,
+                  ...(storedInterest ? { interest: storedInterest } : {}),
+                });
+              }
               if (first === "need" && !storedUnderstanding(merged, ctx.messages)) {
                 return JSON.stringify({
                   ok: true,
@@ -780,14 +1098,6 @@ export function registerBookingCapability(): void {
         };
       }
 
-      const fieldShape = Object.fromEntries(
-        Object.keys(ctx.agent.leadSchema.fields)
-          .filter((k) => k !== "intent" && k !== "name_collected_by_agent")
-          .map((k) => [k, z.string().optional()]),
-      );
-      fieldShape.booking_confirm = z.string().optional();
-      fieldShape.booking_flow = z.string().optional();
-
       return {
         save_interest: saveInterestTool(ctx, collected),
         update_meeting_details: updateMeetingDetailsTool(ctx, collected),
@@ -795,134 +1105,7 @@ export function registerBookingCapability(): void {
           description:
             "Save details they already gave in chat. Do not invent a clock, a phone, or facts they did not say. Do not translate names. Do not copy the WhatsApp/profile display name into name. For phone, only save after they gave or confirmed a number. Pass empty string to clear a field. time_preference must be a day and clock they actually said, inside opening hours. For need: pass a one-line understanding or an extra detail; a short yes keeps the saved understanding. Never pass a pointer phrase or a paste of their message.",
           inputSchema: z.object(fieldShape),
-          execute: async (raw: Record<string, unknown>) => {
-            const fields: LeadFields = {};
-            for (const [key, value] of Object.entries(raw)) {
-              if (typeof value !== "string") continue;
-              if (!value.trim()) {
-                fields[key] = "";
-                continue;
-              }
-              if (
-                key === "phone" &&
-                !looksLikePhoneNumber(value) &&
-                value !== callbackPhone(ctx)
-              ) {
-                return `invalid phone: ${value}`;
-              }
-              if (key === "time_preference") {
-                const already = String(
-                  fieldsForTurn.time_preference ?? collected.fields?.time_preference ?? "",
-                );
-                if (clockNotStated(value, ctx.messages, already)) {
-                  collected.askFieldUsed = true;
-                  collected.replyLocked = true;
-                  collected.timeRejected = true;
-                  collected.reply = copyFor(lang).chat.askTimeUnclear;
-                  return JSON.stringify({
-                    ok: false,
-                    error: "unclear_time",
-                    hint: "The customer did not name a clock time. Ask for a day and time. Do not invent an hour.",
-                  });
-                }
-              }
-              if (key === "time_preference" && (hours || schedule.length)) {
-                const result = evaluateTimePreference(value, {
-                  lang,
-                  hoursLabel: hours,
-                  schedule,
-                  timeZone,
-                });
-                const failure = timePreferenceNormalizeError(result, lang, hours);
-                if (failure) {
-                  collected.askFieldUsed = true;
-                  collected.replyLocked = true;
-                  collected.timeRejected = true;
-                  collected.reply = failure.reask ?? copyFor(lang).chat.askTime(hours);
-                  return JSON.stringify({
-                    ok: false,
-                    error: failure.error,
-                    hint: failure.hint,
-                  });
-                }
-              }
-              if (key === "email" && value.trim() && !looksLikeEmail(value)) {
-                collected.askFieldUsed = true;
-                collected.replyLocked = true;
-                collected.timeRejected = false;
-                collected.reply = copyFor(lang).chat.askEmail;
-                return JSON.stringify({
-                  ok: false,
-                  error: "invalid_email",
-                  hint: "Ask again for a complete email only. Do not ask name or other fields until email is valid.",
-                });
-              }
-              if (key === "need") {
-                const mergedForNeed = { ...fieldsForTurn, ...collected.fields, ...fields };
-                const gathered = storedUnderstanding(mergedForNeed, ctx.messages);
-                const resolved = resolveNeedFromReply(value, gathered, ctx.messages);
-                if ("reject" in resolved) {
-                  collected.askFieldUsed = true;
-                  collected.replyLocked = true;
-                  collected.reply = askNextBookingGap(lang, "need", mergedForNeed, { hours }, { ctx });
-                  markNeedPrompted(collected, "need");
-                  return JSON.stringify({
-                    ok: false,
-                    error: resolved.reject,
-                    hint: gathered
-                      ? "Need was not saved. Re-ask with the saved understanding; a short yes keeps it as need."
-                      : NEED_INTEREST_HINT,
-                  });
-                }
-                fields.need = resolved.need;
-                fields.need_prompted = "";
-                continue;
-              }
-              if (key === "time_preference") {
-                fields.time_preference = displayTimePreference(value, lang);
-                continue;
-              }
-              fields[key] = value.trim();
-              if (key === "name" && value.trim()) {
-                fields.name_collected_by_agent = "1";
-              }
-            }
-            collected.fields = { ...collected.fields, ...fields };
-            // Accepted in-hours time → next gap immediately (no LLM "closing hour" confirm).
-            if (
-              typeof fields.time_preference === "string" &&
-              fields.time_preference.trim() &&
-              !collected.replyLocked
-            ) {
-              const merged = { ...fieldsForTurn, ...collected.fields };
-              const gaps = bookingFieldGaps(merged, required);
-              if (gaps.length > 0) {
-                const next = gaps[0];
-                if (next === "need" && !storedUnderstanding(merged, ctx.messages)) {
-                  return JSON.stringify({
-                    ok: true,
-                    next_field: "need",
-                    hint: NEED_INTEREST_HINT,
-                  });
-                }
-                collected.askFieldUsed = true;
-                collected.replyLocked = true;
-                collected.reply = askNextBookingGap(
-                  lang,
-                  next,
-                  merged,
-                  {
-                    hours,
-                    deducedPhone: next === "phone" ? callbackPhone(ctx) : undefined,
-                  },
-                  { ctx },
-                );
-                markNeedPrompted(collected, next);
-                return JSON.stringify({ ok: true, next_field: next });
-              }
-            }
-            return "ok";
-          },
+          execute: saveBookingFields,
         }),
         ask_field: tool({
           description:
@@ -1058,6 +1241,7 @@ export function registerBookingCapability(): void {
             const slotNormalized = displayTimePreference(
               String(merged.time_preference ?? ""),
               lang,
+              { now: slotNow, schedule: bookableSchedule },
             );
             if (
               slotNormalized &&
@@ -1100,6 +1284,17 @@ export function registerBookingCapability(): void {
             const gated = gateBookOnGaps({ book: true, gaps });
             if (!gated.book) {
               return JSON.stringify({ ok: false, missing: gaps });
+            }
+            if (
+              looksLikeBookingDecline(last) ||
+              (bookingConfirmStatus(fieldsForTurn) !== "confirmed" &&
+                !looksLikeBookingAffirmation(last))
+            ) {
+              return JSON.stringify({
+                ok: false,
+                missing: ["booking_confirm"],
+                hint: "Call confirm_details, then save_fields booking_confirm=confirmed only after a short yes.",
+              });
             }
             if (bookingConfirmStatus(merged) !== "confirmed") {
               return JSON.stringify({

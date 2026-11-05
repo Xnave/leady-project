@@ -28,12 +28,13 @@ import {
   type ReservationSubmitMode,
 } from "@/lib/flow/reservation-config";
 import { isChatLanguage, looksHebrew, type ChatLanguage } from "@/lib/flow/locale";
+import { MORTGAGE_RULES } from "@/lib/documents/mortgage-rules";
 import { copyFor } from "@/lib/copy";
 import { fillUi, stepLabel, uiCopy, type UiLang } from "@/lib/ui";
 
 const WIZARD_STEPS = ["knowledge", "business", "flow", "done"] as const;
-const PRODUCT_CAPABILITIES: CapabilityId[] = ["booking", "reservations"];
-const READY_CAPABILITIES = new Set<CapabilityId>(["booking", "reservations"]);
+const PRODUCT_CAPABILITIES: CapabilityId[] = ["booking", "reservations", "documents"];
+const READY_CAPABILITIES = new Set<CapabilityId>(["booking", "reservations", "documents"]);
 
 type Props = {
   name: string;
@@ -52,6 +53,7 @@ type Props = {
   bookingApprovedTemplate?: string;
   bookingRejectedTemplate?: string;
   reservationConfig?: unknown;
+  documentConfig?: { baseUrl?: string; rules?: unknown; hasKey?: boolean };
   /** Stored Agent.persona; the wizard edits it in place so re-running setup keeps it. */
   persona?: unknown;
   uiLang?: UiLang;
@@ -116,6 +118,12 @@ export function OnboardWizard(props: Props) {
   const [customFieldDraft, setCustomFieldDraft] = useState("");
   const bookingEnabled = capabilities.includes("booking");
   const reservationsEnabled = capabilities.includes("reservations");
+  const documentsEnabled = capabilities.includes("documents");
+  const [docBaseUrl, setDocBaseUrl] = useState(props.documentConfig?.baseUrl || "fake://smart");
+  const [docApiKey, setDocApiKey] = useState("");
+  const [docRules, setDocRules] = useState(() =>
+    JSON.stringify(props.documentConfig?.rules ?? MORTGAGE_RULES, null, 2),
+  );
   const catalogId: CatalogId =
     bookingEnabled || reservationsEnabled ? "inbox" : "faq";
   const [venueAddress, setVenueAddress] = useState(props.venueAddress ?? "");
@@ -255,6 +263,9 @@ export function OnboardWizard(props: Props) {
         bookingApprovedTemplate,
         bookingRejectedTemplate,
         reservationConfig,
+        documentConfig: documentsEnabled
+          ? { baseUrl: docBaseUrl, apiKey: docApiKey, rules: docRules }
+          : undefined,
         persona: cleanDraft(persona),
       }),
     });
@@ -555,6 +566,31 @@ export function OnboardWizard(props: Props) {
                 })}
               </div>
             </fieldset>
+            {documentsEnabled ? (
+              <fieldset>
+                <legend>{ui.documentsUi.settingsTitle}</legend>
+                <p className="muted">{ui.documentsUi.rulesHint}</p>
+                <label>
+                  {ui.documentsUi.baseUrl}
+                  <input value={docBaseUrl} onChange={(e) => setDocBaseUrl(e.target.value)} />
+                </label>
+                <label>
+                  {ui.documentsUi.apiKey}
+                  <input
+                    type="password"
+                    value={docApiKey}
+                    onChange={(e) => setDocApiKey(e.target.value)}
+                    placeholder={props.documentConfig?.hasKey ? "••••" : ""}
+                    autoComplete="off"
+                  />
+                </label>
+                <p className="muted">{ui.documentsUi.apiKeyHint}</p>
+                <label>
+                  {ui.documentsUi.rules}
+                  <textarea rows={12} value={docRules} onChange={(e) => setDocRules(e.target.value)} />
+                </label>
+              </fieldset>
+            ) : null}
             {bookingEnabled ? (
               <>
               <fieldset>

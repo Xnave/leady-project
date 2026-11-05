@@ -159,6 +159,7 @@ export async function POST(req: Request) {
           ? instagramIdentityFields(senderName, senderUsername)
           : {}),
       },
+      attachments: inbound.attachments,
       channel,
     }),
   );

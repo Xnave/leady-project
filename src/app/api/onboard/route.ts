@@ -16,8 +16,10 @@ import { bookingConfigFromFields } from "@/lib/flow/booking-config";
 import {
   DEFAULT_INSTANCE_KIND,
   disableCapabilityInstance,
+  loadInstanceConfig,
   upsertCapabilityInstance,
 } from "@/lib/capability-instances";
+import { parseDocumentConfig } from "@/lib/flow/document-config";
 import { isChatLanguage, type ChatLanguage } from "@/lib/flow/locale";
 import { defaultLeadSchema, validateFlow } from "@/lib/flow/validate";
 import { FlowConfigError } from "@/lib/flow/types";
@@ -45,6 +47,7 @@ export async function POST(req: Request) {
     bookingApprovedTemplate?: string;
     bookingRejectedTemplate?: string;
     reservationConfig?: unknown;
+    documentConfig?: unknown;
     persona?: unknown;
   };
 
@@ -117,11 +120,25 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  let documentConfig: unknown = {};
+  if (capabilities.includes("documents")) {
+    const existing = await loadInstanceConfig({ tenantId, capabilityId: "documents" });
+    try {
+      documentConfig = parseDocumentConfig(
+        body.documentConfig,
+        typeof existing.apiKeyEnc === "string" ? existing.apiKeyEnc : "",
+      );
+    } catch (e) {
+      const msg = e instanceof FlowConfigError ? e.errors.join("\n") : String(e);
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
+  }
   const instanceConfigs: { capabilityId: CapabilityId; config: unknown }[] = [
     {
       capabilityId: "booking",
       config: bookingConfig,
     },
+    { capabilityId: "documents", config: documentConfig },
     ...(body.reservationConfig !== undefined
       ? [
           {

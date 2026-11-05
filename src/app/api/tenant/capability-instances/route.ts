@@ -6,7 +6,9 @@ import {
   upsertCapabilityInstance,
 } from "@/lib/capability-instances";
 import { parseBookingConfig } from "@/lib/flow/booking-config";
+import { parseDocumentConfig } from "@/lib/flow/document-config";
 import { parseReservationConfig } from "@/lib/flow/reservation-config";
+import { FlowConfigError } from "@/lib/flow/types";
 import { getCapability } from "@/lib/flow/registry";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
 import { requireTenantId } from "@/lib/tenant";
@@ -20,6 +22,7 @@ import { tenantRoleOr403 } from "@/lib/tenant-role";
 const CONFIG_PARSERS: Record<string, (raw: unknown) => unknown> = {
   booking: parseBookingConfig,
   reservations: parseReservationConfig,
+  documents: (raw) => parseDocumentConfig(raw),
 };
 
 /** GET every configured request type for the tenant. */
@@ -55,11 +58,18 @@ export async function PUT(req: Request) {
   }
 
   const parse = CONFIG_PARSERS[capabilityId];
+  let config: unknown = body?.config ?? {};
+  try {
+    if (parse) config = parse(body?.config);
+  } catch (err) {
+    const message = err instanceof FlowConfigError ? err.errors.join("\n") : "Invalid config";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
   const instance = await upsertCapabilityInstance({
     tenantId,
     capabilityId,
     kind,
-    config: parse ? parse(body?.config) : (body?.config ?? {}),
+    config,
   });
   return NextResponse.json({ instance });
 }

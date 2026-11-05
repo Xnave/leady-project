@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { encryptBytes } from "@/lib/crypto";
 import { persistInboundIfNew } from "@/lib/conversations";
 import { runTurnNow, tryDispatchNudgeEvent, tryDispatchOwnerAlertEvents, tryEnqueueAgentTurn } from "@/lib/flow/run-turn";
 import { prisma } from "@/lib/db";
@@ -35,8 +36,26 @@ async function waitForAgentReply(opts: {
 
 export async function POST(req: Request) {
   const tenantId = await requireTenantId();
-  const body = (await req.json()) as { leadId?: string; from?: string; text?: string };
-  const text = body.text?.trim() ?? "";
+  const body = (await req.json()) as {
+    leadId?: string;
+    from?: string;
+    text?: string;
+    file?: { filename?: string; mime?: string; base64?: string };
+  };
+  let attachments: { mime: string; filename: string; bytesEnc: string }[] | undefined;
+  if (body.file?.base64) {
+    const bytes = Buffer.from(body.file.base64, "base64");
+    if (!bytes.length) return NextResponse.json({ error: "Empty file" }, { status: 400 });
+    if (bytes.length > 8_000_000) return NextResponse.json({ error: "File is too large" }, { status: 400 });
+    attachments = [
+      {
+        mime: body.file.mime || "application/octet-stream",
+        filename: body.file.filename?.trim() || "file",
+        bytesEnc: encryptBytes(bytes),
+      },
+    ];
+  }
+  const text = body.text?.trim() || attachments?.[0]?.filename || "";
   if (!text) return NextResponse.json({ error: "Empty message" }, { status: 400 });
 
   let channel = await prisma.channelConnection.findFirst({
@@ -80,6 +99,7 @@ export async function POST(req: Request) {
     from,
     text,
     displayName,
+    attachments,
   });
   if (!inserted) {
     return NextResponse.json({ error: "Duplicate message" }, { status: 409 });

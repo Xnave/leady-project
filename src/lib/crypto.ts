@@ -26,6 +26,15 @@ export function decryptSecret(packed: string): string {
   ]).toString("utf8");
 }
 
+/** File bytes at rest. Cleared after SmartNPV accepts the upload. */
+export function encryptBytes(bytes: Buffer): string {
+  return encryptSecret(bytes.toString("base64"));
+}
+
+export function decryptBytes(packed: string): Buffer {
+  return Buffer.from(decryptSecret(packed), "base64");
+}
+
 export function verifyZernioSignature(
   body: string,
   signatureHeader: string | null,

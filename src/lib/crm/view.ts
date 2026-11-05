@@ -89,6 +89,22 @@ export type LeadViewDTO = LeadRowDTO & {
   messages: { id: string; role: string; text: string; createdAt: string }[];
   details: { label: string; value: string }[];
   requests: { id: string; headline: string; status: string }[];
+  documents: {
+    status: string;
+    activeStage: string;
+    releasedStageId: string;
+    nextStageId: string;
+    slots: {
+      id: string;
+      label: string;
+      stage: string;
+      status: string;
+      lastReason: string;
+      filename: string;
+      remoteId: string;
+      href: string;
+    }[];
+  } | null;
   /** The open task the owner acts on in the lead view (was the Inbox), or null. */
   openTask: OpenTaskDTO | null;
 };

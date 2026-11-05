@@ -1,3 +1,4 @@
+import { supportedTypeLabels } from "@/lib/documents/file-types";
 import type { ChatCopy, PromptCopy } from "./types";
 import { prompts as enPrompts } from "./en";
 
@@ -40,6 +41,7 @@ export const chat: ChatCopy = {
     ].join("\n"),
   bookingConfirmIntro: "הנה פרטי הפגישה, כדי שנוכל לוודא שהכול נכון:",
   bookingConfirmAsk: "ודא שהכול נכון, לשמור את הבקשה?",
+  bookingDeclineAsk: "בסדר, לא שומרים את הבקשה. לשנות את המועד, או לעצור כאן?",
   askVisitKind: "איזה סוג ביקור יתאים לך?",
   askTime: (hours) =>
     hours
@@ -97,8 +99,46 @@ export const chat: ChatCopy = {
     offerAltDates: (from, to) =>
       `התאריכים שביקשת לא פנויים, אבל אפשר להציע את ${from} עד ${to}. זה יכול להתאים לך?`,
     offerDeclineAsk: "אין בעיה. אילו תאריכים אחרים יהיו נוחים לך?",
+    offerReplacement: (from, to) =>
+      `רשמתי ${from} עד ${to} במקום התאריכים שהוצעו. נציג יאשר אותם.`,
     offerUnclearAsk: "רק לוודא שהבנתי — התאריכים שהצענו מתאימים לך, או שנחפש אפשרות אחרת?",
   },
+  documents: {
+      askId: "כדי לאתר את התיק צריך את מספר תעודת הזהות (9 ספרות).",
+      notFound: "לא מצאתי תיק לפי המספר הזה. אפשר לבדוק ולשלוח שוב?",
+      notConfigured: "איסוף המסמכים עוד לא הוגדר. נציג יחזור אליך.",
+      askStage: (docs) => `אפשר לשלוח עכשיו: ${docs}. קובץ אחד בכל הודעה, או כמה ברצף.`,
+      askEmployment: (name) =>
+        `כדי לבקש רק את המסמכים הרלוונטיים, מה מצב התעסוקה של ${name} — שכיר/ה, עצמאי/ת או גם וגם?`,
+      askFirstHome: "האם המשכנתה מיועדת לרכישת הדירה הראשונה שלכם?",
+      askLoans: "האם יש הלוואות שצריך לצרף להן יתרה?",
+      askMoreLoans: "יש לך הלוואות נוספות שצריך להעלות?",
+      askAccounts: "האם יש חשבונות בנק שצריך מהם תדפיסי עו״ש? צריך את שלושת החודשים שלפני החודש הזה.",
+      askSalaryDeposit: (name) =>
+        `האם המשכורת שמופיעה בתלוש של ${name} מופקדת לחשבון הבנק האישי?`,
+      askMorePhotos: "יש עוד תמונות של המסמך הזה?",
+      blankForm: (doc) => `מצורף הטופס: ${doc}. צריך למלא אותו ולשלוח בחזרה.`,
+      nextStage: "מתחילים את המסמכים של השלב הבא. אבקש אותם ברגע שהרשימה מוכנה.",
+      advisorFlag: (label) => `${label} דורש את היועץ. בינתיים אפשר לשלוח תעודת זהות וספח.`,
+      received: (doc) => `${doc} נקלט.`,
+      rejected: (doc, reason) => `${doc} לא התקבל: ${reason}`,
+      complete: "כל המסמכים התקבלו. תודה.",
+      escalated: "לא הצלחתי לאשר את המסמך אחרי כמה ניסיונות, אז אני מעביר את זה ליועץ.",
+      uploadFailed: "הקובץ אצלי, אבל עוד לא עלה למערכת. אנסה שוב בהודעה הבאה.",
+      reasons: {
+        field_present: "חסר פרט שחייב להופיע במסמך",
+        matches_profile: "הפרטים לא תואמים לתיק",
+        date_within_months: "התאריך ישן מדי",
+        prior_calendar_months: "התדפיס לא מאחד משלושת החודשים הקודמים",
+        min_items: "אין במסמך מספיק פריטים",
+        wrong_type: "זה לא אחד המסמכים שעדיין חסרים",
+        unreadable: "לא הצלחתי לקרוא את הקובץ",
+        no_model: "לא הצלחתי לקרוא את הקובץ",
+        extract_failed: "לא הצלחתי לקרוא את הקובץ",
+        too_large: "הקובץ גדול מדי",
+        unsupported_type: `אפשר לשלוח ${supportedTypeLabels("או")}`,
+      },
+    },
 };
 
 /** System prompts stay in English so the model follows tools reliably. */

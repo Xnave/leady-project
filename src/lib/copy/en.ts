@@ -1,3 +1,4 @@
+import { supportedTypeLabels } from "@/lib/documents/file-types";
 import type { ChatCopy, PromptCopy } from "./types";
 
 export const chat: ChatCopy = {
@@ -40,6 +41,7 @@ export const chat: ChatCopy = {
     ].join("\n"),
   bookingConfirmIntro: "Perfect - here's the visit request I have:",
   bookingConfirmAsk: "Do these details look right, and shall I save the request?",
+  bookingDeclineAsk: "Okay, I won't save the request. Want to change the time, or stop here?",
   askVisitKind: "What kind of visit works for you?",
   askTime: (hours) =>
     hours
@@ -102,8 +104,47 @@ export const chat: ChatCopy = {
     offerAltDates: (from, to) =>
       `Those dates are not available. Does ${from} to ${to} work instead?`,
     offerDeclineAsk: "No problem - which other dates work for you?",
+    offerReplacement: (from, to) =>
+      `Noted ${from} to ${to} instead of the offered dates. A teammate will confirm them.`,
     offerUnclearAsk: "Just to confirm - do the offered dates work for you?",
   },
+  documents: {
+      askId: "To find your file I need your ID number (9 digits).",
+      notFound: "I couldn't find a file for that ID. Want to check the number and send it again?",
+      notConfigured: "Document collection isn't set up yet. A teammate will follow up.",
+      askStage: (docs) => `Please send: ${docs}. One file per message is fine, or several in a row.`,
+      askEmployment: (name) =>
+        `To ask only for the relevant documents, what is ${name}'s employment — salaried, self-employed, or both?`,
+      askFirstHome: "Is this mortgage for your first home?",
+      askLoans: "Are there loans we should collect a balance for?",
+      askMoreLoans: "Do you have another loan document to upload?",
+      askAccounts: "Are there bank accounts we should collect statements for? We need the three calendar months before this one.",
+      askSalaryDeposit: (name) =>
+        `Is the salary on ${name}'s payslip deposited into their own bank account?`,
+      askMorePhotos: "Are there more photos of this same document?",
+      blankForm: (doc) => `The ${doc} form is attached. Please fill it in and send it back.`,
+      nextStage: "We're starting the next set of documents. I'll ask for them as soon as that list is ready.",
+      advisorFlag: (label) =>
+        `${label} needs the consultant. You can still send the ID and the appendix.`,
+      received: (doc) => `${doc} was received.`,
+      rejected: (doc, reason) => `${doc} wasn't accepted: ${reason}`,
+      complete: "All the documents were received. Thank you.",
+      escalated: "I couldn't confirm that document after a few tries, so I'm handing this to the consultant.",
+      uploadFailed: "I have the file, but it hasn't reached the office system yet. I'll try again on your next message.",
+      reasons: {
+        field_present: "a required detail is missing",
+        matches_profile: "the details don't match the file we have",
+        date_within_months: "the date is too old",
+        prior_calendar_months: "it isn't from one of the three previous months",
+        min_items: "it doesn't include enough items",
+        wrong_type: "this isn't one of the documents we still need",
+        unreadable: "I couldn't read the file",
+        no_model: "I couldn't read the file",
+        extract_failed: "I couldn't read the file",
+        too_large: "the file is too large",
+        unsupported_type: `send a ${supportedTypeLabels("or")}`,
+      },
+    },
 };
 
 export const prompts: PromptCopy = {

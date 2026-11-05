@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ChatThread } from "@/components/ChatThread";
 import { shouldResetThread, threadKey } from "@/components/demo-chat-state";
+import { supportedFileAccept } from "@/lib/documents/file-types";
 
 type Msg = {
   id: string;
@@ -18,6 +19,7 @@ type ComposerLabels = {
   send: string;
   sending: string;
   sendFailed: string;
+  attach?: string;
 };
 
 type ThreadLabels = {
@@ -55,6 +57,8 @@ export function DemoChat({
   const shownKey = useRef(serverKey);
   const [messages, setMessages] = useState(initialMessages);
   const [text, setText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [fileKey, setFileKey] = useState(0);
   const [pending, setPending] = useState(false);
   const [typing, setTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,25 +79,42 @@ export function DemoChat({
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed || pending || disabled || !ready) return;
+    if ((!trimmed && !file) || pending || disabled || !ready) return;
 
     const optimistic: Msg = {
       id: `local-${Date.now()}`,
       role: "lead",
-      text: trimmed,
+      text: trimmed || file?.name || "",
       createdAt: new Date(),
     };
     setMessages((prev) => [...prev, optimistic]);
     setText("");
+    const sending = file;
+    setFile(null);
+    setFileKey((key) => key + 1);
     setPending(true);
     setTyping(true);
     setError(null);
 
     try {
+      let attached: { filename: string; mime: string; base64: string } | undefined;
+      if (sending) {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result ?? ""));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(sending);
+        });
+        attached = {
+          filename: sending.name,
+          mime: sending.type || "application/octet-stream",
+          base64: dataUrl.slice(dataUrl.indexOf(",") + 1),
+        };
+      }
       const res = await fetch("/api/demo/message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leadId, from: from || undefined, text: trimmed }),
+        body: JSON.stringify({ leadId, from: from || undefined, text: trimmed, file: attached }),
       });
       // A crashed route can answer with an empty or HTML body; don't let parsing mask the real error.
       const data = (await res.json().catch(() => ({}))) as { error?: string; leadId?: string };
@@ -107,6 +128,7 @@ export function DemoChat({
     } catch (err) {
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
       setText(trimmed);
+      setFile(sending);
       setError(err instanceof Error ? err.message : composerLabels.sendFailed);
       setTyping(false);
       setPending(false);
@@ -130,7 +152,19 @@ export function DemoChat({
           disabled={pending || disabled || !ready}
           aria-label={composerLabels.placeholder}
         />
-        <button type="submit" disabled={pending || disabled || !ready}>
+        {composerLabels.attach ? (
+          <label className="muted">
+            {composerLabels.attach}
+            <input
+              key={fileKey}
+              type="file"
+            accept={supportedFileAccept()}
+              disabled={pending || disabled || !ready}
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+        ) : null}
+        <button type="submit" disabled={pending || disabled || !ready || (!text.trim() && !file)}>
           {pending ? composerLabels.sending : composerLabels.send}
         </button>
         {error ? <p className="muted">{error}</p> : null}

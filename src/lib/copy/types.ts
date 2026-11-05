@@ -46,6 +46,8 @@ export type ChatCopy = {
   bookingConfirmIntro: string;
   /** Closing ask after the booking confirm fact block. */
   bookingConfirmAsk: string;
+  /** Customer said no to saving the visit. Ask whether to change the time or stop. */
+  bookingDeclineAsk: string;
   askVisitKind: string;
   askTime: (hours: string) => string;
   /** When a proposed time is outside venue hours. */
@@ -70,6 +72,28 @@ export type ChatCopy = {
   notePrefix: string;
   /** Span-request mechanics (dates, availability, approvals) - nouns come from config. */
   request: RequestChatCopy;
+  documents: {
+    askId: string;
+    notFound: string;
+    notConfigured: string;
+    askStage: (docs: string) => string;
+    askEmployment: (name: string) => string;
+    askFirstHome: string;
+    askLoans: string;
+    askMoreLoans: string;
+    askAccounts: string;
+    askSalaryDeposit: (name: string) => string;
+    askMorePhotos: string;
+    blankForm: (doc: string) => string;
+    nextStage: string;
+    advisorFlag: (label: string) => string;
+    received: (doc: string) => string;
+    rejected: (doc: string, reason: string) => string;
+    complete: string;
+    escalated: string;
+    uploadFailed: string;
+    reasons: Record<string, string>;
+  };
 };
 
 /**
@@ -103,6 +127,7 @@ export type RequestChatCopy = {
   sendBookingLink: (noun: string, url: string) => string;
   offerAltDates: (from: string, to: string) => string;
   offerDeclineAsk: string;
+  offerReplacement: (from: string, to: string) => string;
   offerUnclearAsk: string;
 };
 
