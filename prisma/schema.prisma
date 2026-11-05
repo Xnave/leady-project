@@ -53,6 +53,8 @@ model Tenant {
   alertSettings        TenantAlertSettings?
   clientSources        ClientSource[]
   contacts             Contact[]
+  campaignSettings     TenantCampaignSettings?
+  whatsAppTemplates    WhatsAppTemplate[]
 }
 
 /**
@@ -576,4 +578,60 @@ model Contact {
   @@index([tenantId, phone])
   @@index([tenantId, dealDate])
   @@index([leadId])
+}
+
+/// Client campaigns add-on (business-initiated WhatsApp templates to the tenant's own
+/// clients). Only platform admins change the add-on and legal fields; the tenant
+/// records terms acceptance.
+model TenantCampaignSettings {
+  tenantId          String    @id
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enabled           Boolean   @default(false)
+  /// "פרסומת" prefix on marketing templates (Communications Law 30A(e)). Off only with a recorded legal note.
+  adPrefixEnabled   Boolean   @default(true)
+  adPrefixOffNote   String    @default("")
+  adPrefixOffBy     String    @default("")
+  adPrefixOffAt     DateTime?
+  /// Unique recipients per day from the tenant's number. Meta starts new portfolios at 250.
+  dailySendCeiling  Int       @default(200)
+  termsVersion      String    @default("")
+  termsAcceptedAt   DateTime?
+  termsAcceptedBy   String    @default("")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+/// A tenant's own WhatsApp template, submitted to Meta through Zernio on the tenant's
+/// connected number. `body` is what the owner wrote; `text`, `footer` and `buttons`
+/// are what Meta received, including the locked additions.
+model WhatsAppTemplate {
+  id             String    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Zernio account id of the WhatsApp number it was submitted on.
+  accountId      String
+  /// Owner-facing title; `name` is the Meta template name.
+  title          String
+  name           String
+  language       String
+  /// "MARKETING" | "UTILITY"
+  category       String
+  body           String
+  /// Example value per {{n}} variable, in order.
+  examples       Json      @default("[]")
+  text           String
+  footer         String    @default("")
+  buttons        Json      @default("[]")
+  /// DRAFT | PENDING | APPROVED | REJECTED | IN_APPEAL | PAUSED | DISABLED | PENDING_DELETION | FAILED
+  status         String    @default("DRAFT")
+  statusReason   String    @default("")
+  providerId     String    @default("")
+  submittedAt    DateTime?
+  submittedBy    String    @default("")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([tenantId, name, language])
+  @@index([tenantId, status])
+  @@index([accountId, name, language])
 }
