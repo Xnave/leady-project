@@ -20,11 +20,20 @@ export type Check =
   | { op: "date_within_months"; field: string; months: number }
   | { op: "min_items"; field: string; count: number };
 
+/** A PDF we send once so the customer can fill it and send it back. */
+export type BlankFormDef = {
+  /** File name under `docs/`. */
+  file: string;
+  once: "conversation";
+};
+
 export type DocTypeDef = {
   labels: { he: string; en: string };
   /** Fields the extractor must pull before checks run. */
   fields: string[];
   checks: Check[];
+  /** Present when this type starts by sending a blank form. */
+  blankForm?: BlankFormDef;
 };
 
 export type StageDef = {
@@ -73,6 +82,19 @@ export class RulesError extends Error {
     this.name = "RulesError";
     this.errors = errors;
   }
+}
+
+function parseBlankForm(raw: unknown, path: string, errors: string[]): BlankFormDef | undefined {
+  if (raw === undefined) return undefined;
+  if (!isRecord(raw)) {
+    errors.push(`${path} must be an object`);
+    return undefined;
+  }
+  const file = typeof raw.file === "string" ? raw.file.trim() : "";
+  if (!file) errors.push(`${path}.file is required`);
+  if (raw.once !== "conversation") errors.push(`${path}.once must be "conversation"`);
+  if (!file || raw.once !== "conversation") return undefined;
+  return { file, once: "conversation" };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -203,10 +225,12 @@ export function parseRules(raw: unknown): RulesDocument {
     const checks = (Array.isArray(def.checks) ? def.checks : [])
       .map((check, i) => parseCheck(check, `documents.${id}.checks[${i}]`, errors))
       .filter((check): check is Check => Boolean(check));
+    const blankForm = parseBlankForm(def.blankForm, `documents.${id}.blankForm`, errors);
     documents[id] = {
       labels: parseLabels(def.labels, `documents.${id}.labels`, errors),
       fields,
       checks,
+      ...(blankForm ? { blankForm } : {}),
     };
   }
   const requirements: Requirement[] = [];

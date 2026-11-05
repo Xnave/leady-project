@@ -64,11 +64,13 @@ export const MORTGAGE_RULES: RulesDocument = {
       labels: { he: "אישור רואה חשבון", en: "Accountant letter" },
       fields: ["fullName"],
       checks: [{ op: "field_present", field: "fullName" }],
+      blankForm: { file: "אישור רואה חשבון עוסק מורשה.pdf", once: "conversation" },
     },
     controlling_shareholder_letter: {
       labels: { he: "אישור רואה חשבון לבעל שליטה", en: "Controlling-shareholder accountant letter" },
       fields: [],
       checks: [],
+      blankForm: { file: "אישור רואה חשבון לבעל שליטה (1).pdf", once: "conversation" },
     },
     bank_statement: {
       labels: { he: "תדפיס עו״ש ל-3 חודשים", en: "Bank statement, last 3 months" },

@@ -70,12 +70,28 @@ describe("mortgage checklist", () => {
     const other = state.slots.find((slot) => slot.altGroup === tax.altGroup && slot.id !== tax.id);
     expect(other && isOutstanding(other, state.slots)).toBe(false);
     expect(current && isOutstanding({ ...current, status: "missing", failCount: 0, lastReason: "", remoteId: "", filename: "" }, state.slots)).toBe(true);
-    const routed = judgeFile(freshDossier({ smartClientId: "c", profile, slots }), MORTGAGE_RULES, {
+    const dossier = freshDossier({ smartClientId: "c", profile, slots });
+    const routed = judgeFile(dossier, MORTGAGE_RULES, {
       docType: "tax_assessment",
       fields: { fullName: "Noam Levi", year: String(years.taxYear) },
     });
     expect(routed.kind).toBe("accept");
     if (routed.kind === "accept") expect(routed.slotId).toBe(`tax_assessment#2#${years.taxYear}`);
+    const priorLetter = judgeFile(dossier, MORTGAGE_RULES, {
+      docType: "accountant_letter",
+      fields: { fullName: "Noam Levi", year: String(years.taxYear) },
+    });
+    expect(priorLetter.kind).toBe("accept");
+    if (priorLetter.kind === "accept") expect(priorLetter.slotId).toBe(`accountant_letter#2-prior#${years.taxYear}`);
+    const currentLetter = judgeFile(dossier, MORTGAGE_RULES, {
+      docType: "accountant_letter",
+      fields: { fullName: "Noam Levi", year: String(years.accountantYear) },
+    });
+    expect(currentLetter.kind).toBe("accept");
+    if (currentLetter.kind === "accept") expect(currentLetter.slotId).toBe(`accountant_letter#2#${years.accountantYear}`);
+    expect(
+      judgeFile(dossier, MORTGAGE_RULES, { docType: "accountant_letter", fields: { fullName: "Noam Levi" } }).kind,
+    ).toBe("unplaced");
   });
 
   it("asks a controlling shareholder about the salary deposit before opening payslips", () => {
@@ -160,5 +176,9 @@ describe("mortgage checklist", () => {
     const parsed = parseRules(MORTGAGE_RULES);
     expect(parsed.taxYear).toBe(collectionYears().taxYear);
     expect(parsed.accountantYear).toBe(collectionYears().accountantYear);
+    expect(parsed.documents.accountant_letter.blankForm).toEqual({
+      file: "אישור רואה חשבון עוסק מורשה.pdf",
+      once: "conversation",
+    });
   });
 });

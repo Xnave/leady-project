@@ -122,9 +122,7 @@ export const chat: ChatCopy = {
       askSalaryDeposit: (name) =>
         `Is the salary on ${name}'s payslip deposited into their own bank account?`,
       askMorePhotos: "Are there more photos of this same document?",
-      accountantForm: "The accountant confirmation form is attached. Please fill it in and send it back.",
-      controllingForm:
-        "The controlling-shareholder accountant form is attached. Please fill it in and send it back.",
+      blankForm: (doc) => `The ${doc} form is attached. Please fill it in and send it back.`,
       nextStage: "We're starting the next set of documents. I'll ask for them as soon as that list is ready.",
       advisorFlag: (label) =>
         `${label} needs the consultant. You can still send the ID and the appendix.`,

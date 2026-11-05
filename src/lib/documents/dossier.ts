@@ -8,12 +8,13 @@ import { safeRefreshLeadState } from "@/lib/crm/refresh";
 import { loadInstanceConfig } from "@/lib/capability-instances";
 import { documentApiKey, parseDocumentConfig, type DocumentConfig } from "@/lib/flow/document-config";
 import { capabilityState } from "@/lib/flow/registry";
+import type { ConnectionView } from "@/lib/conversations";
 import type { TurnContext } from "@/lib/flow/types";
 import { sendStaffReply } from "@/lib/staff-reply";
 import { sendZernioInboxMessage } from "@/lib/zernio";
 import { extractDocument, type DocExtraction } from "./extract";
 import { applyCustomerAnswers, borrowersOf, openQuestions, type OpenQuestion } from "./facts";
-import { docLabel, type Profile, type RulesDocument, type Slot } from "./rules";
+import { docLabel, type BlankFormDef, type Profile, type RulesDocument, type Slot } from "./rules";
 import { checklistSlots } from "./mortgage-rules";
 import { isImageFile, isUploadableFile, smartUploadName, uploadDay } from "./file-types";
 import { imagesToPdf, photoDone } from "./images";
@@ -50,21 +51,8 @@ export type DocumentsTurnState = {
   asks: OpenQuestion[];
 };
 
-const ACCOUNTANT_FORM = "אישור רואה חשבון עוסק מורשה.pdf";
-const CONTROLLING_FORM = "אישור רואה חשבון לבעל שליטה (1).pdf";
-
-const BLANK_FORMS = {
-  accountant_letter: {
-    filename: ACCOUNTANT_FORM,
-    marker: "accountant_letter",
-    messageId: "out-accountant-",
-  },
-  controlling_shareholder_letter: {
-    filename: CONTROLLING_FORM,
-    marker: "controlling_shareholder_letter",
-    messageId: "out-controlling-",
-  },
-} as const;
+/** The turn already carries the Zernio ids. `connection` is set by loadTurnContext. */
+type IngestTurn = TurnContext & { connection?: Pick<ConnectionView, "zernioAccountId"> };
 
 type ExtractFn = typeof extractDocument;
 
@@ -369,7 +357,7 @@ type IngestJob = {
 };
 
 type IngestLines = {
-  ctx: TurnContext;
+  ctx: IngestTurn;
   chat: ReturnType<typeof copyFor>["chat"];
   lines: string[];
 };
@@ -516,51 +504,39 @@ async function notifyAdvisor(ctx: TurnContext, state: DossierState): Promise<Dos
   return { ...state, profile: { ...state.profile, advisorNotified: true } };
 }
 
-async function zernioTarget(ctx: TurnContext): Promise<{ accountId: string; conversationId: string } | null> {
-  const lead = await prisma.lead.findFirst({
-    where: { id: ctx.lead.id, tenantId: ctx.tenantId },
-    select: { fields: true },
-  });
-  const fields = isRecord(lead?.fields) ? lead.fields : {};
-  const conversationId = typeof fields.zernioConversationId === "string" ? fields.zernioConversationId.trim() : "";
-  let accountId = typeof fields.replyAccountId === "string" ? fields.replyAccountId.trim() : "";
-  if (!accountId) {
-    const conversation = await prisma.conversation.findFirst({
-      where: { id: ctx.conversation.id, tenantId: ctx.tenantId },
-      select: { channel: { select: { providerExternalId: true } } },
-    });
-    accountId = conversation?.channel.providerExternalId?.trim() ?? "";
-  }
+function zernioIds(ctx: IngestTurn): { accountId: string; conversationId: string } | null {
+  const conversationId =
+    typeof ctx.lead.fields.zernioConversationId === "string" ? ctx.lead.fields.zernioConversationId.trim() : "";
+  const accountId = ctx.connection?.zernioAccountId?.trim() ?? "";
   if (!accountId || !conversationId) return null;
   return { accountId, conversationId };
 }
 
-type BlankForm = keyof typeof BLANK_FORMS;
-
 /** One blank PDF per conversation. The next customer file fills that slot, without a field check. */
 async function sendBlankForm(
-  ctx: TurnContext,
+  ctx: IngestTurn,
   chat: ReturnType<typeof copyFor>["chat"],
-  kind: BlankForm,
-): Promise<"sent" | "skipped" | "missing"> {
-  const form = BLANK_FORMS[kind];
+  docType: string,
+  form: BlankFormDef,
+  label: string,
+): Promise<"sent" | "already" | "skipped" | "missing"> {
   const prior = await prisma.message.findFirst({
     where: {
       tenantId: ctx.tenantId,
       conversationId: ctx.conversation.id,
       role: "agent",
-      metadata: { path: ["documentsForm"], equals: form.marker },
+      metadata: { path: ["documentsForm"], equals: docType },
     },
     select: { id: true },
   });
-  if (prior) return "sent";
-  const caption = kind === "accountant_letter" ? chat.documents.accountantForm : chat.documents.controllingForm;
-  const target = await zernioTarget(ctx);
+  if (prior) return "already";
+  const caption = chat.documents.blankForm(label);
+  const target = zernioIds(ctx);
   if (!target) {
-    warnDocuments("documents.form_skipped", { conversationId: ctx.conversation.id, reason: "no_channel", form: kind });
+    warnDocuments("documents.form_skipped", { conversationId: ctx.conversation.id, reason: "no_channel", form: docType });
     return "skipped";
   }
-  const providerMessageId = `${form.messageId}${ctx.conversation.id}`;
+  const providerMessageId = `out-form-${docType}-${ctx.conversation.id}`;
   await prisma.message.create({
     data: {
       tenantId: ctx.tenantId,
@@ -568,22 +544,22 @@ async function sendBlankForm(
       role: "agent",
       text: caption,
       providerMessageId,
-      metadata: { documentsForm: form.marker, filename: form.filename } as Prisma.InputJsonValue,
+      metadata: { documentsForm: docType, filename: form.file } as Prisma.InputJsonValue,
     },
   });
   try {
-    const bytes = await readFile(path.join(process.cwd(), "docs", form.filename));
+    const bytes = await readFile(path.join(process.cwd(), "docs", form.file));
     await sendZernioInboxMessage({
       accountId: target.accountId,
       conversationId: target.conversationId,
       text: caption,
-      file: { filename: form.filename, mime: "application/pdf", bytes },
+      file: { filename: form.file, mime: "application/pdf", bytes },
     });
   } catch (err) {
     await prisma.message.deleteMany({ where: { tenantId: ctx.tenantId, providerMessageId } });
     const missing = typeof err === "object" && err !== null && "code" in err && err.code === "ENOENT";
     if (missing) {
-      warnDocuments("documents.form_skipped", { conversationId: ctx.conversation.id, reason: "missing_file", form: kind });
+      warnDocuments("documents.form_skipped", { conversationId: ctx.conversation.id, reason: "missing_file", form: docType });
       return "missing";
     }
     throw err;
@@ -591,28 +567,22 @@ async function sendBlankForm(
   return "sent";
 }
 
-/** A blank form was just sent, so the next file fills that slot unless the reader names another open type. */
+/** A blank form was just sent, so the next file fills that type unless the reader names another open type. */
 function assumePendingForm(
   state: DossierState,
   extractedType: string,
 ): { state: DossierState; accepted: { slotId: string; docType: string } | null } | null {
-  const pending: BlankForm[] = [];
-  if (state.profile.controllingFormPending === true) pending.push("controlling_shareholder_letter");
-  if (state.profile.accountantFormPending === true) pending.push("accountant_letter");
-  const kind = pending[0];
-  if (!kind) return null;
-  const slot = state.slots.find((item) => item.status === "missing" && item.docType === kind);
+  const pending = typeof state.profile.formPending === "string" ? state.profile.formPending : "";
+  if (!pending) return null;
+  const slot = state.slots.find((item) => item.status === "missing" && item.docType === pending);
   const namedOther = Boolean(
     extractedType &&
-      extractedType !== kind &&
+      extractedType !== pending &&
       state.slots.some((item) => item.status === "missing" && item.docType === extractedType),
   );
-  const profile = { ...state.profile };
-  if (kind === "accountant_letter") profile.accountantFormPending = false;
-  else profile.controllingFormPending = false;
-  const next = { ...state, profile };
+  const next = { ...state, profile: { ...state.profile, formPending: "" } };
   if (!slot || namedOther) return { state: next, accepted: null };
-  return { state: next, accepted: { slotId: slot.id, docType: kind } };
+  return { state: next, accepted: { slotId: slot.id, docType: pending } };
 }
 
 function uploadNameFor(state: DossierState, rules: RulesDocument, slotId: string, docType: string, now = new Date()): string {
@@ -839,6 +809,7 @@ async function judgeFileJob(opts: IngestLines & {
   if (assumed?.accepted) return { state: assumed.state, escalated: false, accepted: assumed.accepted };
   if (assumed) working = assumed.state;
   const judged = judgeFile(working, opts.config.rules, extracted);
+  if (judged.kind === "unplaced") return { state: judged.state, escalated: false, accepted: null };
   if (judged.kind !== "reject") {
     return { state: working, escalated: false, accepted: { slotId: judged.slotId, docType: judged.docType } };
   }
@@ -1091,7 +1062,7 @@ async function closeImageBatch(opts: IngestLines & {
 }
 
 export async function runDocumentsIngest(
-  ctx: TurnContext,
+  ctx: IngestTurn,
   deps?: { extract?: ExtractFn; client?: SmartClient },
 ): Promise<{ ok: boolean; reply: string }> {
   const config = await readConfig(ctx.tenantId);
@@ -1219,37 +1190,26 @@ export async function runDocumentsIngest(
     state = refreshDossier(state, config.rules, "");
   }
 
-  const owesLetter =
-    state.profile.accountantFormSent !== true &&
-    state.slots.some((slot) => slot.docType === "accountant_letter" && isOutstanding(slot, state.slots));
-  const owesControlling =
-    !owesLetter &&
-    state.profile.controllingFormSent !== true &&
-    state.slots.some((slot) => slot.docType === "controlling_shareholder_letter" && isOutstanding(slot, state.slots));
-  const owed = owesLetter ? "accountant_letter" : owesControlling ? "controlling_shareholder_letter" : null;
-  if (owed) {
-    const caption = owed === "accountant_letter" ? chat.documents.accountantForm : chat.documents.controllingForm;
+  const seenForms = new Set<string>();
+  for (const slot of state.slots) {
+    const form = config.rules.documents[slot.docType]?.blankForm;
+    if (!form || seenForms.has(slot.docType) || !isOutstanding(slot, state.slots)) continue;
+    seenForms.add(slot.docType);
+    const label = docLabel(config.rules, slot.docType, lang);
+    const caption = chat.documents.blankForm(label);
     try {
-      const sent = await sendBlankForm(ctx, chat, owed);
-      if (sent === "sent") {
-        state = {
-          ...state,
-          profile: {
-            ...state.profile,
-            ...(owed === "accountant_letter"
-              ? { accountantFormSent: true, accountantFormPending: true }
-              : { controllingFormSent: true, controllingFormPending: true }),
-          },
-        };
-      } else if (sent === "skipped") {
-        lines.push(caption);
-      }
+      const sent = await sendBlankForm(ctx, chat, slot.docType, form, label);
+      if (sent === "already") continue;
+      if (sent === "sent") state = { ...state, profile: { ...state.profile, formPending: slot.docType } };
+      else if (sent === "skipped") lines.push(caption);
+      break;
     } catch (err) {
       warnDocuments("documents.form_failed", {
         conversationId: ctx.conversation.id,
         error: err instanceof Error ? err.message : String(err),
       });
       lines.push(caption);
+      break;
     }
   }
 

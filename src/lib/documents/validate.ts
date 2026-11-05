@@ -100,7 +100,8 @@ export type DossierState = {
 
 export type FileJudgement =
   | { kind: "accept"; slotId: string; docType: string }
-  | { kind: "reject"; state: DossierState; slotId: string; reason: string; escalated: boolean };
+  | { kind: "reject"; state: DossierState; slotId: string; reason: string; escalated: boolean }
+  | { kind: "unplaced"; state: DossierState };
 
 const FAIL_LIMIT = 3;
 
@@ -147,11 +148,10 @@ function yearOf(fields: Record<string, unknown>): number | null {
   return match ? Number(match[0]) : null;
 }
 
-/** When two slots share a type, a year written on the file picks its slot. Otherwise the earlier slot wins. */
-function orderByYear(slots: SlotState[], fields: Record<string, unknown>): SlotState[] {
-  const year = yearOf(fields);
-  if (!year) return slots;
-  return [...slots.filter((slot) => slot.year === year), ...slots.filter((slot) => slot.year !== year)];
+/** A slot that names a year accepts a file only when that year is written on it. */
+function yearMatches(slot: SlotState, fields: Record<string, unknown>): boolean {
+  if (!slot.year) return true;
+  return yearOf(fields) === slot.year;
 }
 
 function profileForSlot(profile: Profile, slot: { borrower?: string }): Profile {
@@ -200,10 +200,11 @@ export function judgeFile(
     if (!fallback) return { kind: "reject", state, slotId: "", reason, escalated: false };
     return withFailure(state, fallback.id, reason);
   }
-  const candidates = orderByYear(
-    open.filter((item) => item.docType === extracted.docType),
-    extracted.fields,
-  );
+  const sameType = open.filter((item) => item.docType === extracted.docType);
+  const candidates = sameType.filter((item) => yearMatches(item, extracted.fields));
+  if (!candidates.length && sameType.some((item) => item.year)) {
+    return { kind: "unplaced", state };
+  }
   if (!candidates.length) {
     if (!fallback) return { kind: "reject", state, slotId: "", reason: "wrong_type", escalated: false };
     return withFailure(state, fallback.id, "wrong_type");

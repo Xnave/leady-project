@@ -247,8 +247,7 @@ export function factsFromClient(raw: Record<string, unknown>): Profile {
     accountsKnown: accounts.length > 0 ? "known" : "unknown",
     advisorFlag: "",
     advisorNotified: false,
-    accountantFormSent: false,
-    accountantFormPending: false,
+    formPending: "",
   };
   profile.advisorFlag = advisorReason(profile);
   return profile;

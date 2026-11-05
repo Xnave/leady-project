@@ -84,8 +84,7 @@ export type ChatCopy = {
     askAccounts: string;
     askSalaryDeposit: (name: string) => string;
     askMorePhotos: string;
-    accountantForm: string;
-    controllingForm: string;
+    blankForm: (doc: string) => string;
     nextStage: string;
     advisorFlag: (label: string) => string;
     received: (doc: string) => string;
