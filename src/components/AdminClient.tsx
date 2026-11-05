@@ -10,6 +10,7 @@ type Labels = {
   tenantPhone: string;
   ownerEmail: string;
   openAsTenant: string;
+  clientSources: string;
   createFailed: string;
   createdClaimOnSignIn: string;
   search: string;
@@ -270,6 +271,9 @@ export function AdminClient({
                   <td className="muted">{t.ownerEmail || "-"}</td>
                   <td className="muted">{t.phone || t.id}</td>
                   <td className="table-actions">
+                    <a className="btn-ghost" href={`/admin/client-sources/${encodeURIComponent(t.id)}`}>
+                      {labels.clientSources}
+                    </a>
                     <form action="/api/admin/impersonate" method="post">
                       <input type="hidden" name="tenantId" value={t.id} />
                       <button type="submit" className="btn-secondary">

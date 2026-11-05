@@ -8,6 +8,7 @@ import { prisma } from "@/lib/db";
 import { RAPID_DEMO_CLERK_ORG_PREFIX } from "@/lib/rapid-demo/guards";
 import type { FlowDefinition } from "@/lib/flow/types";
 import type { OwnerAlertEvent } from "@/lib/crm/alerts-send";
+import type { ClientSourceSyncEvent } from "@/lib/client-sources/dispatch";
 
 export const runAgentTurn = inngest.createFunction(
   {
@@ -217,6 +218,66 @@ export const ownerAlert = inngest.createFunction(
   },
 );
 
+/**
+ * Pull one tenant CRM into Contact rows. One durable step per page, so a retry
+ * resumes at the failed page instead of starting over. One sync per source at
+ * a time. Writes Contact rows only: no Lead, no digest item, no lead count.
+ */
+export const clientSourceSync = inngest.createFunction(
+  {
+    id: "client-source-sync",
+    retries: 2,
+    concurrency: [{ key: "event.data.sourceId", limit: 1 }],
+  },
+  { event: "client-sources/sync.requested" },
+  async ({ event, step }) => {
+    const { tenantId, sourceId, mode } = event.data as ClientSourceSyncEvent["data"];
+    const { updatedSince } = await step.run("begin", async () => {
+      const { beginSourceSync } = await import("@/lib/client-sources/store");
+      return beginSourceSync(tenantId, sourceId, mode);
+    });
+    const { addCounts, emptyCounts } = await import("@/lib/client-sources/sync");
+    let counts = emptyCounts();
+    let cursor: string | null = null;
+    const MAX_PAGES = 2_000;
+    let complete = false;
+    for (let i = 0; i < MAX_PAGES; i++) {
+      const page = await step.run(`page-${i}`, async () => {
+        const { syncSourcePage } = await import("@/lib/client-sources/store");
+        return syncSourcePage(tenantId, sourceId, cursor, updatedSince);
+      });
+      counts = addCounts(counts, page.counts);
+      cursor = page.nextCursor;
+      if (!cursor) {
+        complete = true;
+        break;
+      }
+    }
+    return step.run("finish", async () => {
+      const { finishSourceSync } = await import("@/lib/client-sources/store");
+      return finishSourceSync(tenantId, sourceId, counts, mode, complete);
+    });
+  },
+);
+
+/** Daily incremental pull of every connected CRM (before the smart campaign trigger runs). */
+export const clientSourcesDaily = inngest.createFunction(
+  { id: "client-sources-daily", retries: 1 },
+  { cron: "TZ=Asia/Jerusalem 0 4 * * *" },
+  async ({ step }) => {
+    const sources = await step.run("sources", () =>
+      prisma.clientSource.findMany({ select: { id: true, tenantId: true } }),
+    );
+    if (!sources.length) return { sources: 0 };
+    const { syncEvent } = await import("@/lib/client-sources/dispatch");
+    await step.sendEvent(
+      "sync-sources",
+      sources.map((s) => syncEvent(s.tenantId, s.id, "incremental")),
+    );
+    return { sources: sources.length };
+  },
+);
+
 /** Drop expired demo tenants and wipe page text still inside the rate-limit window. */
 // export const purgeRapidDemos = inngest.createFunction(
 //   { id: "purge-rapid-demos", retries: 1 },
@@ -228,6 +289,6 @@ export const ownerAlert = inngest.createFunction(
 //     }),
 // );
 
-export const inngestFunctions = [runAgentTurn, nudgeIfSilent, crmDigest, ownerAlert
+export const inngestFunctions = [runAgentTurn, nudgeIfSilent, crmDigest, ownerAlert, clientSourceSync, clientSourcesDaily
     // , purgeRapidDemos
 ];
