@@ -120,6 +120,7 @@ export function createSmartNpvConnector(opts: { fetchImpl?: typeof fetch; sleep?
     parseConfig: (raw) => configSchema.parse(raw ?? {}) as SmartNpvConfig,
     sessionTtlSeconds: null,
     fieldCatalog: SMARTNPV_FIELDS,
+    archivedField: "archive",
 
     async authenticate(credentials) {
       const parsed = credentialsSchema.safeParse(credentials);
