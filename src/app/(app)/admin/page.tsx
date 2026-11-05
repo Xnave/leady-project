@@ -57,6 +57,7 @@ export default async function AdminPage() {
           tenantPhone: ui.common.tenantPhone,
           ownerEmail: ui.common.ownerEmail,
           openAsTenant: ui.common.openAsTenant,
+          clientSources: ui.admin.clientSources,
           createFailed: ui.errors.createFailed,
           createdClaimOnSignIn: ui.errors.createdClaimOnSignIn,
           search: ui.common.search,

@@ -6,6 +6,7 @@ import { isClerkConfigured } from "@/lib/clerk";
 import { getUiLang, getUiTheme } from "@/lib/cookies";
 import { prisma } from "@/lib/db";
 import { getNavCounts } from "@/lib/nav-counts";
+import { hasClientSources } from "@/lib/client-sources/store";
 import { canManageTeamNav } from "@/lib/team";
 import { getTenantShell, requireTenantId } from "@/lib/tenant";
 import { canManageTenant } from "@/lib/tenant-role";
@@ -25,18 +26,21 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   let tenantName: string | null = null;
   let showTeam = false;
   let showSettings = false;
+  let showClients = false;
   try {
     const tenantId = await requireTenantId();
-    const [nav, shell, team, manager] = await Promise.all([
+    const [nav, shell, team, manager, clients] = await Promise.all([
       getNavCounts(tenantId),
       getTenantShell(tenantId),
       canManageTeamNav(tenantId),
       canManageTenant(),
+      hasClientSources(tenantId),
     ]);
     counts = nav;
     tenantName = shell?.name ?? null;
     showTeam = team;
     showSettings = manager;
+    showClients = manager && clients;
   } catch {
     counts = null;
   }
@@ -53,6 +57,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
         theme={theme}
         showTeam={showTeam}
         showSettings={showSettings}
+        showClients={showClients}
         showAccount={clerkOn}
       />
       <div className="app-main">
