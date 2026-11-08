@@ -27,11 +27,24 @@ import {
   checkStayAvailability,
   getStaffDateOffer,
   markReservationDecision,
+  movePendingReservationDates,
 } from "@/lib/reservations";
 import { persistTurnFields } from "@/lib/conversations";
 
 function lastLeadText(ctx: TurnContext): string {
   return [...ctx.messages].reverse().find((m) => m.role === "lead")?.text ?? "";
+}
+
+/** A spoken stay that is not the staff offer. Same dates, or no range, return null. */
+export function spokenReplacementStay(
+  text: string,
+  offer: { checkIn: string; checkOut: string },
+  now: Date,
+  lang: "en" | "he",
+): { checkIn: string; checkOut: string } | null {
+  const range = resolveCalendarDateRange(text, now, lang);
+  if (!range || (range.start === offer.checkIn && range.end === offer.checkOut)) return null;
+  return { checkIn: range.start, checkOut: range.end };
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -52,12 +65,17 @@ function applySpokenStayDates(
     resolveCalendarDateRange(collectable.check_in ?? "", now, lang);
   if (!range) return;
   const today = todayIsoDate(now);
-  if (!collectable.check_in || isPastIsoDate(collectable.check_in, today)) {
-    collectable.check_in = range.start;
-  }
-  if (!collectable.check_out || isPastIsoDate(collectable.check_out, today)) {
-    collectable.check_out = range.end;
-  }
+  const start = collectable.check_in?.trim() ?? "";
+  const end = collectable.check_out?.trim() ?? "";
+  const pair =
+    ISO_DATE.test(start) &&
+    ISO_DATE.test(end) &&
+    !isPastIsoDate(start, today) &&
+    !isPastIsoDate(end, today) &&
+    start < end;
+  if (pair) return;
+  collectable.check_in = range.start;
+  collectable.check_out = range.end;
 }
 
 function dropNewConversation(effects: NonNullable<TalkOutcome["effects"]>) {
@@ -83,6 +101,13 @@ export function reconcileReservations(
 
   if (offered) {
     return { ...out, effects };
+  }
+  if (effects.some((effect) => effect.type === "accept_offered_slot")) {
+    return {
+      ...out,
+      effects,
+      fields: { ...(out.fields ?? {}), reservation_flow: "" },
+    };
   }
   if (!isReservationCollectActive(fields)) {
     return { ...out, effects };
@@ -131,8 +156,15 @@ export function reconcileReservations(
     nextStage = undefined;
   }
 
+  const firstGap = gapsAfter[0];
+  const reply =
+    out.reply?.trim() || shouldSubmit || !firstGap
+      ? out.reply
+      : askReservationField(replyLang(ctx, lastLeadText(ctx)), firstGap, config);
+
   return {
     ...out,
+    reply,
     fields: Object.keys(nextFields).length ? { ...out.fields, ...nextFields } : out.fields,
     effects,
     nextStage,
@@ -173,6 +205,30 @@ function splitReservationConfirm(raw: Record<string, string>): {
   };
 }
 
+/**
+ * Same save as `save_fields`: tool fields, then the range in the latest lead
+ * message, then the field kit. Older messages are not read.
+ */
+function saveStayFields(opts: {
+  raw: Record<string, string>;
+  spoken: string;
+  lang: "en" | "he";
+  specs: ReturnType<typeof reservationFieldSpecs>;
+  fctx: ReturnType<typeof reservationFieldContext>;
+  collected: TalkOutcome;
+}): string[] {
+  const { confirm, collectable } = splitReservationConfirm(opts.raw);
+  const now = opts.fctx.now ?? zonedToday();
+  applySpokenStayDates(collectable, opts.spoken, now, opts.lang);
+  const { values } = normalizeFields(opts.specs, collectable, opts.fctx);
+  opts.collected.fields = {
+    ...(opts.collected.fields ?? {}),
+    ...values,
+    ...confirm,
+  };
+  return Object.keys(values);
+}
+
 function askReservationField(
   lang: "en" | "he",
   fieldId: string,
@@ -184,6 +240,15 @@ function askReservationField(
     askField(specs, fieldId, fctx) ??
     copyFor(lang).chat.request.askField(fieldId.replaceAll("_", " "))
   );
+}
+
+/** The only field that may be asked now. The model writes the sentence. */
+function nextStayGap(fields: LeadFields, config: ReservationConfig): string | null {
+  return reservationFieldGaps(fields, config)[0] ?? null;
+}
+
+function stayAskHint(field: string): string {
+  return `Call reply now. Ask only for ${field}, in your own words, as a person at this business. Use the customer's name when you know it. If this field has choices, offer those choices in the sentence. Do not use a form line such as "הפרט הבא".`;
 }
 
 function hasRates(config: ReservationConfig): boolean {
@@ -223,7 +288,7 @@ export function registerReservationsCapability(): void {
     closingLines: () => [
       "Prefer reply for informational turns. Call ask_field only while a date-span request is in progress.",
       "Never say a request is confirmed or booked - create_reservation_hold only stores a tentative request for a human; send_reservation_link only shares a self-serve URL.",
-      "Call reply unless ask_field already set the outbound text.",
+      "After save_fields or ask_field, call reply yourself. The tool names the only field you may ask for. Phrase it as a person at this business, not as a form.",
     ],
     promptSection: ({ ctx, fields }) => {
       const config = reservationConfigFromCtx(ctx);
@@ -241,7 +306,7 @@ export function registerReservationsCapability(): void {
           known ? `Already known (do not re-ask): ${known}.` : "",
           "Call resolve_offered_dates with your decision:",
           '- decision="accept" ONLY if they clearly agree to THOSE exact offered dates.',
-          '- decision="decline" if they reject them or name other dates.',
+          '- decision="decline" if they reject them or name any other dates. A different range in that message is stored on the pending request — do not ask which dates again.',
           '- decision="unclear" if you cannot tell.',
           "Do NOT call ask_field, confirm_details, start_reservation, create_reservation_hold, or send_reservation_link while this offer is pending.",
           "Do NOT call start_new_conversation.",
@@ -256,6 +321,7 @@ export function registerReservationsCapability(): void {
         const lines = [
           `${noun} request is in progress. Collect fields: ${collectList}. Gaps: ${gaps.join(", ") || "none"}. reservation_confirm=${confirm || "(none)"}.`,
           "Save dates as YYYY-MM-DD (check_in / check_out). check_out must be after check_in.",
+          "Ask only the first gap, in reply, the way a person at this business would. Use their name when you know it, and offer real choices when the field has them. Do not ask for a later field, such as the unit, while name or phone is still missing. Never send a form line such as \"הפרט הבא\".",
           linkMode
             ? "Do not call check_availability - this tenant finishes by sending a booking link."
             : "After dates are saved, call check_availability before finishing the hold when possible.",
@@ -285,6 +351,7 @@ export function registerReservationsCapability(): void {
       return [
         `${noun} request is NOT started. Answer questions from knowledge with reply.`,
         `Only call start_reservation when they clearly want to book a ${noun} / check dates (not a sales meeting).`,
+        `On that call, pass every detail already in their message (dates, guests, name, phone, unit). Do not invent any.`,
         `When collecting, fields are: ${collectList}.`,
         "Do not invent prices unless a rate table is configured on this tenant.",
         ...policyLines(config),
@@ -311,23 +378,32 @@ export function registerReservationsCapability(): void {
       if (!active && !offered) {
         tools.start_reservation = tool({
           description:
-            `Start collecting a ${noun} request (start/end dates and configured fields). Only when they clearly want those dates.`,
-          inputSchema: z.object({}),
-          execute: async () => {
+            `Start collecting a ${noun} request. Pass every detail already in the customer's message. Do not invent dates, names, or counts they did not say. A spoken date range is stored even when fields is empty.`,
+          inputSchema: z.object({
+            fields: z
+              .record(z.string(), z.string())
+              .optional()
+              .describe(
+                "Details already in this message: check_in, check_out, guests, name, phone, unit, or any other collected field.",
+              ),
+          }),
+          execute: async ({ fields }: { fields?: Record<string, string> }) => {
+            const saved = saveStayFields({
+              raw: fields ?? {},
+              spoken: lastLeadText(ctx),
+              lang,
+              specs,
+              fctx,
+              collected,
+            });
             collected.fields = {
               ...(collected.fields ?? {}),
               reservation_flow: "active",
-              reservation_confirm: "",
+              reservation_confirm: String(collected.fields?.reservation_confirm ?? ""),
             };
-            const gaps = reservationFieldGaps(
-              { ...ctx.lead.fields, ...collected.fields },
-              config,
-            );
-            const first = gaps[0] ?? "check_in";
-            const q = askReservationField(lang, first, config);
-            pushReply(collected, q);
-            collected.askFieldUsed = true;
-            return { ok: true, next_field: first };
+            const first = nextStayGap({ ...ctx.lead.fields, ...collected.fields }, config);
+            if (!first) return { ok: true, saved, active: true };
+            return { ok: true, next_field: first, saved, hint: stayAskHint(first) };
           },
         });
         return tools;
@@ -336,7 +412,7 @@ export function registerReservationsCapability(): void {
       if (offered) {
         tools.resolve_offered_dates = tool({
           description:
-            `Accept or decline staff-offered alternative ${noun} dates. Do not ask for fields already known.`,
+            `Accept or decline staff-offered alternative ${noun} dates. Decline when they reject the offer or name any other dates. Do not ask for fields already known.`,
           inputSchema: z.object({
             decision: z.enum(["accept", "decline", "unclear"]),
           }),
@@ -349,7 +425,7 @@ export function registerReservationsCapability(): void {
                 check_in: offer.checkIn,
                 check_out: offer.checkOut,
                 reservation_confirm: "confirmed",
-                reservation_flow: "active",
+                reservation_flow: "",
                 staff_date_offer: "",
               };
               ctx.lead.fields = { ...ctx.lead.fields, ...collected.fields };
@@ -360,6 +436,7 @@ export function registerReservationsCapability(): void {
                 checkOut: offer.checkOut,
               });
               pushReply(collected, result.text);
+              collected.replyLocked = true;
               pushEffect(collected, { type: "accept_offered_slot" });
               await persistTurnFields(
                 ctx.tenantId,
@@ -371,12 +448,37 @@ export function registerReservationsCapability(): void {
               return { ok: true, decision: "accept" };
             }
             if (decision === "decline") {
+              const replacement = spokenReplacementStay(
+                lastLeadText(ctx),
+                offer,
+                fctx.now ?? zonedToday(),
+                lang,
+              );
               collected.fields = {
                 ...(collected.fields ?? {}),
                 staff_date_offer: "",
                 reservation_confirm: "",
                 reservation_flow: "active",
+                ...(replacement
+                  ? { check_in: replacement.checkIn, check_out: replacement.checkOut }
+                  : {}),
               };
+              if (replacement) {
+                await movePendingReservationDates({
+                  tenantId: ctx.tenantId,
+                  reservationId: offer.reservationId,
+                  checkIn: replacement.checkIn,
+                  checkOut: replacement.checkOut,
+                });
+                collected.reply = r.offerReplacement(replacement.checkIn, replacement.checkOut);
+                collected.replyLocked = true;
+                return {
+                  ok: true,
+                  decision: "decline",
+                  check_in: replacement.checkIn,
+                  check_out: replacement.checkOut,
+                };
+              }
               pushReply(collected, r.offerDeclineAsk);
               return { ok: true, decision: "decline" };
             }
@@ -393,31 +495,33 @@ export function registerReservationsCapability(): void {
           fields: z.record(z.string(), z.string()),
         }),
         execute: async ({ fields }) => {
-          const { confirm, collectable } = splitReservationConfirm(fields);
-          const now = fctx.now ?? zonedToday();
-          applySpokenStayDates(collectable, lastLeadText(ctx), now, lang);
-          // The field kit owns coercion (dates → ISO, option labels → ids) and
-          // drops keys this tenant does not collect.
-          const { values } = normalizeFields(specs, collectable, fctx);
-          collected.fields = {
-            ...(collected.fields ?? {}),
-            ...values,
-            ...confirm,
-          };
-          return { ok: true, saved: Object.keys(values) };
+          const saved = saveStayFields({
+            raw: fields,
+            spoken: lastLeadText(ctx),
+            lang,
+            specs,
+            fctx,
+            collected,
+          });
+          const next = nextStayGap({ ...ctx.lead.fields, ...collected.fields }, config);
+          return { ok: true, saved, ...(next ? { next_field: next, hint: stayAskHint(next) } : {}) };
         },
       });
 
       tools.ask_field = tool({
-        description: `Ask for the next missing ${noun} field.`,
+        description: `Ask for the first missing ${noun} field. A later field is redirected to that gap.`,
         inputSchema: z.object({
           field: z.string(),
         }),
         execute: async ({ field }) => {
-          const q = askReservationField(lang, field, config);
-          pushReply(collected, q);
-          collected.askFieldUsed = true;
-          return { ok: true, field };
+          const next = nextStayGap({ ...ctx.lead.fields, ...collected.fields }, config);
+          if (!next) return { ok: false, skip: true };
+          return {
+            ok: true,
+            field: next,
+            hint: stayAskHint(next),
+            ...(next !== field ? { redirected_from: field } : {}),
+          };
         },
       });
 

@@ -6,6 +6,12 @@
     "start": "next start",
     "dev": "next dev",
     "build": "prisma generate && next build",
+    "inngest:start": "npx inngest-cli@latest dev",
+    
+    "scenarios": "tsx scripts/agent-scenarios/run.ts",
+    "scenarios:load-tenants": "tsx scripts/agent-scenarios/load-tenants.ts",
+    "scenarios:production": "ENV_FILE=.env.production tsx scripts/agent-scenarios/run.ts",
+    "scenarios:staging": "ENV_FILE=.env.staging tsx scripts/agent-scenarios/run.ts",
 
     "typecheck": "tsc --noEmit",
     "lint": "next lint",

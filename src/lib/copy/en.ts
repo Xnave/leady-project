@@ -40,6 +40,7 @@ export const chat: ChatCopy = {
     ].join("\n"),
   bookingConfirmIntro: "Perfect - here's the visit request I have:",
   bookingConfirmAsk: "Do these details look right, and shall I save the request?",
+  bookingDeclineAsk: "Okay, I won't save the request. Want to change the time, or stop here?",
   askVisitKind: "What kind of visit works for you?",
   askTime: (hours) =>
     hours
@@ -102,6 +103,8 @@ export const chat: ChatCopy = {
     offerAltDates: (from, to) =>
       `Those dates are not available. Does ${from} to ${to} work instead?`,
     offerDeclineAsk: "No problem - which other dates work for you?",
+    offerReplacement: (from, to) =>
+      `Noted ${from} to ${to} instead of the offered dates. A teammate will confirm them.`,
     offerUnclearAsk: "Just to confirm - do the offered dates work for you?",
   },
 };
