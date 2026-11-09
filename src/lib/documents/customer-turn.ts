@@ -22,6 +22,7 @@ export type FactName =
   | "second_borrower"
   | "first_home"
   | "couple_split"
+  | "split_who"
   | "salary_deposit"
   | "more_loans";
 
@@ -39,6 +40,8 @@ export type FactSnapshot = {
   secondBorrower: "yes" | "no" | "unknown";
   firstHome: "true" | "false" | "unknown";
   coupleSplit: "yes" | "no" | "unknown";
+  /** Slot of the self-employed borrower once the mixed pair is known. */
+  splitWho: "1" | "2" | "";
   salaryDeposit: "yes" | "no" | "";
   loanMore: string;
   openQuestion: string;
@@ -53,6 +56,7 @@ const FACTS: FactName[] = [
   "second_borrower",
   "first_home",
   "couple_split",
+  "split_who",
   "salary_deposit",
   "more_loans",
 ];
@@ -108,6 +112,7 @@ function validFactValue(fact: FactName, value: string): boolean {
   if (fact === "second_borrower" || fact === "couple_split" || fact === "salary_deposit" || fact === "more_loans") {
     return value === "yes" || value === "no";
   }
+  if (fact === "split_who") return value === "1" || value === "2";
   return value === "true" || value === "false";
 }
 
@@ -121,6 +126,7 @@ export function isIdleQuestion(text: string): boolean {
 }
 
 function employmentStatement(text: string): Employment | null {
+  if (/שנינו|שתינו|שני הלווים|both of us|we(?:'re| are) both/i.test(text)) return null;
   const folded = text.toLowerCase();
   let employment: Employment | null = null;
   if (/שכיר וגם עצמאי|עצמאי וגם שכיר|גם וגם|שכיר ועצמאי|salaried and self|\bboth\b/.test(folded)) employment = "both";
@@ -154,12 +160,6 @@ function factFromText(text: string): CustomerIntent | null {
     const value = /לא דירה|זו לא|זה לא|not (?:a |our )?first/i.test(text) ? "false" : "true";
     if (value === "true" && !/בעצם|התכוונתי|זו דירה|זאת דירה|it is/i.test(text)) return null;
     return { kind: "fact", fact: "first_home", value, confidence };
-  }
-  if (/אישה שכיר|wife is salaried|husband is self/i.test(text)) {
-    return { kind: "fact", fact: "couple_split", value: "yes", confidence };
-  }
-  if (/האישה לא|wife is not|הבעל לא עצמאי/i.test(text)) {
-    return { kind: "fact", fact: "couple_split", value: "no", confidence };
   }
   if (/לא מופקד|לא מפקיד|not deposited|does not deposit/i.test(text)) {
     return { kind: "fact", fact: "salary_deposit", value: "no", confidence };
@@ -211,6 +211,7 @@ export function changesStoredFact(snapshot: FactSnapshot, intent: CustomerIntent
   if (intent.fact === "second_borrower") return knownDiffers(snapshot.secondBorrower, intent.value);
   if (intent.fact === "first_home") return knownDiffers(snapshot.firstHome, intent.value);
   if (intent.fact === "couple_split") return knownDiffers(snapshot.coupleSplit, intent.value);
+  if (intent.fact === "split_who") return (snapshot.splitWho === "1" || snapshot.splitWho === "2") && snapshot.splitWho !== intent.value;
   if (intent.fact === "salary_deposit") return snapshot.salaryDeposit === "yes" || snapshot.salaryDeposit === "no"
     ? snapshot.salaryDeposit !== intent.value
     : false;
@@ -262,7 +263,8 @@ function turnPrompt(input: { message: string; snapshot: FactSnapshot; lastAgentM
     "Read one customer message during a mortgage document checklist.",
     "Return every intent in the message. Return an empty list when nothing should change.",
     "Empty list for: a question (אם יש לי הלוואות זה משנה?, אפשר לשלוח רישיון במקום?), filler (בעצם) with no new fact, and זה לא נטען or זה לא ברור.",
-    "fact values: loans known|none; employment salaried|self_employed|controlling_shareholder|both|other; second_borrower yes|no; first_home true|false; couple_split yes|no; salary_deposit yes|no; more_loans yes|no.",
+    "fact values: loans known|none; employment salaried|self_employed|controlling_shareholder|both|other; second_borrower yes|no; first_home true|false; couple_split yes|no; split_who 1|2; salary_deposit yes|no; more_loans yes|no.",
+    "split_who is which borrower is self-employed after a yes to one salaried and one self-employed. 1 is the first person in that question, 2 is the second. The other borrower is salaried.",
     "אני שכיר וגם עצמאי is employment both. הלוואה נוספת is more_loans, not loans known.",
     "retract when they say the file they sent was the wrong document. target id_card_back when they name a licence or the other side, otherwise latest.",
     "how_to steps for where to get a document or they did not understand. how_to short for a bare אין לי while a document is open.",

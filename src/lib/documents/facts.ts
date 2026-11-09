@@ -36,6 +36,7 @@ export type AccountFact = { id: string };
 export type OpenQuestion =
   | { kind: "second_borrower" }
   | { kind: "couple_split" }
+  | { kind: "split_who"; first: string; second: string }
   | { kind: "employment"; name: string; slot: "1" | "2" }
   | { kind: "salary_deposit"; name: string }
   | { kind: "first_home" }
@@ -174,6 +175,7 @@ export type FactRevisionKind =
   | "first_home_no"
   | "couple_yes"
   | "couple_no"
+  | "split_who"
   | "salary_yes"
   | "salary_no"
   | "more_loans";
@@ -286,11 +288,6 @@ export function openQuestions(profile: Profile): OpenQuestion[] {
   if (secondBorrowerOf(current) === "unknown" && borrowers.length > 0) {
     questions.push({ kind: "second_borrower" });
   }
-  const two = borrowers.some((borrower) => borrower.slot === "2");
-  const employmentUnknown = borrowers.some((borrower) => borrower.employment === "unknown");
-  if (two && employmentUnknown && current.coupleSplit !== "yes" && current.coupleSplit !== "no") {
-    questions.push({ kind: "couple_split" });
-  }
   for (const borrower of borrowers) {
     if (borrower.employment === "unknown") {
       questions.push({ kind: "employment", name: borrower.fullName, slot: borrower.slot });
@@ -318,7 +315,7 @@ function withIdSide(questions: OpenQuestion[], profile: Profile, borrowers: Borr
   return [...questions, { kind: "id_biometric", name: borrower.fullName, slot: pending }];
 }
 
-const FACT_KINDS = new Set(["second_borrower", "couple_split", "employment", "first_home", "loans"]);
+const FACT_KINDS = new Set(["second_borrower", "couple_split", "split_who", "employment", "first_home", "loans"]);
 
 /** Borrower count, employment, first home, and loans. Photos and extra loans are not in this gate. */
 export function factsOpen(profile: Profile): boolean {
@@ -441,13 +438,20 @@ export function factsFromClient(raw: Record<string, unknown>): Profile {
   return ensureBorrowers(profile);
 }
 
+/** "שנינו שכירים" names every borrower, including after a leading לא. */
+export function sharedBorrowerEmployment(text: string): Employment | null {
+  if (!/שנינו|שתינו|שני הלווים|both of us|we(?:'re| are) both/i.test(text)) return null;
+  return employmentAnswer(text);
+}
+
 function employmentAnswer(text: string): Employment | null {
   const folded = text.toLowerCase();
-  if (/שכיר וגם עצמאי|עצמאי וגם שכיר|גם וגם|שכיר ועצמאי|salaried and self|\bboth\b/.test(folded)) return "both";
+  if (/שכיר וגם עצמאי|עצמאי וגם שכיר|גם וגם|שכיר ועצמאי|salaried and self/.test(folded)) return "both";
   if (/בעל שליטה|controlling shareholder/.test(folded)) return "controlling_shareholder";
   if (/(?:^|[\s,.])אחר(?:$|[\s,.!?])|\bother\b/.test(folded)) return "other";
   if (/עצמאי|self[-\s]?employed/.test(folded)) return "self_employed";
   if (/שכיר|\bsalaried\b|\bemployed\b/.test(folded)) return "salaried";
+  if (/\bboth\b/.test(folded)) return "both";
   return null;
 }
 
@@ -463,6 +467,51 @@ function assignEmployment(borrower: BorrowerFact, employment: Employment, now: D
   borrower.employmentSource = "customer";
   borrower.employmentAnsweredAt = now.toISOString();
   borrower.employmentLabel = employmentLabelFor(employment);
+}
+
+/** Slot of the self-employed borrower when the pair is one salaried and one self-employed. */
+export function splitWhoOf(profile: Profile): "1" | "2" | "" {
+  const people = borrowersOf(profile);
+  const self = people.filter((borrower) => borrower.employment === "self_employed");
+  const salaried = people.filter((borrower) => borrower.employment === "salaried");
+  if (self.length === 1 && salaried.length === 1 && (self[0]?.slot === "1" || self[0]?.slot === "2")) {
+    return self[0].slot;
+  }
+  return "";
+}
+
+/** A yes to the mixed pair still needs this answer before either income list opens. */
+function splitWhoAnswer(text: string, borrowers: BorrowerFact[]): "1" | "2" | null {
+  const folded = text.trim().toLowerCase();
+  const named = (slot: "1" | "2"): boolean => {
+    const name = borrowers.find((borrower) => borrower.slot === slot)?.fullName.trim().toLowerCase() ?? "";
+    if (name.length < 2) return false;
+    if (folded.includes(name)) return true;
+    return name.split(/\s+/).some((part) => part.length > 1 && folded.includes(part));
+  };
+  const first = named("1");
+  const second = named("2");
+  if (first && !second) return "1";
+  if (second && !first) return "2";
+  if (/השני|second borrower|the second/.test(folded)) return "2";
+  if (/הראשון|first borrower|the first/.test(folded)) return "1";
+  return null;
+}
+
+function assignSplit(borrowers: BorrowerFact[], selfSlot: "1" | "2", now: Date): string {
+  const notes: string[] = [];
+  for (const borrower of borrowers) {
+    if (borrower.slot !== "1" && borrower.slot !== "2") continue;
+    const employment: Employment = borrower.slot === selfSlot ? "self_employed" : "salaried";
+    const fromReport = borrower.employmentSource === "status_report"
+      && borrower.employment !== "unknown"
+      && borrower.employment !== employment;
+    const prior = borrower.employment;
+    if (borrower.employment === employment && borrower.employmentSource === "customer") continue;
+    assignEmployment(borrower, employment, now);
+    if (fromReport) notes.push(employmentConflictText(prior, employment));
+  }
+  return notes.join(" ");
 }
 
 function employmentLabelFor(employment: Employment): string {
@@ -533,20 +582,18 @@ export function applyCustomerAnswers(
     }
   }
   if (asked === "couple_split" && next.coupleSplit !== "yes" && next.coupleSplit !== "no") {
-    const yes = /^(?:כן|yes)[.!?\s]*$/i.test(text) || /אישה שכיר|wife is salaried|husband is self/.test(text.toLowerCase());
+    const yes = /^(?:כן|yes)[.!?\s]*$/i.test(text);
     const no = /^(?:לא|no)[.!?\s]*$/i.test(text);
     if (yes || no) {
       next.coupleSplit = no ? "no" : "yes";
-      if (!no) {
-        for (const borrower of borrowers) {
-          if (borrower.employment !== "unknown" || borrower.employmentSource === "status_report") continue;
-          const employment = borrower.slot === "2" ? "self_employed" : "salaried";
-          borrower.employment = employment;
-          borrower.employmentLabel = employmentLabelFor(employment);
-          borrower.employmentSource = "customer";
-          borrower.employmentAnsweredAt = now.toISOString();
-        }
-      }
+      changed = true;
+    }
+  }
+  if (asked === "split_who" && splitWhoOf({ ...next, borrowers }) === "") {
+    const selfSlot = splitWhoAnswer(text, borrowers);
+    if (selfSlot) {
+      const conflict = assignSplit(borrowers, selfSlot, now);
+      if (conflict) next.employmentConflict = conflict;
       changed = true;
     }
   }
@@ -561,10 +608,20 @@ export function applyCustomerAnswers(
       changed = true;
     }
   }
+  const shared = sharedBorrowerEmployment(text);
   const employment = employmentAnswer(text);
-  if (employment && asked === "employment" && !idleQuestion(text)) {
-    const target = borrowers.find((borrower) => borrower.employment === "unknown");
-    if (target) {
+  if (shared && !idleQuestion(text)) {
+    for (const borrower of borrowers) {
+      if (borrower.employment !== "unknown") continue;
+      assignEmployment(borrower, shared, now);
+      changed = true;
+    }
+  } else if (employment && asked === "employment" && !idleQuestion(text)) {
+    const question = nextQuestion(profile);
+    const slot = question?.kind === "employment" ? question.slot : undefined;
+    const target = borrowers.find((borrower) => borrower.slot === slot)
+      ?? borrowers.find((borrower) => borrower.employment === "unknown");
+    if (target && target.employment === "unknown") {
       assignEmployment(target, employment, now);
       changed = true;
     }
@@ -671,7 +728,10 @@ export function applyFactIntents(
     }
     if (intent.fact === "employment" && EMPLOYMENT_VALUES.has(intent.value)) {
       const value = intent.value as Employment;
-      const target = borrowers.find((borrower) => borrower.slot === "1") ?? borrowers[0];
+      const open = nextQuestion(profile);
+      const target = open?.kind === "employment"
+        ? borrowers.find((borrower) => borrower.slot === open.slot)
+        : borrowers.find((borrower) => borrower.slot === "1") ?? borrowers[0];
       if (target && target.employment !== value) {
         const prior = target.employment;
         const fromReport = target.employmentSource === "status_report" && prior !== "unknown";
@@ -708,14 +768,17 @@ export function applyFactIntents(
     if (intent.fact === "couple_split" && (intent.value === "yes" || intent.value === "no") && next.coupleSplit !== intent.value) {
       const prior = next.coupleSplit === "yes" || next.coupleSplit === "no" ? next.coupleSplit : "unknown";
       next.coupleSplit = intent.value;
-      if (intent.value === "yes") {
-        for (const borrower of borrowers) {
-          if (borrower.employment !== "unknown") continue;
-          assignEmployment(borrower, borrower.slot === "2" ? "self_employed" : "salaried", now);
-        }
-      }
       changed = true;
       if (prior !== "unknown") revisions.push({ kind: intent.value === "yes" ? "couple_yes" : "couple_no" });
+      continue;
+    }
+    if (intent.fact === "split_who" && (intent.value === "1" || intent.value === "2")) {
+      const prior = splitWhoOf({ ...next, borrowers });
+      if (prior === intent.value) continue;
+      const conflict = assignSplit(borrowers, intent.value, now);
+      if (conflict) next.employmentConflict = conflict;
+      changed = true;
+      if (prior === "1" || prior === "2") revisions.push({ kind: "split_who", detail: intent.value });
       continue;
     }
     if (intent.fact === "salary_deposit" && (intent.value === "yes" || intent.value === "no")) {

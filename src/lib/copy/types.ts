@@ -88,6 +88,8 @@ export type ChatCopy = {
     askEmployment: (name: string) => string;
     askSecondBorrower: string;
     askCouple: string;
+    /** Who is self-employed when one borrower is salaried and the other is not. */
+    askSplitWho: (first: string, second: string) => string;
     askIdBiometric: (name: string) => string;
     askIdBack: string;
     askFirstHome: string;

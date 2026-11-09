@@ -65,7 +65,8 @@ describe("mortgage checklist", () => {
     expect(alone.borrowers).toHaveLength(1);
     const pair = applyCustomerAnswers(profile, "כן").profile;
     expect(pair.borrowers?.map((borrower) => borrower.slot)).toEqual(["1", "2"]);
-    expect(nextQuestion(pair)?.kind).toBe("couple_split");
+    expect(nextQuestion(pair)?.kind).toBe("employment");
+    expect(documentAskText(nextQuestion(pair)!, "he", copyFor("he").chat)).toContain("הלווה");
   });
 
   it("asks the personal questions before any slot when the file has nobody", () => {
@@ -74,16 +75,40 @@ describe("mortgage checklist", () => {
     expect(checklistSlots(profile, MORTGAGE_RULES)).toEqual([]);
   });
 
-  it("opens both lists when the wife is salaried and the husband is self-employed", () => {
-    const counted = applyCustomerAnswers(factsFromClient({}), "כן").profile;
-    const split = applyCustomerAnswers(counted, "כן").profile;
-    expect(split.borrowers?.map((borrower) => borrower.employment)).toEqual(["salaried", "self_employed"]);
-    const profile = { ...split, firstHome: "true", loans: "none" };
-    const types = checklistSlots(profile, MORTGAGE_RULES).map((slot) => slot.docType);
-    expect(types.filter((type) => type === "payslip")).toHaveLength(3);
-    expect(types).toContain("tax_assessment");
-    expect(types).toContain("accountant_letter");
-    expect(types).not.toContain("controlling_shareholder_letter");
+  it("asks each borrower for employment, and one answer does not fill the other", () => {
+    const pair = applyCustomerAnswers(factsFromClient({}), "כן").profile;
+    expect(nextQuestion(pair)?.kind).toBe("employment");
+    const one = applyCustomerAnswers(pair, "שכיר").profile;
+    expect(one.borrowers?.map((borrower) => borrower.employment)).toEqual(["salaried", "unknown"]);
+    expect(nextQuestion(one)?.kind).toBe("employment");
+    expect(documentAskText(nextQuestion(one)!, "he", copyFor("he").chat)).toContain("הלווה הנוסף");
+    const mixed = applyCustomerAnswers(one, "עצמאי").profile;
+    expect(mixed.borrowers?.map((borrower) => borrower.employment)).toEqual(["salaried", "self_employed"]);
+    const mixedSlots = checklistSlots({ ...mixed, firstHome: "true", loans: "none" }, MORTGAGE_RULES);
+    expect(mixedSlots.filter((slot) => slot.docType === "payslip").map((slot) => slot.borrower)).toEqual(["1", "1", "1"]);
+    expect(mixedSlots.filter((slot) => slot.docType === "tax_assessment").map((slot) => slot.borrower)).toEqual(["2"]);
+    expect(mixedSlots.filter((slot) => slot.docType === "accountant_letter").map((slot) => slot.borrower)).toEqual(["2"]);
+
+    const reversed = applyCustomerAnswers(applyCustomerAnswers(pair, "עצמאי").profile, "שכיר").profile;
+    const reversedSlots = checklistSlots({ ...reversed, firstHome: "true", loans: "none" }, MORTGAGE_RULES);
+    expect(reversedSlots.filter((slot) => slot.docType === "payslip").map((slot) => slot.borrower)).toEqual(["2", "2", "2"]);
+    expect(reversedSlots.filter((slot) => slot.docType === "tax_assessment").map((slot) => slot.borrower)).toEqual(["1"]);
+  });
+
+  it("reads לא שנינו שכירים as both borrowers salaried", () => {
+    const pair = applyCustomerAnswers(factsFromClient({}), "כן").profile;
+    const both = applyCustomerAnswers(pair, "לא שנינו שכירים").profile;
+    expect(both.borrowers?.map((borrower) => borrower.employment)).toEqual(["salaried", "salaried"]);
+    expect(nextQuestion(both)?.kind).toBe("first_home");
+    const slots = checklistSlots({ ...both, firstHome: "true", loans: "none" }, MORTGAGE_RULES);
+    expect(slots.filter((slot) => slot.docType === "payslip")).toHaveLength(6);
+    expect(slots.map((slot) => slot.docType)).not.toContain("tax_assessment");
+
+    const self = applyCustomerAnswers(pair, "שנינו עצמאים").profile;
+    const selfSlots = checklistSlots({ ...self, firstHome: "true", loans: "none" }, MORTGAGE_RULES);
+    expect(selfSlots.filter((slot) => slot.docType === "tax_assessment")).toHaveLength(2);
+    expect(selfSlots.filter((slot) => slot.docType === "accountant_letter")).toHaveLength(2);
+    expect(selfSlots.map((slot) => slot.docType)).not.toContain("payslip");
   });
 
   it("keeps the stage open after one statement when other documents are still missing", () => {
@@ -273,11 +298,11 @@ describe("mortgage checklist", () => {
     const answered = applyCustomerAnswers(profile, "כן").profile;
     expect(answered.firstHome).toBe("unknown");
     expect(answered.secondBorrower).toBe("yes");
-    expect(openQuestions(answered).map((question) => question.kind)[0]).toBe("couple_split");
-    const declined = applyCustomerAnswers(answered, "לא").profile;
-    expect(declined.coupleSplit).toBe("no");
-    expect(nextQuestion(declined)?.kind).toBe("employment");
-    const employed = applyCustomerAnswers(declined, "הוא עצמאי").profile;
+    expect(openQuestions(answered).map((question) => question.kind)[0]).toBe("employment");
+    expect(applyCustomerAnswers(answered, "לא").changed).toBe(false);
+    const employed = applyCustomerAnswers(answered, "הוא עצמאי").profile;
+    expect(employed.borrowers?.find((borrower) => borrower.slot === "2")?.employment).toBe("self_employed");
+    expect(employed.borrowers?.find((borrower) => borrower.slot === "1")?.employment).toBe("salaried");
     const home = applyCustomerAnswers(employed, "כן").profile;
     expect(home.firstHome).toBe("true");
     expect(applyCustomerAnswers(home, "לא").profile.loans).toBe("none");

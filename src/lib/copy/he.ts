@@ -122,7 +122,8 @@ export const chat: ChatCopy = {
       askEmployment: (name) =>
         `כדי להתאים את רשימת המסמכים, מהו מצב התעסוקה של ${name} — שכיר/ה, עצמאי/ת, שכיר/ה בעל שליטה, או אחר?`,
       askSecondBorrower: "האם יש לווה נוסף בתיק?",
-      askCouple: "האם האישה שכירה והבעל עצמאי?",
+      askCouple: "האם אחד הלווים עצמאי והשני שכיר?",
+      askSplitWho: (first, second) => `מי מהם עצמאי, ${first} או ${second}?`,
       askIdBiometric: (name) =>
         name ? `האם תעודת הזהות של ${name} ביומטרית?` : "האם תעודת הזהות ביומטרית?",
       askIdBack: "אשמח גם לצד השני של תעודת הזהות.",
@@ -175,8 +176,10 @@ export const chat: ChatCopy = {
         if (kind === "second_no") return "רשמתי שאין לווה נוסף.";
         if (kind === "first_home_yes") return "רשמתי שזו דירה ראשונה.";
         if (kind === "first_home_no") return "רשמתי שזו לא דירה ראשונה.";
-        if (kind === "couple_yes") return "רשמתי שהאישה שכירה והבעל עצמאי.";
-        if (kind === "couple_no") return "רשמתי שזה לא המקרה של אישה שכירה ובעל עצמאי.";
+        if (kind === "couple_yes") return "רשמתי שאחד הלווים עצמאי והשני שכיר.";
+        if (kind === "couple_no") return "רשמתי שזה לא המקרה של לווה עצמאי ולווה שכיר.";
+        if (kind === "split_who" && detail === "2") return "רשמתי שהלווה השני עצמאי והראשון שכיר.";
+        if (kind === "split_who") return "רשמתי שהלווה הראשון עצמאי והשני שכיר.";
         if (kind === "salary_yes") return "רשמתי שהמשכורת נכנסת לחשבון האישי.";
         if (kind === "salary_no") return "רשמתי שהמשכורת לא נכנסת לחשבון האישי.";
         if (kind === "more_loans") return "רשמתי שיש הלוואה נוספת.";
@@ -202,8 +205,10 @@ export const chat: ChatCopy = {
         if (kind === "second_borrower") return "לרשום שיש לווה נוסף";
         if (kind === "first_home" && detail === "false") return "לרשום שזו לא דירה ראשונה";
         if (kind === "first_home") return "לרשום שזו דירה ראשונה";
-        if (kind === "couple_split" && detail === "no") return "לרשום שזה לא המקרה של אישה שכירה ובעל עצמאי";
-        if (kind === "couple_split") return "לרשום שהאישה שכירה והבעל עצמאי";
+        if (kind === "couple_split" && detail === "no") return "לרשום שזה לא המקרה של לווה עצמאי ולווה שכיר";
+        if (kind === "couple_split") return "לרשום שאחד הלווים עצמאי והשני שכיר";
+        if (kind === "split_who" && detail === "2") return "לרשום שהלווה השני עצמאי והראשון שכיר";
+        if (kind === "split_who") return "לרשום שהלווה הראשון עצמאי והשני שכיר";
         if (kind === "salary_deposit" && detail === "no") return "לרשום שהמשכורת לא נכנסת לחשבון האישי";
         if (kind === "salary_deposit") return "לרשום שהמשכורת נכנסת לחשבון האישי";
         if (kind === "more_loans" && detail === "no") return "לרשום שאין הלוואה נוספת";

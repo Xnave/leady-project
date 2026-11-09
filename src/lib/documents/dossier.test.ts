@@ -123,7 +123,10 @@ describe("rejectionDetail", () => {
     };
     expect(borrowerFileWho(sameJob, "2", "he")).toBe("הלווה השני");
 
-    const split = applyCustomerAnswers(applyCustomerAnswers(factsFromClient({}), "כן").profile, "כן").profile;
+    const split = applyCustomerAnswers(
+      applyCustomerAnswers(applyCustomerAnswers(factsFromClient({}), "כן").profile, "שכיר").profile,
+      "עצמאי",
+    ).profile;
     const profile = { ...split, firstHome: "true" as const, loans: "none" as const };
     let state = freshDossier({
       smartClientId: "c",
@@ -139,7 +142,10 @@ describe("rejectionDetail", () => {
   });
 
   it("drops the open photo and keeps an older saved letter", () => {
-    const split = applyCustomerAnswers(applyCustomerAnswers(factsFromClient({}), "כן").profile, "כן").profile;
+    const split = applyCustomerAnswers(
+      applyCustomerAnswers(applyCustomerAnswers(factsFromClient({}), "כן").profile, "שכיר").profile,
+      "עצמאי",
+    ).profile;
     const profile = {
       ...split,
       firstHome: "true" as const,

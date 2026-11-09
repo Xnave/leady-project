@@ -127,7 +127,8 @@ export const chat: ChatCopy = {
       askEmployment: (name) =>
         `To tailor the document list, what is ${name}'s employment status — salaried, self-employed, controlling shareholder, or other?`,
       askSecondBorrower: "Is there a second borrower on this file?",
-      askCouple: "Is the wife salaried and the husband self-employed?",
+      askCouple: "Is one borrower self-employed and the other salaried?",
+      askSplitWho: (first, second) => `Which one is self-employed, ${first} or ${second}?`,
       askIdBiometric: (name) =>
         name ? `Is ${name}'s ID card biometric?` : "Is the ID card biometric?",
       askIdBack: "Please also send the other side of the ID card.",
@@ -180,8 +181,10 @@ export const chat: ChatCopy = {
         if (kind === "second_no") return "Noted that there is no second borrower.";
         if (kind === "first_home_yes") return "Noted that this is a first home.";
         if (kind === "first_home_no") return "Noted that this is not a first home.";
-        if (kind === "couple_yes") return "Noted that the wife is salaried and the husband is self-employed.";
-        if (kind === "couple_no") return "Noted that this is not a salaried wife and a self-employed husband.";
+        if (kind === "couple_yes") return "Noted that one borrower is self-employed and the other is salaried.";
+        if (kind === "couple_no") return "Noted that this is not one self-employed borrower and one salaried borrower.";
+        if (kind === "split_who" && detail === "2") return "Noted that the second borrower is self-employed and the first is salaried.";
+        if (kind === "split_who") return "Noted that the first borrower is self-employed and the second is salaried.";
         if (kind === "salary_yes") return "Noted that the salary is deposited into the personal account.";
         if (kind === "salary_no") return "Noted that the salary is not deposited into the personal account.";
         if (kind === "more_loans") return "Noted that there is another loan.";
@@ -207,8 +210,10 @@ export const chat: ChatCopy = {
         if (kind === "second_borrower") return "record that there is a second borrower";
         if (kind === "first_home" && detail === "false") return "record that this is not a first home";
         if (kind === "first_home") return "record that this is a first home";
-        if (kind === "couple_split" && detail === "no") return "record that this is not a salaried wife and a self-employed husband";
-        if (kind === "couple_split") return "record that the wife is salaried and the husband is self-employed";
+        if (kind === "couple_split" && detail === "no") return "record that this is not one self-employed borrower and one salaried borrower";
+        if (kind === "couple_split") return "record that one borrower is self-employed and the other is salaried";
+        if (kind === "split_who" && detail === "2") return "record that the second borrower is self-employed and the first is salaried";
+        if (kind === "split_who") return "record that the first borrower is self-employed and the second is salaried";
         if (kind === "salary_deposit" && detail === "no") return "record that the salary is not deposited into the personal account";
         if (kind === "salary_deposit") return "record that the salary is deposited into the personal account";
         if (kind === "more_loans" && detail === "no") return "record that there is no other loan";

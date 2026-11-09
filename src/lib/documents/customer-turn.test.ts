@@ -35,6 +35,7 @@ function snapshot(over: Partial<FactSnapshot> = {}): FactSnapshot {
     secondBorrower: "no",
     firstHome: "true",
     coupleSplit: "unknown",
+    splitWho: "",
     salaryDeposit: "",
     loanMore: "",
     openQuestion: "",

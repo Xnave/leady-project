@@ -33,7 +33,7 @@ import {
   type CustomerIntent,
   type FactSnapshot,
 } from "./customer-turn";
-import { applyCustomerAnswers, applyExtractedBiometric, borrowerFileWho, borrowersOf, declinesExistingLoans, factsFromClient, factsOpen, firstHomeOf, loansOf, missingTheDocument, nextQuestion, openQuestions, retractsLastFile, secondBorrowerOf, type OpenQuestion } from "./facts";
+import { applyCustomerAnswers, applyExtractedBiometric, borrowerFileWho, borrowersOf, declinesExistingLoans, factsFromClient, factsOpen, firstHomeOf, loansOf, missingTheDocument, nextQuestion, openQuestions, retractsLastFile, secondBorrowerOf, sharedBorrowerEmployment, splitWhoOf, type OpenQuestion } from "./facts";
 import { docLabel, type BlankFormDef, type Profile, type RulesDocument, type Slot } from "./rules";
 import { checklistSlots, nextCollectionStageId, releasedStageId } from "./mortgage-rules";
 import { isImageFile, isUploadableFile, smartUploadName, uploadDay } from "./file-types";
@@ -746,6 +746,11 @@ export function documentAskText(
 ): string {
   if (question.kind === "second_borrower") return chat.documents.askSecondBorrower;
   if (question.kind === "couple_split") return chat.documents.askCouple;
+  if (question.kind === "split_who") {
+    const first = question.first || chat.documents.borrowerOrder["1"];
+    const second = question.second || chat.documents.borrowerOrder["2"];
+    return chat.documents.askSplitWho(first, second);
+  }
   if (question.kind === "id_biometric") return chat.documents.askIdBiometric(question.name || who);
   if (question.kind === "id_back") {
     return who ? chat.documents.forBorrower(chat.documents.askIdBack, who) : chat.documents.askIdBack;
@@ -822,6 +827,7 @@ function factSnapshot(profile: Profile, documentOpen: boolean): FactSnapshot {
     secondBorrower: secondBorrowerOf(profile),
     firstHome: firstHomeOf(profile),
     coupleSplit: couple === "yes" || couple === "no" ? couple : "unknown",
+    splitWho: splitWhoOf(profile),
     salaryDeposit: deposit === "yes" || deposit === "no" ? deposit : "",
     loanMore: typeof profile.loanMore === "string" ? profile.loanMore : "",
     openQuestion: nextQuestion(profile)?.kind ?? "",
@@ -2080,12 +2086,20 @@ export async function runDocumentsIngest(
       }
     }
   }
+  const sharedEmployment = sharedBorrowerEmployment(answerText);
+  if (sharedEmployment) {
+    turnIntents = turnIntents.filter((intent) => !(intent.kind === "fact" && intent.fact === "employment"));
+  }
   const applied = applyTurnFacts(profileForRefresh, turnIntents);
   profileForRefresh = applied.profile;
   for (const revision of applied.revisions) lines.push(chat.documents.revised(revision.kind, revision.detail));
   if (applied.loansCleared) lines.push(chat.documents.noLoans);
+  // One employment word answers the borrower who was asked. The same sentence
+  // must not be applied again to the next borrower. "שנינו שכירים" stays on
+  // the heuristic path, which fills every borrower still unknown.
+  const employmentConsumed = !sharedEmployment && turnIntents.some((intent) => intent.kind === "fact" && intent.fact === "employment");
   let state = clearExpiredCool(
-    refreshDossier({ ...prior, profile: profileForRefresh }, config.rules, refreshText, bare),
+    refreshDossier({ ...prior, profile: profileForRefresh }, config.rules, employmentConsumed ? "" : refreshText, bare),
     maxTries,
   );
   const offeredForm = offeredBlankForm(state, config.rules, ctx.messages);
