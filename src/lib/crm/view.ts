@@ -105,6 +105,8 @@ export type LeadViewDTO = LeadRowDTO & {
       href: string;
       mime: string;
       files: { href: string; mime: string }[];
+      /** Every slot this row stands for. Returning the row reopens all of them. */
+      slotIds: string[];
     }[];
   } | null;
   /** The open task the owner acts on in the lead view (was the Inbox), or null. */
@@ -119,6 +121,8 @@ export type LeadViewDTO = LeadRowDTO & {
 export type OpenTaskDTO = {
   id: string;
   kind: "handoff" | "approval";
+  /** Stored task reason, before the operator label. */
+  code: string;
   reason: string;
   summary: string;
   createdAt: string;

@@ -664,6 +664,8 @@ export async function completeHitlTaskWithDirectReply(opts: {
   taskId: string;
   actorUserId: string;
   reply: string;
+  /** A file return is a decline. Omitted means the teammate answered the customer. */
+  approved?: boolean;
 }) {
   const task = await prisma.hitlTask.findFirstOrThrow({
     where: { id: opts.taskId, tenantId: opts.tenantId, status: "open" },
@@ -673,7 +675,7 @@ export async function completeHitlTaskWithDirectReply(opts: {
       where: { id: task.id },
       data: {
         status: "done",
-        resolution: { note: opts.reply, approved: true, directReply: true },
+        resolution: { note: opts.reply, approved: opts.approved !== false, directReply: true },
         completedBy: opts.actorUserId,
         completedAt: new Date(),
       },
@@ -684,7 +686,7 @@ export async function completeHitlTaskWithDirectReply(opts: {
         leadId: task.leadId,
         conversationId: task.conversationId,
         category: "hitl",
-        action: "reply",
+        action: opts.approved === false ? "decline" : "reply",
         actorUserId: opts.actorUserId,
         actorLabel: resolveActorLabel(opts.actorUserId),
         summary: "",

@@ -110,6 +110,15 @@ export const chat: ChatCopy = {
       askStage: (docs) => `כדי להתקדם, אשמח לקבל את ${docs}.`,
       askIdCard: "אשמח לתמונה של תעודת הזהות עם הספח.",
       askPayslips: "אשמח לתלושי שכר של 3 החודשים האחרונים.",
+      ownedBy: (label, who) => `${label} של ${who}`,
+      forBorrower: (line, who) => `${line.replace(/[.?!]+\s*$/, "")} של ${who}.`,
+      borrowerRole: {
+        salaried: "הלווה השכיר",
+        self_employed: "הלווה העצמאי",
+        controlling_shareholder: "הלווה בעל השליטה",
+        both: "הלווה השכיר והעצמאי",
+      },
+      borrowerOrder: { "1": "הלווה הראשון", "2": "הלווה השני" },
       askEmployment: (name) =>
         `כדי להתאים את רשימת המסמכים, מהו מצב התעסוקה של ${name} — שכיר/ה, עצמאי/ת, שכיר/ה בעל שליטה, או אחר?`,
       askSecondBorrower: "האם יש לווה נוסף בתיק?",
@@ -210,6 +219,8 @@ export const chat: ChatCopy = {
       received: (doc) => `קיבלתי את ${doc}.`,
       rejected: (doc, reason, detail) => `לא הצלחתי לאשר את ${doc}: ${reason}.${detail ? ` ${detail}` : ""}`,
       complete: "המסמכים נשלחו לבדיקה. ניצור איתך קשר כשהעיבוד יסתיים, ואז נוכל להתקדם לשלב הבא.",
+      returnFiles: (items) =>
+        `צריך לשלוח מחדש:\n${items.map((item) => `• ${item.label} — ${item.note}`).join("\n")}\nאפשר לשלוח אותם כאן. הקובץ החדש יחליף את הקודם.`,
       askEscalate: "רוצה שאעביר את זה ליועץ, או שננסה שוב עוד מעט?",
       cooldownWait: (minutes) => `אפשר לנסות שוב בעוד כ־${minutes} דקות.`,
       escalateAccepted: "מעביר את זה ליועץ. הוא יחזור אליך בהקדם.",

@@ -115,6 +115,15 @@ export const chat: ChatCopy = {
       askStage: (docs) => `To move forward, please send ${docs}.`,
       askIdCard: "Please send a photo of your ID card with the appendix.",
       askPayslips: "Please send payslips for the last 3 months.",
+      ownedBy: (label, who) => `${label} for ${who}`,
+      forBorrower: (line, who) => `${line.replace(/[.?!]+\s*$/, "")} for ${who}.`,
+      borrowerRole: {
+        salaried: "the salaried borrower",
+        self_employed: "the self-employed borrower",
+        controlling_shareholder: "the controlling-shareholder borrower",
+        both: "the borrower who is both salaried and self-employed",
+      },
+      borrowerOrder: { "1": "the first borrower", "2": "the second borrower" },
       askEmployment: (name) =>
         `To tailor the document list, what is ${name}'s employment status — salaried, self-employed, controlling shareholder, or other?`,
       askSecondBorrower: "Is there a second borrower on this file?",
@@ -216,6 +225,8 @@ export const chat: ChatCopy = {
       received: (doc) => `I've received the ${doc}.`,
       rejected: (doc, reason, detail) => `I couldn't approve the ${doc}: ${reason}.${detail ? ` ${detail}` : ""}`,
       complete: "The documents have been sent for review. We'll contact you once they're processed, and then we can move on to the next step.",
+      returnFiles: (items) =>
+        `Please send these again:\n${items.map((item) => `• ${item.label} — ${item.note}`).join("\n")}\nYou can send them here. The new file replaces the previous one.`,
       askEscalate: "Would you like me to pass this to a consultant, or try again in a bit?",
       cooldownWait: (minutes) => `You can try again in about ${minutes} minutes.`,
       escalateAccepted: "I'll pass this to a consultant. They'll get back to you soon.",

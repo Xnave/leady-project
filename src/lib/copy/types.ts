@@ -79,6 +79,12 @@ export type ChatCopy = {
     askStage: (docs: string) => string;
     askIdCard: string;
     askPayslips: string;
+    /** Attach a borrower to a document name: "ID card for Dana". */
+    ownedBy: (label: string, who: string) => string;
+    /** Attach a borrower to a full sentence that already asks for a file. */
+    forBorrower: (line: string, who: string) => string;
+    borrowerRole: Record<"salaried" | "self_employed" | "controlling_shareholder" | "both", string>;
+    borrowerOrder: Record<"1" | "2", string>;
     askEmployment: (name: string) => string;
     askSecondBorrower: string;
     askCouple: string;
@@ -105,6 +111,8 @@ export type ChatCopy = {
     received: (doc: string) => string;
     rejected: (doc: string, reason: string, detail?: string) => string;
     complete: string;
+    /** What the customer receives when an advisor sends files back. */
+    returnFiles: (items: { label: string; note: string }[]) => string;
     askEscalate: string;
     cooldownWait: (minutes: number) => string;
     escalateAccepted: string;

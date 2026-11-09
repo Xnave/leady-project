@@ -1,3 +1,4 @@
+import { copyFor } from "@/lib/copy";
 import type { Profile } from "./rules";
 
 /** What the checklist can act on. Empty `status_report` stays unknown. */
@@ -224,6 +225,36 @@ export function advisorReason(profile: Profile): string {
   return flagged
     .map((borrower) => `${borrower.fullName || borrower.slot}: ${borrower.employmentLabel || "אחר"}`)
     .join(", ");
+}
+
+/**
+ * Who a file belongs to when the case has two borrowers.
+ * A name wins. Otherwise a unique employment, then first or second.
+ * One borrower stays unnamed.
+ */
+export function borrowerFileWho(
+  profile: Profile,
+  borrower: string | undefined,
+  lang: "en" | "he",
+): string {
+  const people = borrowersOf(profile);
+  if (people.length < 2) return "";
+  const slot = borrower === "2" ? "2" : borrower === "1" ? "1" : "";
+  if (!slot) return "";
+  const person = people.find((item) => item.slot === slot);
+  if (!person) return "";
+  const name = person.fullName.trim();
+  if (name) return name;
+  const documents = copyFor(lang).chat.documents;
+  const employment = person.employment;
+  const namedRole = employment === "salaried"
+    || employment === "self_employed"
+    || employment === "controlling_shareholder"
+    || employment === "both";
+  if (namedRole && people.filter((item) => item.employment === employment).length === 1) {
+    return documents.borrowerRole[employment];
+  }
+  return documents.borrowerOrder[slot];
 }
 
 export function blankBorrower(slot: "1" | "2" = "2"): BorrowerFact {

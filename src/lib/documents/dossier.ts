@@ -33,7 +33,7 @@ import {
   type CustomerIntent,
   type FactSnapshot,
 } from "./customer-turn";
-import { applyCustomerAnswers, applyExtractedBiometric, borrowersOf, declinesExistingLoans, factsFromClient, factsOpen, firstHomeOf, loansOf, missingTheDocument, nextQuestion, openQuestions, retractsLastFile, secondBorrowerOf, type OpenQuestion } from "./facts";
+import { applyCustomerAnswers, applyExtractedBiometric, borrowerFileWho, borrowersOf, declinesExistingLoans, factsFromClient, factsOpen, firstHomeOf, loansOf, missingTheDocument, nextQuestion, openQuestions, retractsLastFile, secondBorrowerOf, type OpenQuestion } from "./facts";
 import { docLabel, type BlankFormDef, type Profile, type RulesDocument, type Slot } from "./rules";
 import { checklistSlots, nextCollectionStageId, releasedStageId } from "./mortgage-rules";
 import { isImageFile, isUploadableFile, smartUploadName, uploadDay } from "./file-types";
@@ -54,6 +54,7 @@ import {
   priorCalendarMonths,
   recentPayslipMonths,
   recordMonths,
+  reopenReturnedSlots,
   slotDisplayLabel,
   type DossierState,
   type SlotState,
@@ -720,12 +721,35 @@ function refreshDossier(state: DossierState, rules: RulesDocument, text: string,
 
 type DocumentChat = ReturnType<typeof copyFor>["chat"];
 
+function questionWho(profile: Profile, question: OpenQuestion, lang: "en" | "he"): string {
+  if (!("slot" in question)) return "";
+  return borrowerFileWho(profile, question.slot, lang);
+}
+
+function withBorrower(
+  chat: DocumentChat,
+  line: string,
+  profile: Profile,
+  borrower: string | undefined,
+  lang: "en" | "he",
+): string {
+  const who = borrowerFileWho(profile, borrower, lang);
+  return who ? chat.documents.forBorrower(line, who) : line;
+}
+
 /** The sentence for one checklist question. */
-export function documentAskText(question: OpenQuestion, lang: "en" | "he", chat: DocumentChat): string {
+export function documentAskText(
+  question: OpenQuestion,
+  lang: "en" | "he",
+  chat: DocumentChat,
+  who = "",
+): string {
   if (question.kind === "second_borrower") return chat.documents.askSecondBorrower;
   if (question.kind === "couple_split") return chat.documents.askCouple;
-  if (question.kind === "id_biometric") return chat.documents.askIdBiometric(question.name);
-  if (question.kind === "id_back") return chat.documents.askIdBack;
+  if (question.kind === "id_biometric") return chat.documents.askIdBiometric(question.name || who);
+  if (question.kind === "id_back") {
+    return who ? chat.documents.forBorrower(chat.documents.askIdBack, who) : chat.documents.askIdBack;
+  }
   const fallback =
     "slot" in question && question.slot === "2"
       ? lang === "he"
@@ -748,8 +772,8 @@ export function documentAskText(question: OpenQuestion, lang: "en" | "he", chat:
 function bareAnswerAllowed(profile: Profile, askedText: string): boolean {
   const question = nextQuestion(profile);
   if (!question || !askedText.trim()) return false;
-  const he = documentAskText(question, "he", copyFor("he").chat);
-  const en = documentAskText(question, "en", copyFor("en").chat);
+  const he = documentAskText(question, "he", copyFor("he").chat, questionWho(profile, question, "he"));
+  const en = documentAskText(question, "en", copyFor("en").chat, questionWho(profile, question, "en"));
   return askedText.includes(he) || askedText.includes(en);
 }
 
@@ -759,7 +783,7 @@ function customerReply(ctx: IngestTurn, reply: string): string {
   return withFirstMessageIntro(ctx, documentsReplyLang(ctx), text);
 }
 
-function nextDocumentAsk(
+export function documentFileAsk(
   state: DossierState,
   rules: RulesDocument,
   lang: "en" | "he",
@@ -767,18 +791,21 @@ function nextDocumentAsk(
 ): string {
   const slot = state.slots.find((item) => isOutstanding(item, state.slots));
   if (!slot) return "";
-  if (slot.docType === "id_card") return chat.documents.askIdCard;
-  if (slot.docType === "payslip") return chat.documents.askPayslips;
-  return chat.documents.askStage(slotDisplayLabel(rules, slot, lang));
+  const line = slot.docType === "id_card"
+    ? chat.documents.askIdCard
+    : slot.docType === "payslip"
+      ? chat.documents.askPayslips
+      : chat.documents.askStage(slotDisplayLabel(rules, slot, lang));
+  return withBorrower(chat, line, state.profile, slot.borrower, lang);
 }
 
 function gatheringLines(state: DossierState, rules: RulesDocument, lang: "en" | "he", chat: DocumentChat): string[] {
   const question = nextQuestion(state.profile);
-  if (question) return [documentAskText(question, lang, chat)];
+  if (question) return [documentAskText(question, lang, chat, questionWho(state.profile, question, lang))];
   const lines: string[] = [];
   const flag = typeof state.profile.advisorFlag === "string" ? state.profile.advisorFlag : "";
   if (flag) lines.push(chat.documents.advisorFlag(flag));
-  const next = nextDocumentAsk(state, rules, lang, chat);
+  const next = documentFileAsk(state, rules, lang, chat);
   if (next) lines.push(next);
   return lines;
 }
@@ -863,6 +890,16 @@ async function notifyAdvisor(ctx: TurnContext, state: DossierState): Promise<Dos
     },
   });
   return { ...state, profile: { ...state.profile, advisorNotified: true } };
+}
+
+function offeredForms(profile: Profile): string[] {
+  const raw = profile.formsOffered;
+  return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
+}
+
+function rememberOfferedForm(state: DossierState, docType: string): DossierState {
+  const formsOffered = [...new Set([...offeredForms(state.profile), docType])];
+  return { ...state, profile: { ...state.profile, formPending: docType, formsOffered } };
 }
 
 function zernioIds(ctx: IngestTurn): { accountId: string; conversationId: string } | null {
@@ -1512,9 +1549,13 @@ function receiptName(
 ): string {
   const slot = state.slots.find((item) => item.id === slotId);
   const base = docLabel(rules, docType, lang);
-  if (covered?.length) return `${base} ${monthList(covered, lang)}`;
-  if (slot?.year) return `${base} ${slot.year}`;
-  return base;
+  const titled = covered?.length
+    ? `${base} ${monthList(covered, lang)}`
+    : slot?.year
+      ? `${base} ${slot.year}`
+      : base;
+  const who = borrowerFileWho(state.profile, slot?.borrower, lang);
+  return who ? copyFor(lang).chat.documents.ownedBy(titled, who) : titled;
 }
 
 /** After the front of an ID is in, ask whether that card is biometric before the next file. */
@@ -1693,6 +1734,26 @@ async function holdImage(opts: IngestLines & {
   });
 }
 
+/** The saved file the customer sent most recently, not the last row in the checklist. */
+async function newestUploadedSlotId(
+  tenantId: string,
+  dossierId: string,
+  state: DossierState,
+): Promise<string> {
+  const docs = await prisma.leadDocument.findMany({
+    where: { tenantId, dossierId, status: "uploaded" },
+    orderBy: { createdAt: "desc" },
+    select: { validation: true },
+  });
+  const open = new Set(state.slots.filter((slot) => slot.status === "uploaded").map((slot) => slot.id));
+  for (const doc of docs) {
+    const validation = isRecord(doc.validation) ? doc.validation : {};
+    const slotId = typeof validation.slotId === "string" ? validation.slotId : "";
+    if (slotId && open.has(slotId)) return slotId;
+  }
+  return "";
+}
+
 async function dropHeld(tenantId: string, dossierId: string, slotId: string): Promise<void> {
   const held = await prisma.leadDocument.findMany({
     where: { tenantId, dossierId, status: "stored" },
@@ -1794,15 +1855,37 @@ export function retractionSlot(slots: SlotState[], text: string): SlotState | un
   return uploaded.at(-1);
 }
 
+/**
+ * The photo they just sent is still open, so "the last file" is that photo.
+ * A biometric reading from it is dropped with the photo.
+ */
+export function releaseHeldSlot(state: DossierState, rules: RulesDocument, slotId: string): DossierState {
+  const slot = state.slots.find((item) => item.id === slotId);
+  if (!slot || slot.status === "uploaded") {
+    return { ...state, profile: { ...state.profile, imageBatchSlot: "", idBackPending: "" } };
+  }
+  let profile: Profile = { ...state.profile, imageBatchSlot: "", idBackPending: "" };
+  const who = slot.borrower === "1" || slot.borrower === "2" ? slot.borrower : "";
+  if (who) {
+    const borrowers = borrowersOf(profile).map((borrower) =>
+      borrower.slot === who ? { ...borrower, idBiometric: "" as const } : borrower,
+    );
+    profile = { ...profile, borrowers };
+    if (profile.appendixSeen === who) profile = { ...profile, appendixSeen: "" };
+  }
+  return refreshDossier({ ...state, profile }, rules, "");
+}
+
 /** Clear the named uploaded slot and, when it was the other side, ask for it again. */
 export function reopenNamedSlot(
   state: DossierState,
   target: "id_card_back" | "latest",
+  latestSlotId = "",
 ): { state: DossierState; slot: SlotState } | null {
   const uploaded = state.slots.filter((slot) => slot.status === "uploaded");
   const slot = target === "id_card_back"
     ? [...uploaded].reverse().find((item) => item.docType === "id_card_back")
-    : uploaded.at(-1);
+    : uploaded.find((item) => item.id === latestSlotId) ?? uploaded.at(-1);
   if (!slot) return null;
   const slots = state.slots.map((item) =>
     item.id === slot.id
@@ -2217,7 +2300,7 @@ export async function runDocumentsIngest(
       const who = state.slots.find((slot) => slot.id === slotId)?.borrower;
       if (docType === "id_card" && biometric === "yes" && (who === "1" || who === "2")) {
         state = { ...state, profile: { ...state.profile, imageBatchSlot: slotId, idBackPending: who } };
-        lines.push(chat.documents.askIdBack);
+        lines.push(withBorrower(chat, chat.documents.askIdBack, state.profile, who, lang));
         continue;
       }
       state = { ...state, profile: { ...state.profile, imageBatchSlot: slotId } };
@@ -2245,7 +2328,7 @@ export async function runDocumentsIngest(
       });
       if (who === "1" || who === "2") {
         state = { ...state, profile: { ...state.profile, imageBatchSlot: judged.accepted.slotId, idBackPending: who } };
-        lines.push(chat.documents.askIdBack);
+        lines.push(withBorrower(chat, chat.documents.askIdBack, state.profile, who, lang));
         continue;
       }
     }
@@ -2290,14 +2373,18 @@ export async function runDocumentsIngest(
   for (const slot of state.slots) {
     const form = config.rules.documents[slot.docType]?.blankForm;
     if (!form || seenForms.has(slot.docType) || !isOutstanding(slot, state.slots)) continue;
+    if (offeredForms(state.profile).includes(slot.docType)) continue;
     seenForms.add(slot.docType);
     const label = docLabel(config.rules, slot.docType, lang);
     const caption = chat.documents.blankForm(label);
     try {
       const sent = await sendBlankForm(ctx, chat, slot.docType, form, label);
-      if (sent === "already") continue;
+      if (sent === "already") {
+        state = rememberOfferedForm(state, slot.docType);
+        continue;
+      }
       if (sent === "sent" || sent === "skipped") {
-        state = { ...state, profile: { ...state.profile, formPending: slot.docType } };
+        state = rememberOfferedForm(state, slot.docType);
       }
       if (sent === "skipped") {
         lines.push(`${caption}\n${blankFormHref(ctx.tenantId, slot.docType, form.file)}`);
@@ -2315,17 +2402,36 @@ export async function runDocumentsIngest(
 
   let reopened = false;
   const retract = turnIntents.find((intent) => intent.kind === "retract");
-  if (retract && retract.kind === "retract") {
-    const undone = reopenNamedSlot(state, retract.target);
+  if (retract && retract.kind === "retract" && retract.target === "latest") {
+    const heldId = typeof state.profile.imageBatchSlot === "string" ? state.profile.imageBatchSlot : "";
+    const held = state.slots.find((slot) => slot.id === heldId && slot.status !== "uploaded");
+    if (held) {
+      await dropHeld(ctx.tenantId, row.id, held.id);
+      state = releaseHeldSlot(state, config.rules, held.id);
+      reopened = true;
+      lines.push(chat.documents.retracted);
+      const again = documentFileAsk(state, config.rules, lang, chat);
+      if (again) lines.push(again);
+    }
+  }
+  if (retract && retract.kind === "retract" && !reopened) {
+    const latestSlotId = retract.target === "latest"
+      ? await newestUploadedSlotId(ctx.tenantId, row.id, state)
+      : "";
+    const undone = reopenNamedSlot(state, retract.target, latestSlotId);
     if (undone) {
       state = undone.state;
       reopened = true;
       lines.push(chat.documents.retracted);
       const slot = undone.slot;
-      if (slot.docType === "id_card_back") lines.push(chat.documents.askIdBack);
-      else if (slot.docType === "id_card") lines.push(chat.documents.askIdCard);
-      else if (slot.docType === "payslip") lines.push(chat.documents.askPayslips);
-      else lines.push(chat.documents.askStage(slotDisplayLabel(config.rules, slot, lang)));
+      const again = slot.docType === "id_card_back"
+        ? chat.documents.askIdBack
+        : slot.docType === "id_card"
+          ? chat.documents.askIdCard
+          : slot.docType === "payslip"
+            ? chat.documents.askPayslips
+            : chat.documents.askStage(slotDisplayLabel(config.rules, slot, lang));
+      lines.push(withBorrower(chat, again, state.profile, slot.borrower, lang));
     }
   }
 
@@ -2333,7 +2439,10 @@ export async function runDocumentsIngest(
   const helpOnly = Boolean(help && !applied.changed && !retract);
   if (help && help.kind === "how_to" && !reopened) {
     const slot = state.slots.find((item) => isOutstanding(item, state.slots));
-    if (slot) lines.push(help.detail === "short" ? chat.documents.howTo(slot.docType) : chat.documents.howToDetail(slot.docType));
+    if (slot) {
+      const helpLine = help.detail === "short" ? chat.documents.howTo(slot.docType) : chat.documents.howToDetail(slot.docType);
+      lines.push(withBorrower(chat, helpLine, state.profile, slot.borrower, lang));
+    }
   } else if (refreshText && declinesExistingLoans(refreshText)) {
     lines.push(chat.documents.noLoans);
   }
@@ -2360,7 +2469,7 @@ export async function runDocumentsIngest(
   const reply = lines.filter(Boolean).join("\n");
   return {
     ok: true,
-    reply: customerReply(ctx, reply || nextDocumentAsk(state, config.rules, lang, chat)),
+    reply: customerReply(ctx, reply || documentFileAsk(state, config.rules, lang, chat)),
   };
 }
 
@@ -2436,6 +2545,8 @@ export type ChecklistPiece = {
   id: string;
   docType: string;
   borrower: string;
+  /** Borrower phrase when the file belongs to one of several people. Empty for a single borrower. */
+  who: string;
   label: string;
   stage: string;
   status: "missing" | "uploaded";
@@ -2452,6 +2563,7 @@ export type ChecklistFile = { href: string; mime: string };
 
 export type ChecklistRow = {
   id: string;
+  slotIds: string[];
   label: string;
   stage: string;
   status: string;
@@ -2546,11 +2658,14 @@ export function groupChecklistRows(
       ? stored
       : [...new Set(group.flatMap((slot) => monthsNamedIn(slot.sourceFilename)))].sort();
     const idLabel = group.find((slot) => slot.docType === "id_card")?.label;
-    const label = payslip
+    const base = payslip
       ? payslipFieldLabel(group.length, named, lang, now)
       : idLabel || first.label;
+    const who = first.who.trim();
+    const label = who ? copyFor(lang).chat.documents.ownedBy(base, who) : base;
     return {
       id: first.id,
+      slotIds: group.map((slot) => slot.id),
       label,
       stage: first.stage,
       status: uploaded ? "uploaded" : "missing",
@@ -2562,6 +2677,96 @@ export function groupChecklistRows(
       files,
     };
   });
+}
+
+function returnedLineLabel(
+  rules: RulesDocument | null,
+  profile: Profile,
+  slots: SlotState[],
+  slotIds: string[],
+  lang: "en" | "he",
+): string {
+  const wanted = new Set(slotIds);
+  const pieces: ChecklistPiece[] = slots.filter((slot) => wanted.has(slot.id)).map((slot) => ({
+    id: slot.id,
+    docType: slot.docType,
+    borrower: slot.borrower || "1",
+    who: borrowerFileWho(profile, slot.borrower, lang),
+    label: rules ? slotDisplayLabel(rules, slot, lang) : slot.docType,
+    stage: slot.stage,
+    status: "uploaded",
+    lastReason: "",
+    filename: slot.filename,
+    remoteId: slot.remoteId,
+    href: "",
+    mime: "application/pdf",
+    coveredMonths: slot.coveredMonths ?? [],
+    sourceFilename: slot.filename,
+  }));
+  return groupChecklistRows(pieces, lang)[0]?.label ?? pieces[0]?.label ?? slotIds[0] ?? "";
+}
+
+/**
+ * Decline part of a finished checklist. The named files become missing again,
+ * the previous uploads are no longer the current file, and the review task can
+ * open again once the customer replaces them.
+ */
+export async function returnChecklistDocuments(opts: {
+  tenantId: string;
+  leadId: string;
+  groups: { slotIds: string[]; note: string }[];
+  lang: "en" | "he";
+}): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  const groups = opts.groups
+    .map((group) => ({ slotIds: group.slotIds.filter(Boolean), note: group.note.trim() }))
+    .filter((group) => group.slotIds.length > 0 && group.note);
+  if (!groups.length) return { ok: false, error: "empty" };
+  const [config, dossier] = await Promise.all([
+    readConfig(opts.tenantId),
+    prisma.dossier.findFirst({
+      where: { tenantId: opts.tenantId, leadId: opts.leadId },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+  if (!dossier) return { ok: false, error: "not_found" };
+  const state = stateOf(dossier);
+  const next = reopenReturnedSlots(state, groups);
+  const reopened = next.slots.filter((slot, index) => slot.status !== state.slots[index]?.status);
+  if (!reopened.length) return { ok: false, error: "nothing_returned" };
+  const noteFor = new Map(groups.flatMap((group) => group.slotIds.map((id) => [id, group.note] as const)));
+  for (const slot of state.slots) {
+    if (!reopened.some((item) => item.id === slot.id)) continue;
+    const match = slot.remoteId
+      ? { remoteId: slot.remoteId }
+      : slot.filename
+        ? { filename: slot.filename }
+        : null;
+    if (!match) continue;
+    await prisma.leadDocument.updateMany({
+      where: { tenantId: opts.tenantId, dossierId: dossier.id, status: "uploaded", ...match },
+      data: {
+        status: "rejected",
+        validation: { reason: "returned", note: noteFor.get(slot.id) ?? "" } as Prisma.InputJsonValue,
+      },
+    });
+  }
+  await prisma.dossier.update({
+    where: { id: dossier.id },
+    data: {
+      profile: next.profile as Prisma.InputJsonValue,
+      slots: next.slots as unknown as Prisma.InputJsonValue,
+      status: next.status,
+      activeStage: next.activeStage,
+    },
+  });
+  const lines = groups
+    .filter((group) => group.slotIds.some((id) => reopened.some((slot) => slot.id === id)))
+    .map((group) => ({
+      label: returnedLineLabel(config?.rules ?? null, state.profile, state.slots, group.slotIds, opts.lang),
+      note: group.note,
+    }));
+  await safeRefreshLeadState(opts.tenantId, opts.leadId);
+  return { ok: true, text: copyFor(opts.lang).chat.documents.returnFiles(lines) };
 }
 
 export async function loadDocumentChecklist(tenantId: string, leadId: string, lang: "en" | "he") {
@@ -2596,6 +2801,7 @@ export async function loadDocumentChecklist(tenantId: string, leadId: string, la
         id: slot.id,
         docType: slot.docType,
         borrower: slot.borrower || "1",
+        who: borrowerFileWho(state.profile, slot.borrower, lang),
         label: rules ? slotDisplayLabel(rules, slot, lang) : slot.docType,
         stage: slot.stage,
         status: slot.status,

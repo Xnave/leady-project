@@ -3784,11 +3784,12 @@ button.crm-stage { cursor: pointer; }
 .crm-doc-preview {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: 220;
   display: grid;
   place-items: center;
   padding: var(--space-4);
 }
+.crm-doc-preview:focus { outline: none; }
 .crm-doc-preview-scrim {
   position: absolute;
   inset: 0;
@@ -3797,13 +3798,14 @@ button.crm-stage { cursor: pointer; }
   cursor: pointer;
 }
 .crm-doc-preview-card {
+  direction: ltr;
   position: relative;
   z-index: 1;
   width: min(960px, 100%);
   height: min(86vh, 900px);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   overflow: hidden;
   background: var(--card);
   border: 1px solid var(--line);
@@ -3817,6 +3819,7 @@ button.crm-stage { cursor: pointer; }
   position: relative;
   z-index: 2;
   grid-column: 1 / -1;
+  grid-row: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3826,6 +3829,7 @@ button.crm-stage { cursor: pointer; }
   background: var(--card);
 }
 .crm-doc-arrow {
+  grid-row: 3;
   align-self: center;
   width: 44px;
   height: 44px;
@@ -3840,6 +3844,7 @@ button.crm-stage { cursor: pointer; }
 }
 .crm-doc-arrow:disabled { opacity: 0.35; cursor: default; }
 .crm-doc-preview-view {
+  grid-row: 3;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -3853,6 +3858,66 @@ button.crm-stage { cursor: pointer; }
   background: var(--bg);
   object-fit: contain;
 }
+.crm-doc-return {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+.crm-doc-return-pick {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+}
+.crm-doc-return-pick input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  flex: none;
+}
+.crm-doc-preview-review,
+.crm-doc-preview-foot {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--card);
+}
+.crm-doc-preview-review {
+  grid-row: 2;
+  flex-wrap: wrap;
+  border-block-end: 1px solid var(--line);
+}
+.crm-doc-preview-review .crm-task-error {
+  flex: 1 0 100%;
+  margin: 0;
+}
+.crm-doc-preview-review textarea {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  min-height: 40px;
+  margin: 0;
+}
+.crm-doc-preview-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+.crm-doc-preview-foot {
+  grid-row: 4;
+  justify-content: space-between;
+  border-block-start: 1px solid var(--line);
+}
+.crm-doc-preview-foot .crm-task-error { flex: 1; }
 
 /* Lead view (shared by the peek panel and the full page) */
 .crm-lv-head { padding: var(--space-5) var(--space-5) var(--space-4); display: grid; gap: var(--space-4); }

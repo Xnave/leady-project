@@ -9,6 +9,8 @@ import {
   extraPayslipSlotIds,
   freshDossier,
   judgeFile,
+  reopenReturnedSlots,
+  type DossierState,
   priorCalendarMonths,
   recordMonths,
   recentPayslipMonths,
@@ -241,5 +243,39 @@ describe("payslip months", () => {
       "payslip#1#1",
       "payslip#1#2",
     ]);
+  });
+});
+
+describe("reopenReturnedSlots", () => {
+  it("clears only the returned file so a new upload can replace it", () => {
+    const slot = (id: string) => ({
+      id,
+      docType: "id_card",
+      stage: "identity",
+      index: 0,
+      borrower: id.endsWith("2") ? "2" : "1",
+      status: "uploaded" as const,
+      failCount: 1,
+      lastReason: "",
+      remoteId: id,
+      filename: `${id}.pdf`,
+    });
+    const start: DossierState = {
+      status: "complete",
+      smartClientId: "c1",
+      profile: { checklistReviewOpened: true },
+      activeStage: "",
+      slots: [slot("id_card#1#0"), slot("id_card#2#0")],
+    };
+    const next = reopenReturnedSlots(start, [{ slotIds: ["id_card#1#0"], note: "התמונה חתוכה" }]);
+    const returned = next.slots.find((item) => item.id === "id_card#1#0");
+    const kept = next.slots.find((item) => item.id === "id_card#2#0");
+    expect(returned).toMatchObject({ status: "missing", remoteId: "", filename: "", lastReason: "התמונה חתוכה" });
+    expect(kept?.status).toBe("uploaded");
+    expect(next.status).toBe("gathering");
+    expect(next.profile.checklistReviewOpened).toBe(false);
+    const replaced = commitSlot(next, "id_card#1#0", "new-file", "new.pdf");
+    expect(replaced.slots.find((item) => item.id === "id_card#1#0")?.remoteId).toBe("new-file");
+    expect(replaced.status).toBe("complete");
   });
 });

@@ -1,4 +1,5 @@
-import { borrowersOf } from "./facts";
+import { copyFor } from "@/lib/copy";
+import { borrowerFileWho, borrowersOf } from "./facts";
 import type { Check, Profile, RulesDocument, Slot } from "./rules";
 
 export type CheckFailure = { op: Check["op"]; field?: string };
@@ -389,6 +390,45 @@ export function recordMonths(
   };
 }
 
+/**
+ * An advisor sent these uploaded files back. Each one is missing again, so the
+ * next upload fills the same slot, and the checklist review can open once more.
+ */
+export function reopenReturnedSlots(
+  state: DossierState,
+  groups: { slotIds: string[]; note: string }[],
+): DossierState {
+  const noteBySlot = new Map<string, string>();
+  for (const group of groups) {
+    const note = group.note.trim();
+    if (!note) continue;
+    for (const id of group.slotIds) noteBySlot.set(id, note);
+  }
+  let returned = false;
+  const slots = state.slots.map((slot) => {
+    const note = noteBySlot.get(slot.id);
+    if (!note || slot.status !== "uploaded") return slot;
+    returned = true;
+    return {
+      ...slot,
+      status: "missing" as const,
+      remoteId: "",
+      filename: "",
+      failCount: 0,
+      lastReason: note,
+      coveredMonths: [],
+    };
+  });
+  if (!returned) return state;
+  return {
+    ...state,
+    slots,
+    status: dossierDone(slots) ? "complete" : "gathering",
+    activeStage: activeStageOf(slots),
+    profile: { ...state.profile, checklistReviewOpened: false },
+  };
+}
+
 export function commitSlot(
   state: DossierState,
   slotId: string,
@@ -434,7 +474,10 @@ export function missingLabels(
       labels.push(label);
       continue;
     }
-    const label = slotLabel(rules, slot, lang);
+    const who = borrowerFileWho(state.profile, slot.borrower, lang);
+    const label = who
+      ? copyFor(lang).chat.documents.ownedBy(slotLabel(rules, slot, lang), who)
+      : slotLabel(rules, slot, lang);
     if (seen.has(label)) continue;
     seen.add(label);
     labels.push(label);

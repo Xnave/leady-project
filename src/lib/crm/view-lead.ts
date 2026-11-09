@@ -371,6 +371,7 @@ export async function loadLeadView(
     openTask = {
       id: task.id,
       kind: task.type === REQUEST_APPROVAL_TASK ? "approval" : "handoff",
+      code: task.reason,
       reason: task.type === REQUEST_APPROVAL_TASK ? "" : hitlReasonLabel(ui, task.reason),
       summary: typeof payload.summary === "string" ? payload.summary : "",
       createdAt: task.createdAt.toISOString(),

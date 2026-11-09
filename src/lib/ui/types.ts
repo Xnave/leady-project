@@ -743,6 +743,16 @@ export type UiCopy = {
     releaseFailed: string;
     openFile: string;
     closeFile: string;
+    returnFiles: string;
+    returnFilesHint: string;
+    returnNote: string;
+    returnNotePlaceholder: string;
+    returnNeedOne: string;
+    returnSend: string;
+    markInvalid: string;
+    saveMark: string;
+    cancelMark: string;
+    sendToFix: string;
     previousFile: string;
     nextFile: string;
     reason: string;
