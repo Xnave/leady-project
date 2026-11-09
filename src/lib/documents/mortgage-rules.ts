@@ -1,19 +1,22 @@
 import {
-  accountsKnown,
   accountsOf,
-  advisorReason,
   borrowersOf,
+  ensureBorrowers,
   factsOpen,
-  firstHomeOf,
   loanCountOf,
-  loansOf,
-  needsSalaryDeposit,
   type BorrowerFact,
 } from "./facts";
-import { requiredSlots, type Profile, type RulesDocument, type Slot } from "./rules";
+import {
+  conditionMatches,
+  type Condition,
+  type Profile,
+  type Requirement,
+  type RulesDocument,
+  type Slot,
+} from "./rules";
 import { priorCalendarMonths } from "./validate";
 
-/** Current calendar year is the accountant letter. The year before it is the prior-year pair. */
+/** Current calendar year is the accountant letter. The year before it is the tax assessment. */
 export function collectionYears(now: Date = new Date()): { taxYear: number; accountantYear: number } {
   const accountantYear = now.getFullYear();
   return { accountantYear, taxYear: accountantYear - 1 };
@@ -21,7 +24,8 @@ export function collectionYears(now: Date = new Date()): { taxYear: number; acco
 
 /**
  * Israeli mortgage file. Identity is always open. Income and banking
- * come from each borrower's employment, known accounts, and known loans.
+ * come from each borrower's employment and known loans. A statement is
+ * one file per listed account, or one file when the file lists none.
  * A person who is both salaried and self-employed, or a purchase that is
  * not a first home, does not get those lists.
  */
@@ -36,19 +40,27 @@ export const MORTGAGE_RULES: RulesDocument = {
   documents: {
     id_card: {
       labels: {
-        he: "תעודת זהות (גם את הצד השני אם הכרטיס ביומטרי)",
-        en: "ID card (both sides of a biometric card)",
+        he: "תעודת זהות",
+        en: "ID card",
       },
-      fields: ["nationalId", "fullName"],
+      recognize:
+        "Israeli identity card (תעודת זהות), front side. A photo or scan of the plastic card counts. The large page beside it is the appendix (ספח); the number and names are on the smaller card. The number is printed in groups such as 2 0570771 4. The given name (שם פרטי) and family name (שם משפחה) are separate lines.",
+      fields: ["nationalId", "firstName", "lastName", "fullName", "biometric", "appendix"],
       checks: [
         { op: "field_present", field: "nationalId" },
         { op: "matches_profile", field: "nationalId", profileKey: "nationalId" },
       ],
     },
+    id_card_back: {
+      labels: { he: "הצד השני של תעודת הזהות", en: "other side of the ID card" },
+      fields: [],
+      checks: [],
+    },
     id_appendix: {
       labels: { he: "ספח תעודת זהות", en: "ID appendix" },
-      fields: ["fullName"],
-      checks: [{ op: "field_present", field: "fullName" }],
+      recognize: "The Israeli ID appendix (ספח תעודת זהות), the paper page listing the household. A photo of that page is enough.",
+      fields: [],
+      checks: [],
     },
     payslip: {
       labels: { he: "תלוש שכר", en: "Payslip" },
@@ -60,12 +72,12 @@ export const MORTGAGE_RULES: RulesDocument = {
     },
     tax_assessment: {
       labels: { he: "שומת מס", en: "Tax assessment" },
-      fields: ["fullName"],
+      fields: ["fullName", "year"],
       checks: [{ op: "field_present", field: "fullName" }],
     },
     accountant_letter: {
       labels: { he: "אישור רואה חשבון", en: "Accountant letter" },
-      fields: ["fullName"],
+      fields: ["fullName", "year"],
       checks: [{ op: "field_present", field: "fullName" }],
       blankForm: { file: "אישור רואה חשבון עוסק מורשה.pdf", once: "conversation" },
     },
@@ -86,59 +98,157 @@ export const MORTGAGE_RULES: RulesDocument = {
       checks: [{ op: "field_present", field: "fullName" }],
     },
   },
-  requirements: [
-    { docType: "id_card", stage: "identity" },
-    { docType: "id_appendix", stage: "identity" },
-  ],
+  requirements: stageOneRequirements(),
 };
 
-function slot(
-  docType: string,
-  stage: string,
-  scope: string,
-  index: number,
-  borrower?: string,
-  accountId?: string,
-  extra?: { year?: number; altGroup?: string; months?: string[] },
-): Slot {
+/** Income and banking stay closed for a non-first home and for an advisor flag. */
+function listOpen(): { op: "all"; of: Condition[] } {
   return {
-    id: `${docType}#${scope}#${index}`,
-    docType,
-    stage,
-    index,
-    collectionStage: "1",
-    ...(borrower ? { borrower } : {}),
-    ...(accountId ? { accountId } : {}),
-    ...(extra?.year ? { year: extra.year } : {}),
-    ...(extra?.altGroup ? { altGroup: extra.altGroup } : {}),
-    ...(extra?.months ? { months: extra.months } : {}),
+    op: "all",
+    of: [
+      { op: "neq", key: "firstHome", value: "false" },
+      { op: "eq", key: "advisorFlag", value: "" },
+    ],
   };
 }
 
-function incomeSlots(borrower: BorrowerFact, rules: RulesDocument): Slot[] {
-  if (needsSalaryDeposit(borrower)) return [];
-  if (borrower.employment === "salaried") {
-    const slips = [0, 1, 2].map((index) => slot("payslip", "income", borrower.slot, index, borrower.slot));
-    if (borrower.salaryDeposit === "no") {
-      slips.push(slot("controlling_shareholder_letter", "income", borrower.slot, 0, borrower.slot));
+function whenEmployment(employment: Condition): Condition {
+  return { op: "all", of: [...listOpen().of, employment] };
+}
+
+function stageOneRequirements(): Requirement[] {
+  const open = listOpen();
+  const salariedOrShareholder: Condition = {
+    op: "any",
+    of: [
+      { op: "eq", key: "employment", value: "salaried" },
+      { op: "eq", key: "employment", value: "controlling_shareholder" },
+    ],
+  };
+  return [
+    { docType: "id_card", stage: "identity", each: "borrower" },
+    {
+      docType: "id_card_back",
+      stage: "identity",
+      each: "borrower",
+      when: { op: "eq", key: "idBiometric", value: "yes" },
+    },
+    { docType: "id_appendix", stage: "identity", each: "borrower" },
+    { docType: "payslip", stage: "income", count: 3, each: "borrower", when: whenEmployment(salariedOrShareholder) },
+    {
+      docType: "controlling_shareholder_letter",
+      stage: "income",
+      each: "borrower",
+      when: whenEmployment({ op: "eq", key: "employment", value: "controlling_shareholder" }),
+    },
+    {
+      docType: "tax_assessment",
+      stage: "income",
+      each: "borrower",
+      year: "taxYear",
+      when: whenEmployment({ op: "eq", key: "employment", value: "self_employed" }),
+    },
+    {
+      docType: "accountant_letter",
+      stage: "income",
+      each: "borrower",
+      year: "accountantYear",
+      when: whenEmployment({ op: "eq", key: "employment", value: "self_employed" }),
+    },
+    { docType: "bank_statement", stage: "banking", each: "account", empty: "one", months: 3, when: open },
+    {
+      docType: "loan_balances",
+      stage: "banking",
+      countFrom: "loanCount",
+      when: { op: "all", of: [...open.of, { op: "eq", key: "loans", value: "known" }] },
+    },
+  ];
+}
+
+function borrowerScope(profile: Profile, borrower: BorrowerFact): Profile {
+  const employment = borrower.statusReport === "3" ? "controlling_shareholder" : borrower.employment;
+  return {
+    ...profile,
+    employment,
+    employmentLabel: borrower.employmentLabel,
+    idBiometric: borrower.idBiometric,
+    nationalId: borrower.nationalId || profile.nationalId,
+    fullName: borrower.fullName || profile.fullName,
+    phone: borrower.phone || profile.phone,
+  };
+}
+
+function resolvedYear(requirement: Requirement, rules: RulesDocument): number | undefined {
+  if (requirement.year === "taxYear") return rules.taxYear ?? collectionYears().taxYear;
+  if (requirement.year === "accountantYear") return rules.accountantYear ?? collectionYears().accountantYear;
+  return undefined;
+}
+
+/** One slot per saved requirement row, repeated for each borrower or account the row names. */
+export function expandRequirements(profile: Profile, rules: RulesDocument): Slot[] {
+  const normalized = ensureBorrowers(profile);
+  const borrowers = borrowersOf(normalized);
+  const stageOrder = new Map(rules.stages.map((stage, index) => [stage.id, index]));
+  const ranked = [...rules.requirements].sort(
+    (a, b) => (stageOrder.get(a.stage) ?? 0) - (stageOrder.get(b.stage) ?? 0),
+  );
+  const slots: Slot[] = [];
+  for (const requirement of ranked) {
+    const year = resolvedYear(requirement, rules);
+    const months = requirement.months ? priorCalendarMonths(new Date(), requirement.months) : undefined;
+    const dated = {
+      ...(year ? { year } : {}),
+      ...(months ? { months } : {}),
+    };
+    if (requirement.each === "borrower") {
+      for (const borrower of borrowers) {
+        if (!conditionMatches(requirement.when, borrowerScope(normalized, borrower))) continue;
+        const count = requirement.count ?? 1;
+        for (let index = 0; index < count; index += 1) {
+          slots.push({
+            id: `${requirement.docType}#${borrower.slot}#${year ?? index}`,
+            docType: requirement.docType,
+            stage: requirement.stage,
+            index,
+            collectionStage: requirement.collectionStage ?? "1",
+            borrower: borrower.slot,
+            ...dated,
+          });
+        }
+      }
+      continue;
     }
-    return slips;
+    if (!conditionMatches(requirement.when, normalized)) continue;
+    if (requirement.each === "account") {
+      const accounts = accountsOf(normalized);
+      const list = accounts.length ? accounts : requirement.empty === "one" ? [{ id: "account" }] : [];
+      for (const account of list) {
+        slots.push({
+          id: `${requirement.docType}#${account.id}#0`,
+          docType: requirement.docType,
+          stage: requirement.stage,
+          index: 0,
+          collectionStage: requirement.collectionStage ?? "1",
+          ...(accounts.length ? { accountId: account.id } : {}),
+          ...dated,
+        });
+      }
+      continue;
+    }
+    const count = requirement.countFrom === "loanCount" ? loanCountOf(normalized) : requirement.count ?? 1;
+    const scope = requirement.countFrom === "loanCount" ? "case" : "";
+    for (let index = 0; index < count; index += 1) {
+      slots.push({
+        id: scope ? `${requirement.docType}#${scope}#${index}` : `${requirement.docType}#${index}`,
+        docType: requirement.docType,
+        stage: requirement.stage,
+        index,
+        collectionStage: requirement.collectionStage ?? "1",
+        ...dated,
+      });
+    }
   }
-  if (borrower.employment === "self_employed") {
-    const years = collectionYears();
-    const taxYear = rules.taxYear ?? years.taxYear;
-    const accountantYear = rules.accountantYear ?? years.accountantYear;
-    const group = `prior-income#${borrower.slot}`;
-    return [
-      slot("accountant_letter", "income", borrower.slot, accountantYear, borrower.slot, undefined, { year: accountantYear }),
-      slot("tax_assessment", "income", borrower.slot, taxYear, borrower.slot, undefined, { year: taxYear, altGroup: group }),
-      slot("accountant_letter", "income", `${borrower.slot}-prior`, taxYear, borrower.slot, undefined, {
-        year: taxYear,
-        altGroup: group,
-      }),
-    ];
-  }
-  return [];
+  return slots;
 }
 
 export function releasedStageId(profile: Profile): string {
@@ -155,44 +265,10 @@ export function nextCollectionStageId(rules: RulesDocument, current: string): st
   return stages[index + 1]?.id ?? "";
 }
 
-/** Slots for a profile that already carries borrower facts. */
-export function mortgageSlots(profile: Profile, rules: RulesDocument): Slot[] {
-  if (factsOpen(profile)) return [];
-  const borrowers = borrowersOf(profile);
-  const identity = borrowers.flatMap((borrower) => [
-    slot("id_card", "identity", borrower.slot, 0, borrower.slot),
-    slot("id_appendix", "identity", borrower.slot, 0, borrower.slot),
-  ]);
-  if (advisorReason(profile) || firstHomeOf(profile) === "false") return identity;
-  const income = borrowers.flatMap((borrower) => incomeSlots(borrower, rules));
-  const months = priorCalendarMonths();
-  const statements =
-    accountsKnown(profile) === "known"
-      ? accountsOf(profile).map((account) =>
-          slot("bank_statement", "banking", account.id, 0, undefined, account.id, { months }),
-        )
-      : [];
-  const askedAccount =
-    accountsKnown(profile) === "known" && accountsOf(profile).length === 0
-      ? [slot("bank_statement", "banking", "asked", 0, undefined, undefined, { months })]
-      : [];
-  const loans =
-    loansOf(profile) === "known"
-      ? Array.from({ length: loanCountOf(profile) }, (_, index) => slot("loan_balances", "banking", "case", index))
-      : [];
-  return [...identity, ...income, ...statements, ...askedAccount, ...loans];
-}
-
-/**
- * Borrower facts use the mortgage generator. A profile without them
- * still follows the saved requirements list.
- */
+/** Slots for the collection wave that is open. The rows come from the saved rules. */
 export function checklistSlots(profile: Profile, rules: RulesDocument): Slot[] {
-  if (factsOpen(profile)) return [];
-  const released = releasedStageId(profile);
-  if (released !== "1") {
-    return requiredSlots(profile, rules).filter((slot) => (slot.collectionStage ?? "1") === released);
-  }
-  if (Array.isArray(profile.borrowers)) return mortgageSlots(profile, rules);
-  return requiredSlots(profile, rules);
+  const normalized = ensureBorrowers(profile);
+  if (factsOpen(normalized)) return [];
+  const released = releasedStageId(normalized);
+  return expandRequirements(normalized, rules).filter((slot) => (slot.collectionStage ?? "1") === released);
 }

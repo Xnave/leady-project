@@ -2,8 +2,10 @@ import { tool } from "ai";
 import { z } from "zod";
 import { capabilityState, registerCapability } from "../registry";
 import type { TalkOutcome, TurnContext } from "../types";
-import { copyFor, replyLang } from "@/lib/copy";
-import { loadDocumentsTurnState, type DocumentsTurnState } from "@/lib/documents/dossier";
+import { hasAgentReplied } from "../intro";
+import { copyFor } from "@/lib/copy";
+import { documentsReplyLang } from "@/lib/documents/dossier";
+import { documentAskText, loadDocumentsTurnState, type DocumentsTurnState } from "@/lib/documents/dossier";
 
 function documentsState(ctx: TurnContext): DocumentsTurnState | undefined {
   return capabilityState<DocumentsTurnState>(ctx, "documents");
@@ -23,6 +25,9 @@ export function reconcileDocuments(opts: {
 }): TalkOutcome {
   const state = documentsState(opts.ctx);
   if (!state?.runIngest) return opts.outcome;
+  // The first turn is the intro. Checklist questions start on the next message,
+  // unless a file already arrived and has to be stored.
+  if (!hasAgentReplied(opts.ctx) && !state.pendingFile) return opts.outcome;
   const effects = [...(opts.outcome.effects ?? [])];
   if (!effects.some((effect) => effect.type === "ingest_document")) {
     effects.push({ type: "ingest_document" });
@@ -54,23 +59,19 @@ export function registerDocumentsCapability(): void {
       if (state.status === "complete") {
         return ["The document checklist is complete. Do not ask for those documents again."];
       }
-      const chat = copyFor(replyLang(ctx), { gender: ctx.agent.persona?.gender }).chat;
-      const asks = (state.asks ?? []).map((question) => {
-        if (question.kind === "employment") return chat.documents.askEmployment(question.name || "the borrower");
-        if (question.kind === "salary_deposit") return chat.documents.askSalaryDeposit(question.name || "the borrower");
-        if (question.kind === "first_home") return chat.documents.askFirstHome;
-        if (question.kind === "loans") return chat.documents.askLoans;
-        if (question.kind === "more_loans") return chat.documents.askMoreLoans;
-        if (question.kind === "more_photos") return chat.documents.askMorePhotos;
-        return chat.documents.askAccounts;
-      });
+      const lang = documentsReplyLang(ctx);
+      const chat = copyFor(lang, { gender: ctx.agent.persona?.gender }).chat;
+      const next = state.asks?.[0];
       return [
         `Document checklist is in progress (${state.status}). Still missing at this stage: ${state.missing.join(", ") || "none"}.`,
-        asks.length ? `Ask these before treating the list as settled:\n${asks.join("\n")}` : "",
+        next
+          ? `Ask only this question, then wait for the answer. Do not ask any other checklist question in the same message:\n${documentAskText(next, lang, chat)}`
+          : "Ask for the current stage's documents together. One file per message is fine; several in a row are fine.",
         "A file the customer sends is handled by ingest_document, including a file for a later stage.",
-        "Ask for the current stage's documents together. One file per message is fine; several in a row are fine.",
         "Never tell the customer a document was received unless ingest_document ran on this turn.",
-        "After a side question, answer it and then ask again for the missing documents in the agent's voice.",
+        "Do not interview the customer about equity, income, timelines, or loan amounts. Stay on the missing document.",
+        "If they say they do not have that document, explain how to get it and ask for it again. Drop the loan balance only when they explicitly say they have no loans.",
+        "After a side question, answer it in one or two sentences and then ask that same next question again.",
       ].filter(Boolean);
     },
     tools: ({ ctx }) => ({

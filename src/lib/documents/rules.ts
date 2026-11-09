@@ -23,13 +23,15 @@ export type Check =
 
 /** A PDF we send once so the customer can fill it and send it back. */
 export type BlankFormDef = {
-  /** File name under `docs/`. */
+  /** File name under `assets/blank-forms/`. */
   file: string;
   once: "conversation";
 };
 
 export type DocTypeDef = {
   labels: { he: string; en: string };
+  /** How the reader recognizes this document, including a photo of it. */
+  recognize?: string;
   /** Fields the extractor must pull before checks run. */
   fields: string[];
   checks: Check[];
@@ -48,8 +50,18 @@ export type Requirement = {
   when?: Condition;
   /** How many accepted files of this type. Default 1. */
   count?: number;
+  /** Read the file count from the profile instead of `count`. */
+  countFrom?: "loanCount";
   /** Which collection wave this requirement belongs to. Default "1". */
   collectionStage?: string;
+  /** Open the row once per borrower or once per known account. */
+  each?: "borrower" | "account";
+  /** When `each` is account and the file lists none, open one slot. */
+  empty?: "one";
+  /** Year taken from the rules document. */
+  year?: "taxYear" | "accountantYear";
+  /** Prior calendar months a statement must cover. */
+  months?: number;
 };
 
 export type RulesDocument = {
@@ -258,10 +270,12 @@ export function parseRules(raw: unknown): RulesDocument {
       .map((check, i) => parseCheck(check, `documents.${id}.checks[${i}]`, errors))
       .filter((check): check is Check => Boolean(check));
     const blankForm = parseBlankForm(def.blankForm, `documents.${id}.blankForm`, errors);
+    const recognize = typeof def.recognize === "string" ? def.recognize.trim() : "";
     documents[id] = {
       labels: parseLabels(def.labels, `documents.${id}.labels`, errors),
       fields,
       checks,
+      ...(recognize ? { recognize } : {}),
       ...(blankForm ? { blankForm } : {}),
     };
   }
@@ -282,12 +296,42 @@ export function parseRules(raw: unknown): RulesDocument {
     if (collectionStage && collectionIds.size > 0 && !collectionIds.has(collectionStage)) {
       errors.push(`requirements[${i}].collectionStage is not defined`);
     }
+    let each: Requirement["each"];
+    if (item.each !== undefined) {
+      if (item.each !== "borrower" && item.each !== "account") errors.push(`requirements[${i}].each is invalid`);
+      else each = item.each;
+    }
+    let empty: Requirement["empty"];
+    if (item.empty !== undefined) {
+      if (item.empty !== "one") errors.push(`requirements[${i}].empty is invalid`);
+      else empty = "one";
+    }
+    let year: Requirement["year"];
+    if (item.year !== undefined) {
+      if (item.year !== "taxYear" && item.year !== "accountantYear") errors.push(`requirements[${i}].year is invalid`);
+      else year = item.year;
+    }
+    let months: number | undefined;
+    if (item.months !== undefined) {
+      if (typeof item.months !== "number" || item.months < 1) errors.push(`requirements[${i}].months must be >= 1`);
+      else months = Math.floor(item.months);
+    }
+    let countFrom: Requirement["countFrom"];
+    if (item.countFrom !== undefined) {
+      if (item.countFrom !== "loanCount") errors.push(`requirements[${i}].countFrom is invalid`);
+      else countFrom = "loanCount";
+    }
     requirements.push({
       docType,
       stage,
       count: typeof count === "number" ? count : 1,
       when: parseCondition(item.when, `requirements[${i}].when`, errors),
       ...(collectionStage ? { collectionStage } : {}),
+      ...(each ? { each } : {}),
+      ...(empty ? { empty } : {}),
+      ...(year ? { year } : {}),
+      ...(months ? { months } : {}),
+      ...(countFrom ? { countFrom } : {}),
     });
   }
   if (errors.length) throw new RulesError(errors);

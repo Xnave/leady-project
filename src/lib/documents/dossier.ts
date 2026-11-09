@@ -3,35 +3,52 @@ import path from "node:path";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { decryptBytes, encryptBytes } from "@/lib/crypto";
-import { copyFor, replyLang } from "@/lib/copy";
+import { copyFor } from "@/lib/copy";
+import { hasAgentReplied } from "@/lib/flow/intro";
+import { withFirstMessageIntro } from "@/lib/persona/greeting";
 import { safeRefreshLeadState } from "@/lib/crm/refresh";
 import { loadInstanceConfig } from "@/lib/capability-instances";
-import { documentApiKey, isTestLead, parseDocumentConfig, type DocumentConfig } from "@/lib/flow/document-config";
+import {
+  DEFAULT_MAX_REJECT_TRIES,
+  DEFAULT_REJECT_COOLDOWN_MINUTES,
+  documentApiKey,
+  isTestLead,
+  parseDocumentConfig,
+  type DocumentConfig,
+} from "@/lib/flow/document-config";
 import { capabilityState } from "@/lib/flow/registry";
 import { loadTurnContext, type ConnectionView } from "@/lib/conversations";
 import { reopenConversation } from "@/lib/flow/rotate-conversation";
 import type { TurnContext } from "@/lib/flow/types";
 import { sendZernioInboxMessage } from "@/lib/zernio";
+import { BLANK_FORMS_DIR, blankFormHref } from "./blank-form";
 import { extractDocument, type DocExtraction } from "./extract";
-import { applyCustomerAnswers, borrowersOf, factsOpen, openQuestions, type OpenQuestion } from "./facts";
+import { applyCustomerAnswers, applyExtractedBiometric, borrowersOf, declinesExistingLoans, factsFromClient, factsOpen, missingTheDocument, nextQuestion, openQuestions, type OpenQuestion } from "./facts";
 import { docLabel, type BlankFormDef, type Profile, type RulesDocument, type Slot } from "./rules";
 import { checklistSlots, nextCollectionStageId, releasedStageId } from "./mortgage-rules";
 import { isImageFile, isUploadableFile, smartUploadName, uploadDay } from "./file-types";
-import { imagesToPdf, photoDone } from "./images";
+import { filesToPdf, photoDone } from "./images";
 import { slotNeedsUpload, smartClientFor, type SmartClient } from "./smart-npv";
 import {
   activeStageOf,
   commitSlot,
   dossierDone,
+  extraPayslipSlotIds,
+  formatStatementMonth,
   freshDossier,
   isOutstanding,
   judgeFile,
   missingLabels,
+  monthsIn,
+  noteSlotMonths,
+  priorCalendarMonths,
+  recentPayslipMonths,
   recordMonths,
   slotDisplayLabel,
   type DossierState,
   type SlotState,
 } from "./validate";
+import { explicitReplyLanguage, isAttachmentCaption, stickyReplyLanguage } from "@/lib/flow/locale";
 
 const MAX_BYTES = 8_000_000;
 
@@ -51,6 +68,8 @@ export type DocumentsTurnState = {
   activeStage: string;
   missing: string[];
   asks: OpenQuestion[];
+  /** A file arrived on this turn, so ingest runs even before the intro. */
+  pendingFile: boolean;
 };
 
 /** The turn already carries the Zernio ids. `connection` is set by loadTurnContext. */
@@ -210,7 +229,7 @@ function sameNeedsId(row: { status: string; profile: unknown; slots: unknown }, 
   return String(asProfile(row.profile).lookupId ?? "") === typedId;
 }
 
-function warnDocuments(msg: string, fields: Record<string, string | number>): void {
+function warnDocuments(msg: string, fields: Record<string, unknown> = {}): void {
   console.warn(JSON.stringify({ msg, ...fields }));
 }
 
@@ -256,7 +275,7 @@ async function loadIngestWindow(args: {
           where: {
             tenantId: args.tenantId,
             messageId: { in: messages.map((message) => message.id) },
-            status: { in: ["rejected", "uploaded"] },
+            status: { in: ["rejected", "uploaded", "stored"] },
           },
           select: { messageId: true, filename: true },
         });
@@ -279,9 +298,10 @@ export async function loadDocumentsTurnState(args: {
       activeStage: "",
       missing: [],
       asks: [],
+      pendingFile: false,
     };
   }
-  const [dossier, inbound, stored] = await Promise.all([
+  const [dossier, inbound, stored, lastAgent] = await Promise.all([
     prisma.dossier.findFirst({
       where: { tenantId: args.tenantId, leadId: args.leadId },
       orderBy: { createdAt: "desc" },
@@ -290,16 +310,35 @@ export async function loadDocumentsTurnState(args: {
     prisma.leadDocument.count({
       where: { tenantId: args.tenantId, leadId: args.leadId, status: "stored" },
     }),
+    prisma.message.findFirst({
+      where: { tenantId: args.tenantId, conversationId: args.conversationId, role: { in: ["agent", "human"] } },
+      orderBy: { createdAt: "desc" },
+      select: { text: true },
+    }),
   ]);
   const state = dossier ? stateOf(dossier) : null;
   const unsupportedOnly =
     stored === 0 &&
     inbound.files.length > 0 &&
     inbound.files.every((file) => !isUploadableFile(file.attachment.mime, file.attachment.filename));
-  const wouldAnswer = state ? applyCustomerAnswers(state.profile, inbound.newestText).changed : false;
+  const wouldAnswer = state
+    ? applyCustomerAnswers(state.profile, inbound.newestText, new Date(), {
+        bare: bareAnswerAllowed(state.profile, lastAgent?.text ?? ""),
+      }).changed
+    : false;
   const closingPhotos = Boolean(state?.profile.imageBatchSlot && photoDone(inbound.newestText));
+  const escalatePending = Boolean(state && escalateOfferPending(state.profile));
+  const coolPending = Boolean(state && coolActive(state.profile));
   const runIngest =
-    !state || state.status === "needs_id" || inbound.files.length > 0 || stored > 0 || wouldAnswer || closingPhotos;
+    !state ||
+    state.status === "needs_id" ||
+    inbound.files.length > 0 ||
+    stored > 0 ||
+    wouldAnswer ||
+    closingPhotos ||
+    (escalatePending && Boolean(inbound.newestText.trim())) ||
+    (coolPending && inbound.files.length > 0) ||
+    ((state.status === "gathering" || state.status === "needs_id") && Boolean(inbound.newestText.trim()));
   return {
     configured: true,
     runIngest,
@@ -308,11 +347,203 @@ export async function loadDocumentsTurnState(args: {
     activeStage: state?.activeStage ?? "",
     missing: state ? missingLabels(state, config.rules, "en") : [],
     asks: state ? openQuestions(state.profile) : [],
+    pendingFile: inbound.files.length > 0,
   };
 }
 
 function reasonText(chat: ReturnType<typeof copyFor>["chat"], reason: string): string {
   return chat.documents.reasons[reason] ?? chat.documents.reasons.unreadable ?? reason;
+}
+
+function coolUntilOf(profile: Profile): Date | null {
+  const raw = typeof profile.rejectCoolUntil === "string" ? profile.rejectCoolUntil : "";
+  if (!raw) return null;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function coolActive(profile: Profile, now = new Date()): boolean {
+  const until = coolUntilOf(profile);
+  return Boolean(until && until.getTime() > now.getTime());
+}
+
+function coolMinutesLeft(profile: Profile, now = new Date()): number {
+  const until = coolUntilOf(profile);
+  if (!until) return 0;
+  return Math.max(1, Math.ceil((until.getTime() - now.getTime()) / 60_000));
+}
+
+function escalateOfferPending(profile: Profile): boolean {
+  return profile.escalateOffer === "pending";
+}
+
+/** Yes/no to the consultant hand-off, only when that question is open. */
+export function escalateAnswer(message: string): "yes" | "no" | null {
+  const text = message.trim().toLowerCase();
+  if (!text) return null;
+  if (/^(כן|yes)[.!?\s]*$/i.test(text)) return "yes";
+  if (/^(לא|no)[.!?\s]*$/i.test(text)) return "no";
+  if (/תעביר|העבר|יועץ|consultant|human|person|escalate/.test(text)) return "yes";
+  if (/אנסה|try again|later|אחר כך|עוד מעט/.test(text)) return "no";
+  return null;
+}
+
+/** After the cool-off ends, clear the timer and reset slots that hit the try limit. */
+function clearExpiredCool(state: DossierState, maxTries: number, now = new Date()): DossierState {
+  const until = coolUntilOf(state.profile);
+  if (!until || until.getTime() > now.getTime()) return state;
+  return {
+    ...state,
+    profile: {
+      ...state.profile,
+      rejectCoolUntil: "",
+      escalateOffer: escalateOfferPending(state.profile) ? "" : state.profile.escalateOffer,
+    },
+    slots: state.slots.map((slot) =>
+      slot.failCount >= maxTries ? { ...slot, failCount: 0 } : slot,
+    ),
+  };
+}
+
+function startRejectCool(
+  state: DossierState,
+  minutes: number,
+  now = new Date(),
+): DossierState {
+  return {
+    ...state,
+    status: state.status === "blocked" ? "gathering" : state.status,
+    profile: {
+      ...state.profile,
+      rejectCoolUntil: new Date(now.getTime() + minutes * 60_000).toISOString(),
+      escalateOffer: "pending",
+    },
+  };
+}
+
+function readableList(values: string[], lang: "en" | "he"): string {
+  if (values.length < 2) return values[0] ?? "";
+  const last = values.at(-1) ?? "";
+  return `${values.slice(0, -1).join(", ")}${lang === "he" ? " ו-" : " and "}${last}`;
+}
+
+function monthList(values: string[], lang: "en" | "he", now = new Date()): string {
+  return readableList(values.map((month) => formatStatementMonth(month, lang, now)), lang);
+}
+
+/**
+ * One sentence that names what failed. Used instead of the generic reason
+ * when the generic wording would hide the missing name or the wrong month.
+ */
+export function customerRejection(opts: {
+  reason: string;
+  field?: string;
+  docType: string;
+  fields: Record<string, unknown>;
+  lang: "en" | "he";
+  now?: Date;
+}): string | undefined {
+  const now = opts.now ?? new Date();
+  const payslip = opts.docType === "payslip";
+  const needed = priorCalendarMonths(now).map((month) => formatStatementMonth(month, opts.lang, now));
+  const need = opts.lang === "he"
+    ? needed.length < 2
+      ? needed[0] ?? ""
+      : `${needed.slice(0, -1).join(", ")} ו${needed.at(-1)}`
+    : monthList(priorCalendarMonths(now), opts.lang, now);
+  if (opts.reason === "unrecognized") {
+    if (payslip) {
+      return opts.lang === "he"
+        ? `זה לא נראה כמו תלוש שכר. אשמח לתלושי שכר של ${need}`
+        : `This doesn't look like a payslip. Please send payslips for ${need}`;
+    }
+    if (opts.docType === "id_card" || opts.docType === "id_card_back") {
+      return opts.lang === "he"
+        ? "לא זיהיתי את הקובץ. שלח בבקשה תמונה ברורה של הצד הקדמי, כך שהשם והמספר נראים"
+        : "I couldn't tell what this file is. Please send a clear photo of the front, with the name and number visible";
+    }
+    return opts.lang === "he"
+      ? "לא זיהיתי את הקובץ כמסמך שביקשתי"
+      : "I couldn't tell what this file is";
+  }
+  if (!payslip) return undefined;
+  const found = monthsIn(opts.fields.periodEnd ?? opts.fields.payMonths);
+  const recent = recentPayslipMonths(found.join(","), 3, now);
+  if (found.length && recent.length === 0) {
+    const listed = opts.lang === "he"
+      ? found.map((month) => formatStatementMonth(month, "he", now)).join(", ")
+      : monthList(found, opts.lang, now);
+    return opts.lang === "he"
+      ? `התלוש הוא לחודש ${listed}. אשמח לתלושי שכר של ${need}`
+      : `This payslip is for ${listed}. Please send payslips for ${need}`;
+  }
+  if (opts.reason === "field_present" && opts.field === "fullName" && !found.length) {
+    return opts.lang === "he"
+      ? `לא הצלחתי לקרוא את שם העובד ואת חודש השכר. אשמח לתלושי שכר של ${need}`
+      : `I couldn't read the employee name or the pay month. Please send payslips for ${need}`;
+  }
+  if (opts.reason === "field_present" && opts.field === "fullName") {
+    return opts.lang === "he"
+      ? "לא הצלחתי לקרוא את שם העובד בתלוש"
+      : "I couldn't read the employee name on the payslip";
+  }
+  if (opts.reason === "field_present") {
+    return opts.lang === "he"
+      ? `לא הצלחתי לקרוא לאיזה חודש התלוש שייך. אשמח לתלוש של ${need}`
+      : `I couldn't read which month this payslip is for. Please send one for ${need}`;
+  }
+  if (opts.reason === "date_within_months") {
+    return opts.lang === "he"
+      ? `התאריך שמופיע בתלוש לא נמצא ב-3 החודשים האחרונים. אשמח לתלושי שכר של ${need}`
+      : `The date on this payslip is not within the last 3 months. Please send payslips for ${need}`;
+  }
+  return undefined;
+}
+
+/** Explain the observed file detail without exposing internal document-type ids. */
+export function rejectionDetail(opts: {
+  reason: string;
+  fields: Record<string, unknown>;
+  lang: "en" | "he";
+  expectedMonths?: string[];
+  now?: Date;
+}): string | undefined {
+  if (opts.reason === "wrong_type") {
+    return opts.lang === "he"
+      ? "הקובץ לא זוהה כאחד מהמסמכים שחסרים כרגע בתיק."
+      : "The file wasn't identified as one of the documents currently needed.";
+  }
+  if (opts.reason !== "prior_calendar_months") return undefined;
+  const now = opts.now ?? new Date();
+  const months = monthsIn(opts.fields.months ?? opts.fields.periodEnd);
+  const expected = opts.expectedMonths?.length
+    ? opts.expectedMonths
+    : priorCalendarMonths(now);
+  const need = monthList(expected, opts.lang, now);
+  if (!months.length) {
+    return opts.lang === "he"
+      ? `לא הצלחתי לזהות בקובץ את החודשים שהוא מכסה. נדרשים ${need}.`
+      : `I couldn't identify which months the statement covers. Needed: ${need}.`;
+  }
+  const listed = monthList(months, opts.lang, now);
+  return opts.lang === "he"
+    ? `זיהיתי בקובץ את החודשים ${listed}; נדרשים ${need}.`
+    : `I found ${listed} in the statement; needed: ${need}.`;
+}
+
+/**
+ * Documents stay in Hebrew unless the customer actually wrote English.
+ * A file name, including `IMG_2359.HEIC`, is never a reason to switch.
+ */
+export function documentsReplyLang(ctx: IngestTurn): "en" | "he" {
+  const policy = ctx.tenant?.chatLanguage;
+  if (policy === "he" || policy === "en") return policy;
+  const spoken = ctx.messages
+    .filter((message) => message.role === "lead" && !isAttachmentCaption(message.text))
+    .map((message) => message.text);
+  const english = spoken.some((text) => explicitReplyLanguage(text) === "en");
+  if (!english) return "he";
+  return stickyReplyLanguage(undefined, spoken);
 }
 
 async function markRejected(opts: {
@@ -448,8 +679,8 @@ function mergeSlots(previous: SlotState[], next: Slot[]): SlotState[] {
   return merged;
 }
 
-function refreshDossier(state: DossierState, rules: RulesDocument, text: string): DossierState {
-  const applied = applyCustomerAnswers(state.profile, text);
+function refreshDossier(state: DossierState, rules: RulesDocument, text: string, bare = false): DossierState {
+  const applied = applyCustomerAnswers(state.profile, text, new Date(), { bare });
   const profile = applied.profile;
   const next = checklistSlots(profile, rules);
   const slots = mergeSlots(state.slots, next);
@@ -477,28 +708,100 @@ function refreshDossier(state: DossierState, rules: RulesDocument, text: string)
   };
 }
 
-function gatheringLines(
+type DocumentChat = ReturnType<typeof copyFor>["chat"];
+
+/** The sentence for one checklist question. */
+export function documentAskText(question: OpenQuestion, lang: "en" | "he", chat: DocumentChat): string {
+  if (question.kind === "second_borrower") return chat.documents.askSecondBorrower;
+  if (question.kind === "couple_split") return chat.documents.askCouple;
+  if (question.kind === "id_biometric") return chat.documents.askIdBiometric(question.name);
+  if (question.kind === "id_back") return chat.documents.askIdBack;
+  const fallback =
+    "slot" in question && question.slot === "2"
+      ? lang === "he"
+        ? "הלווה הנוסף"
+        : "the other borrower"
+      : lang === "he"
+        ? "הלווה"
+        : "the borrower";
+  const name = "name" in question && question.name ? question.name : fallback;
+  if (question.kind === "employment") return chat.documents.askEmployment(name);
+  if (question.kind === "salary_deposit") return chat.documents.askSalaryDeposit(name);
+  if (question.kind === "first_home") return chat.documents.askFirstHome;
+  if (question.kind === "loans") return chat.documents.askLoans;
+  if (question.kind === "more_loans") return chat.documents.askMoreLoans;
+  if (question.kind === "more_photos") return chat.documents.askMorePhotos;
+  return chat.documents.askAccounts;
+}
+
+/** A bare כן/לא counts only after the agent actually asked that question. */
+function bareAnswerAllowed(profile: Profile, askedText: string): boolean {
+  const question = nextQuestion(profile);
+  if (!question || !askedText.trim()) return false;
+  const he = documentAskText(question, "he", copyFor("he").chat);
+  const en = documentAskText(question, "en", copyFor("en").chat);
+  return askedText.includes(he) || askedText.includes(en);
+}
+
+function customerReply(ctx: IngestTurn, reply: string): string {
+  const text = reply.trim();
+  if (!text || hasAgentReplied(ctx)) return text;
+  return withFirstMessageIntro(ctx, documentsReplyLang(ctx), text);
+}
+
+function nextDocumentAsk(
   state: DossierState,
   rules: RulesDocument,
   lang: "en" | "he",
-  chat: ReturnType<typeof copyFor>["chat"],
-): string[] {
+  chat: DocumentChat,
+): string {
+  const slot = state.slots.find((item) => isOutstanding(item, state.slots));
+  if (!slot) return "";
+  if (slot.docType === "id_card") return chat.documents.askIdCard;
+  if (slot.docType === "payslip") return chat.documents.askPayslips;
+  return chat.documents.askStage(slotDisplayLabel(rules, slot, lang));
+}
+
+function gatheringLines(state: DossierState, rules: RulesDocument, lang: "en" | "he", chat: DocumentChat): string[] {
+  const question = nextQuestion(state.profile);
+  if (question) return [documentAskText(question, lang, chat)];
   const lines: string[] = [];
-  const someone = lang === "he" ? "הלווה" : "the borrower";
-  for (const question of openQuestions(state.profile)) {
-    if (question.kind === "employment") lines.push(chat.documents.askEmployment(question.name || someone));
-    if (question.kind === "salary_deposit") lines.push(chat.documents.askSalaryDeposit(question.name || someone));
-    if (question.kind === "first_home") lines.push(chat.documents.askFirstHome);
-    if (question.kind === "loans") lines.push(chat.documents.askLoans);
-    if (question.kind === "more_loans") lines.push(chat.documents.askMoreLoans);
-    if (question.kind === "accounts") lines.push(chat.documents.askAccounts);
-    if (question.kind === "more_photos") lines.push(chat.documents.askMorePhotos);
-  }
   const flag = typeof state.profile.advisorFlag === "string" ? state.profile.advisorFlag : "";
   if (flag) lines.push(chat.documents.advisorFlag(flag));
-  const missing = missingLabels(state, rules, lang);
-  if (missing.length) lines.push(chat.documents.askStage(missing.join(", ")));
+  const next = nextDocumentAsk(state, rules, lang, chat);
+  if (next) lines.push(next);
   return lines;
+}
+
+/** One needs-you task when the checklist is finished, so the advisor can review and release the next step. */
+async function openChecklistReview(ctx: IngestTurn, state: DossierState): Promise<DossierState> {
+  if (state.profile.checklistReviewOpened === true) return state;
+  const existing = await prisma.hitlTask.findFirst({
+    where: {
+      tenantId: ctx.tenantId,
+      conversationId: ctx.conversation.id,
+      reason: "document_checklist_complete",
+      status: "open",
+    },
+    select: { id: true },
+  });
+  if (!existing) {
+    await prisma.hitlTask.create({
+      data: {
+        tenantId: ctx.tenantId,
+        conversationId: ctx.conversation.id,
+        leadId: ctx.lead.id,
+        type: "more_info",
+        reason: "document_checklist_complete",
+        payload: {
+          summary: "המסמכים התקבלו. לבדוק את התיק ואז לשחרר את השלב הבא.",
+          kind: "checklist_complete",
+        } as Prisma.InputJsonValue,
+        status: "open",
+      },
+    });
+  }
+  return { ...state, profile: { ...state.profile, checklistReviewOpened: true } };
 }
 
 async function notifyAdvisor(ctx: TurnContext, state: DossierState): Promise<DossierState> {
@@ -543,7 +846,11 @@ async function sendBlankForm(
     },
     select: { id: true },
   });
-  if (prior) return "already";
+  const marker = `type=${encodeURIComponent(docType)}`;
+  const inThread = ctx.messages.some((message) =>
+    (message.role === "agent" || message.role === "human") && message.text.includes(marker),
+  );
+  if (prior || inThread) return "already";
   const caption = chat.documents.blankForm(label);
   const target = zernioIds(ctx);
   if (!target) {
@@ -562,7 +869,7 @@ async function sendBlankForm(
     },
   });
   try {
-    const bytes = await readFile(path.join(process.cwd(), "docs", form.file));
+    const bytes = await readFile(path.join(BLANK_FORMS_DIR, form.file));
     await sendZernioInboxMessage({
       accountId: target.accountId,
       conversationId: target.conversationId,
@@ -579,6 +886,92 @@ async function sendBlankForm(
     throw err;
   }
   return "sent";
+}
+
+/** The blank form for this file is already in the checklist, so a second copy is not read again. */
+export function blankFormAlreadyUploaded(
+  rules: RulesDocument,
+  slots: { docType: string; status: string }[],
+  filename: string,
+): boolean {
+  const docType = Object.entries(rules.documents).find(([, def]) => def.blankForm?.file === filename)?.[0];
+  return Boolean(docType && slots.some((slot) => slot.docType === docType && slot.status === "uploaded"));
+}
+
+async function recordFileOutcome(opts: {
+  ctx: IngestTurn;
+  row: DossierRow;
+  job: IngestJob;
+  status: "rejected" | "uploaded";
+  docType: string;
+  remoteId?: string;
+  validation: Prisma.InputJsonValue;
+}): Promise<void> {
+  const data = {
+    status: opts.status,
+    docType: opts.docType,
+    remoteId: opts.remoteId ?? "",
+    bytesEnc: null,
+    validation: opts.validation,
+  };
+  if (opts.job.id) {
+    await prisma.leadDocument.update({ where: { id: opts.job.id }, data });
+    return;
+  }
+  await prisma.leadDocument.create({
+    data: {
+      tenantId: opts.ctx.tenantId,
+      leadId: opts.ctx.lead.id,
+      dossierId: opts.row.id,
+      messageId: opts.job.messageId,
+      filename: opts.job.filename,
+      mime: opts.job.mime,
+      ...data,
+    },
+  });
+}
+
+/** A second copy of a form that already filled its slot. No model read and no customer line. */
+async function closeDuplicateBlankForm(opts: {
+  ctx: IngestTurn;
+  row: DossierRow;
+  state: DossierState;
+  job: IngestJob;
+  rules: RulesDocument;
+}): Promise<boolean> {
+  if (!blankFormAlreadyUploaded(opts.rules, opts.state.slots, opts.job.filename)) return false;
+  const slot = opts.state.slots.find((item) =>
+    item.status === "uploaded" && opts.rules.documents[item.docType]?.blankForm?.file === opts.job.filename,
+  );
+  await recordFileOutcome({
+    ctx: opts.ctx,
+    row: opts.row,
+    job: opts.job,
+    status: "uploaded",
+    docType: slot?.docType ?? "",
+    remoteId: slot?.remoteId,
+    validation: { duplicateOf: slot?.id ?? "" },
+  });
+  return true;
+}
+
+/** A form already handed to this chat. The next file fills that slot. */
+function offeredBlankForm(
+  state: DossierState,
+  rules: RulesDocument,
+  messages: { role: string; text: string }[],
+): string {
+  const pending = typeof state.profile.formPending === "string" ? state.profile.formPending : "";
+  if (pending) return pending;
+  for (const slot of state.slots) {
+    if (slot.status === "uploaded" || !rules.documents[slot.docType]?.blankForm) continue;
+    const marker = `type=${encodeURIComponent(slot.docType)}`;
+    const offered = messages.some((message) =>
+      (message.role === "agent" || message.role === "human") && message.text.includes(marker),
+    );
+    if (offered) return slot.docType;
+  }
+  return "";
 }
 
 /** A blank form was just sent, so the next file fills that type unless the reader names another open type. */
@@ -604,7 +997,7 @@ function offlineSmartClient(): SmartClient {
     async findClient() {
       return {
         clientId: "test",
-        profile: { firstHome: "unknown", loans: "unknown", accounts: "unknown" },
+        profile: factsFromClient({}),
       };
     },
     async listClients() {
@@ -642,6 +1035,7 @@ async function matchClient(opts: IngestLines & {
   typedId: string;
   hasFiles: boolean;
   answerText: string;
+  bare: boolean;
 }): Promise<{ row: DossierRow | null; done?: { ok: boolean; reply: string } }> {
   let { row } = opts;
   if (row && row.status !== "needs_id") return { row };
@@ -667,7 +1061,7 @@ async function matchClient(opts: IngestLines & {
     await safeRefreshLeadState(opts.ctx.tenantId, opts.ctx.lead.id);
     return { row, done: { ok: true, reply } };
   }
-  const answered = applyCustomerAnswers(found.profile, opts.answerText);
+  const answered = applyCustomerAnswers(found.profile, opts.answerText, new Date(), { bare: opts.bare });
   const opened = freshDossier({
     smartClientId: found.clientId,
     profile: answered.profile,
@@ -686,7 +1080,6 @@ async function matchClient(opts: IngestLines & {
     : await prisma.dossier.create({
         data: { tenantId: opts.ctx.tenantId, leadId: opts.ctx.lead.id, ...data },
       });
-  if (!opts.hasFiles) opts.lines.push(...gatheringLines(opened, opts.config.rules, opts.lang, opts.chat));
   return { row };
 }
 
@@ -816,56 +1209,176 @@ async function judgeFileJob(opts: IngestLines & {
   job: IngestJob;
 }): Promise<{
   state: DossierState;
-  escalated: boolean;
-  accepted: { slotId: string; docType: string; coveredMonths?: string[] } | null;
+  cooled: boolean;
+  accepted: {
+    slotId: string;
+    docType: string;
+    coveredMonths?: string[];
+    biometric?: "yes" | "no";
+    appendix?: "yes" | "no";
+    payMonths?: string[];
+  } | null;
 }> {
   if (opts.job.resume) {
     return {
       state: opts.state,
-      escalated: false,
+      cooled: false,
       accepted: { slotId: opts.job.resume.slotId, docType: opts.job.resume.docType },
     };
   }
-  const open = opts.state.slots
-    .filter((slot) => slot.status === "missing")
-    .map((slot) => ({
+  const missing = opts.state.slots.filter((slot) => slot.status === "missing");
+  const open = missing.map((slot) => {
+    const he = docLabel(opts.config.rules, slot.docType, "he");
+    const en = docLabel(opts.config.rules, slot.docType, "en");
+    return {
       docType: slot.docType,
-      label: docLabel(opts.config.rules, slot.docType, "en"),
+      label: he === en ? he : `${he} / ${en}`,
       fields: opts.config.rules.documents[slot.docType]?.fields ?? [],
-    }));
+      recognize: opts.config.rules.documents[slot.docType]?.recognize,
+    };
+  });
   const extracted: DocExtraction = await opts.extract({
     bytes: opts.job.bytes,
     mime: opts.job.mime,
     filename: opts.job.filename,
     open,
+    focus: missing[0]?.docType,
   });
   let working = opts.state;
   const assumed = assumePendingForm(working, extracted.docType ?? "");
-  if (assumed?.accepted) return { state: assumed.state, escalated: false, accepted: assumed.accepted };
+  if (assumed?.accepted) return { state: assumed.state, cooled: false, accepted: assumed.accepted };
   if (assumed) working = assumed.state;
-  const judged = judgeFile(working, opts.config.rules, extracted);
-  if (judged.kind === "unplaced") return { state: judged.state, escalated: false, accepted: null };
+  const judged = judgeFile(working, opts.config.rules, extracted, new Date(), {
+    maxTries: opts.config.maxRejectTries ?? DEFAULT_MAX_REJECT_TRIES,
+  });
+  if (judged.kind === "unplaced") {
+    const slot = working.slots.find((item) =>
+      item.docType === extracted.docType && item.status === "missing" && item.year,
+    );
+    const label = docLabel(opts.config.rules, extracted.docType || "", opts.lang);
+    const detail = slot?.year
+      ? opts.lang === "he"
+        ? `לא מצאתי עליו את שנת ${slot.year}`
+        : `I couldn't find ${slot.year} on it`
+      : opts.lang === "he"
+        ? "לא הצלחתי לשייך אותו לתיק"
+        : "I couldn't match it to the file";
+    warnDocuments("documents.judge", {
+      filename: opts.job.filename,
+      kind: "unplaced",
+      docType: extracted.docType || "(none)",
+      detail: `Could not place "${extracted.docType || "unknown"}" on any open slot.`,
+    });
+    opts.lines.push(opts.chat.documents.rejected(label || opts.job.filename, detail));
+    await recordFileOutcome({
+      ctx: opts.ctx,
+      row: opts.row,
+      job: opts.job,
+      status: "rejected",
+      docType: extracted.docType,
+      validation: { reason: "unplaced" },
+    });
+    return { state: judged.state, cooled: false, accepted: null };
+  }
   if (judged.kind !== "reject") {
+    warnDocuments("documents.judge", {
+      filename: opts.job.filename,
+      kind: "accept",
+      slotId: judged.slotId,
+      docType: judged.docType,
+      detail: `Accepted as ${judged.docType} → slot ${judged.slotId}.`,
+    });
     return {
       state: working,
-      escalated: false,
+      cooled: false,
       accepted: {
         slotId: judged.slotId,
         docType: judged.docType,
         ...(judged.coveredMonths?.length ? { coveredMonths: judged.coveredMonths } : {}),
+        ...((extracted.fields.biometric === "yes" || extracted.fields.biometric === "no")
+          ? { biometric: extracted.fields.biometric }
+          : {}),
+        ...((extracted.fields.appendix === "yes" || extracted.fields.appendix === "no")
+          ? { appendix: extracted.fields.appendix }
+          : {}),
+        ...(judged.docType === "payslip"
+          ? { payMonths: monthsIn(extracted.fields.payMonths ?? extracted.fields.periodEnd) }
+          : {}),
       },
     };
   }
-  const state = judged.state;
-  const label = docLabel(
-    opts.config.rules,
-    state.slots.find((slot) => slot.id === judged.slotId)?.docType ?? "",
-    opts.lang,
+  const openTypes = open.map((item) => item.docType);
+  const foundMonths = monthsIn(extracted.fields.months ?? extracted.fields.periodEnd);
+  const expectedMonths =
+    judged.reason === "prior_calendar_months" ? priorCalendarMonths(new Date()) : [];
+  const judgeDetail =
+    judged.reason === "wrong_type"
+      ? `Rejected: file looks like "${extracted.docType || "unknown"}", but open slot is ${judged.slotId || openTypes.join(", ") || "none"} (${openTypes.join(", ") || "no open types"}).`
+      : judged.reason === "prior_calendar_months"
+        ? foundMonths.length
+          ? `Rejected bank statement: vision found months [${foundMonths.join(", ")}], but we need the three prior months [${expectedMonths.join(", ")}].`
+          : `Rejected bank statement: vision returned empty months (need [${expectedMonths.join(", ")}]). The file was typed as a statement, but no YYYY-MM coverage was extracted.`
+      : judged.reason === "field_present" || judged.reason.startsWith("field_")
+        ? `Rejected ${extracted.docType || "file"}: missing/invalid fields (${extracted.summary?.emptyFields?.join(", ") || judged.reason}).`
+        : `Rejected ${extracted.docType || "file"}: ${judged.reason}.`;
+  warnDocuments("documents.judge", {
+    filename: opts.job.filename,
+    kind: "reject",
+    slotId: judged.slotId || "(none)",
+    docType: extracted.docType || "(none)",
+    reason: judged.reason,
+    atLimit: judged.atLimit,
+    openTypes,
+    ...(judged.reason === "prior_calendar_months"
+      ? { foundMonths, expectedMonths, rawMonthsField: extracted.fields.months ?? "" }
+      : {}),
+    detail: judgeDetail,
+  });
+  let state = judged.state;
+  const slotDoc = state.slots.find((slot) => slot.id === judged.slotId)?.docType ?? extracted.docType ?? "";
+  const label = docLabel(opts.config.rules, slotDoc, opts.lang);
+  const specific = customerRejection({
+    reason: judged.reason,
+    field: judged.field,
+    docType: slotDoc,
+    fields: extracted.fields,
+    lang: opts.lang,
+  });
+  const customerReason = judged.reason === "field_present" && judged.field === "nationalId"
+    ? "id_number"
+    : judged.reason;
+  opts.lines.push(
+    specific
+      ? opts.chat.documents.rejected(label || opts.job.filename, specific)
+      : opts.chat.documents.rejected(
+          label || opts.job.filename,
+          reasonText(opts.chat, customerReason),
+          rejectionDetail({
+            reason: judged.reason,
+            fields: extracted.fields,
+            lang: opts.lang,
+            ...(judged.reason === "prior_calendar_months" ? { expectedMonths } : {}),
+          }),
+        ),
   );
-  opts.lines.push(opts.chat.documents.rejected(label || opts.job.filename, reasonText(opts.chat, judged.reason)));
   const validation = {
     reason: judged.reason,
     ...(extracted.error ? { error: extracted.error } : {}),
+    ...(extracted.summary
+      ? {
+          extract: {
+            docType: extracted.docType,
+            askedFields: extracted.summary.askedFields,
+            filledFields: extracted.summary.filledFields,
+            emptyFields: extracted.summary.emptyFields,
+            finishReason: extracted.summary.finishReason,
+            ms: extracted.summary.ms,
+            ...(extracted.fields.months ? { months: extracted.fields.months } : {}),
+            ...(extracted.summary.evidence ? { evidence: extracted.summary.evidence } : {}),
+            ...(extracted.summary.warnings?.length ? { warnings: extracted.summary.warnings } : {}),
+          },
+        }
+      : {}),
   } as Prisma.InputJsonValue;
   if (opts.job.id) {
     await prisma.leadDocument.update({
@@ -888,7 +1401,15 @@ async function judgeFileJob(opts: IngestLines & {
       },
     });
   }
-  if (!judged.escalated) return { state, escalated: false, accepted: null };
+  if (!judged.atLimit) return { state, cooled: false, accepted: null };
+  const minutes = opts.config.rejectCooldownMinutes ?? DEFAULT_REJECT_COOLDOWN_MINUTES;
+  state = startRejectCool(state, minutes);
+  opts.lines.push(opts.chat.documents.cooldownWait(minutes));
+  opts.lines.push(opts.chat.documents.askEscalate);
+  return { state, cooled: true, accepted: null };
+}
+
+async function handOffDocumentReview(opts: IngestLines & { summary: string }): Promise<void> {
   await prisma.$transaction([
     prisma.hitlTask.create({
       data: {
@@ -897,7 +1418,7 @@ async function judgeFileJob(opts: IngestLines & {
         leadId: opts.ctx.lead.id,
         type: "more_info",
         reason: "document_review",
-        payload: { summary: judged.reason },
+        payload: { summary: opts.summary },
         status: "open",
       },
     }),
@@ -908,8 +1429,6 @@ async function judgeFileJob(opts: IngestLines & {
   ]);
   opts.ctx.conversation.status = "waiting_human";
   opts.ctx.conversation.flowState = "waiting_human";
-  opts.lines.push(opts.chat.documents.escalated);
-  return { state, escalated: true, accepted: null };
 }
 
 function applyAccept(
@@ -935,9 +1454,20 @@ function receiptName(
 ): string {
   const slot = state.slots.find((item) => item.id === slotId);
   const base = docLabel(rules, docType, lang);
-  if (covered?.length) return `${base} ${covered.join(", ")}`;
+  if (covered?.length) return `${base} ${monthList(covered, lang)}`;
   if (slot?.year) return `${base} ${slot.year}`;
   return base;
+}
+
+/** After the front of an ID is in, ask whether that card is biometric before the next file. */
+function rememberIdSide(state: DossierState, slotId: string, docType: string): DossierState {
+  if (docType !== "id_card") return state;
+  if (state.profile.askIdBiometric === "1" || state.profile.askIdBiometric === "2") return state;
+  const who = state.slots.find((slot) => slot.id === slotId)?.borrower;
+  if (who !== "1" && who !== "2") return state;
+  const borrower = borrowersOf(state.profile).find((item) => item.slot === who);
+  if (!borrower || borrower.idBiometric === "yes" || borrower.idBiometric === "no") return state;
+  return { ...state, profile: { ...state.profile, askIdBiometric: who } };
 }
 
 /** Send an accepted file to Smart NPV, or keep the ciphertext when the upload fails. */
@@ -982,7 +1512,7 @@ async function uploadAcceptedFile(opts: IngestLines & {
     opts.lines.push(opts.chat.documents.received(
       receiptName(opts.config.rules, opts.lang, state, slotId, docType, opts.coveredMonths),
     ));
-    return { state, accepted: false };
+    return { state: rememberIdSide(state, slotId, docType), accepted: false };
   }
 
   const docRow = job.id
@@ -1011,7 +1541,7 @@ async function uploadAcceptedFile(opts: IngestLines & {
         data: {
           status: "uploaded",
           docType,
-          filename,
+          filename: job.filename,
           remoteId,
           bytesEnc: encryptBytes(job.bytes),
           validation: { accepted: true, slotId, docType } as Prisma.InputJsonValue,
@@ -1020,7 +1550,7 @@ async function uploadAcceptedFile(opts: IngestLines & {
       opts.lines.push(opts.chat.documents.received(
         receiptName(opts.config.rules, opts.lang, opts.state, slotId, docType, opts.coveredMonths),
       ));
-      return { state, accepted: true };
+      return { state: rememberIdSide(state, slotId, docType), accepted: true };
     }
     const uploaded = await opts.client.upload({
       clientId: state.smartClientId,
@@ -1047,7 +1577,7 @@ async function uploadAcceptedFile(opts: IngestLines & {
       data: {
         status: "uploaded",
         docType,
-        filename,
+        filename: job.filename,
         remoteId: uploaded.remoteId,
         downloadUrl: savedUrl || null,
         bytesEnc: null,
@@ -1057,7 +1587,7 @@ async function uploadAcceptedFile(opts: IngestLines & {
     opts.lines.push(opts.chat.documents.received(
       receiptName(opts.config.rules, opts.lang, opts.state, slotId, docType, opts.coveredMonths),
     ));
-    return { state, accepted: true };
+    return { state: rememberIdSide(state, slotId, docType), accepted: true };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     if (error === "unsupported_type") {
@@ -1120,6 +1650,70 @@ async function dropHeld(tenantId: string, dossierId: string, slotId: string): Pr
   }
 }
 
+function backPendingOf(profile: Profile): "1" | "2" | "" {
+  return profile.idBackPending === "1" || profile.idBackPending === "2" ? profile.idBackPending : "";
+}
+
+/** A biometric reading on the card opens the other side for that borrower. */
+function noteIdBiometric(
+  state: DossierState,
+  rules: RulesDocument,
+  slotId: string,
+  biometric: "yes" | "no" | undefined,
+): DossierState {
+  if (biometric !== "yes" && biometric !== "no") return state;
+  const who = state.slots.find((slot) => slot.id === slotId)?.borrower;
+  if (who !== "1" && who !== "2") return state;
+  const profile = applyExtractedBiometric(state.profile, who, biometric);
+  return refreshDossier({ ...state, profile }, rules, "");
+}
+
+/** The ספח was already in the ID photo, so that slot is the same file. */
+function noteAppendix(
+  state: DossierState,
+  slotId: string,
+  appendix: "yes" | "no" | undefined,
+): DossierState {
+  if (appendix !== "yes") return state;
+  const who = state.slots.find((slot) => slot.id === slotId)?.borrower;
+  if (who !== "1" && who !== "2") return state;
+  return { ...state, profile: { ...state.profile, appendixSeen: who } };
+}
+
+/** The ספח in the ID photo shares the file that uploaded the card. */
+function commitSeenAppendix(state: DossierState, frontSlotId: string): DossierState {
+  const front = state.slots.find((slot) => slot.id === frontSlotId);
+  if (!front || front.status !== "uploaded") return state;
+  if (state.profile.appendixSeen !== front.borrower) return state;
+  const appendix = state.slots.find((slot) =>
+    slot.docType === "id_appendix" && slot.borrower === front.borrower && slot.status !== "uploaded",
+  );
+  if (!appendix) return state;
+  return commitSlot(state, appendix.id, front.remoteId, front.filename || "photos.pdf");
+}
+
+/** The other side shares the PDF that already uploaded the front. */
+function commitIdBack(state: DossierState, frontSlotId: string): DossierState {
+  const front = state.slots.find((slot) => slot.id === frontSlotId);
+  if (!front || front.status !== "uploaded") return state;
+  const back = state.slots.find((slot) =>
+    slot.docType === "id_card_back" && slot.borrower === front.borrower && slot.status !== "uploaded",
+  );
+  if (!back) return state;
+  return commitSlot(state, back.id, front.remoteId, front.filename || "photos.pdf");
+}
+
+async function heldForSlot(tenantId: string, dossierId: string, slotId: string): Promise<number> {
+  const held = await prisma.leadDocument.findMany({
+    where: { tenantId, dossierId, status: "stored" },
+    select: { validation: true },
+  });
+  return held.filter((doc) => {
+    const validation = isRecord(doc.validation) ? doc.validation : {};
+    return validation.held === true && validation.slotId === slotId;
+  }).length;
+}
+
 /** Photos of one document become a single PDF, then that PDF is what Smart NPV receives. */
 async function closeImageBatch(opts: IngestLines & {
   config: DocumentConfig;
@@ -1147,7 +1741,7 @@ async function closeImageBatch(opts: IngestLines & {
   }
   if (!pages.length) return { ...opts.state, profile: { ...opts.state.profile, imageBatchSlot: "" } };
   const slot = opts.state.slots.find((item) => item.id === slotId);
-  const pdf = await imagesToPdf(pages.map((page) => ({ mime: page.mime, bytes: page.bytes })));
+  const pdf = await filesToPdf(pages.map((page) => ({ mime: page.mime, bytes: page.bytes })));
   const uploaded = await uploadAcceptedFile({
     ...opts,
     state: opts.state,
@@ -1161,6 +1755,8 @@ async function closeImageBatch(opts: IngestLines & {
     docType: slot?.docType ?? "",
   });
   if (!uploaded.accepted) return opts.state;
+  let next = { ...uploaded.state, profile: { ...uploaded.state.profile, imageBatchSlot: "" } };
+  if (slot?.docType === "id_card") next = commitSeenAppendix(next, slotId);
   await prisma.$transaction(
     pages.map((page) =>
       prisma.leadDocument.update({
@@ -1169,7 +1765,7 @@ async function closeImageBatch(opts: IngestLines & {
       }),
     ),
   );
-  return { ...uploaded.state, profile: { ...uploaded.state.profile, imageBatchSlot: "" } };
+  return next;
 }
 
 export async function runDocumentsIngest(
@@ -1177,9 +1773,9 @@ export async function runDocumentsIngest(
   deps?: { extract?: ExtractFn; client?: SmartClient },
 ): Promise<{ ok: boolean; reply: string }> {
   const config = await readConfig(ctx.tenantId);
-  const lang = replyLang(ctx);
+  const lang = documentsReplyLang(ctx);
   const chat = copyFor(lang, { gender: ctx.agent.persona?.gender }).chat;
-  if (!config) return { ok: false, reply: chat.documents.notConfigured };
+  if (!config) return { ok: false, reply: customerReply(ctx, chat.documents.notConfigured) };
 
   const testing = isTestLead(config, phoneOf(ctx));
   const client = deps?.client ?? (testing
@@ -1202,8 +1798,11 @@ export async function runDocumentsIngest(
   });
 
   const rejectedTypes = await rejectUnsupportedFiles({ ctx, chat, lines, row, files: inbound.files });
-  if (rejectedTypes) return rejectedTypes;
+  if (rejectedTypes) return { ...rejectedTypes, reply: customerReply(ctx, rejectedTypes.reply) };
 
+  const lastAgentText =
+    [...ctx.messages].reverse().find((message) => message.role === "agent" || message.role === "human")?.text ?? "";
+  const bare = row ? bareAnswerAllowed(stateOf(row).profile, lastAgentText) : false;
   const matched = await matchClient({
     ctx,
     chat,
@@ -1215,13 +1814,23 @@ export async function runDocumentsIngest(
     typedId,
     hasFiles: inbound.files.length > 0,
     answerText: inbound.newestText,
+    bare,
   });
-  if (matched.done) return matched.done;
+  if (matched.done) return { ...matched.done, reply: customerReply(ctx, matched.done.reply) };
   row = matched.row;
-  if (!row) return { ok: false, reply: chat.documents.notConfigured };
+  if (!row) return { ok: false, reply: customerReply(ctx, chat.documents.notConfigured) };
 
-  const closingPhotos = Boolean(stateOf(row).profile.imageBatchSlot && photoDone(inbound.newestText));
-  let state = refreshDossier(stateOf(row), config.rules, closingPhotos ? "" : inbound.newestText);
+  const backPending = stateOf(row).profile.idBackPending === "1" || stateOf(row).profile.idBackPending === "2";
+  const closingPhotos = Boolean(stateOf(row).profile.imageBatchSlot && photoDone(inbound.newestText) && !backPending);
+  const maxTries = config.maxRejectTries ?? DEFAULT_MAX_REJECT_TRIES;
+  let state = clearExpiredCool(
+    refreshDossier(stateOf(row), config.rules, closingPhotos ? "" : inbound.newestText, bare),
+    maxTries,
+  );
+  const offeredForm = offeredBlankForm(state, config.rules, ctx.messages);
+  if (offeredForm && state.profile.formPending !== offeredForm) {
+    state = { ...state, profile: { ...state.profile, formPending: offeredForm } };
+  }
   if (factsOpen(state.profile)) {
     lines.push(...gatheringLines(state, config.rules, lang, chat));
     await prisma.dossier.update({
@@ -1235,25 +1844,83 @@ export async function runDocumentsIngest(
       },
     });
     await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
-    return { ok: true, reply: lines.filter(Boolean).join("\n") };
+    return { ok: true, reply: customerReply(ctx, lines.filter(Boolean).join("\n")) };
   }
   if (closingPhotos) {
     state = await closeImageBatch({ ctx, chat, lines, config, client, lang, row, state });
     state = refreshDossier(state, config.rules, "");
   }
   state = await notifyAdvisor(ctx, state);
-  if (state.status === "blocked") {
+
+  if (escalateOfferPending(state.profile)) {
+    const answer = escalateAnswer(inbound.newestText);
+    if (answer === "yes") {
+      state = {
+        ...state,
+        profile: { ...state.profile, escalateOffer: "accepted", rejectCoolUntil: "" },
+      };
+      await handOffDocumentReview({
+        ctx,
+        chat,
+        lines,
+        summary: "customer asked to escalate document review",
+      });
+      lines.push(chat.documents.escalateAccepted);
+      await prisma.dossier.update({
+        where: { id: row.id },
+        data: {
+          status: state.status === "blocked" ? "gathering" : state.status,
+          slots: state.slots as unknown as Prisma.InputJsonValue,
+          activeStage: state.activeStage,
+          profile: state.profile as Prisma.InputJsonValue,
+          smartClientId: state.smartClientId,
+        },
+      });
+      await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
+      return { ok: true, reply: customerReply(ctx, lines.filter(Boolean).join("\n")) };
+    }
+    if (answer === "no") {
+      state = { ...state, profile: { ...state.profile, escalateOffer: "declined" } };
+      lines.push(chat.documents.escalateDeclined);
+      if (coolActive(state.profile)) lines.push(chat.documents.cooldownWait(coolMinutesLeft(state.profile)));
+    }
+  }
+
+  if (coolActive(state.profile) && inbound.files.length > 0) {
+    const minutes = coolMinutesLeft(state.profile);
+    lines.push(chat.documents.cooldownWait(minutes));
+    if (!escalateOfferPending(state.profile) && state.profile.escalateOffer !== "accepted") {
+      state = { ...state, profile: { ...state.profile, escalateOffer: "pending" } };
+      lines.push(chat.documents.askEscalate);
+    }
+    for (const file of inbound.files) {
+      await markRejected({
+        tenantId: ctx.tenantId,
+        leadId: ctx.lead.id,
+        dossierId: row.id,
+        messageId: file.messageId,
+        filename: file.attachment.filename,
+        mime: file.attachment.mime,
+        reason: "cooldown",
+      });
+    }
     await prisma.dossier.update({
       where: { id: row.id },
       data: {
-        status: state.status,
+        status: state.status === "blocked" ? "gathering" : state.status,
         slots: state.slots as unknown as Prisma.InputJsonValue,
         activeStage: state.activeStage,
         profile: state.profile as Prisma.InputJsonValue,
+        smartClientId: state.smartClientId,
       },
     });
     await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
-    return { ok: true, reply: lines.join(" ") || chat.documents.escalated };
+    return { ok: true, reply: customerReply(ctx, lines.filter(Boolean).join("\n")) };
+  }
+
+  // Older dossiers may still be blocked from the previous auto-escalation path.
+  if (state.status === "blocked") {
+    state = { ...state, status: "gathering" };
   }
 
   const jobs = await collectJobs({ ctx, chat, lines, row, files: inbound.files });
@@ -1273,27 +1940,79 @@ export async function runDocumentsIngest(
       });
       continue;
     }
+    if (await closeDuplicateBlankForm({ ctx, row, state, job, rules: config.rules })) continue;
     const batchSlot = typeof state.profile.imageBatchSlot === "string" ? state.profile.imageBatchSlot : "";
+    if (backPendingOf(state.profile) && batchSlot) {
+      await holdImage({ ctx, chat, lines, row, job, slotId: batchSlot, docType: "id_card" });
+      const count = await heldForSlot(ctx.tenantId, row.id, batchSlot);
+      if (count >= 2) {
+        state = await closeImageBatch({ ctx, chat, lines, config, client, lang, row, state });
+        const front = state.slots.find((slot) => slot.id === batchSlot);
+        if (front?.status === "uploaded") {
+          state = commitIdBack(state, batchSlot);
+          state = {
+            ...state,
+            profile: { ...state.profile, idBackPending: "", imageBatchSlot: "" },
+          };
+          acceptedAny = true;
+          state = refreshDossier(state, config.rules, "");
+        }
+      }
+      continue;
+    }
     if (isImageFile(job.mime, job.filename)) {
       let slotId = batchSlot;
       let docType = state.slots.find((slot) => slot.id === slotId)?.docType ?? "";
+      let biometric: "yes" | "no" | undefined;
       if (!slotId) {
         const judged = await judgeFileJob({ ctx, chat, lines, config, extract, lang, row, state, job });
         state = judged.state;
-        if (judged.escalated) break;
+        if (judged.cooled) break;
         if (!judged.accepted) continue;
         slotId = judged.accepted.slotId;
         docType = judged.accepted.docType;
+        biometric = judged.accepted.biometric;
+        if (docType === "id_card") {
+          state = noteIdBiometric(state, config.rules, slotId, biometric);
+          state = noteAppendix(state, slotId, judged.accepted.appendix);
+        }
       }
       await holdImage({ ctx, chat, lines, row, job, slotId, docType });
+      const who = state.slots.find((slot) => slot.id === slotId)?.borrower;
+      if (docType === "id_card" && biometric === "yes" && (who === "1" || who === "2")) {
+        state = { ...state, profile: { ...state.profile, imageBatchSlot: slotId, idBackPending: who } };
+        lines.push(chat.documents.askIdBack);
+        continue;
+      }
       state = { ...state, profile: { ...state.profile, imageBatchSlot: slotId } };
       lines.push(chat.documents.askMorePhotos);
       continue;
     }
     const judged = await judgeFileJob({ ctx, chat, lines, config, extract, lang, row, state, job });
     state = judged.state;
-    if (judged.escalated) break;
+    if (judged.cooled) break;
     if (!judged.accepted) continue;
+    if (judged.accepted.docType === "id_card") {
+      state = noteIdBiometric(state, config.rules, judged.accepted.slotId, judged.accepted.biometric);
+      state = noteAppendix(state, judged.accepted.slotId, judged.accepted.appendix);
+    }
+    if (judged.accepted.docType === "id_card" && judged.accepted.biometric === "yes") {
+      const who = state.slots.find((slot) => slot.id === judged.accepted?.slotId)?.borrower;
+      await holdImage({
+        ctx,
+        chat,
+        lines,
+        row,
+        job,
+        slotId: judged.accepted.slotId,
+        docType: "id_card",
+      });
+      if (who === "1" || who === "2") {
+        state = { ...state, profile: { ...state.profile, imageBatchSlot: judged.accepted.slotId, idBackPending: who } };
+        lines.push(chat.documents.askIdBack);
+        continue;
+      }
+    }
     const uploaded = await uploadAcceptedFile({
       ctx,
       chat,
@@ -1309,6 +2028,20 @@ export async function runDocumentsIngest(
       coveredMonths: judged.accepted.coveredMonths,
     });
     state = uploaded.state;
+    if (uploaded.accepted && judged.accepted.docType === "payslip") {
+      const front = state.slots.find((slot) => slot.id === judged.accepted?.slotId);
+      const months = [...(judged.accepted.payMonths ?? [])].sort();
+      const extra = extraPayslipSlotIds(state, judged.accepted.slotId, months);
+      for (const slotId of extra) {
+        state = commitSlot(state, slotId, front?.remoteId ?? "", front?.filename || job.filename);
+      }
+      [judged.accepted.slotId, ...extra].forEach((slotId, index) => {
+        if (months[index]) state = noteSlotMonths(state, slotId, [months[index]]);
+      });
+    }
+    if (uploaded.accepted && judged.accepted.docType === "id_card") {
+      state = commitSeenAppendix(state, judged.accepted.slotId);
+    }
     if (uploaded.accepted && judged.accepted.slotId === batchSlot) {
       await dropHeld(ctx.tenantId, row.id, batchSlot);
       state = { ...state, profile: { ...state.profile, imageBatchSlot: "" } };
@@ -1327,8 +2060,12 @@ export async function runDocumentsIngest(
     try {
       const sent = await sendBlankForm(ctx, chat, slot.docType, form, label);
       if (sent === "already") continue;
-      if (sent === "sent") state = { ...state, profile: { ...state.profile, formPending: slot.docType } };
-      else if (sent === "skipped") lines.push(caption);
+      if (sent === "sent" || sent === "skipped") {
+        state = { ...state, profile: { ...state.profile, formPending: slot.docType } };
+      }
+      if (sent === "skipped") {
+        lines.push(`${caption}\n${blankFormHref(ctx.tenantId, slot.docType, form.file)}`);
+      }
       break;
     } catch (err) {
       warnDocuments("documents.form_failed", {
@@ -1340,8 +2077,18 @@ export async function runDocumentsIngest(
     }
   }
 
-  if (state.status === "complete") lines.push(chat.documents.complete);
-  else if (state.status === "gathering" && (acceptedAny || lines.length === 0)) {
+  if (!inbound.files.length && missingTheDocument(inbound.newestText)) {
+    const slot = state.slots.find((item) => isOutstanding(item, state.slots));
+    if (slot) lines.push(chat.documents.howTo(slot.docType));
+  } else if (!inbound.files.length && declinesExistingLoans(inbound.newestText)) {
+    lines.push(chat.documents.noLoans);
+  }
+
+  if (state.status === "complete") {
+    lines.push(chat.documents.complete);
+    state = await openChecklistReview(ctx, state);
+  }
+  else if (state.status === "gathering" && (acceptedAny || lines.length === 0 || declinesExistingLoans(inbound.newestText))) {
     lines.push(...gatheringLines(state, config.rules, lang, chat));
   }
 
@@ -1357,7 +2104,10 @@ export async function runDocumentsIngest(
   });
   await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
   const reply = lines.filter(Boolean).join("\n");
-  return { ok: true, reply: reply || chat.documents.askStage(missingLabels(state, config.rules, lang).join(", ")) };
+  return {
+    ok: true,
+    reply: customerReply(ctx, reply || nextDocumentAsk(state, config.rules, lang, chat)),
+  };
 }
 
 /**
@@ -1415,6 +2165,151 @@ export async function releaseNextDocumentStage(
   return { ok: true };
 }
 
+/** The stored upload for a slot. One file can fill several slots, so match the remote id first. */
+export function checklistFile<T extends { filename: string; remoteId: string }>(
+  slot: { filename: string; remoteId: string },
+  files: T[],
+): T | undefined {
+  return files.find((item) =>
+    (slot.remoteId && item.remoteId === slot.remoteId) ||
+    (slot.filename && item.filename === slot.filename),
+  );
+}
+
+const IDENTITY_TYPES = new Set(["id_card", "id_card_back", "id_appendix"]);
+
+export type ChecklistPiece = {
+  id: string;
+  docType: string;
+  borrower: string;
+  label: string;
+  stage: string;
+  status: "missing" | "uploaded";
+  lastReason: string;
+  filename: string;
+  remoteId: string;
+  href: string;
+  mime: string;
+  coveredMonths: string[];
+  sourceFilename: string;
+};
+
+export type ChecklistFile = { href: string; mime: string };
+
+export type ChecklistRow = {
+  id: string;
+  label: string;
+  stage: string;
+  status: string;
+  lastReason: string;
+  filename: string;
+  remoteId: string;
+  href: string;
+  mime: string;
+  files: ChecklistFile[];
+};
+
+/** Inclusive YYYY-MM span. A gap longer than a year stays as the two endpoints. */
+export function expandMonthRange(start: string, end: string): string[] {
+  const from = monthsIn(start)[0];
+  const to = monthsIn(end)[0];
+  if (!from || !to) return [...new Set([start, end].filter(Boolean))].sort();
+  const [fromYear, fromMonth] = from.split("-").map(Number);
+  const [toYear, toMonth] = to.split("-").map(Number);
+  const begin = fromYear * 12 + fromMonth - 1;
+  const finish = toYear * 12 + toMonth - 1;
+  if (finish < begin || finish - begin > 11) return [...new Set([from, to])].sort();
+  const out: string[] = [];
+  for (let cursor = begin; cursor <= finish; cursor += 1) {
+    const year = Math.floor(cursor / 12);
+    const month = (cursor % 12) + 1;
+    out.push(`${year}-${String(month).padStart(2, "0")}`);
+  }
+  return out;
+}
+
+function monthsNamedIn(filename: string): string[] {
+  const unique = monthsIn(filename);
+  if (unique.length === 2) return expandMonthRange(unique[0], unique[1]);
+  return unique;
+}
+
+/** "3 תלושי שכר אוגוסט-אוקטובר" */
+export function payslipFieldLabel(
+  count: number,
+  months: string[],
+  lang: "en" | "he",
+  now = new Date(),
+): string {
+  const noun = lang === "he"
+    ? count === 1 ? "תלוש שכר" : "תלושי שכר"
+    : count === 1 ? "Payslip" : "Payslips";
+  const known = [...new Set(months)].sort();
+  if (!known.length) return `${count} ${noun}`;
+  const first = formatStatementMonth(known[0], lang, now);
+  const last = formatStatementMonth(known[known.length - 1], lang, now);
+  return `${count} ${noun} ${first === last ? first : `${first}-${last}`}`;
+}
+
+/**
+ * The ID card, its other side, and the appendix are one field.
+ * Payslips for one borrower are one field, named with their months.
+ */
+export function groupChecklistRows(
+  slots: ChecklistPiece[],
+  lang: "en" | "he",
+  now = new Date(),
+): ChecklistRow[] {
+  const groups: ChecklistPiece[][] = [];
+  const at = new Map<string, number>();
+  for (const slot of slots) {
+    const key = IDENTITY_TYPES.has(slot.docType)
+      ? `identity:${slot.borrower || "1"}`
+      : slot.docType === "payslip"
+        ? `payslip:${slot.borrower || "1"}`
+        : slot.id;
+    const index = at.get(key);
+    if (index === undefined) {
+      at.set(key, groups.length);
+      groups.push([slot]);
+    } else {
+      groups[index].push(slot);
+    }
+  }
+  return groups.map((group) => {
+    const first = group[0];
+    const files: ChecklistFile[] = [];
+    const seen = new Set<string>();
+    for (const slot of group) {
+      if (!slot.href || seen.has(slot.href)) continue;
+      seen.add(slot.href);
+      files.push({ href: slot.href, mime: slot.mime || "application/pdf" });
+    }
+    const uploaded = group.every((slot) => slot.status === "uploaded");
+    const payslip = group.every((slot) => slot.docType === "payslip");
+    const stored = [...new Set(group.flatMap((slot) => slot.coveredMonths))].sort();
+    const named = stored.length
+      ? stored
+      : [...new Set(group.flatMap((slot) => monthsNamedIn(slot.sourceFilename)))].sort();
+    const idLabel = group.find((slot) => slot.docType === "id_card")?.label;
+    const label = payslip
+      ? payslipFieldLabel(group.length, named, lang, now)
+      : idLabel || first.label;
+    return {
+      id: first.id,
+      label,
+      stage: first.stage,
+      status: uploaded ? "uploaded" : "missing",
+      lastReason: uploaded ? "" : group.find((slot) => slot.lastReason)?.lastReason ?? "",
+      filename: first.filename,
+      remoteId: group.find((slot) => slot.remoteId && !slot.remoteId.startsWith("local:"))?.remoteId ?? "",
+      href: files[0]?.href ?? "",
+      mime: files[0]?.mime ?? "application/pdf",
+      files,
+    };
+  });
+}
+
 export async function loadDocumentChecklist(tenantId: string, leadId: string, lang: "en" | "he") {
   const [config, dossier] = await Promise.all([
     readConfig(tenantId),
@@ -1431,20 +2326,22 @@ export async function loadDocumentChecklist(tenantId: string, leadId: string, la
   const files = await prisma.leadDocument.findMany({
     where: { tenantId, dossierId: dossier.id, status: "uploaded" },
     orderBy: { createdAt: "desc" },
-    select: { id: true, filename: true, remoteId: true, downloadUrl: true },
+    select: { id: true, filename: true, remoteId: true, downloadUrl: true, mime: true },
   });
   return {
     status: state.status,
     activeStage: state.activeStage,
     releasedStageId: current,
     nextStageId: state.status === "complete" ? nextStageId : "",
-    slots: state.slots.map((slot) => {
-      const file = files.find((item) => item.filename && item.filename === slot.filename);
-      const href = file && (file.downloadUrl || file.remoteId.startsWith("local:"))
-        ? `/api/leads/${leadId}/documents/${file.id}`
+    slots: groupChecklistRows(state.slots.map((slot) => {
+      const linked = checklistFile(slot, files);
+      const href = linked && (linked.downloadUrl || linked.remoteId.startsWith("local:"))
+        ? `/api/leads/${leadId}/documents/${linked.id}`
         : "";
       return {
         id: slot.id,
+        docType: slot.docType,
+        borrower: slot.borrower || "1",
         label: rules ? slotDisplayLabel(rules, slot, lang) : slot.docType,
         stage: slot.stage,
         status: slot.status,
@@ -1452,7 +2349,10 @@ export async function loadDocumentChecklist(tenantId: string, leadId: string, la
         filename: slot.filename,
         remoteId: slot.remoteId,
         href,
+        mime: linked?.mime || "application/pdf",
+        coveredMonths: slot.coveredMonths ?? [],
+        sourceFilename: linked?.filename || slot.filename,
       };
-    }),
+    }), lang),
   };
 }

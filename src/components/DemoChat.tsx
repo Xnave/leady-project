@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ChatThread } from "@/components/ChatThread";
 import { shouldResetThread, threadKey } from "@/components/demo-chat-state";
-import { supportedFileAccept } from "@/lib/documents/file-types";
 
 type Msg = {
   id: string;
@@ -19,7 +18,7 @@ type ComposerLabels = {
   send: string;
   sending: string;
   sendFailed: string;
-  attach?: string;
+  dropFile?: string;
 };
 
 type ThreadLabels = {
@@ -57,11 +56,11 @@ export function DemoChat({
   const shownKey = useRef(serverKey);
   const [messages, setMessages] = useState(initialMessages);
   const [text, setText] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [fileKey, setFileKey] = useState(0);
   const [pending, setPending] = useState(false);
   const [typing, setTyping] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dragDepth = useRef(0);
   // Until hydration the form would submit natively and drop the message.
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
@@ -76,22 +75,18 @@ export function DemoChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverKey]);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = text.trim();
-    if ((!trimmed && !file) || pending || disabled || !ready) return;
+  async function sendMessage(rawText: string, sending: File | null) {
+    const trimmed = rawText.trim();
+    if ((!trimmed && !sending) || pending || disabled || !ready) return;
 
     const optimistic: Msg = {
       id: `local-${Date.now()}`,
       role: "lead",
-      text: trimmed || file?.name || "",
+      text: trimmed || sending?.name || "",
       createdAt: new Date(),
     };
     setMessages((prev) => [...prev, optimistic]);
     setText("");
-    const sending = file;
-    setFile(null);
-    setFileKey((key) => key + 1);
     setPending(true);
     setTyping(true);
     setError(null);
@@ -117,26 +112,85 @@ export function DemoChat({
         body: JSON.stringify({ leadId, from: from || undefined, text: trimmed, file: attached }),
       });
       // A crashed route can answer with an empty or HTML body; don't let parsing mask the real error.
-      const data = (await res.json().catch(() => ({}))) as { error?: string; leadId?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        leadId?: string;
+        messages?: Msg[];
+      };
       if (!res.ok) throw new Error(data.error ?? composerLabels.sendFailed);
+      if (data.messages?.length) {
+        shownKey.current = threadKey(data.leadId ?? leadId, data.messages);
+        setMessages(data.messages);
+        setPending(false);
+        setTyping(false);
+      }
       if (data.leadId && data.leadId !== leadId) {
         router.push(`/demo?leadId=${data.leadId}`);
       } else {
         router.refresh();
       }
-      // Keep typing/pending until serverKey updates with the agent reply.
     } catch (err) {
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
       setText(trimmed);
-      setFile(sending);
       setError(err instanceof Error ? err.message : composerLabels.sendFailed);
       setTyping(false);
       setPending(false);
     }
   }
 
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    void sendMessage(text, null);
+  }
+
+  function hasFiles(e: React.DragEvent) {
+    return [...e.dataTransfer.types].includes("Files");
+  }
+
+  function onDragEnter(e: React.DragEvent) {
+    if (!hasFiles(e) || pending || disabled || !ready) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setDragging(true);
+  }
+
+  function onDragOver(e: React.DragEvent) {
+    if (!hasFiles(e) || pending || disabled || !ready) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }
+
+  function onDragLeave(e: React.DragEvent) {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragging(false);
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    const dropped = e.dataTransfer.files?.[0];
+    if (!dropped) return;
+    void sendMessage(text, dropped);
+  }
+
+  function onPaste(e: React.ClipboardEvent<HTMLInputElement>) {
+    const pasted = e.clipboardData.files?.[0];
+    if (!pasted) return;
+    e.preventDefault();
+    void sendMessage(text, pasted);
+  }
+
   return (
-    <>
+    <div
+      className={`demo-drop${dragging ? " is-dragging" : ""}`}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <ChatThread
         lang={lang}
         messages={messages}
@@ -144,31 +198,25 @@ export function DemoChat({
         leadName={leadName}
         typing={typing}
       />
+      {dragging && composerLabels.dropFile ? (
+        <div className="demo-drop-overlay" role="status">
+          {composerLabels.dropFile}
+        </div>
+      ) : null}
       <form onSubmit={onSubmit} className="composer">
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onPaste={onPaste}
           placeholder={disabled ? composerLabels.waitingHuman : composerLabels.placeholder}
           disabled={pending || disabled || !ready}
           aria-label={composerLabels.placeholder}
         />
-        {composerLabels.attach ? (
-          <label className="muted">
-            {composerLabels.attach}
-            <input
-              key={fileKey}
-              type="file"
-            accept={supportedFileAccept()}
-              disabled={pending || disabled || !ready}
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            />
-          </label>
-        ) : null}
-        <button type="submit" disabled={pending || disabled || !ready || (!text.trim() && !file)}>
+        <button type="submit" disabled={pending || disabled || !ready || !text.trim()}>
           {pending ? composerLabels.sending : composerLabels.send}
         </button>
         {error ? <p className="muted">{error}</p> : null}
       </form>
-    </>
+    </div>
   );
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { decryptBytes } from "@/lib/crypto";
+import { inlineContentDisposition } from "@/lib/documents/file-types";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
 
@@ -13,11 +14,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!doc) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (doc.bytesEnc) {
     const bytes = decryptBytes(doc.bytesEnc);
-    const filename = doc.filename.replace(/[\r\n"]/g, "") || "document.pdf";
     return new NextResponse(new Uint8Array(bytes), {
       headers: {
         "content-type": doc.mime || "application/pdf",
-        "content-disposition": `inline; filename="${filename}"`,
+        "content-disposition": inlineContentDisposition(doc.filename || "document.pdf"),
       },
     });
   }

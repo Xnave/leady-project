@@ -4,7 +4,17 @@ import { chat as he } from "@/lib/copy/he";
 import { uiCopy } from "@/lib/ui";
 import { MORTGAGE_RULES } from "./mortgage-rules";
 import { requiredSlots } from "./rules";
-import { commitSlot, freshDossier, judgeFile, priorCalendarMonths, recordMonths, runChecks } from "./validate";
+import {
+  commitSlot,
+  extraPayslipSlotIds,
+  freshDossier,
+  judgeFile,
+  priorCalendarMonths,
+  recordMonths,
+  recentPayslipMonths,
+  runChecks,
+  slotDisplayLabel,
+} from "./validate";
 
 const NOW = new Date("2026-11-02T00:00:00.000Z");
 const profile = {
@@ -23,6 +33,31 @@ function dossier() {
 }
 
 describe("document checks", () => {
+  it("accepts an ID card when the file has no number yet", () => {
+    const failure = runChecks(
+      MORTGAGE_RULES.documents.id_card.checks,
+      { nationalId: "123456782", fullName: "Dana Levi" },
+      { nationalId: "" },
+      NOW,
+    );
+    expect(failure).toBeNull();
+  });
+
+  it("accepts an ID appendix once it is recognized", () => {
+    const accepted = judgeFile(dossier(), MORTGAGE_RULES, { docType: "id_appendix", fields: {} }, NOW);
+    expect(accepted.kind).toBe("accept");
+  });
+
+  it("accepts an ID card read as a grouped number and a last name", () => {
+    const accepted = judgeFile(
+      dossier(),
+      MORTGAGE_RULES,
+      { docType: "id_card", fields: { nationalId: "1 2345678 2", lastName: "Levi" } },
+      NOW,
+    );
+    expect(accepted.kind).toBe("accept");
+  });
+
   it("accepts a national id that matches the profile", () => {
     const failure = runChecks(
       MORTGAGE_RULES.documents.id_card.checks,
@@ -95,18 +130,35 @@ describe("document checks", () => {
     expect(state.status).toBe("complete");
   });
 
+  it("uses a human statement request rather than exposing individual month ids", () => {
+    const state = freshDossier({
+      smartClientId: "c1",
+      profile,
+      slots: [{
+        id: "bank_statement#a#0",
+        docType: "bank_statement",
+        stage: "banking",
+        index: 0,
+        months: ["2026-08", "2026-09", "2026-10"],
+      }],
+    });
+    expect(slotDisplayLabel(MORTGAGE_RULES, state.slots[0]!, "he")).toBe(
+      "תדפיס עו״ש עבור 3 חודשים אחרונים",
+    );
+  });
+
   it("rejects a file that is not one of the open types", () => {
     const judged = judgeFile(dossier(), MORTGAGE_RULES, { docType: "passport", fields: {} }, NOW);
     expect(judged.kind).toBe("reject");
     if (judged.kind === "reject") expect(judged.reason).toBe("wrong_type");
   });
 
-  it("treats an empty type from a completed read as the wrong document", () => {
+  it("treats an empty type from a completed read as unrecognized", () => {
     const judged = judgeFile(dossier(), MORTGAGE_RULES, { docType: "", fields: {} }, NOW);
     expect(judged.kind).toBe("reject");
     if (judged.kind !== "reject") return;
-    expect(judged.reason).toBe("wrong_type");
-    expect(judged.state.slots.find((slot) => slot.id === judged.slotId)?.lastReason).toBe("wrong_type");
+    expect(judged.reason).toBe("unrecognized");
+    expect(judged.state.slots.find((slot) => slot.id === judged.slotId)?.lastReason).toBe("unrecognized");
   });
 
   it("keeps a skipped or failed read off the wrong-document reason", () => {
@@ -122,19 +174,21 @@ describe("document checks", () => {
     expect(uiCopy("he").documentsUi.reasons.extract_failed).toBe("בדיקת הקובץ נכשלה");
   });
 
-  it("escalates after three failures on the same slot and commits an accepted upload", () => {
+  it("hits the try limit without blocking the dossier", () => {
     let state = dossier();
-    let escalated = false;
-    for (let i = 0; i < 3; i += 1) {
-      const judged = judgeFile(state, MORTGAGE_RULES, { docType: "passport", fields: {} }, NOW);
+    let atLimit = false;
+    for (let i = 0; i < 5; i += 1) {
+      const judged = judgeFile(state, MORTGAGE_RULES, { docType: "passport", fields: {} }, NOW, {
+        maxTries: 5,
+      });
       expect(judged.kind).toBe("reject");
       if (judged.kind === "reject") {
         state = judged.state;
-        escalated = judged.escalated;
+        atLimit = judged.atLimit;
       }
     }
-    expect(escalated).toBe(true);
-    expect(state.status).toBe("blocked");
+    expect(atLimit).toBe(true);
+    expect(state.status).toBe("gathering");
 
     const ok = freshDossier({
       smartClientId: "c1",
@@ -152,5 +206,40 @@ describe("document checks", () => {
     const next = commitSlot(ok, accepted.slotId, "remote-1", "id.pdf");
     expect(next.slots.find((slot) => slot.id === accepted.slotId)?.status).toBe("uploaded");
     expect(next.status).toBe("gathering");
+  });
+});
+
+describe("payslip months", () => {
+  const now = new Date("2026-11-09T12:00:00.000Z");
+
+  it("keeps August through October and drops January 2023", () => {
+    expect(recentPayslipMonths("2023-01, 2026-08, 2026-09, 2026-10", 3, now)).toEqual([
+      "2026-08",
+      "2026-09",
+      "2026-10",
+    ]);
+  });
+
+  it("closes the other two payslip slots when one file has three recent months", () => {
+    const state = freshDossier({
+      smartClientId: "c1",
+      profile,
+      slots: [0, 1, 2].map((index) => ({
+        id: `payslip#1#${index}`,
+        docType: "payslip",
+        stage: "income",
+        index,
+        borrower: "1",
+        status: index === 0 ? "uploaded" as const : "missing" as const,
+        failCount: 0,
+        lastReason: "",
+        remoteId: index === 0 ? "local:slip" : "",
+        filename: index === 0 ? "payslips.pdf" : "",
+      })),
+    });
+    expect(extraPayslipSlotIds(state, "payslip#1#0", ["2026-08", "2026-09", "2026-10"], now)).toEqual([
+      "payslip#1#1",
+      "payslip#1#2",
+    ]);
   });
 });

@@ -114,7 +114,7 @@ export default async function DemoPage({
     send: ui.common.send,
     sending: ui.common.sending,
     sendFailed: ui.chat.sendFailed,
-    attach: ui.documentsUi.attach,
+    dropFile: ui.documentsUi.dropFile,
   };
   const threadLabels = {
     emptyThread: ui.chat.emptyThread,

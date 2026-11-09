@@ -150,9 +150,15 @@ export async function POST(req: Request) {
   const lead = await prisma.lead.findFirstOrThrow({
     where: { tenantId, channelId: channel.id, externalUserId: from },
   });
+  const messages = await prisma.message.findMany({
+    where: { tenantId, conversationId: inserted.conversationId },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, role: true, text: true, createdAt: true },
+  });
   return NextResponse.json({
     leadId: lead.id,
     conversationId: inserted.conversationId,
     viaInngest: enqueued && answered,
+    messages,
   });
 }

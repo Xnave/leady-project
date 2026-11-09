@@ -33,6 +33,8 @@ export default async function DocumentsSettingsPage() {
         baseUrl={pub.baseUrl || "fake://smart"}
         hasKey={pub.hasKey}
         testPhones={pub.testPhones.join("\n")}
+        maxRejectTries={pub.maxRejectTries}
+        rejectCooldownMinutes={pub.rejectCooldownMinutes}
         rules={rules}
       />
     </div>

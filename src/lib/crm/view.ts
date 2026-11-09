@@ -103,6 +103,8 @@ export type LeadViewDTO = LeadRowDTO & {
       filename: string;
       remoteId: string;
       href: string;
+      mime: string;
+      files: { href: string; mime: string }[];
     }[];
   } | null;
   /** The open task the owner acts on in the lead view (was the Inbox), or null. */

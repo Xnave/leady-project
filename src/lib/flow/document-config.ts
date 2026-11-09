@@ -11,8 +11,21 @@ export type DocumentConfig = {
   testPhones: string[];
   /** True when no key is stored. Files stay in the CRM. */
   testOnly: boolean;
+  /** Rejected uploads on one slot before a cool-off. Default 5. */
+  maxRejectTries: number;
+  /** Minutes to wait after the try limit before the customer can send that file again. Default 5. */
+  rejectCooldownMinutes: number;
   rules: RulesDocument;
 };
+
+export const DEFAULT_MAX_REJECT_TRIES = 5;
+export const DEFAULT_REJECT_COOLDOWN_MINUTES = 5;
+
+function clampedInt(value: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(n)));
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -57,6 +70,13 @@ export function parseDocumentConfig(
     }
   }
   const testPhones = phoneList(body.testPhones, existingTestPhones);
+  const maxRejectTries = clampedInt(body.maxRejectTries, DEFAULT_MAX_REJECT_TRIES, 1, 20);
+  const rejectCooldownMinutes = clampedInt(
+    body.rejectCooldownMinutes,
+    DEFAULT_REJECT_COOLDOWN_MINUTES,
+    1,
+    1440,
+  );
 
   let rules: RulesDocument = MORTGAGE_RULES;
   if (body.rules !== undefined) {
@@ -69,7 +89,15 @@ export function parseDocumentConfig(
   }
 
   if (errors.length) throw new FlowConfigError(errors);
-  return { baseUrl, apiKeyEnc, testPhones, testOnly: !apiKeyEnc, rules };
+  return {
+    baseUrl,
+    apiKeyEnc,
+    testPhones,
+    testOnly: !apiKeyEnc,
+    maxRejectTries,
+    rejectCooldownMinutes,
+    rules,
+  };
 }
 
 export function documentApiKey(config: DocumentConfig): string {
@@ -95,6 +123,8 @@ export function publicDocumentConfig(config: Record<string, unknown>): {
   hasKey: boolean;
   testOnly: boolean;
   testPhones: string[];
+  maxRejectTries: number;
+  rejectCooldownMinutes: number;
   rules: unknown;
 } {
   const parsed = isRecord(config) ? config : {};
@@ -107,6 +137,13 @@ export function publicDocumentConfig(config: Record<string, unknown>): {
     hasKey,
     testOnly: !hasKey,
     testPhones,
+    maxRejectTries: clampedInt(parsed.maxRejectTries, DEFAULT_MAX_REJECT_TRIES, 1, 20),
+    rejectCooldownMinutes: clampedInt(
+      parsed.rejectCooldownMinutes,
+      DEFAULT_REJECT_COOLDOWN_MINUTES,
+      1,
+      1440,
+    ),
     rules: parsed.rules ?? MORTGAGE_RULES,
   };
 }

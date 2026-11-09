@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { chat as en } from "@/lib/copy/en";
 import { chat as he } from "@/lib/copy/he";
-import { isImageFile, isUploadableFile, smartUploadName, supportedTypeLabels, uploadFileName } from "./file-types";
+import { inlineContentDisposition, isImageFile, isUploadableFile, smartUploadName, supportedTypeLabels, uploadFileName } from "./file-types";
 
 describe("supported document types", () => {
   it("allows pdf, png, jpg, and jpeg only", () => {
@@ -16,6 +16,13 @@ describe("supported document types", () => {
   it("names the uploaded file with an allowed extension", () => {
     expect(uploadFileName("id card.pdf", "application/pdf")).toBe("id card.pdf");
     expect(uploadFileName("scan", "image/png")).toBe("scan.png");
+  });
+
+  it("keeps a Hebrew filename out of the Latin-1 download header", () => {
+    const header = inlineContentDisposition("לווה_תעודת_זהות_2026-11-09_01.pdf");
+    expect([...header].every((char) => char.charCodeAt(0) <= 255)).toBe(true);
+    expect(header).toContain("filename*=UTF-8''");
+    expect(header).toContain(encodeURIComponent("לווה_תעודת_זהות_2026-11-09_01.pdf"));
   });
 
   it("names a Smart NPV upload from the borrower, the Hebrew label, the day, and a version", () => {

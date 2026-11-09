@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { RulesEditor } from "@/components/documents/RulesEditor";
+import { loadRulesDocument, rulesIssueList } from "@/lib/documents/rules-form";
+import type { RulesDocument } from "@/lib/documents/rules";
 import type { UiCopy } from "@/lib/ui";
 
 type Props = {
@@ -9,6 +12,8 @@ type Props = {
   baseUrl: string;
   hasKey: boolean;
   testPhones: string;
+  maxRejectTries: number;
+  rejectCooldownMinutes: number;
   rules: string;
 };
 
@@ -17,8 +22,11 @@ export function DocumentsSettingsForm(props: Props) {
   const [enabled, setEnabled] = useState(props.enabled);
   const [baseUrl, setBaseUrl] = useState(props.baseUrl);
   const [apiKey, setApiKey] = useState("");
-  const [rules, setRules] = useState(props.rules);
+  const [rules, setRules] = useState<RulesDocument>(() => loadRulesDocument(props.rules));
+  const rulesOk = rulesIssueList(rules).length === 0;
   const [testPhones, setTestPhones] = useState(props.testPhones);
+  const [maxRejectTries, setMaxRejectTries] = useState(String(props.maxRejectTries));
+  const [rejectCooldownMinutes, setRejectCooldownMinutes] = useState(String(props.rejectCooldownMinutes));
   const [phone, setPhone] = useState("");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -33,7 +41,15 @@ export function DocumentsSettingsForm(props: Props) {
       const res = await fetch("/api/settings/documents", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled, baseUrl, apiKey, rules, testPhones }),
+        body: JSON.stringify({
+          enabled,
+          baseUrl,
+          apiKey,
+          rules,
+          testPhones,
+          maxRejectTries,
+          rejectCooldownMinutes,
+        }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? copy.failed);
@@ -94,12 +110,31 @@ export function DocumentsSettingsForm(props: Props) {
       </label>
       <p className="muted">{copy.testPhonesHint}</p>
       <label>
-        {copy.rules}
-        <textarea rows={16} value={rules} onChange={(e) => setRules(e.target.value)} />
+        {copy.maxRejectTries}
+        <input
+          type="number"
+          min={1}
+          max={20}
+          value={maxRejectTries}
+          onChange={(e) => setMaxRejectTries(e.target.value)}
+        />
       </label>
-      <p className="muted">{copy.rulesHint}</p>
+      <p className="muted">{copy.maxRejectTriesHint}</p>
+      <label>
+        {copy.rejectCooldownMinutes}
+        <input
+          type="number"
+          min={1}
+          max={1440}
+          value={rejectCooldownMinutes}
+          onChange={(e) => setRejectCooldownMinutes(e.target.value)}
+        />
+      </label>
+      <p className="muted">{copy.rejectCooldownMinutesHint}</p>
+      <p className="muted rules-hint">{copy.rulesHint}</p>
+      <RulesEditor value={rules} onChange={setRules} copy={copy.editor} />
       <div className="wizard-footer">
-        <button type="submit" className="btn" disabled={pending}>
+        <button type="submit" className="btn" disabled={pending || !rulesOk} aria-busy={pending}>
           {props.ui.common.save}
         </button>
       </div>

@@ -23,7 +23,7 @@ function ctx(runIngest: boolean): TurnContext {
       nudgeCountByStage: {},
     },
     lead: { id: "l1", externalUserId: "+1", fields: {} },
-    messages: [],
+    messages: [{ id: "m1", role: "agent", text: "שלום", createdAt: new Date() }],
     capabilityState: {
         documents: {
           configured: true,
@@ -53,6 +53,13 @@ describe("reconcileDocuments", () => {
   it("leaves an ordinary reply alone when nothing is waiting", () => {
     const outcome: TalkOutcome = { reply: "What else can I help with?" };
     expect(reconcileDocuments({ ctx: ctx(false), outcome })).toEqual(outcome);
+  });
+
+  it("lets the first hello stay the intro", () => {
+    const first = ctx(true);
+    first.messages = [{ id: "m1", role: "lead", text: "שלום", createdAt: new Date() }];
+    const outcome: TalkOutcome = { reply: "היי, אני העוזרת." };
+    expect(reconcileDocuments({ ctx: first, outcome })).toEqual(outcome);
   });
 });
 

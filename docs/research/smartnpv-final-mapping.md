@@ -51,7 +51,7 @@ These are the files the advisor asks the lead for. None of them appeared in the 
 | Which borrower | `id_1`. A second borrower when `id_2` is different, or when `phone_2` is set and `id_2` is empty. | A copied `id_1` in `id_2`. |
 | Employment | `status_report_1` / `status_report_2`, using the מעמד תעסוקתי table. `1`, `2`, and `3` are the salaried list. The string `"0"` is self-employed. `5` is both and flags the advisor. `4` and `6`–`9`, and empty, ask the client. | An empty value as code `0`. Workplace, income, and gender. |
 | First home | Ask the lead. `false` flags the advisor and drops income and banking. | `transaction_type`. In the same lookup file, `1` is שיפוצים. |
-| Bank accounts | One statement slot per `banks_accounts` row that has its own id. Zero rows means unknown, so ask whether there are accounts. | A fixed count of three files. |
+| Bank accounts | One statement slot per `banks_accounts` row that has its own id. Zero rows still open one statement. The agent does not ask whether accounts exist. | A fixed count of three files. |
 | Loans | `liabilities` nonempty, or `current_mortgage` above 0, means loans are known. Otherwise unknown, so ask. | An empty `liabilities` array as "no loans". |
 
 ## Still unresolved

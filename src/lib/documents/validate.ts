@@ -40,6 +40,41 @@ function withinMonths(date: Date, months: number, now: Date): boolean {
   return date.getTime() >= cutoff.getTime() && date.getTime() <= now.getTime();
 }
 
+/** Payslip months that fall inside the rolling window the rules accept. */
+export function recentPayslipMonths(value: unknown, months = 3, now = new Date()): string[] {
+  return monthsIn(value).filter((month) => {
+    const [year, mon] = month.split("-").map(Number);
+    if (!year || !mon) return false;
+    return withinMonths(new Date(Date.UTC(year, mon - 1, 15)), months, now);
+  });
+}
+
+/**
+ * One accepted payslip file can close the other open payslip slots when it
+ * contains more than one month inside the window. The first month is the slot
+ * the file itself was placed on.
+ */
+export function extraPayslipSlotIds(
+  state: DossierState,
+  frontSlotId: string,
+  months: string[],
+  now = new Date(),
+): string[] {
+  const front = state.slots.find((slot) => slot.id === frontSlotId);
+  if (!front || front.docType !== "payslip") return [];
+  const room = Math.max(0, recentPayslipMonths(months.join(","), 3, now).length - 1);
+  if (!room) return [];
+  return state.slots
+    .filter((slot) =>
+      slot.docType === "payslip" &&
+      slot.borrower === front.borrower &&
+      slot.id !== front.id &&
+      slot.status !== "uploaded",
+    )
+    .slice(0, room)
+    .map((slot) => slot.id);
+}
+
 export function runChecks(
   checks: Check[],
   extracted: Record<string, unknown>,
@@ -58,9 +93,14 @@ export function runChecks(
       const expected = profile[check.profileKey];
       const leftDigits = digits(value);
       const rightDigits = digits(expected);
+      const expectedText = fold(expected);
+      if (!rightDigits && !expectedText) {
+        if (leftDigits || fold(value)) continue;
+        return { op: check.op, field: check.field };
+      }
       const same = leftDigits && rightDigits
         ? leftDigits === rightDigits
-        : fold(value) !== "" && fold(value) === fold(expected);
+        : fold(value) !== "" && fold(value) === expectedText;
       if (!same) return { op: check.op, field: check.field };
       continue;
     }
@@ -111,10 +151,11 @@ export type DossierState = {
 
 export type FileJudgement =
   | { kind: "accept"; slotId: string; docType: string; coveredMonths?: string[] }
-  | { kind: "reject"; state: DossierState; slotId: string; reason: string; escalated: boolean }
+  | { kind: "reject"; state: DossierState; slotId: string; reason: string; field?: string; atLimit: boolean }
   | { kind: "unplaced"; state: DossierState };
 
-const FAIL_LIMIT = 3;
+/** Default try limit when the tenant has not configured documents.maxRejectTries. */
+export const DEFAULT_REJECT_TRIES = 5;
 
 export function freshDossier(opts: {
   smartClientId: string;
@@ -169,26 +210,39 @@ function profileForSlot(profile: Profile, slot: { borrower?: string }): Profile 
   if (!slot.borrower) return profile;
   const borrower = borrowersOf(profile).find((item) => item.slot === slot.borrower);
   if (!borrower) return profile;
-  return { ...profile, nationalId: borrower.nationalId, fullName: borrower.fullName, phone: borrower.phone };
+  return {
+    ...profile,
+    nationalId: borrower.nationalId || profile.nationalId,
+    fullName: borrower.fullName || profile.fullName,
+    phone: borrower.phone || profile.phone,
+  };
 }
 
-function withFailure(state: DossierState, slotId: string, reason: string): FileJudgement {
+function withFailure(
+  state: DossierState,
+  slotId: string,
+  reason: string,
+  maxTries: number,
+  field?: string,
+): FileJudgement {
   const slots = state.slots.map((slot) =>
     slot.id === slotId
       ? { ...slot, failCount: slot.failCount + 1, lastReason: reason }
       : slot,
   );
   const failed = slots.find((slot) => slot.id === slotId);
-  const escalated = (failed?.failCount ?? 0) >= FAIL_LIMIT;
+  const atLimit = (failed?.failCount ?? 0) >= maxTries;
   return {
     kind: "reject",
     slotId,
     reason,
-    escalated,
+    ...(field ? { field } : {}),
+    atLimit,
     state: {
       ...state,
       slots,
-      status: escalated ? "blocked" : state.status,
+      // Stay gathering: the customer may wait out a cool-off or ask for a person.
+      status: state.status === "blocked" ? "gathering" : state.status,
       activeStage: activeStageOf(slots),
     },
   };
@@ -203,24 +257,30 @@ export function judgeFile(
   rules: RulesDocument,
   extracted: { docType: string; fields: Record<string, unknown>; unread?: "no_model" | "extract_failed" },
   now: Date = new Date(),
+  opts?: { maxTries?: number },
 ): FileJudgement {
+  const maxTries = Math.max(1, opts?.maxTries ?? DEFAULT_REJECT_TRIES);
   const open = state.slots.filter((slot) => slot.status === "missing");
   const fallback = open.find((slot) => slot.stage === state.activeStage) ?? open[0];
   if (!extracted.docType) {
-    const reason = extracted.unread ?? "wrong_type";
-    if (!fallback) return { kind: "reject", state, slotId: "", reason, escalated: false };
-    return withFailure(state, fallback.id, reason);
+    const reason = extracted.unread ?? "unrecognized";
+    if (!fallback) return { kind: "reject", state, slotId: "", reason, atLimit: false };
+    return withFailure(state, fallback.id, reason, maxTries);
   }
   const sameType = open.filter((item) => item.docType === extracted.docType);
   const candidates = sameType.filter((item) => yearMatches(item, extracted.fields));
   if (!candidates.length && sameType.some((item) => item.year)) {
     return { kind: "unplaced", state };
   }
-  if (!candidates.length) {
-    if (!fallback) return { kind: "reject", state, slotId: "", reason: "wrong_type", escalated: false };
-    return withFailure(state, fallback.id, "wrong_type");
+  if (!candidates.length && extracted.docType === "id_card") {
+    const back = open.filter((item) => item.docType === "id_card_back");
+    if (back.length) candidates.push(...back);
   }
-  let failed: { id: string; op: Check["op"] } | null = null;
+  if (!candidates.length) {
+    if (!fallback) return { kind: "reject", state, slotId: "", reason: "wrong_type", atLimit: false };
+    return withFailure(state, fallback.id, "wrong_type", maxTries);
+  }
+  let failed: { id: string; op: Check["op"]; field?: string } | null = null;
   for (const candidate of candidates) {
     const checks = rules.documents[candidate.docType]?.checks ?? [];
     const failure = runChecks(checks, extracted.fields, profileForSlot(state.profile, candidate), now);
@@ -233,9 +293,9 @@ export function judgeFile(
         ...(coveredMonths.length ? { coveredMonths } : {}),
       };
     }
-    if (!failed) failed = { id: candidate.id, op: failure.op };
+    if (!failed) failed = { id: candidate.id, op: failure.op, field: failure.field };
   }
-  return withFailure(state, failed?.id ?? candidates[0].id, failed?.op ?? "wrong_type");
+  return withFailure(state, failed?.id ?? candidates[0].id, failed?.op ?? "wrong_type", maxTries, failed?.field);
 }
 
 /** The three calendar months before this month, oldest first, in Asia/Jerusalem. */
@@ -258,6 +318,44 @@ export function priorCalendarMonths(now = new Date(), count = 3): string[] {
 /** YYYY-MM values named in a statement field. One file may name several months. */
 export function monthsIn(value: unknown): string[] {
   return [...new Set(String(value ?? "").match(/\d{4}-\d{2}/g) ?? [])];
+}
+
+const HEBREW_MONTHS = [
+  "ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני",
+  "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר",
+];
+const ENGLISH_MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+function calendarYear(now: Date): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+  }).formatToParts(now);
+  return Number(parts.find((part) => part.type === "year")?.value);
+}
+
+/** April, or April 2025 when the month is not in the current calendar year. */
+export function formatStatementMonth(yyyyMm: string, lang: "en" | "he", now = new Date()): string {
+  const match = yyyyMm.match(/^(\d{4})-(\d{2})$/);
+  if (!match) return yyyyMm;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const name = (lang === "he" ? HEBREW_MONTHS : ENGLISH_MONTHS)[month - 1];
+  if (!name) return yyyyMm;
+  return year === calendarYear(now) ? name : `${name} ${year}`;
+}
+
+/** Remember which months a payslip slot already accepted, without reopening it. */
+export function noteSlotMonths(state: DossierState, slotId: string, months: string[]): DossierState {
+  const covered = [...new Set(months.filter(Boolean))].sort();
+  if (!covered.length) return state;
+  return {
+    ...state,
+    slots: state.slots.map((slot) => (slot.id === slotId ? { ...slot, coveredMonths: covered } : slot)),
+  };
 }
 
 /** Add the months a statement covered. The slot stays open until every required month is in. */
@@ -317,13 +415,13 @@ export function missingLabels(
   lang: "en" | "he",
   stageId?: string,
 ): string[] {
-  const stage = stageId || state.activeStage;
+  const stage = stageId === "*" ? "" : stageId || state.activeStage;
   const seen = new Set<string>();
   const seenGroups = new Set<string>();
   const labels: string[] = [];
   const joiner = lang === "he" ? " או " : " or ";
   for (const slot of state.slots) {
-    if (!isOutstanding(slot, state.slots) || slot.stage !== stage) continue;
+    if (!isOutstanding(slot, state.slots) || (stage && slot.stage !== stage)) continue;
     if (slot.altGroup) {
       if (seenGroups.has(slot.altGroup)) continue;
       seenGroups.add(slot.altGroup);
@@ -350,7 +448,11 @@ export function slotDisplayLabel(rules: RulesDocument, slot: SlotState, lang: "e
   if (slot.months?.length) {
     const covered = new Set(slot.coveredMonths ?? []);
     const missing = slot.months.filter((month) => !covered.has(month));
-    if (missing.length) return `${base} ${missing.join(", ")}`;
+    if (missing.length) {
+      return lang === "he"
+        ? `${base} עבור ${missing.length} חודשים אחרונים`
+        : `${base} for the last ${missing.length} months`;
+    }
   }
   return base;
 }

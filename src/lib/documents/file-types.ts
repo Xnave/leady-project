@@ -80,6 +80,13 @@ export function uploadDay(now: Date = new Date()): string {
   }).format(now);
 }
 
+/** An inline download header. Hebrew names go in filename* so the header stays Latin-1. */
+export function inlineContentDisposition(filename: string): string {
+  const cleaned = filename.replace(/[\r\n"]/g, "").trim() || "document";
+  const ascii = cleaned.replace(/[^\x20-\x7E]/g, "_") || "document";
+  return `inline; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(cleaned)}`;
+}
+
 export function uploadFileName(filename: string, mime: string): string {
   const base = filename.split(/[/\\]/).pop()?.trim() || "document";
   const ext = fileExtension(base);

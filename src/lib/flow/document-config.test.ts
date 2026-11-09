@@ -49,6 +49,8 @@ describe("parseDocumentConfig", () => {
     expect(saved.apiKeyEnc).toBe("");
     expect(saved.testOnly).toBe(true);
     expect(saved.testPhones).toEqual(["0501234567"]);
+    expect(saved.maxRejectTries).toBe(5);
+    expect(saved.rejectCooldownMinutes).toBe(5);
     expect(isTestLead(saved, "+972501234567")).toBe(true);
     const keyed = parseDocumentConfig({
       baseUrl: "fake://smart",
@@ -58,5 +60,17 @@ describe("parseDocumentConfig", () => {
     });
     expect(isTestLead(keyed, "0509999999")).toBe(false);
     expect(isTestLead(keyed, "0501234567")).toBe(true);
+  });
+
+  it("keeps reject try and cool-off settings within range", () => {
+    process.env.APP_ENCRYPTION_KEY = KEY;
+    const saved = parseDocumentConfig({
+      baseUrl: "fake://smart",
+      rules: MORTGAGE_RULES,
+      maxRejectTries: "12",
+      rejectCooldownMinutes: 0,
+    });
+    expect(saved.maxRejectTries).toBe(12);
+    expect(saved.rejectCooldownMinutes).toBe(1);
   });
 });
