@@ -1,8 +1,7 @@
 import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { NextResponse } from "next/server";
 import { loadInstanceConfig } from "@/lib/capability-instances";
-import { BLANK_FORMS_DIR, blankFormSignatureMatches } from "@/lib/documents/blank-form";
+import { blankFormFilePath, blankFormSignatureMatches } from "@/lib/documents/blank-form";
 import { inlineContentDisposition } from "@/lib/documents/file-types";
 import { MORTGAGE_RULES } from "@/lib/documents/mortgage-rules";
 import { parseRules } from "@/lib/documents/rules";
@@ -34,11 +33,10 @@ export async function GET(req: Request) {
     file = "";
   }
   if (!file) file = MORTGAGE_RULES.documents[type]?.blankForm?.file ?? "";
-  if (!file || file.includes("/") || file.includes("\\") || file.includes("..")) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
-  }
+  const filePath = blankFormFilePath(file);
+  if (!filePath) return NextResponse.json({ error: "not_found" }, { status: 404 });
   try {
-    const bytes = await readFile(path.join(BLANK_FORMS_DIR, file));
+    const bytes = await readFile(filePath);
     return new NextResponse(new Uint8Array(bytes), {
       headers: {
         "content-type": "application/pdf",

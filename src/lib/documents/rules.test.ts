@@ -302,6 +302,16 @@ describe("mortgage checklist", () => {
     expect(types).not.toContain("bank_statement");
   });
 
+  it("rejects a blank form path that leaves the forms folder", () => {
+    const raw = structuredClone(MORTGAGE_RULES) as unknown as {
+      documents: { accountant_letter: { blankForm: { file: string; once: string } } };
+    };
+    raw.documents.accountant_letter.blankForm = { file: "../.env", once: "conversation" };
+    expect(() => parseRules(raw)).toThrow(RulesError);
+    raw.documents.accountant_letter.blankForm = { file: "nested/form.pdf", once: "conversation" };
+    expect(() => parseRules(raw)).toThrow(RulesError);
+  });
+
   it("rejects an unknown check op", () => {
     const raw = structuredClone(MORTGAGE_RULES) as unknown as {
       documents: { id_card: { checks: { op: string }[] } };

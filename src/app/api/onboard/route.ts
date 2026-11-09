@@ -124,9 +124,13 @@ export async function POST(req: Request) {
   if (capabilities.includes("documents")) {
     const existing = await loadInstanceConfig({ tenantId, capabilityId: "documents" });
     try {
+      const existingPhones = Array.isArray(existing.testPhones)
+        ? existing.testPhones.filter((item): item is string => typeof item === "string")
+        : [];
       documentConfig = parseDocumentConfig(
         body.documentConfig,
         typeof existing.apiKeyEnc === "string" ? existing.apiKeyEnc : "",
+        existingPhones,
       );
     } catch (e) {
       const msg = e instanceof FlowConfigError ? e.errors.join("\n") : String(e);

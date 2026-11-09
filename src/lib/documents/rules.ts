@@ -118,9 +118,11 @@ function parseBlankForm(raw: unknown, path: string, errors: string[]): BlankForm
     return undefined;
   }
   const file = typeof raw.file === "string" ? raw.file.trim() : "";
+  const unsafe = file.includes("/") || file.includes("\\") || file.includes("..");
   if (!file) errors.push(`${path}.file is required`);
+  if (unsafe) errors.push(`${path}.file must be one file name`);
   if (raw.once !== "conversation") errors.push(`${path}.once must be "conversation"`);
-  if (!file || raw.once !== "conversation") return undefined;
+  if (!file || unsafe || raw.once !== "conversation") return undefined;
   return { file, once: "conversation" };
 }
 

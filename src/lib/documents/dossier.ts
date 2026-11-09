@@ -1,5 +1,4 @@
 import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { decryptBytes, encryptBytes } from "@/lib/crypto";
@@ -21,7 +20,7 @@ import { loadTurnContext, type ConnectionView } from "@/lib/conversations";
 import { reopenConversation } from "@/lib/flow/rotate-conversation";
 import type { TurnContext } from "@/lib/flow/types";
 import { sendZernioInboxMessage } from "@/lib/zernio";
-import { BLANK_FORMS_DIR, blankFormHref } from "./blank-form";
+import { blankFormFilePath, blankFormHref } from "./blank-form";
 import { extractDocument, type DocExtraction } from "./extract";
 import {
   applyTurnFacts,
@@ -902,6 +901,11 @@ async function sendBlankForm(
     warnDocuments("documents.form_skipped", { conversationId: ctx.conversation.id, reason: "no_channel", form: docType });
     return "skipped";
   }
+  const filePath = blankFormFilePath(form.file);
+  if (!filePath) {
+    warnDocuments("documents.form_skipped", { conversationId: ctx.conversation.id, reason: "missing_file", form: docType });
+    return "missing";
+  }
   const providerMessageId = `out-form-${docType}-${ctx.conversation.id}`;
   await prisma.message.create({
     data: {
@@ -914,7 +918,7 @@ async function sendBlankForm(
     },
   });
   try {
-    const bytes = await readFile(path.join(BLANK_FORMS_DIR, form.file));
+    const bytes = await readFile(filePath);
     await sendZernioInboxMessage({
       accountId: target.accountId,
       conversationId: target.conversationId,
@@ -1236,6 +1240,15 @@ async function collectJobs(opts: IngestLines & { row: DossierRow; files: Inbound
         error: err instanceof Error ? err.message : String(err),
       });
       opts.lines.push(opts.chat.documents.rejected(attachment.filename, reasonText(opts.chat, reason)));
+      await markRejected({
+        tenantId: opts.ctx.tenantId,
+        leadId: opts.ctx.lead.id,
+        dossierId: opts.row.id,
+        messageId: file.messageId,
+        filename: attachment.filename,
+        mime: attachment.mime,
+        reason,
+      });
       continue;
     }
     if (!bytes) continue;

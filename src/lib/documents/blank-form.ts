@@ -5,6 +5,20 @@ import { appOrigin } from "@/lib/request-url";
 /** Blank PDFs the agent sends. Kept out of docs/ so they are not mixed with notes. */
 export const BLANK_FORMS_DIR = path.join(process.cwd(), "assets", "blank-forms");
 
+/**
+ * Absolute path of one file inside the blank-forms folder.
+ * A name with a slash or `..` is refused, and the resolved path must stay in the folder.
+ */
+export function blankFormFilePath(file: string): string | null {
+  const name = file.trim();
+  if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) return null;
+  const root = path.resolve(BLANK_FORMS_DIR);
+  const resolved = path.resolve(root, name);
+  if (resolved !== path.join(root, name)) return null;
+  if (!resolved.startsWith(root + path.sep)) return null;
+  return resolved;
+}
+
 function formSecret(): string {
   const hex = process.env.APP_ENCRYPTION_KEY ?? "";
   if (!hex) throw new Error("APP_ENCRYPTION_KEY is required to sign a blank form link");

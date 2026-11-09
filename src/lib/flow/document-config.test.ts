@@ -62,6 +62,18 @@ describe("parseDocumentConfig", () => {
     expect(isTestLead(keyed, "0501234567")).toBe(true);
   });
 
+  it("keeps a stored key and phone list when the save omits both", () => {
+    process.env.APP_ENCRYPTION_KEY = KEY;
+    const again = parseDocumentConfig(
+      { baseUrl: "fake://smart", rules: MORTGAGE_RULES },
+      "stored-key",
+      ["0501234567"],
+    );
+    expect(again.apiKeyEnc).toBe("stored-key");
+    expect(again.testPhones).toEqual(["0501234567"]);
+    expect(again.testOnly).toBe(false);
+  });
+
   it("keeps reject try and cool-off settings within range", () => {
     process.env.APP_ENCRYPTION_KEY = KEY;
     const saved = parseDocumentConfig({

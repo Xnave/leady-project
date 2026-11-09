@@ -1,5 +1,6 @@
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { blankFormHref, blankFormSignatureMatches } from "./blank-form";
+import { BLANK_FORMS_DIR, blankFormFilePath, blankFormHref, blankFormSignatureMatches } from "./blank-form";
 
 const KEY = "a".repeat(64);
 
@@ -22,5 +23,12 @@ describe("blank form links", () => {
       url.searchParams.get("sig") ?? "",
     )).toBe(true);
     expect(blankFormSignatureMatches("other-tenant", "accountant_letter", url.searchParams.get("sig") ?? "")).toBe(false);
+  });
+
+  it("resolves only a single file inside the blank-forms folder", () => {
+    expect(blankFormFilePath("letter.pdf")).toBe(path.resolve(BLANK_FORMS_DIR, "letter.pdf"));
+    expect(blankFormFilePath("../.env")).toBeNull();
+    expect(blankFormFilePath("nested/form.pdf")).toBeNull();
+    expect(blankFormFilePath("..\\secret.pdf")).toBeNull();
   });
 });

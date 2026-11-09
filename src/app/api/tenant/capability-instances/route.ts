@@ -3,6 +3,7 @@ import {
   DEFAULT_INSTANCE_KIND,
   disableCapabilityInstance,
   loadCapabilityInstances,
+  loadInstanceConfig,
   upsertCapabilityInstance,
 } from "@/lib/capability-instances";
 import { parseBookingConfig } from "@/lib/flow/booking-config";
@@ -22,7 +23,6 @@ import { tenantRoleOr403 } from "@/lib/tenant-role";
 const CONFIG_PARSERS: Record<string, (raw: unknown) => unknown> = {
   booking: parseBookingConfig,
   reservations: parseReservationConfig,
-  documents: (raw) => parseDocumentConfig(raw),
 };
 
 /** GET every configured request type for the tenant. */
@@ -60,7 +60,19 @@ export async function PUT(req: Request) {
   const parse = CONFIG_PARSERS[capabilityId];
   let config: unknown = body?.config ?? {};
   try {
-    if (parse) config = parse(body?.config);
+    if (capabilityId === "documents") {
+      const existing = await loadInstanceConfig({ tenantId, capabilityId: "documents" });
+      const phones = Array.isArray(existing.testPhones)
+        ? existing.testPhones.filter((item): item is string => typeof item === "string")
+        : [];
+      config = parseDocumentConfig(
+        body?.config,
+        typeof existing.apiKeyEnc === "string" ? existing.apiKeyEnc : "",
+        phones,
+      );
+    } else if (parse) {
+      config = parse(body?.config);
+    }
   } catch (err) {
     const message = err instanceof FlowConfigError ? err.errors.join("\n") : "Invalid config";
     return NextResponse.json({ error: message }, { status: 400 });

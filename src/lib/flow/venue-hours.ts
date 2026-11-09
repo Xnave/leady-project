@@ -1,5 +1,5 @@
 import { DEFAULT_TZ, zonedToday } from "./clock";
-import { isAmbiguousBareHour, normalizeSlot } from "./slot";
+import { isAmbiguousBareHour, lastBareHourDigit, normalizeSlot } from "./slot";
 
 export type VenueHoursWindow = {
   openMinutes: number;
@@ -339,11 +339,7 @@ export type BookableSlotStatus =
 export type BookableSlotResult = { status: BookableSlotStatus };
 
 function bareHourDigitIn(text: string): number | null {
-  const bare = text.match(/(?:ב־|ב-|at\s+|בשעה\s+|ב\s*)(\d{1,2})(?!\d)(?!\s*:)/i);
-  if (!bare) return null;
-  const hour = Number(bare[1]);
-  if (!Number.isInteger(hour) || hour < 1 || hour > 12) return null;
-  return hour;
+  return lastBareHourDigit(text);
 }
 
 /** 10 → 10:00 and 22:00. 12 → noon and midnight. */
