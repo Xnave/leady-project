@@ -138,6 +138,71 @@ export const chat: ChatCopy = {
         };
         return steps[docType] ?? "אפשר להוציא את המסמך מהגורם שמנפיק אותו ולשלוח אותו לכאן כקובץ או כתמונה.";
       },
+      howToDetail: (docType) => {
+        const steps: Record<string, string> = {
+          loan_balances: "באתר או באפליקציה של הבנק נכנסים להלוואות ובוחרים אישור יתרה לסילוק, או מבקשים את האישור בסניף, ושומרים PDF.",
+          bank_statement: "באתר או באפליקציה של הבנק נכנסים לעו״ש, מייצאים תנועות של שלושת החודשים האחרונים כ־PDF, בלי החודש הנוכחי.",
+          id_card: "מצלמים את כרטיס תעודת הזהות יחד עם הספח, במקום מואר, כך שהשם והמספר קריאים.",
+          id_card_back: "הופכים את כרטיס תעודת הזהות ומצלמים את הצד השני, לא רישיון נהיגה.",
+          id_appendix: "מצלמים את דף הספח כולו, כך שכל השורות נראות.",
+          payslip: "באזור העובד של המעסיק, או בבקשה מהמעסיק, מורידים את תלושי שלושת החודשים האחרונים.",
+          tax_assessment: "נכנסים לאזור האישי של רשות המסים, בוחרים שומת מס או אישור פתיחת תיק לשנת המס, ומורידים PDF. אם אין כניסה, רואה החשבון יכול להוציא את זה.",
+          accountant_letter: "שולחים לרואה החשבון את הטופס הריק שצורף, ומבקשים שימלא אותו לשנה הנוכחית ויחזיר PDF.",
+          controlling_shareholder_letter: "מבקשים מרואה החשבון את אישור בעל השליטה כ־PDF ומצרפים אותו כאן.",
+        };
+        return steps[docType] ?? "פונים לגורם שמנפיק את המסמך, מבקשים עותק עדכני, ושולחים אותו לכאן כקובץ או כתמונה.";
+      },
+      revised: (kind, detail) => {
+        const employment: Record<string, string> = {
+          salaried: "שכיר/ה",
+          self_employed: "עצמאי/ת",
+          controlling_shareholder: "שכיר/ה בעל/ת שליטה",
+          both: "שכיר/ה ועצמאי/ת",
+          other: "אחר",
+        };
+        if (kind === "loans_known") return "רשמתי שיש הלוואות. נבקש את היתרה כשנגיע אליה.";
+        if (kind === "employment") return `רשמתי שהתעסוקה היא ${employment[detail ?? ""] ?? "מעודכנת"}.`;
+        if (kind === "second_yes") return "רשמתי שיש לווה נוסף.";
+        if (kind === "second_no") return "רשמתי שאין לווה נוסף.";
+        if (kind === "first_home_yes") return "רשמתי שזו דירה ראשונה.";
+        if (kind === "first_home_no") return "רשמתי שזו לא דירה ראשונה.";
+        if (kind === "couple_yes") return "רשמתי שהאישה שכירה והבעל עצמאי.";
+        if (kind === "couple_no") return "רשמתי שזה לא המקרה של אישה שכירה ובעל עצמאי.";
+        if (kind === "salary_yes") return "רשמתי שהמשכורת נכנסת לחשבון האישי.";
+        if (kind === "salary_no") return "רשמתי שהמשכורת לא נכנסת לחשבון האישי.";
+        if (kind === "more_loans") return "רשמתי שיש הלוואה נוספת.";
+        return "רשמתי את העדכון.";
+      },
+      retracted: "הורדתי את הקובץ האחרון, הוא לא המסמך הנכון.",
+      notIdBack: "זה לא הצד השני של תעודת הזהות. אשמח לצד השני של הכרטיס.",
+      idBackTryAgain: "לא הצלחתי לקרוא את התמונה. אפשר לשלוח אותה שוב?",
+      confirmChange: (kind, detail) => {
+        const employment: Record<string, string> = {
+          salaried: "שכיר/ה",
+          self_employed: "עצמאי/ת",
+          controlling_shareholder: "שכיר/ה בעל/ת שליטה",
+          both: "שכיר/ה ועצמאי/ת",
+          other: "אחר",
+        };
+        if (kind === "retract" && detail === "id_card_back") return "להוריד את הצד השני";
+        if (kind === "retract") return "להוריד את הקובץ האחרון";
+        if (kind === "employment") return `לרשום שהתעסוקה היא ${employment[detail ?? ""] ?? "מעודכנת"}`;
+        if (kind === "loans" && detail === "none") return "לרשום שאין הלוואות";
+        if (kind === "loans") return "לרשום שיש הלוואות";
+        if (kind === "second_borrower" && detail === "no") return "לרשום שאין לווה נוסף";
+        if (kind === "second_borrower") return "לרשום שיש לווה נוסף";
+        if (kind === "first_home" && detail === "false") return "לרשום שזו לא דירה ראשונה";
+        if (kind === "first_home") return "לרשום שזו דירה ראשונה";
+        if (kind === "couple_split" && detail === "no") return "לרשום שזה לא המקרה של אישה שכירה ובעל עצמאי";
+        if (kind === "couple_split") return "לרשום שהאישה שכירה והבעל עצמאי";
+        if (kind === "salary_deposit" && detail === "no") return "לרשום שהמשכורת לא נכנסת לחשבון האישי";
+        if (kind === "salary_deposit") return "לרשום שהמשכורת נכנסת לחשבון האישי";
+        if (kind === "more_loans" && detail === "no") return "לרשום שאין הלוואה נוספת";
+        if (kind === "more_loans") return "לרשום שיש הלוואה נוספת";
+        if (kind === "how_to") return "להסביר מאיפה משיגים את המסמך";
+        return "לעדכן את מה שאמרת";
+      },
+      confirmTurn: (changes) => `רק לוודא: ${changes.join(", ")}?`,
       noLoans: "רשמתי שאין הלוואות, אז לא צריך יתרת הלוואות.",
       blankForm: (doc) => `מצורף טופס ${doc}. אשמח שתמלא/י אותו ותשלח/י אותו בחזרה.`,
       nextStage: "אפשר להתקדם לשלב הבא. אשלח את רשימת המסמכים הבאה ברגע שתהיה מוכנה.",

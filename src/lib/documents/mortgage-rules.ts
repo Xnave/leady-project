@@ -53,6 +53,8 @@ export const MORTGAGE_RULES: RulesDocument = {
     },
     id_card_back: {
       labels: { he: "הצד השני של תעודת הזהות", en: "other side of the ID card" },
+      recognize:
+        "The other side of an Israeli identity card (תעודת זהות), the back of the plastic card. Set docType to id_card_back only for that back. A driving licence (רישיון נהיגה), a passport, or any other card is not this document: leave docType empty.",
       fields: [],
       checks: [],
     },
@@ -166,7 +168,11 @@ function stageOneRequirements(): Requirement[] {
 }
 
 function borrowerScope(profile: Profile, borrower: BorrowerFact): Profile {
-  const employment = borrower.statusReport === "3" ? "controlling_shareholder" : borrower.employment;
+  const employment = borrower.employmentSource === "customer"
+    ? borrower.employment
+    : borrower.statusReport === "3"
+      ? "controlling_shareholder"
+      : borrower.employment;
   return {
     ...profile,
     employment,

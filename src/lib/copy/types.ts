@@ -91,6 +91,13 @@ export type ChatCopy = {
     askSalaryDeposit: (name: string) => string;
     askMorePhotos: string;
     howTo: (docType: string) => string;
+    howToDetail: (docType: string) => string;
+    revised: (kind: string, detail?: string) => string;
+    retracted: string;
+    notIdBack: string;
+    idBackTryAgain: string;
+    confirmChange: (kind: string, detail?: string) => string;
+    confirmTurn: (changes: string[]) => string;
     noLoans: string;
     blankForm: (doc: string) => string;
     nextStage: string;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { copyFor } from "@/lib/copy";
-import { documentAskText } from "./dossier";
-import { applyCustomerAnswers, applyExtractedBiometric, declinesExistingLoans, employmentFromStatusReport, factsFromClient, missingTheDocument, nextQuestion, openQuestions } from "./facts";
+import { documentAskText, reopenUploadedSlot } from "./dossier";
+import { applyCustomerAnswers, applyExtractedBiometric, asksHowToGet, borrowersOf, declinesExistingLoans, employmentFromStatusReport, factsFromClient, missingTheDocument, nextQuestion, openQuestions, retractsLastFile } from "./facts";
 import { checklistSlots, collectionYears, MORTGAGE_RULES, nextCollectionStageId } from "./mortgage-rules";
 import { mapSmartProfile } from "./smart-npv";
 import { parseRules, RulesError } from "./rules";
@@ -210,9 +210,7 @@ describe("mortgage checklist", () => {
     const still = applyCustomerAnswers(profile, "אין לי").profile;
     expect(still.loans).toBe("known");
     expect(checklistSlots(still, MORTGAGE_RULES).map((slot) => slot.docType)).toContain("loan_balances");
-    const none = applyCustomerAnswers(profile, "אין לי הלוואות").profile;
-    expect(none.loans).toBe("none");
-    expect(checklistSlots(none, MORTGAGE_RULES).map((slot) => slot.docType)).not.toContain("loan_balances");
+    expect(applyCustomerAnswers(profile, "אין לי הלוואות").profile.loans).toBe("known");
     expect(copyFor("he").chat.documents.howTo("loan_balances")).toContain("בנק");
   });
 
@@ -328,5 +326,49 @@ describe("mortgage checklist", () => {
       file: "אישור רואה חשבון לבעל שליטה (1).pdf",
       once: "conversation",
     });
+  });
+
+  it("does not overwrite a stored answer from the message text alone", () => {
+    const none = { ...ready(), loans: "none" as const, hasLoans: false, loanMore: "no" };
+    expect(applyCustomerAnswers(none, "בעצם יש לי הלוואות").profile.loans).toBe("none");
+    expect(applyCustomerAnswers(none, "אם יש לי הלוואות זה משנה?").profile.loans).toBe("none");
+    const selfEmployed = ready({ status_report_1: "0" });
+    expect(borrowersOf(applyCustomerAnswers(selfEmployed, "בעצם אני שכיר").profile).find((borrower) => borrower.slot === "1")?.employment).toBe("self_employed");
+    expect(borrowersOf(applyCustomerAnswers(selfEmployed, "בעצם אני שכיר").profile).find((borrower) => borrower.slot === "1")?.employmentSource).toBe("status_report");
+    const both = applyCustomerAnswers(ready({ status_report_1: "" }), "אני שכיר וגם עצמאי").profile;
+    expect(borrowersOf(both).find((borrower) => borrower.slot === "1")?.employment).toBe("both");
+    expect(both.advisorFlag).toEqual(expect.stringContaining("שכיר ועצמאי"));
+    const closed = checklistSlots(both, MORTGAGE_RULES).map((slot) => slot.docType);
+    expect(closed).toContain("id_card");
+    expect(closed).not.toContain("payslip");
+    expect(closed).not.toContain("tax_assessment");
+    expect(closed).not.toContain("bank_statement");
+  });
+
+  it("treats where-to-get as help and a named wrong file as a retraction", () => {
+    expect(asksHowToGet("מאיפה אני משיג?")).toBe(true);
+    expect(asksHowToGet("לא הבנתי לאן אני נכנס?")).toBe(true);
+    expect(asksHowToGet("אין לי")).toBe(false);
+    expect(copyFor("he").chat.documents.howToDetail("tax_assessment")).toContain("רשות המסים");
+    expect(copyFor("en").chat.documents.howToDetail("tax_assessment")).toContain("personal area");
+    expect(retractsLastFile("שלחתי צד שני של הרישיון")).toBe(true);
+    expect(retractsLastFile("בעצם שלחתי לך צד שני של הרישיון")).toBe(true);
+    expect(retractsLastFile("אין לי")).toBe(false);
+    expect(retractsLastFile("מאיפה אני משיג?")).toBe(false);
+    expect(retractsLastFile("זה לא נטען")).toBe(false);
+    expect(retractsLastFile("זה לא ברור")).toBe(false);
+    expect(retractsLastFile("אפשר לשלוח רישיון במקום?")).toBe(false);
+
+    const profile = applyExtractedBiometric(ready(), "1", "yes");
+    let state = freshDossier({ smartClientId: "c", profile, slots: checklistSlots(profile, MORTGAGE_RULES) });
+    const back = state.slots.find((slot) => slot.docType === "id_card_back");
+    expect(back).toBeTruthy();
+    if (!back) return;
+    state = commitSlot(state, back.id, "remote-licence", "licence.jpg");
+    const undone = reopenUploadedSlot(state, "שלחתי צד שני של הרישיון");
+    expect(undone?.slot.status).toBe("missing");
+    expect(undone?.slot.remoteId).toBe("");
+    expect(undone?.state.profile.idBackPending).toBe("1");
+    expect(reopenUploadedSlot(state, "אין לי")).toBeNull();
   });
 });

@@ -134,6 +134,51 @@ export function declinesExistingLoans(text: string): boolean {
   return /אין (לי )?(שום )?הלווא|בלי הלווא|no loans|without loans|don'?t have (any )?loans|do not have (any )?loans/i.test(text);
 }
 
+/** They named loans and said there are some. "הלוואה נוספת" is the extra-loan question. */
+export function affirmsExistingLoans(text: string): boolean {
+  if (missingTheDocument(text) || declinesExistingLoans(text)) return false;
+  if (/נוספ|another|more loan|עוד הלוואה/i.test(text)) return false;
+  return /יש (לי )?הלווא|have loans|i have (a )?loan/i.test(text);
+}
+
+/** The sentence marks a change, or it is the new answer itself. A bare "אין לי" is neither. */
+export function correctionMarked(text: string): boolean {
+  return /בעצם|התכוונתי|טעיתי|actually|i meant/i.test(text);
+}
+
+/** Where to get the open document, or that the last explanation was not clear. */
+export function asksHowToGet(text: string): boolean {
+  return /מאיפה|איך (אני )?משיג|איך מוריד|לאן (אני )?נכנס|לא הבנתי|where (do|can) i (get|find)|how do i get|which (site|page)|don'?t understand|do not understand/i.test(text);
+}
+
+/**
+ * The last file was the wrong document. "אין לי" is still "I don't have this file".
+ * An ordinary question does not reopen a slot.
+ */
+export function retractsLastFile(text: string): boolean {
+  const value = text.trim();
+  if (!value) return false;
+  if (missingTheDocument(value) && !/רישיון|licen[cs]e|זה לא|not the/i.test(value)) return false;
+  if (/זה לא (נטען|ברור|נכון|משנה|קשור)|not (charged|clear|sure)/i.test(value)) return false;
+  if (/[?？]/.test(value) || /^(אם|האם|אפשר|can i|could i)\b/i.test(value)) return false;
+  return /שלחתי בטעות|sent (the )?wrong|wrong (file|document|photo|side)|רישיון|driving licen|זה לא (ה)?(תעוד|מסמך|קובץ)|not the (right )?id|not an id/i.test(value);
+}
+
+export type FactRevisionKind =
+  | "loans_known"
+  | "employment"
+  | "second_yes"
+  | "second_no"
+  | "first_home_yes"
+  | "first_home_no"
+  | "couple_yes"
+  | "couple_no"
+  | "salary_yes"
+  | "salary_no"
+  | "more_loans";
+
+export type FactRevision = { kind: FactRevisionKind; detail?: string };
+
 export function loansOf(profile: Profile): LoansFact {
   if (profile.loans === "known" || profile.loans === "none" || profile.loans === "unknown") return profile.loans;
   if (profile.hasLoans === true) return "known";
@@ -367,12 +412,26 @@ export function factsFromClient(raw: Record<string, unknown>): Profile {
 
 function employmentAnswer(text: string): Employment | null {
   const folded = text.toLowerCase();
-  if (/גם וגם|שכיר ועצמאי|\bboth\b/.test(folded)) return "both";
+  if (/שכיר וגם עצמאי|עצמאי וגם שכיר|גם וגם|שכיר ועצמאי|salaried and self|\bboth\b/.test(folded)) return "both";
   if (/בעל שליטה|controlling shareholder/.test(folded)) return "controlling_shareholder";
-  if (/אחר|\bother\b/.test(folded)) return "other";
+  if (/(?:^|[\s,.])אחר(?:$|[\s,.!?])|\bother\b/.test(folded)) return "other";
   if (/עצמאי|self[-\s]?employed/.test(folded)) return "self_employed";
   if (/שכיר|\bsalaried\b|\bemployed\b/.test(folded)) return "salaried";
   return null;
+}
+
+function idleQuestion(text: string): boolean {
+  const value = text.trim();
+  return /[?？]/.test(value)
+    || /^(אם|האם|אפשר|can i|could i|what if)\b/i.test(value)
+    || /זה משנה|does it matter/i.test(value);
+}
+
+function assignEmployment(borrower: BorrowerFact, employment: Employment, now: Date): void {
+  borrower.employment = employment;
+  borrower.employmentSource = "customer";
+  borrower.employmentAnsweredAt = now.toISOString();
+  borrower.employmentLabel = employmentLabelFor(employment);
 }
 
 function employmentLabelFor(employment: Employment): string {
@@ -407,15 +466,16 @@ function moreLoansAnswer(message: string): "yes" | "no" | null {
 }
 
 /**
- * Apply one customer reply to facts that are still unknown.
- * A decoded employment code is left as-is: we only asked because it was unknown.
+ * Apply one customer reply to a fact that is still unknown.
+ * A stored answer changes only through applyFactIntents, after the message has been read.
+ * A bare "אין לי" still means the file is not in hand.
  */
 export function applyCustomerAnswers(
   input: Profile,
   message: string,
   now: Date = new Date(),
   opts?: { bare?: boolean },
-): { profile: Profile; changed: boolean } {
+): { profile: Profile; changed: boolean; revision?: FactRevision } {
   const text = message.trim();
   const profile = ensureBorrowers(input);
   if (!text) return { profile, changed: profile !== input };
@@ -425,9 +485,11 @@ export function applyCustomerAnswers(
     accounts: accountsOf(profile).map((account) => ({ ...account })),
   };
   let changed = false;
+  let revision: FactRevision | undefined;
   const borrowers = borrowersOf(next);
   const asked = nextQuestion(profile)?.kind;
-  if (asked === "second_borrower" && secondBorrowerOf(next) === "unknown") {
+  const priorSecond = secondBorrowerOf(profile);
+  if (asked === "second_borrower" && priorSecond === "unknown") {
     const folded = text.toLowerCase();
     const bareNo = /^(?:לא|no)[.!?\s]*$/i.test(text);
     const bareYes = /^(?:כן|yes)[.!?\s]*$/i.test(text);
@@ -469,26 +531,23 @@ export function applyCustomerAnswers(
     }
   }
   const employment = employmentAnswer(text);
-  if (employment && asked === "employment") {
+  if (employment && asked === "employment" && !idleQuestion(text)) {
     const target = borrowers.find((borrower) => borrower.employment === "unknown");
     if (target) {
-      target.employment = employment;
-      target.employmentSource = "customer";
-      target.employmentAnsweredAt = now.toISOString();
-      target.employmentLabel = employmentLabelFor(employment);
+      assignEmployment(target, employment, now);
       changed = true;
     }
   }
   const bareYesNo = opts?.bare !== false && /^(כן|לא|yes|no)[.!?\s]*$/i.test(text);
   const bareNo = /^(לא|no)/i.test(text);
-  if (firstHomeOf(next) === "unknown" && mentions(text, /דירה ה?ראשונה|first home/)) {
-    next.firstHome = mentions(text, /לא דירה|not (?:a |our )?first/) ? "false" : "true";
+  if (firstHomeOf(next) === "unknown" && !idleQuestion(text) && mentions(text, /דירה ה?ראשונה|first home/)) {
+    next.firstHome = mentions(text, /לא דירה|זו לא|זה לא|not (?:a |our )?first/) ? "false" : "true";
     changed = true;
   } else if (asked === "first_home" && firstHomeOf(next) === "unknown" && bareYesNo) {
     next.firstHome = bareNo ? "false" : "true";
     changed = true;
   }
-  if (loansOf(next) === "unknown" && mentions(text, /הלווא|loans?/)) {
+  if (loansOf(next) === "unknown" && !idleQuestion(text) && mentions(text, /הלווא|loans?/) && !/נוספ|another|more loan|עוד הלוואה/i.test(text)) {
     next.loans = mentions(text, /אין הלווא|no loans|without loans/) ? "none" : "known";
     next.hasLoans = next.loans === "known";
     changed = true;
@@ -497,7 +556,7 @@ export function applyCustomerAnswers(
     next.hasLoans = next.loans === "known";
     changed = true;
   }
-  if (declinesExistingLoans(text)) {
+  if (declinesExistingLoans(text) && loansOf(profile) === "unknown") {
     next.loans = "none";
     next.hasLoans = false;
     next.loanMore = "no";
@@ -534,5 +593,141 @@ export function applyCustomerAnswers(
     }
     next.advisorFlag = advisorReason(next);
   }
-  return { profile: next, changed };
+  return { profile: next, changed, ...(revision ? { revision } : {}) };
 }
+
+type IncomingFact = { kind: string; fact?: string; value?: string };
+
+function employmentConflictText(previous: Employment, next: Employment): string {
+  const label = employmentLabelFor;
+  return `הדיווח במערכת: ${label(previous)}. הלקוח עדכן: ${label(next)}.`;
+}
+
+/**
+ * Apply fact intents from a customer-turn read. Retracts and how-to replies stay with the caller.
+ * A status-report employment that changes is kept as the customer's value, and the disagreement
+ * is stored beside the advisor flag so the income list still follows the new answer.
+ */
+export function applyFactIntents(
+  input: Profile,
+  intents: IncomingFact[],
+  now: Date = new Date(),
+): { profile: Profile; changed: boolean; revisions: FactRevision[]; loansCleared: boolean } {
+  const profile = ensureBorrowers(input);
+  const next: Profile = {
+    ...profile,
+    borrowers: borrowersOf(profile).map((borrower) => ({ ...borrower })),
+    accounts: accountsOf(profile).map((account) => ({ ...account })),
+  };
+  const borrowers = borrowersOf(next);
+  const revisions: FactRevision[] = [];
+  let changed = false;
+  let loansCleared = false;
+  for (const intent of intents) {
+    if (intent.kind !== "fact" || !intent.fact || !intent.value) continue;
+    if (intent.fact === "loans" && (intent.value === "known" || intent.value === "none") && loansOf(next) !== intent.value) {
+      const prior = loansOf(next);
+      next.loans = intent.value;
+      next.hasLoans = intent.value === "known";
+      if (intent.value === "known" && next.loanMore === "no") next.loanMore = "";
+      if (intent.value === "none") {
+        next.loanMore = "no";
+        if (prior === "known") loansCleared = true;
+      }
+      changed = true;
+      if (prior !== "unknown" && intent.value === "known") revisions.push({ kind: "loans_known" });
+      continue;
+    }
+    if (intent.fact === "employment" && EMPLOYMENT_VALUES.has(intent.value)) {
+      const value = intent.value as Employment;
+      const target = borrowers.find((borrower) => borrower.slot === "1") ?? borrowers[0];
+      if (target && target.employment !== value) {
+        const prior = target.employment;
+        const fromReport = target.employmentSource === "status_report" && prior !== "unknown";
+        assignEmployment(target, value, now);
+        changed = true;
+        if (fromReport) next.employmentConflict = employmentConflictText(prior, value);
+        if (prior !== "unknown") revisions.push({ kind: "employment", detail: value });
+      }
+      continue;
+    }
+    if (intent.fact === "second_borrower" && (intent.value === "yes" || intent.value === "no")) {
+      const prior = secondBorrowerOf({ ...next, borrowers });
+      if (prior === intent.value) continue;
+      if (intent.value === "no") {
+        for (let index = borrowers.length - 1; index >= 0; index -= 1) {
+          if (borrowers[index]?.slot === "2") borrowers.splice(index, 1);
+        }
+        next.secondBorrower = "no";
+      } else {
+        next.secondBorrower = "yes";
+        if (!borrowers.some((borrower) => borrower.slot === "2")) borrowers.push(blankBorrower("2"));
+      }
+      changed = true;
+      if (prior !== "unknown") revisions.push({ kind: intent.value === "yes" ? "second_yes" : "second_no" });
+      continue;
+    }
+    if (intent.fact === "first_home" && (intent.value === "true" || intent.value === "false") && firstHomeOf(next) !== intent.value) {
+      const prior = firstHomeOf(next);
+      next.firstHome = intent.value;
+      changed = true;
+      if (prior !== "unknown") revisions.push({ kind: intent.value === "true" ? "first_home_yes" : "first_home_no" });
+      continue;
+    }
+    if (intent.fact === "couple_split" && (intent.value === "yes" || intent.value === "no") && next.coupleSplit !== intent.value) {
+      const prior = next.coupleSplit === "yes" || next.coupleSplit === "no" ? next.coupleSplit : "unknown";
+      next.coupleSplit = intent.value;
+      if (intent.value === "yes") {
+        for (const borrower of borrowers) {
+          if (borrower.employment !== "unknown") continue;
+          assignEmployment(borrower, borrower.slot === "2" ? "self_employed" : "salaried", now);
+        }
+      }
+      changed = true;
+      if (prior !== "unknown") revisions.push({ kind: intent.value === "yes" ? "couple_yes" : "couple_no" });
+      continue;
+    }
+    if (intent.fact === "salary_deposit" && (intent.value === "yes" || intent.value === "no")) {
+      const target = borrowers.find((borrower) => borrower.salaryDeposit === "yes" || borrower.salaryDeposit === "no")
+        ?? borrowers.find((borrower) => borrower.slot === "1");
+      if (target && target.salaryDeposit !== intent.value) {
+        const prior = target.salaryDeposit;
+        target.salaryDeposit = intent.value;
+        changed = true;
+        if (prior === "yes" || prior === "no") {
+          revisions.push({ kind: intent.value === "yes" ? "salary_yes" : "salary_no" });
+        }
+      }
+      continue;
+    }
+    if (intent.fact === "more_loans" && intent.value === "yes" && next.loanMore === "no") {
+      next.loanCount = loanCountOf(next) + 1;
+      next.loanMore = "";
+      next.loans = "known";
+      next.hasLoans = true;
+      changed = true;
+      revisions.push({ kind: "more_loans" });
+    } else if (intent.fact === "more_loans" && intent.value === "no" && next.loanMore !== "no") {
+      next.loanMore = "no";
+      changed = true;
+    }
+  }
+  next.borrowers = borrowers;
+  if (changed) {
+    const first = borrowers[0];
+    if (first) {
+      next.employment = first.employment === "unknown" ? "" : first.employment;
+      next.employmentLabel = first.employmentLabel;
+    }
+    next.advisorFlag = advisorReason(next);
+  }
+  return { profile: next, changed, revisions, loansCleared };
+}
+
+const EMPLOYMENT_VALUES = new Set<string>([
+  "salaried",
+  "self_employed",
+  "controlling_shareholder",
+  "both",
+  "other",
+]);

@@ -23,7 +23,18 @@ import type { TurnContext } from "@/lib/flow/types";
 import { sendZernioInboxMessage } from "@/lib/zernio";
 import { BLANK_FORMS_DIR, blankFormHref } from "./blank-form";
 import { extractDocument, type DocExtraction } from "./extract";
-import { applyCustomerAnswers, applyExtractedBiometric, borrowersOf, declinesExistingLoans, factsFromClient, factsOpen, missingTheDocument, nextQuestion, openQuestions, type OpenQuestion } from "./facts";
+import {
+  applyTurnFacts,
+  clearPendingTurn,
+  confirmAnswer,
+  pendingTurnOf,
+  proposalNeedsConfirm,
+  readCustomerTurn,
+  withPendingTurn,
+  type CustomerIntent,
+  type FactSnapshot,
+} from "./customer-turn";
+import { applyCustomerAnswers, applyExtractedBiometric, borrowersOf, declinesExistingLoans, factsFromClient, factsOpen, firstHomeOf, loansOf, missingTheDocument, nextQuestion, openQuestions, retractsLastFile, secondBorrowerOf, type OpenQuestion } from "./facts";
 import { docLabel, type BlankFormDef, type Profile, type RulesDocument, type Slot } from "./rules";
 import { checklistSlots, nextCollectionStageId, releasedStageId } from "./mortgage-rules";
 import { isImageFile, isUploadableFile, smartUploadName, uploadDay } from "./file-types";
@@ -773,6 +784,40 @@ function gatheringLines(state: DossierState, rules: RulesDocument, lang: "en" | 
   return lines;
 }
 
+function factSnapshot(profile: Profile, documentOpen: boolean): FactSnapshot {
+  const people = borrowersOf(profile);
+  const first = people.find((borrower) => borrower.slot === "1") ?? people[0];
+  const couple = profile.coupleSplit;
+  const deposit = first?.salaryDeposit;
+  return {
+    loans: loansOf(profile),
+    employment: first?.employment ?? "unknown",
+    employmentSource: first?.employmentSource ?? "",
+    secondBorrower: secondBorrowerOf(profile),
+    firstHome: firstHomeOf(profile),
+    coupleSplit: couple === "yes" || couple === "no" ? couple : "unknown",
+    salaryDeposit: deposit === "yes" || deposit === "no" ? deposit : "",
+    loanMore: typeof profile.loanMore === "string" ? profile.loanMore : "",
+    openQuestion: nextQuestion(profile)?.kind ?? "",
+    documentOpen,
+  };
+}
+
+function confirmChangeLines(intents: CustomerIntent[], chat: ReturnType<typeof copyFor>["chat"]): string[] {
+  return intents.map((intent) => {
+    if (intent.kind === "retract") return chat.documents.confirmChange("retract", intent.target);
+    if (intent.kind === "fact") return chat.documents.confirmChange(intent.fact, intent.value);
+    if (intent.kind === "how_to") return chat.documents.confirmChange("how_to");
+    return chat.documents.confirmChange("answer", intent.value);
+  });
+}
+
+function checklistReviewSummary(profile: Profile): string {
+  const base = "המסמכים התקבלו. לבדוק את התיק ואז לשחרר את השלב הבא.";
+  const conflict = typeof profile.employmentConflict === "string" ? profile.employmentConflict.trim() : "";
+  return conflict ? `${base} ${conflict}` : base;
+}
+
 /** One needs-you task when the checklist is finished, so the advisor can review and release the next step. */
 async function openChecklistReview(ctx: IngestTurn, state: DossierState): Promise<DossierState> {
   if (state.profile.checklistReviewOpened === true) return state;
@@ -794,7 +839,7 @@ async function openChecklistReview(ctx: IngestTurn, state: DossierState): Promis
         type: "more_info",
         reason: "document_checklist_complete",
         payload: {
-          summary: "המסמכים התקבלו. לבדוק את התיק ואז לשחרר את השלב הבא.",
+          summary: checklistReviewSummary(state.profile),
           kind: "checklist_complete",
         } as Prisma.InputJsonValue,
         status: "open",
@@ -1692,6 +1737,85 @@ function commitSeenAppendix(state: DossierState, frontSlotId: string): DossierSt
   return commitSlot(state, appendix.id, front.remoteId, front.filename || "photos.pdf");
 }
 
+/** The other side of the ID is the back of the card. The front, sent again, is not. */
+export function acceptsIdBack(docType: string): boolean {
+  return docType === "id_card_back";
+}
+
+export type IdBackRead = { accept: boolean; docType: string; unread?: "no_model" | "extract_failed" };
+
+/** A failed read is not the same as a photo the model could see and reject. */
+export function idBackOutcome(read: IdBackRead): "accept" | "wrong" | "unread" {
+  if (read.unread) return "unread";
+  return read.accept ? "accept" : "wrong";
+}
+
+/** Read the photo the customer sent while the other side is still open. */
+export async function readIdBack(
+  extract: ExtractFn,
+  job: { bytes: Buffer; mime: string; filename: string },
+  recognize?: string,
+): Promise<IdBackRead> {
+  const extracted = await extract({
+    bytes: job.bytes,
+    mime: job.mime,
+    filename: job.filename,
+    open: [{
+      docType: "id_card_back",
+      label: "הצד השני של תעודת הזהות / other side of the ID card",
+      fields: [],
+      recognize,
+    }],
+    focus: "id_card_back",
+  });
+  const docType = extracted.docType || "";
+  return { accept: acceptsIdBack(docType), docType, ...(extracted.unread ? { unread: extracted.unread } : {}) };
+}
+
+/** The uploaded slot this correction is about. The other side wins when they name it. */
+export function retractionSlot(slots: SlotState[], text: string): SlotState | undefined {
+  const uploaded = slots.filter((slot) => slot.status === "uploaded");
+  if (/רישיון|צד (ה)?שני|other side|back of|licen[cs]e/i.test(text)) {
+    return [...uploaded].reverse().find((slot) => slot.docType === "id_card_back");
+  }
+  return uploaded.at(-1);
+}
+
+/** Clear the named uploaded slot and, when it was the other side, ask for it again. */
+export function reopenNamedSlot(
+  state: DossierState,
+  target: "id_card_back" | "latest",
+): { state: DossierState; slot: SlotState } | null {
+  const uploaded = state.slots.filter((slot) => slot.status === "uploaded");
+  const slot = target === "id_card_back"
+    ? [...uploaded].reverse().find((item) => item.docType === "id_card_back")
+    : uploaded.at(-1);
+  if (!slot) return null;
+  const slots = state.slots.map((item) =>
+    item.id === slot.id
+      ? { ...item, status: "missing" as const, remoteId: "", filename: "", failCount: 0, lastReason: "" }
+      : item,
+  );
+  let profile = state.profile;
+  if (slot.docType === "id_card_back" && (slot.borrower === "1" || slot.borrower === "2")) {
+    const front = state.slots.find((item) => item.docType === "id_card" && item.borrower === slot.borrower);
+    profile = { ...profile, idBackPending: slot.borrower, imageBatchSlot: front?.id ?? "" };
+  }
+  const next = slots.find((item) => item.id === slot.id) ?? slot;
+  return {
+    state: { ...state, slots, profile, status: "gathering", activeStage: activeStageOf(slots) },
+    slot: next,
+  };
+}
+
+/** Clear that slot and, when it was the other side, ask for it again. */
+export function reopenUploadedSlot(state: DossierState, text: string): { state: DossierState; slot: SlotState } | null {
+  if (!retractsLastFile(text)) return null;
+  const slot = retractionSlot(state.slots, text);
+  if (!slot) return null;
+  return reopenNamedSlot(state, slot.docType === "id_card_back" ? "id_card_back" : "latest");
+}
+
 /** The other side shares the PDF that already uploaded the front. */
 function commitIdBack(state: DossierState, frontSlotId: string): DossierState {
   const front = state.slots.find((slot) => slot.id === frontSlotId);
@@ -1770,7 +1894,7 @@ async function closeImageBatch(opts: IngestLines & {
 
 export async function runDocumentsIngest(
   ctx: IngestTurn,
-  deps?: { extract?: ExtractFn; client?: SmartClient },
+  deps?: { extract?: ExtractFn; client?: SmartClient; readTurn?: typeof readCustomerTurn },
 ): Promise<{ ok: boolean; reply: string }> {
   const config = await readConfig(ctx.tenantId);
   const lang = documentsReplyLang(ctx);
@@ -1823,13 +1947,68 @@ export async function runDocumentsIngest(
   const backPending = stateOf(row).profile.idBackPending === "1" || stateOf(row).profile.idBackPending === "2";
   const closingPhotos = Boolean(stateOf(row).profile.imageBatchSlot && photoDone(inbound.newestText) && !backPending);
   const maxTries = config.maxRejectTries ?? DEFAULT_MAX_REJECT_TRIES;
+  const answerText = closingPhotos ? "" : inbound.newestText;
+  const prior = stateOf(row);
+  const documentOpen = prior.slots.some((slot) => isOutstanding(slot, prior.slots));
+  let turnIntents: CustomerIntent[] = [];
+  let held = false;
+  let refreshText = answerText;
+  let profileForRefresh = prior.profile;
+  if (answerText && !inbound.files.length) {
+    const pending = pendingTurnOf(prior.profile);
+    const confirmation = pending ? confirmAnswer(answerText) : null;
+    if (pending && confirmation === "yes") {
+      turnIntents = pending;
+      profileForRefresh = clearPendingTurn(prior.profile);
+      refreshText = "";
+    } else if (pending && confirmation === "no") {
+      profileForRefresh = clearPendingTurn(prior.profile);
+      refreshText = "";
+    } else {
+      const base = pending ? clearPendingTurn(prior.profile) : prior.profile;
+      const snapshot = factSnapshot(base, documentOpen);
+      const read = await (deps?.readTurn ?? readCustomerTurn)({
+        message: answerText,
+        snapshot,
+        lastAgentMessage: lastAgentText,
+        openSlot: prior.slots.find((slot) => isOutstanding(slot, prior.slots))?.docType ?? "",
+      });
+      if (proposalNeedsConfirm(snapshot, read.intents)) {
+        held = true;
+        profileForRefresh = withPendingTurn(base, read.intents);
+        refreshText = "";
+        lines.push(chat.documents.confirmTurn(confirmChangeLines(read.intents, chat)));
+      } else {
+        turnIntents = read.intents;
+        profileForRefresh = clearPendingTurn(base);
+      }
+    }
+  }
+  const applied = applyTurnFacts(profileForRefresh, turnIntents);
+  profileForRefresh = applied.profile;
+  for (const revision of applied.revisions) lines.push(chat.documents.revised(revision.kind, revision.detail));
+  if (applied.loansCleared) lines.push(chat.documents.noLoans);
   let state = clearExpiredCool(
-    refreshDossier(stateOf(row), config.rules, closingPhotos ? "" : inbound.newestText, bare),
+    refreshDossier({ ...prior, profile: profileForRefresh }, config.rules, refreshText, bare),
     maxTries,
   );
   const offeredForm = offeredBlankForm(state, config.rules, ctx.messages);
   if (offeredForm && state.profile.formPending !== offeredForm) {
     state = { ...state, profile: { ...state.profile, formPending: offeredForm } };
+  }
+  if (held) {
+    await prisma.dossier.update({
+      where: { id: row.id },
+      data: {
+        status: "gathering",
+        slots: state.slots as unknown as Prisma.InputJsonValue,
+        activeStage: state.activeStage,
+        profile: state.profile as Prisma.InputJsonValue,
+        smartClientId: state.smartClientId,
+      },
+    });
+    await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
+    return { ok: true, reply: customerReply(ctx, lines.filter(Boolean).join("\n")) };
   }
   if (factsOpen(state.profile)) {
     lines.push(...gatheringLines(state, config.rules, lang, chat));
@@ -1943,6 +2122,50 @@ export async function runDocumentsIngest(
     if (await closeDuplicateBlankForm({ ctx, row, state, job, rules: config.rules })) continue;
     const batchSlot = typeof state.profile.imageBatchSlot === "string" ? state.profile.imageBatchSlot : "";
     if (backPendingOf(state.profile) && batchSlot) {
+      let read: IdBackRead = { accept: false, docType: "", unread: "extract_failed" };
+      try {
+        read = await readIdBack(extract, job, config.rules.documents.id_card_back?.recognize);
+      } catch (err) {
+        warnDocuments("documents.id_back_read_failed", {
+          conversationId: ctx.conversation.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      const outcome = idBackOutcome(read);
+      if (outcome === "unread") {
+        const fails = (typeof state.profile.idBackReadFails === "number" ? state.profile.idBackReadFails : 0) + 1;
+        state = { ...state, profile: { ...state.profile, idBackReadFails: fails } };
+        await recordFileOutcome({
+          ctx,
+          row,
+          job,
+          status: "rejected",
+          docType: "id_card_back",
+          validation: { reason: read.unread ?? "extract_failed" },
+        });
+        if (fails >= maxTries) {
+          const minutes = config.rejectCooldownMinutes ?? DEFAULT_REJECT_COOLDOWN_MINUTES;
+          state = startRejectCool(state, minutes);
+          lines.push(chat.documents.cooldownWait(minutes));
+          lines.push(chat.documents.askEscalate);
+        } else {
+          lines.push(chat.documents.idBackTryAgain);
+        }
+        continue;
+      }
+      if (outcome === "wrong") {
+        lines.push(chat.documents.notIdBack);
+        await recordFileOutcome({
+          ctx,
+          row,
+          job,
+          status: "rejected",
+          docType: "id_card_back",
+          validation: { reason: "not_id_back", docType: read.docType },
+        });
+        continue;
+      }
+      state = { ...state, profile: { ...state.profile, idBackReadFails: 0 } };
       await holdImage({ ctx, chat, lines, row, job, slotId: batchSlot, docType: "id_card" });
       const count = await heldForSlot(ctx.tenantId, row.id, batchSlot);
       if (count >= 2) {
@@ -2077,10 +2300,28 @@ export async function runDocumentsIngest(
     }
   }
 
-  if (!inbound.files.length && missingTheDocument(inbound.newestText)) {
+  let reopened = false;
+  const retract = turnIntents.find((intent) => intent.kind === "retract");
+  if (retract && retract.kind === "retract") {
+    const undone = reopenNamedSlot(state, retract.target);
+    if (undone) {
+      state = undone.state;
+      reopened = true;
+      lines.push(chat.documents.retracted);
+      const slot = undone.slot;
+      if (slot.docType === "id_card_back") lines.push(chat.documents.askIdBack);
+      else if (slot.docType === "id_card") lines.push(chat.documents.askIdCard);
+      else if (slot.docType === "payslip") lines.push(chat.documents.askPayslips);
+      else lines.push(chat.documents.askStage(slotDisplayLabel(config.rules, slot, lang)));
+    }
+  }
+
+  const help = turnIntents.find((intent) => intent.kind === "how_to");
+  const helpOnly = Boolean(help && !applied.changed && !retract);
+  if (help && help.kind === "how_to" && !reopened) {
     const slot = state.slots.find((item) => isOutstanding(item, state.slots));
-    if (slot) lines.push(chat.documents.howTo(slot.docType));
-  } else if (!inbound.files.length && declinesExistingLoans(inbound.newestText)) {
+    if (slot) lines.push(help.detail === "short" ? chat.documents.howTo(slot.docType) : chat.documents.howToDetail(slot.docType));
+  } else if (refreshText && declinesExistingLoans(refreshText)) {
     lines.push(chat.documents.noLoans);
   }
 
@@ -2088,7 +2329,7 @@ export async function runDocumentsIngest(
     lines.push(chat.documents.complete);
     state = await openChecklistReview(ctx, state);
   }
-  else if (state.status === "gathering" && (acceptedAny || lines.length === 0 || declinesExistingLoans(inbound.newestText))) {
+  else if (state.status === "gathering" && !reopened && !helpOnly && (acceptedAny || lines.length === 0 || applied.changed || declinesExistingLoans(refreshText))) {
     lines.push(...gatheringLines(state, config.rules, lang, chat));
   }
 

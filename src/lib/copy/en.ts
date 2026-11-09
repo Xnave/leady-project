@@ -143,6 +143,71 @@ export const chat: ChatCopy = {
         };
         return steps[docType] ?? "You can get this document from the office that issues it and send it here as a file or a photo.";
       },
+      howToDetail: (docType) => {
+        const steps: Record<string, string> = {
+          loan_balances: "On the bank's website or app, open Loans and download a payoff balance, or ask the branch for that letter, and save it as a PDF.",
+          bank_statement: "On the bank's website or app, open the current account and export the last three months, not the current month, as a PDF.",
+          id_card: "Photograph the ID card together with the appendix, in good light, so the name and number are readable.",
+          id_card_back: "Turn the ID card over and photograph the other side. A driving licence does not count.",
+          id_appendix: "Photograph the whole appendix page so every line is visible.",
+          payslip: "In the employee portal, or by asking the employer, download the payslips for the last three months.",
+          tax_assessment: "Sign in to the tax authority personal area, choose the tax assessment or the tax-file opening confirmation for the tax year, and download the PDF. If you cannot sign in, the accountant can issue it.",
+          accountant_letter: "Send the accountant the blank form attached here and ask them to complete it for the current year and return a PDF.",
+          controlling_shareholder_letter: "Ask the accountant for the controlling-shareholder letter as a PDF and send it here.",
+        };
+        return steps[docType] ?? "Ask the office that issues this document for a current copy, and send it here as a file or a photo.";
+      },
+      revised: (kind, detail) => {
+        const employment: Record<string, string> = {
+          salaried: "salaried",
+          self_employed: "self-employed",
+          controlling_shareholder: "a controlling shareholder",
+          both: "both salaried and self-employed",
+          other: "other",
+        };
+        if (kind === "loans_known") return "Noted that there are loans. We'll ask for the balance when we get to it.";
+        if (kind === "employment") return `Noted that the employment is ${employment[detail ?? ""] ?? "updated"}.`;
+        if (kind === "second_yes") return "Noted that there is a second borrower.";
+        if (kind === "second_no") return "Noted that there is no second borrower.";
+        if (kind === "first_home_yes") return "Noted that this is a first home.";
+        if (kind === "first_home_no") return "Noted that this is not a first home.";
+        if (kind === "couple_yes") return "Noted that the wife is salaried and the husband is self-employed.";
+        if (kind === "couple_no") return "Noted that this is not a salaried wife and a self-employed husband.";
+        if (kind === "salary_yes") return "Noted that the salary is deposited into the personal account.";
+        if (kind === "salary_no") return "Noted that the salary is not deposited into the personal account.";
+        if (kind === "more_loans") return "Noted that there is another loan.";
+        return "Noted the update.";
+      },
+      retracted: "I've removed the last file. It wasn't the right document.",
+      notIdBack: "That is not the other side of the ID card. Please send the other side of the card.",
+      idBackTryAgain: "I couldn't read that photo. Please send it again.",
+      confirmChange: (kind, detail) => {
+        const employment: Record<string, string> = {
+          salaried: "salaried",
+          self_employed: "self-employed",
+          controlling_shareholder: "a controlling shareholder",
+          both: "both salaried and self-employed",
+          other: "other",
+        };
+        if (kind === "retract" && detail === "id_card_back") return "remove the other side";
+        if (kind === "retract") return "remove the last file";
+        if (kind === "employment") return `record the employment as ${employment[detail ?? ""] ?? "updated"}`;
+        if (kind === "loans" && detail === "none") return "record that there are no loans";
+        if (kind === "loans") return "record that there are loans";
+        if (kind === "second_borrower" && detail === "no") return "record that there is no second borrower";
+        if (kind === "second_borrower") return "record that there is a second borrower";
+        if (kind === "first_home" && detail === "false") return "record that this is not a first home";
+        if (kind === "first_home") return "record that this is a first home";
+        if (kind === "couple_split" && detail === "no") return "record that this is not a salaried wife and a self-employed husband";
+        if (kind === "couple_split") return "record that the wife is salaried and the husband is self-employed";
+        if (kind === "salary_deposit" && detail === "no") return "record that the salary is not deposited into the personal account";
+        if (kind === "salary_deposit") return "record that the salary is deposited into the personal account";
+        if (kind === "more_loans" && detail === "no") return "record that there is no other loan";
+        if (kind === "more_loans") return "record that there is another loan";
+        if (kind === "how_to") return "explain where to get the document";
+        return "update what you said";
+      },
+      confirmTurn: (changes) => `Just to confirm: ${changes.join(", ")}?`,
       noLoans: "Noted that there are no loans, so a loan balance is not needed.",
       blankForm: (doc) => `I've attached the ${doc} form. Please complete it and send it back here.`,
       nextStage: "We can move on to the next step. I'll send the next document list as soon as it's ready.",

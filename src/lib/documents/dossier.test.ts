@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { chat as he } from "@/lib/copy/he";
-import { blankFormAlreadyUploaded, checklistFile, customerRejection, documentsReplyLang, escalateAnswer, groupChecklistRows, pendingFiles, payslipFieldLabel, rejectionDetail, selectIngestMessages, type ChecklistPiece } from "./dossier";
+import { acceptsIdBack, blankFormAlreadyUploaded, checklistFile, customerRejection, documentsReplyLang, escalateAnswer, groupChecklistRows, idBackOutcome, pendingFiles, payslipFieldLabel, readIdBack, rejectionDetail, selectIngestMessages, type ChecklistPiece } from "./dossier";
 import { MORTGAGE_RULES } from "./mortgage-rules";
 
 function message(id: string, iso: string, filename?: string) {
@@ -228,5 +228,26 @@ describe("blankFormAlreadyUploaded", () => {
     expect(blankFormAlreadyUploaded(MORTGAGE_RULES, [{ docType: "accountant_letter", status: "missing" }], file)).toBe(false);
     expect(blankFormAlreadyUploaded(MORTGAGE_RULES, [{ docType: "accountant_letter", status: "uploaded" }], file)).toBe(true);
     expect(blankFormAlreadyUploaded(MORTGAGE_RULES, [{ docType: "id_card", status: "uploaded" }], file)).toBe(false);
+  });
+});
+
+describe("readIdBack", () => {
+  const job = { bytes: Buffer.from("photo"), mime: "image/jpeg", filename: "back.jpg" };
+
+  it("does not accept a photo the read says is not an ID", async () => {
+    const licence = await readIdBack(async () => ({ docType: "", fields: {} }), job, MORTGAGE_RULES.documents.id_card_back.recognize);
+    expect(licence.accept).toBe(false);
+    expect(idBackOutcome(licence)).toBe("wrong");
+    const front = await readIdBack(async () => ({ docType: "id_card", fields: {} }), job);
+    expect(front.accept).toBe(false);
+    expect(idBackOutcome(front)).toBe("wrong");
+    expect(acceptsIdBack("id_card")).toBe(false);
+    const failed = await readIdBack(async () => ({ docType: "", fields: {}, unread: "extract_failed" }), job);
+    expect(idBackOutcome(failed)).toBe("unread");
+    expect(he.documents.idBackTryAgain).toContain("שוב");
+    expect(he.documents.idBackTryAgain).not.toContain("זה לא הצד השני");
+    const card = await readIdBack(async () => ({ docType: "id_card_back", fields: {} }), job);
+    expect(card.accept).toBe(true);
+    expect(idBackOutcome(card)).toBe("accept");
   });
 });
