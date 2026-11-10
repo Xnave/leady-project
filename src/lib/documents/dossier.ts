@@ -38,6 +38,7 @@ import { docLabel, type BlankFormDef, type Profile, type RulesDocument, type Slo
 import { checklistSlots, nextCollectionStageId, releasedStageId } from "./mortgage-rules";
 import { isImageFile, isUploadableFile, smartUploadName, uploadDay } from "./file-types";
 import { storedClientByPhone } from "./client-sync";
+import { senderPhone } from "@/lib/demo-phone";
 import { filesToPdf, photoDone } from "./images";
 import { slotNeedsUpload, SMART_NPV_HOST, SmartNpvAuthError, smartClientFor, type SmartClient } from "./smart-npv";
 import {
@@ -365,7 +366,10 @@ export async function loadDocumentsTurnState(args: {
     (coolPending && inbound.files.length > 0) ||
     (state.status === "gathering" && Boolean(inbound.newestText.trim()));
   const fields = isRecord(lead?.fields) ? lead.fields : {};
-  const phone = (typeof fields.phone === "string" ? fields.phone : "") || lead?.externalUserId || "";
+  const phone = senderPhone(
+    lead?.externalUserId ?? "",
+    typeof fields.phone === "string" ? fields.phone : "",
+  );
   let unrecognized = false;
   let sayUnrecognized = false;
   if (!isTestLead(config, phone) && (!state || state.status === "needs_id")) {
@@ -656,10 +660,9 @@ type IngestLines = {
 };
 
 function phoneOf(ctx: TurnContext): string {
-  return (
-    ctx.channel?.customerPhone ||
-    (typeof ctx.lead.fields.phone === "string" ? ctx.lead.fields.phone : "") ||
-    ctx.lead.externalUserId
+  return senderPhone(
+    ctx.channel?.customerPhone || ctx.lead.externalUserId,
+    typeof ctx.lead.fields.phone === "string" ? ctx.lead.fields.phone : "",
   );
 }
 

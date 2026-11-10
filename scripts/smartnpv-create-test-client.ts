@@ -26,7 +26,7 @@ const client = {
   note_details: "Zapidly sync check",
 };
 
-async function main() {
+async function createTestClient() {
   if (!API_KEY) {
     console.error("Set SMARTNPV_API_KEY to the tenant Smart NPV key.");
     process.exit(1);
@@ -68,7 +68,7 @@ async function main() {
   );
 }
 
-main().catch((err: unknown) => {
+createTestClient().catch((err: unknown) => {
   console.error(err instanceof Error ? err.message : "create failed");
   process.exit(1);
 });

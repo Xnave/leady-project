@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { encryptBytes } from "@/lib/crypto";
 import { persistInboundIfNew } from "@/lib/conversations";
+import { demoPhoneSender, phoneFromDemoSender } from "@/lib/demo-phone";
 import { runTurnNow, tryDispatchNudgeEvent, tryDispatchOwnerAlertEvents, tryEnqueueAgentTurn } from "@/lib/flow/run-turn";
+import type { FlowDefinition } from "@/lib/flow/types";
 import { prisma } from "@/lib/db";
+import { formatPhoneDisplay } from "@/lib/leads";
 import { ensureLocalDemoChannel } from "@/lib/provision-tenant";
 import { requireTenantId } from "@/lib/tenant";
 import { getUiLang } from "@/lib/cookies";
@@ -40,8 +43,56 @@ export async function POST(req: Request) {
     leadId?: string;
     from?: string;
     text?: string;
+    impersonatePhone?: string;
     file?: { filename?: string; mime?: string; base64?: string };
   };
+  const ui = uiCopy(await getUiLang());
+  if (body.impersonatePhone?.trim()) {
+    const sender = demoPhoneSender(body.impersonatePhone);
+    const phone = phoneFromDemoSender(sender);
+    if (!sender || !phone) {
+      return NextResponse.json({ error: ui.demo.impersonateInvalid }, { status: 400 });
+    }
+    const channelId = await ensureLocalDemoChannel(tenantId);
+    const channel = await prisma.channelConnection.findFirst({
+      where: { id: channelId, tenantId },
+      include: { agent: true },
+    });
+    if (!channel) return NextResponse.json({ error: "No channel" }, { status: 400 });
+    const displayName = formatPhoneDisplay(phone);
+    const lead = await prisma.lead.upsert({
+      where: {
+        tenantId_channelId_externalUserId: { tenantId, channelId, externalUserId: sender },
+      },
+      create: {
+        tenantId,
+        channelId,
+        externalUserId: sender,
+        displayName,
+        fields: { demoReplyHereOnly: "1" },
+      },
+      update: { displayName },
+    });
+    const open = await prisma.conversation.findFirst({
+      where: { tenantId, leadId: lead.id, status: { not: "closed" } },
+      select: { id: true },
+    });
+    if (!open) {
+      const flow = channel.agent.flow as FlowDefinition;
+      await prisma.conversation.create({
+        data: {
+          tenantId,
+          leadId: lead.id,
+          channelId,
+          agentId: channel.agentId,
+          flowState: flow.start,
+          flowVersion: channel.agent.flowVersion,
+          lifecycleReason: "demo_impersonate",
+        },
+      });
+    }
+    return NextResponse.json({ leadId: lead.id });
+  }
   let attachments: { mime: string; filename: string; bytesEnc: string }[] | undefined;
   if (body.file?.base64) {
     const bytes = Buffer.from(body.file.base64, "base64");
@@ -77,9 +128,11 @@ export async function POST(req: Request) {
   if (body.leadId) {
     const lead = await prisma.lead.findFirst({
       where: { id: body.leadId, tenantId },
+      include: { channel: true },
     });
     if (!lead) return NextResponse.json({ error: "Unknown lead" }, { status: 404 });
     from = lead.externalUserId;
+    channel = lead.channel;
   }
   let displayName: string | undefined;
   if (!from) {
@@ -87,7 +140,7 @@ export async function POST(req: Request) {
     const demoLeads = await prisma.lead.count({
       where: { tenantId, externalUserId: { startsWith: "demo-" } },
     });
-    displayName = fillUi(uiCopy(await getUiLang()).demo.testCustomerName, { n: demoLeads + 1 });
+    displayName = fillUi(ui.demo.testCustomerName, { n: demoLeads + 1 });
   }
 
   const providerMessageId = `demo-${crypto.randomUUID()}`;

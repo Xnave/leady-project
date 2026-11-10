@@ -564,6 +564,11 @@ export const en: UiCopy = {
     noLeadSelected: "Pick a customer from the list or start a new test chat",
     contactInfo: "Contact info",
     banner: "Simulator - you are the customer. Live WhatsApp is on Channels.",
+    impersonate: "Impersonate",
+    impersonatePhone: "WhatsApp number",
+    impersonateHint: "The agent treats this as the number the message came from. It does not ask the customer for a phone.",
+    impersonateRecent: "Recent numbers",
+    impersonateInvalid: "Enter a phone number.",
   },
   errors: {
     createFailed: "Could not create",

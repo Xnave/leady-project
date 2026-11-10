@@ -1,4 +1,5 @@
 import { sendOnChannel } from "@/lib/channels/meta";
+import { replyStaysHere } from "@/lib/demo-phone";
 import {
   ensureChannelAccessToken,
   insertAgentMessage,
@@ -103,6 +104,7 @@ export async function sendAndSave(
       typeof ctx.lead.fields.zernioConversationId === "string"
         ? ctx.lead.fields.zernioConversationId
         : undefined,
+    replyHereOnly: replyStaysHere(ctx.lead.fields, ctx.lead.externalUserId),
   });
   addTurnPerf({ send_http_ms: Date.now() - httpStarted, send_ms: Date.now() - sendStarted });
   // Recompute lastOutboundAt / cold. Inside a turn this joins the turn's single refresh.

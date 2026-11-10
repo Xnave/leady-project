@@ -177,6 +177,11 @@ export type UiCopy = {
     noLeadSelected: string;
     contactInfo: string;
     banner: string;
+    impersonate: string;
+    impersonatePhone: string;
+    impersonateHint: string;
+    impersonateRecent: string;
+    impersonateInvalid: string;
   };
   home: {
     quickSetup: string;

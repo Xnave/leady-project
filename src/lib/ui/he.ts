@@ -564,6 +564,11 @@ export const he: UiCopy = {
     noLeadSelected: "בחרו לקוח מהרשימה או התחילו בדיקה חדשה",
     contactInfo: "פרטי קשר",
     banner: "סימולטור - אתם הלקוח. וואטסאפ חי נמצא בערוצים.",
+    impersonate: "התחזות",
+    impersonatePhone: "מספר וואטסאפ",
+    impersonateHint: "הסוכן מתייחס למספר הזה כמספר שממנו הגיעה ההודעה. הוא לא מבקש טלפון מהלקוח.",
+    impersonateRecent: "מספרים אחרונים",
+    impersonateInvalid: "צריך מספר טלפון.",
   },
   errors: {
     createFailed: "יצירה נכשלה",
