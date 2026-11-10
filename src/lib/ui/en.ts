@@ -226,6 +226,7 @@ export const en: UiCopy = {
     flowLabel: "Conversation style",
     languageLabel: "Agent language",
     sendFailed: "Send failed",
+    fileTooLarge: "This file is too large, so it was not sent. Please send a smaller file.",
     today: "Today",
     yesterday: "Yesterday",
   },

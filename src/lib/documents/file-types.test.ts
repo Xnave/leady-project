@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { chat as en } from "@/lib/copy/en";
 import { chat as he } from "@/lib/copy/he";
-import { inlineContentDisposition, isImageFile, isUploadableFile, smartUploadName, supportedTypeLabels, uploadFileName } from "./file-types";
+import { exceedsWhatsAppImage, inlineContentDisposition, isImageFile, isUploadableFile, presignedExpiry, presignedUrlStale, smartUploadName, supportedTypeLabels, uploadFileName, WHATSAPP_IMAGE_BYTES, ZERNIO_UPLOAD_BYTES } from "./file-types";
 
 describe("supported document types", () => {
   it("allows pdf, png, jpg, and jpeg only", () => {
@@ -43,5 +43,21 @@ describe("supported document types", () => {
     expect(labels).toBe("PDF, PNG, JPG, or JPEG");
     expect(en.documents.reasons.unsupported_type).toContain(labels);
     expect(he.documents.reasons.unsupported_type).toContain(supportedTypeLabels("או"));
+  });
+
+  it("names the WhatsApp image limit and the Zernio upload limit", () => {
+    expect(WHATSAPP_IMAGE_BYTES).toBe(5 * 1024 * 1024);
+    expect(ZERNIO_UPLOAD_BYTES).toBe(Math.round(4.5 * 1024 * 1024));
+    expect(exceedsWhatsAppImage("image/jpeg", WHATSAPP_IMAGE_BYTES + 1)).toBe(true);
+    expect(exceedsWhatsAppImage("image/png", WHATSAPP_IMAGE_BYTES)).toBe(false);
+    expect(exceedsWhatsAppImage("application/pdf", WHATSAPP_IMAGE_BYTES + 1)).toBe(false);
+  });
+
+  it("reads an S3 signature and treats it as stale a minute before it dies", () => {
+    const url = "https://files.example/id.pdf?X-Amz-Date=20261110T170351Z&X-Amz-Expires=900";
+    expect(presignedExpiry(url)).toBe(Date.parse("2026-11-10T17:18:51Z"));
+    expect(presignedUrlStale(url, new Date("2026-11-10T17:04:51Z"))).toBe(false);
+    expect(presignedUrlStale(url, new Date("2026-11-10T17:21:59Z"))).toBe(true);
+    expect(presignedUrlStale("https://files.example/plain.pdf")).toBe(false);
   });
 });

@@ -2,7 +2,7 @@ import { PDFDocument } from "pdf-lib";
 
 /** The customer said this photo was the last page of the document in hand. */
 export function photoDone(text: string): boolean {
-  return /^(אין עוד|אין עוד תמונות|זה הכל|זהו|סיימתי|no more|that'?s all|last one|לא|no)[.!?\s]*$/i.test(text.trim());
+  return /^(אין עוד|אין עוד תמונות|זה הכל|זהו|סיימתי|no more|that'?s all|last one|לא+|no)[.!?\s]*$/i.test(text.trim());
 }
 
 /** Photos and PDF pages, in order, become one PDF. */

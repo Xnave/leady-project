@@ -36,7 +36,7 @@ import {
 import { applyCustomerAnswers, applyExtractedBiometric, borrowerFileWho, borrowersOf, declinesExistingLoans, factsFromClient, factsOpen, firstHomeOf, loansOf, missingTheDocument, nextQuestion, openQuestions, retractsLastFile, secondBorrowerOf, sharedBorrowerEmployment, splitWhoOf, type OpenQuestion } from "./facts";
 import { docLabel, type BlankFormDef, type Profile, type RulesDocument, type Slot } from "./rules";
 import { checklistSlots, nextCollectionStageId, releasedStageId } from "./mortgage-rules";
-import { isImageFile, isUploadableFile, smartUploadName, uploadDay } from "./file-types";
+import { exceedsWhatsAppImage, isImageFile, isUploadableFile, smartUploadName, uploadDay, ZERNIO_UPLOAD_BYTES, ZERNIO_UPLOAD_LABEL } from "./file-types";
 import { storedClientByPhone } from "./client-sync";
 import { senderPhone } from "@/lib/demo-phone";
 import { filesToPdf, photoDone } from "./images";
@@ -70,6 +70,7 @@ export type StoredAttachment = {
   mime: string;
   filename: string;
   bytesEnc?: string;
+  size?: number;
 };
 
 export type DocumentsTurnState = {
@@ -137,6 +138,7 @@ function attachmentsOf(metadata: unknown): StoredAttachment[] {
     mime: typeof item.mime === "string" ? item.mime : "application/octet-stream",
     filename: typeof item.filename === "string" && item.filename.trim() ? item.filename.trim() : "file",
     bytesEnc: typeof item.bytesEnc === "string" ? item.bytesEnc : undefined,
+    ...(typeof item.size === "number" && item.size > 0 ? { size: item.size } : {}),
   }));
 }
 
@@ -158,10 +160,31 @@ async function readConfig(tenantId: string): Promise<DocumentConfig | null> {
   }
 }
 
-async function downloadUrl(url: string): Promise<Buffer> {
+class OversizedFile extends Error {
+  constructor(readonly limit: string) {
+    super("too_large");
+    this.name = "OversizedFile";
+  }
+}
+
+/** The limit to tell the customer when this file cannot come through WhatsApp. */
+function announcedLimit(attachment: StoredAttachment): string | null {
+  if (typeof attachment.size === "number" && exceedsWhatsAppImage(attachment.mime, attachment.size)) return "5MB";
+  if (!attachment.url && typeof attachment.size === "number" && attachment.size > ZERNIO_UPLOAD_BYTES) {
+    return ZERNIO_UPLOAD_LABEL;
+  }
+  return null;
+}
+
+async function downloadUrl(url: string, mime: string): Promise<Buffer> {
   const res = await fetch(url);
+  if (res.status === 413) throw new OversizedFile(ZERNIO_UPLOAD_LABEL);
   if (!res.ok) throw new Error(`attachment ${res.status}`);
+  const declared = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declared) && exceedsWhatsAppImage(mime, declared)) throw new OversizedFile("5MB");
+  if (Number.isFinite(declared) && declared > MAX_BYTES) throw new Error("too_large");
   const bytes = Buffer.from(await res.arrayBuffer());
+  if (exceedsWhatsAppImage(mime, bytes.length)) throw new OversizedFile("5MB");
   if (bytes.length > MAX_BYTES) throw new Error("too_large");
   return bytes;
 }
@@ -798,6 +821,9 @@ export function documentAskText(
   if (question.kind === "id_back") {
     return who ? chat.documents.forBorrower(chat.documents.askIdBack, who) : chat.documents.askIdBack;
   }
+  if (question.kind === "id_appendix") {
+    return who ? chat.documents.forBorrower(chat.documents.askIdAppendix, who) : chat.documents.askIdAppendix;
+  }
   const fallback =
     "slot" in question && question.slot === "2"
       ? lang === "he"
@@ -1357,21 +1383,40 @@ async function collectJobs(opts: IngestLines & { row: DossierRow; files: Inbound
       });
       continue;
     }
+    const limit = announcedLimit(attachment);
+    if (limit) {
+      opts.lines.push(opts.chat.documents.overSize(limit));
+      await markRejected({
+        tenantId: opts.ctx.tenantId,
+        leadId: opts.ctx.lead.id,
+        dossierId: opts.row.id,
+        messageId: file.messageId,
+        filename: attachment.filename,
+        mime: attachment.mime,
+        reason: "too_large",
+      });
+      continue;
+    }
     let bytes: Buffer | null = null;
     try {
       bytes = attachment.bytesEnc
         ? decryptBytes(attachment.bytesEnc)
         : attachment.url
-          ? await downloadUrl(attachment.url)
+          ? await downloadUrl(attachment.url, attachment.mime)
           : null;
     } catch (err) {
-      const reason = err instanceof Error && err.message === "too_large" ? "too_large" : "unreadable";
+      const oversized = err instanceof OversizedFile;
+      const reason = oversized || (err instanceof Error && err.message === "too_large") ? "too_large" : "unreadable";
       warnDocuments("documents.download_failed", {
         filename: attachment.filename,
         mime: attachment.mime,
         error: err instanceof Error ? err.message : String(err),
       });
-      opts.lines.push(opts.chat.documents.rejected(attachment.filename, reasonText(opts.chat, reason)));
+      opts.lines.push(
+        err instanceof OversizedFile
+          ? opts.chat.documents.overSize(err.limit)
+          : opts.chat.documents.rejected(attachment.filename, reasonText(opts.chat, reason)),
+      );
       await markRejected({
         tenantId: opts.ctx.tenantId,
         leadId: opts.ctx.lead.id,
@@ -1397,6 +1442,8 @@ async function judgeFileJob(opts: IngestLines & {
   row: DossierRow;
   state: DossierState;
   job: IngestJob;
+  /** Ask the reader about this type first. The open list still decides where the file lands. */
+  focus?: string;
 }): Promise<{
   state: DossierState;
   cooled: boolean;
@@ -1432,7 +1479,7 @@ async function judgeFileJob(opts: IngestLines & {
     mime: opts.job.mime,
     filename: opts.job.filename,
     open,
-    focus: missing[0]?.docType,
+    focus: opts.focus ?? missing[0]?.docType,
   });
   let working = opts.state;
   const assumed = assumePendingForm(working, extracted.docType ?? "");
@@ -1656,11 +1703,14 @@ function receiptName(
 ): string {
   const slot = state.slots.find((item) => item.id === slotId);
   const base = docLabel(rules, docType, lang);
+  const withAppendix = docType === "id_card" && state.profile.appendixSeen === slot?.borrower
+    ? `${base}, ${docLabel(rules, "id_appendix", lang)}`
+    : base;
   const titled = covered?.length
-    ? `${base} ${monthList(covered, lang)}`
+    ? `${withAppendix} ${monthList(covered, lang)}`
     : slot?.year
-      ? `${base} ${slot.year}`
-      : base;
+      ? `${withAppendix} ${slot.year}`
+      : withAppendix;
   const who = borrowerFileWho(state.profile, slot?.borrower, lang);
   return who ? copyFor(lang).chat.documents.ownedBy(titled, who) : titled;
 }
@@ -1906,6 +1956,26 @@ function noteAppendix(
   return { ...state, profile: { ...state.profile, appendixSeen: who } };
 }
 
+/**
+ * The card photos are still in hand, and the ספח is not in them yet.
+ * The other side of a biometric card comes first.
+ */
+export function idBatchNeedsAppendix(state: DossierState): boolean {
+  const slotId = typeof state.profile.imageBatchSlot === "string" ? state.profile.imageBatchSlot : "";
+  const slot = state.slots.find((item) => item.id === slotId);
+  const who = slot?.borrower;
+  if (!slot || slot.docType !== "id_card" || (who !== "1" && who !== "2")) return false;
+  if (state.profile.idBackPending === who) return false;
+  if (state.profile.appendixSeen === who) return false;
+  return state.slots.some((item) =>
+    item.docType === "id_appendix" && item.borrower === who && item.status !== "uploaded",
+  );
+}
+
+function appendixPendingOf(profile: Profile): "1" | "2" | "" {
+  return profile.appendixPending === "1" || profile.appendixPending === "2" ? profile.appendixPending : "";
+}
+
 /** The ספח in the ID photo shares the file that uploaded the card. */
 function commitSeenAppendix(state: DossierState, frontSlotId: string): DossierState {
   const front = state.slots.find((slot) => slot.id === frontSlotId);
@@ -1969,9 +2039,9 @@ export function retractionSlot(slots: SlotState[], text: string): SlotState | un
 export function releaseHeldSlot(state: DossierState, rules: RulesDocument, slotId: string): DossierState {
   const slot = state.slots.find((item) => item.id === slotId);
   if (!slot || slot.status === "uploaded") {
-    return { ...state, profile: { ...state.profile, imageBatchSlot: "", idBackPending: "" } };
+    return { ...state, profile: { ...state.profile, imageBatchSlot: "", idBackPending: "", appendixPending: "" } };
   }
-  let profile: Profile = { ...state.profile, imageBatchSlot: "", idBackPending: "" };
+  let profile: Profile = { ...state.profile, imageBatchSlot: "", idBackPending: "", appendixPending: "" };
   const who = slot.borrower === "1" || slot.borrower === "2" ? slot.borrower : "";
   if (who) {
     const borrowers = borrowersOf(profile).map((borrower) =>
@@ -2083,7 +2153,10 @@ async function closeImageBatch(opts: IngestLines & {
   });
   if (!uploaded.accepted) return opts.state;
   let next: DossierState = { ...uploaded.state, profile: { ...uploaded.state.profile, imageBatchSlot: "" } };
-  if (slot?.docType === "id_card") next = commitSeenAppendix(next, slotId);
+  if (slot?.docType === "id_card") {
+    next = commitIdBack(next, slotId);
+    next = commitSeenAppendix(next, slotId);
+  }
   await prisma.$transaction(
     pages.map((page) =>
       prisma.leadDocument.update({
@@ -2147,10 +2220,12 @@ export async function runDocumentsIngest(
   row = matched.row;
   if (!row) return { ok: false, reply: customerReply(ctx, chat.documents.notConfigured) };
 
-  const backPending = stateOf(row).profile.idBackPending === "1" || stateOf(row).profile.idBackPending === "2";
-  const closingPhotos = Boolean(stateOf(row).profile.imageBatchSlot && photoDone(inbound.newestText) && !backPending);
+  const priorDossier = stateOf(row);
+  const backPending = priorDossier.profile.idBackPending === "1" || priorDossier.profile.idBackPending === "2";
+  const finishingPhotos = Boolean(priorDossier.profile.imageBatchSlot && photoDone(inbound.newestText) && !backPending);
+  const closingPhotos = finishingPhotos && !idBatchNeedsAppendix(priorDossier);
   const maxTries = config.maxRejectTries ?? DEFAULT_MAX_REJECT_TRIES;
-  const answerText = closingPhotos ? "" : inbound.newestText;
+  const answerText = finishingPhotos ? "" : inbound.newestText;
   const prior = stateOf(row);
   const documentOpen = prior.slots.some((slot) => isOutstanding(slot, prior.slots));
   let turnIntents: CustomerIntent[] = [];
@@ -2236,9 +2311,18 @@ export async function runDocumentsIngest(
     await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
     return { ok: true, reply: customerReply(ctx, lines.filter(Boolean).join("\n")) };
   }
-  if (closingPhotos) {
+  let batchAccepted = false;
+  if (finishingPhotos && !closingPhotos) {
+    const slotId = typeof priorDossier.profile.imageBatchSlot === "string" ? priorDossier.profile.imageBatchSlot : "";
+    const who = priorDossier.slots.find((slot) => slot.id === slotId)?.borrower;
+    if (who === "1" || who === "2") {
+      state = { ...state, profile: { ...state.profile, imageBatchSlot: slotId, appendixPending: who } };
+    }
+  } else if (closingPhotos) {
+    const slotId = typeof state.profile.imageBatchSlot === "string" ? state.profile.imageBatchSlot : "";
     state = await closeImageBatch({ ctx, chat, lines, config, client, lang, row, state });
     state = refreshDossier(state, config.rules, "");
+    batchAccepted = state.slots.some((slot) => slot.id === slotId && slot.status === "uploaded");
   }
   state = await notifyAdvisor(ctx, state);
 
@@ -2380,18 +2464,61 @@ export async function runDocumentsIngest(
       await holdImage({ ctx, chat, lines, row, job, slotId: batchSlot, docType: "id_card" });
       const count = await heldForSlot(ctx.tenantId, row.id, batchSlot);
       if (count >= 2) {
-        state = await closeImageBatch({ ctx, chat, lines, config, client, lang, row, state });
-        const front = state.slots.find((slot) => slot.id === batchSlot);
-        if (front?.status === "uploaded") {
-          state = commitIdBack(state, batchSlot);
-          state = {
-            ...state,
-            profile: { ...state.profile, idBackPending: "", imageBatchSlot: "" },
-          };
-          acceptedAny = true;
-          state = refreshDossier(state, config.rules, "");
+        const who = state.slots.find((slot) => slot.id === batchSlot)?.borrower;
+        const waiting = who === "1" || who === "2"
+          ? idBatchNeedsAppendix({ ...state, profile: { ...state.profile, idBackPending: "" } })
+          : false;
+        if (waiting && (who === "1" || who === "2")) {
+          state = { ...state, profile: { ...state.profile, idBackPending: "", appendixPending: who } };
+        } else {
+          state = await closeImageBatch({ ctx, chat, lines, config, client, lang, row, state });
+          const front = state.slots.find((slot) => slot.id === batchSlot);
+          if (front?.status === "uploaded") {
+            state = commitIdBack(state, batchSlot);
+            state = {
+              ...state,
+              profile: { ...state.profile, idBackPending: "", imageBatchSlot: "" },
+            };
+            acceptedAny = true;
+            state = refreshDossier(state, config.rules, "");
+          }
         }
       }
+      continue;
+    }
+    if (appendixPendingOf(state.profile) && batchSlot) {
+      const judged = await judgeFileJob({
+        ctx, chat, lines, config, extract, lang, row, state, job, focus: "id_appendix",
+      });
+      state = judged.state;
+      if (judged.cooled) break;
+      const appendixFile = Boolean(judged.accepted && (
+        judged.accepted.docType === "id_appendix"
+        || (judged.accepted.docType === "id_card" && judged.accepted.appendix === "yes")
+      ));
+      if (!appendixFile) {
+        if (judged.accepted) {
+          lines.push(chat.documents.notIdAppendix);
+          await recordFileOutcome({
+            ctx,
+            row,
+            job,
+            status: "rejected",
+            docType: judged.accepted.docType,
+            validation: { reason: "not_id_appendix" },
+          });
+        }
+        continue;
+      }
+      state = noteAppendix(state, batchSlot, "yes");
+      await holdImage({ ctx, chat, lines, row, job, slotId: batchSlot, docType: "id_card" });
+      state = await closeImageBatch({ ctx, chat, lines, config, client, lang, row, state });
+      state = {
+        ...state,
+        profile: { ...state.profile, appendixPending: "", imageBatchSlot: "" },
+      };
+      state = refreshDossier(state, config.rules, "");
+      if (state.slots.some((slot) => slot.id === batchSlot && slot.status === "uploaded")) acceptedAny = true;
       continue;
     }
     if (isImageFile(job.mime, job.filename)) {
@@ -2566,7 +2693,7 @@ export async function runDocumentsIngest(
     lines.push(chat.documents.complete);
     state = await openChecklistReview(ctx, state);
   }
-  else if (state.status === "gathering" && !reopened && !helpOnly && (acceptedAny || lines.length === 0 || applied.changed || declinesExistingLoans(refreshText))) {
+  else if (state.status === "gathering" && !reopened && !helpOnly && (acceptedAny || batchAccepted || lines.length === 0 || applied.changed || declinesExistingLoans(refreshText))) {
     lines.push(...gatheringLines(state, config.rules, lang, chat));
   }
 

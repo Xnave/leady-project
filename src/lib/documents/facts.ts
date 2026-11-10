@@ -44,6 +44,7 @@ export type OpenQuestion =
   | { kind: "accounts" }
   | { kind: "more_loans" }
   | { kind: "more_photos" }
+  | { kind: "id_appendix"; name: string; slot: "1" | "2" }
   | { kind: "id_biometric"; name: string; slot: "1" | "2" }
   | { kind: "id_back"; name: string; slot: "1" | "2" };
 
@@ -296,10 +297,13 @@ export function openQuestions(profile: Profile): OpenQuestion[] {
   if (firstHomeOf(current) === "unknown") questions.push({ kind: "first_home" });
   if (current.imageBatchSlot) {
     const back = current.idBackPending === "1" || current.idBackPending === "2" ? current.idBackPending : "";
-    const borrower = borrowers.find((item) => item.slot === back);
+    const appendix = current.appendixPending === "1" || current.appendixPending === "2" ? current.appendixPending : "";
+    const borrower = borrowers.find((item) => item.slot === (back || appendix));
     questions.push(back
       ? { kind: "id_back", name: borrower?.fullName ?? "", slot: back }
-      : { kind: "more_photos" });
+      : appendix
+        ? { kind: "id_appendix", name: borrower?.fullName ?? "", slot: appendix }
+        : { kind: "more_photos" });
   }
   if (advisorReason(current)) return withIdSide(questions, current, borrowers);
   if (loansOf(current) === "unknown") questions.push({ kind: "loans" });

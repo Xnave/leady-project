@@ -100,6 +100,7 @@ export type ChatCopy = {
     askSplitWho: (first: string, second: string) => string;
     askIdBiometric: (name: string) => string;
     askIdBack: string;
+    askIdAppendix: string;
     askFirstHome: string;
     askLoans: string;
     askMoreLoans: string;
@@ -111,6 +112,7 @@ export type ChatCopy = {
     revised: (kind: string, detail?: string) => string;
     retracted: string;
     notIdBack: string;
+    notIdAppendix: string;
     idBackTryAgain: string;
     confirmChange: (kind: string, detail?: string) => string;
     confirmTurn: (changes: string[]) => string;
@@ -130,6 +132,7 @@ export type ChatCopy = {
     /** Kept for older dossiers that were already handed off. */
     escalated: string;
     uploadFailed: string;
+    overSize: (limit: string) => string;
     reasons: Record<string, string>;
   };
 };

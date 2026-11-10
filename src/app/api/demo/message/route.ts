@@ -97,7 +97,9 @@ export async function POST(req: Request) {
   if (body.file?.base64) {
     const bytes = Buffer.from(body.file.base64, "base64");
     if (!bytes.length) return NextResponse.json({ error: "Empty file" }, { status: 400 });
-    if (bytes.length > 8_000_000) return NextResponse.json({ error: "File is too large" }, { status: 400 });
+    if (bytes.length > 8_000_000) {
+      return NextResponse.json({ error: ui.chat.fileTooLarge }, { status: 400 });
+    }
     attachments = [
       {
         mime: body.file.mime || "application/octet-stream",

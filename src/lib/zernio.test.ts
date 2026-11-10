@@ -168,6 +168,25 @@ describe("parseZernioMessageReceived", () => {
     expect(parsed?.text).toBe("");
   });
 
+  it("keeps a file WhatsApp could not carry, so the agent can name the limit", () => {
+    const parsed = parseZernioMessageReceived({
+      event: "message.received",
+      id: "evt_big",
+      account: { id: "acc_1", platform: "whatsapp" },
+      message: {
+        direction: "incoming",
+        text: "",
+        platformMessageId: "msg_big",
+        conversationId: "conv_1",
+        sender: { phoneNumber: "+972500000000" },
+        attachments: [{ mime: "image/jpeg", filename: "id.jpg", size: 6 * 1024 * 1024 }],
+      },
+    });
+    expect(parsed?.attachments).toEqual([
+      { url: "", mime: "image/jpeg", filename: "id.jpg", size: 6 * 1024 * 1024 },
+    ]);
+  });
+
   it("ignores outgoing echoes", () => {
     expect(
       parseZernioMessageReceived({

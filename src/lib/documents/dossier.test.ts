@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { copyFor } from "@/lib/copy";
 import { chat as he } from "@/lib/copy/he";
-import { acceptsIdBack, blankFormAlreadyUploaded, checklistFile, customerRejection, documentFileAsk, documentsReplyLang, escalateAnswer, groupChecklistRows, idBackOutcome, pendingFiles, payslipFieldLabel, readIdBack, rejectionDetail, releaseHeldSlot, reopenNamedSlot, selectIngestMessages, type ChecklistPiece } from "./dossier";
-import { applyCustomerAnswers, blankBorrower, borrowerFileWho, factsFromClient } from "./facts";
+import { acceptsIdBack, blankFormAlreadyUploaded, checklistFile, customerRejection, documentAskText, documentFileAsk, documentsReplyLang, escalateAnswer, groupChecklistRows, idBackOutcome, idBatchNeedsAppendix, pendingFiles, payslipFieldLabel, readIdBack, rejectionDetail, releaseHeldSlot, reopenNamedSlot, selectIngestMessages, type ChecklistPiece } from "./dossier";
+import { applyCustomerAnswers, blankBorrower, borrowerFileWho, factsFromClient, nextQuestion } from "./facts";
 import { checklistSlots, MORTGAGE_RULES } from "./mortgage-rules";
 import { commitSlot, freshDossier } from "./validate";
 
@@ -339,6 +339,38 @@ describe("customerRejection", () => {
     });
     expect(text).toContain("תלוש שכר");
     expect(text).not.toContain("הצד הקדמי");
+  });
+
+  it("keeps the ID card until the appendix can go in the same file", () => {
+    const answered = applyCustomerAnswers(
+      applyCustomerAnswers(factsFromClient({}), "לא").profile,
+      "שכיר",
+    ).profile;
+    const profile = {
+      ...answered,
+      firstHome: "true" as const,
+      loans: "none" as const,
+      imageBatchSlot: "id_card#1#0",
+    };
+    const state = freshDossier({
+      smartClientId: "c",
+      profile,
+      slots: checklistSlots(profile, MORTGAGE_RULES),
+    });
+    expect(idBatchNeedsAppendix(state)).toBe(true);
+    const waiting = { ...state.profile, appendixPending: "1" };
+    const question = nextQuestion(waiting);
+    expect(question?.kind).toBe("id_appendix");
+    if (question?.kind === "id_appendix") {
+      expect(documentAskText(question, "he", copyFor("he").chat)).toBe(he.documents.askIdAppendix);
+    }
+    expect(idBatchNeedsAppendix({ ...state, profile: { ...state.profile, appendixSeen: "1" } })).toBe(false);
+    const released = releaseHeldSlot(
+      { ...state, profile: { ...state.profile, appendixPending: "1" } },
+      MORTGAGE_RULES,
+      "id_card#1#0",
+    );
+    expect(released.profile.appendixPending).toBe("");
   });
 });
 

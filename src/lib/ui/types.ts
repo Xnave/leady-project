@@ -333,6 +333,7 @@ export type UiCopy = {
     flowLabel: string;
     languageLabel: string;
     sendFailed: string;
+    fileTooLarge: string;
     today: string;
     yesterday: string;
   };
