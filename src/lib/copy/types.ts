@@ -79,6 +79,11 @@ export type ChatCopy = {
     askStage: (docs: string) => string;
     askIdCard: string;
     askPayslips: string;
+    /**
+     * Ask for the payslip months still required. `held` is empty when none are
+     * confirmed saved. `who` is empty when the file has one borrower.
+     */
+    payslipGap: (held: string, missing: string, who: string) => string;
     /** Attach a borrower to a document name: "ID card for Dana". */
     ownedBy: (label: string, who: string) => string;
     /** Attach a borrower to a full sentence that already asks for a file. */

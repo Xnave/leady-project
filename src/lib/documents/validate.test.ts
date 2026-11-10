@@ -145,7 +145,7 @@ describe("document checks", () => {
       }],
     });
     expect(slotDisplayLabel(MORTGAGE_RULES, state.slots[0]!, "he")).toBe(
-      "תדפיס עו״ש עבור 3 חודשים אחרונים",
+      "תדפיס עו״ש של אוגוסט, ספטמבר ואוקטובר",
     );
   });
 
@@ -170,8 +170,10 @@ describe("document checks", () => {
     expect(failed.kind === "reject" && failed.reason).toBe("extract_failed");
     expect(en.documents.reasons.no_model).toBe(en.documents.reasons.unreadable);
     expect(en.documents.reasons.extract_failed).toBe(en.documents.reasons.unreadable);
-    expect(he.documents.reasons.no_model).toBe(he.documents.reasons.unreadable);
-    expect(he.documents.reasons.extract_failed).toBe(he.documents.reasons.unreadable);
+    expect(he.documents.reasons.no_model).toContain("אין לי אפשרות לבדוק");
+    expect(he.documents.reasons.extract_failed).toContain("לחלץ את הפרטים");
+    expect(he.documents.reasons.unreadable).toContain("לא הצלחתי לקרוא");
+    expect(he.documents.reasons.no_model).not.toBe(he.documents.reasons.wrong_type);
     expect(uiCopy("en").documentsUi.reasons.no_model).toBe("No model configured");
     expect(uiCopy("he").documentsUi.reasons.extract_failed).toBe("בדיקת הקובץ נכשלה");
   });

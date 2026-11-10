@@ -491,11 +491,11 @@ export function slotDisplayLabel(rules: RulesDocument, slot: SlotState, lang: "e
   if (slot.months?.length) {
     const covered = new Set(slot.coveredMonths ?? []);
     const missing = slot.months.filter((month) => !covered.has(month));
-    if (missing.length) {
-      return lang === "he"
-        ? `${base} עבור ${missing.length} חודשים אחרונים`
-        : `${base} for the last ${missing.length} months`;
-    }
+    const shown = missing.length ? missing : slot.months;
+    const names = shown.map((month) => formatStatementMonth(month, lang));
+    const last = names.at(-1) ?? "";
+    const listed = names.length < 2 ? last : `${names.slice(0, -1).join(", ")}${lang === "he" ? " ו" : " and "}${last}`;
+    return lang === "he" ? `${base} של ${listed}` : `${base} for ${listed}`;
   }
   return base;
 }

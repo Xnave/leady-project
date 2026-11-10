@@ -38,4 +38,4 @@ Slot id is `<docType>#<index>`. Stage order is the `stages` array.
 - `src/lib/flow/interpreter.ts`. The pack is `src/lib/flow/capabilities/documents.ts`.
 - New tables, new `InterpreterPorts` fields, and a second approval form. Accepted files are a `LeadDocument` on the dossier.
 - Prisma inside the capability pack. Writes stay in `src/lib/documents/dossier.ts`.
-- Customer wording in `src/lib/ui/`, and operator wording in `src/lib/copy/`.
+- Customer wording in `src/lib/ui/`, and operator wording in `src/lib/copy/`. Lead wording follows `.cursor/skills/agent-voice/SKILL.md`.

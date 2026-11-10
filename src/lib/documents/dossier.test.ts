@@ -66,7 +66,7 @@ describe("rejectionDetail", () => {
         expectedMonths: ["2026-08", "2026-09", "2026-10"],
         now,
       }),
-    ).toBe("זיהיתי בקובץ את החודשים אפריל, מאי, יוני ו-יולי; נדרשים אוגוסט, ספטמבר ו-אוקטובר.");
+    ).toBe("זיהיתי בקובץ את החודשים אפריל, מאי, יוני ויולי; נדרשים אוגוסט, ספטמבר ואוקטובר.");
     expect(
       rejectionDetail({
         reason: "prior_calendar_months",
@@ -138,7 +138,42 @@ describe("rejectionDetail", () => {
       if (firstIdentity) state = commitSlot(state, slot.id, "remote", "id.jpg");
     }
     const ask = documentFileAsk(state, MORTGAGE_RULES, "he", copyFor("he").chat);
-    expect(ask).toBe("אשמח לתמונה של תעודת הזהות עם הספח של הלווה העצמאי.");
+    expect(ask).toBe("אפשר לשלוח צילום ברור של תעודת הזהות עם הספח של הלווה העצמאי.");
+  });
+
+  it("asks only for the payslip month that is not already saved", () => {
+    let profile = factsFromClient({});
+    profile = applyCustomerAnswers(profile, "לא").profile;
+    profile = applyCustomerAnswers(profile, "שכיר").profile;
+    profile = applyCustomerAnswers(profile, "כן").profile;
+    profile = { ...profile, loans: "none" };
+    let state = freshDossier({
+      smartClientId: "c",
+      profile,
+      slots: checklistSlots(profile, MORTGAGE_RULES),
+    });
+    const now = new Date("2026-11-09T12:00:00.000Z");
+    const slips = state.slots.filter((slot) => slot.docType === "payslip");
+    expect(slips).toHaveLength(3);
+    state = {
+      ...state,
+      slots: state.slots.map((slot) => slot.docType === "payslip" ? slot : { ...slot, status: "uploaded" as const }),
+    };
+    const saved = [
+      { id: slips[0]?.id, month: "2026-08" },
+      { id: slips[1]?.id, month: "2026-09" },
+    ];
+    for (const item of saved) {
+      if (!item.id) continue;
+      state = commitSlot(state, item.id, item.month, "slip.pdf");
+      state = {
+        ...state,
+        slots: state.slots.map((slot) => slot.id === item.id ? { ...slot, coveredMonths: [item.month] } : slot),
+      };
+    }
+    expect(documentFileAsk(state, MORTGAGE_RULES, "he", copyFor("he").chat, now)).toBe(
+      "התלושים של אוגוסט וספטמבר כבר אצלנו. נצטרך רק את תלוש אוקטובר המלא, כולל כל העמודים.",
+    );
   });
 
   it("drops the open photo and keeps an older saved letter", () => {
@@ -177,7 +212,7 @@ describe("rejectionDetail", () => {
 
   it("asks for a closer photo of the card when the ID number was not read", () => {
     expect(he.documents.askIdCard).toContain("עם הספח");
-    expect(he.documents.askIdBack).toBe("אשמח גם לצד השני של תעודת הזהות.");
+    expect(he.documents.askIdBack).toBe("אפשר לשלוח גם צילום של גב תעודת הזהות.");
     expect(he.documents.askPayslips).toContain("3 החודשים האחרונים");
     expect(he.documents.reasons.id_number).toContain("מספר תעודת הזהות");
   });

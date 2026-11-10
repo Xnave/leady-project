@@ -112,9 +112,24 @@ export const chat: ChatCopy = {
       askId: "To find your file, please send your 9-digit ID number.",
       notFound: "I couldn't find a file with that number. Please check it and send it again.",
       notConfigured: "Document collection hasn't been set up yet. A teammate will follow up shortly.",
-      askStage: (docs) => `To move forward, please send ${docs}.`,
-      askIdCard: "Please send a photo of your ID card with the appendix.",
-      askPayslips: "Please send payslips for the last 3 months.",
+      askStage: (docs) => `Could you send ${docs}?`,
+      askIdCard: "Could you send a clear photo of the ID card with the appendix?",
+      askPayslips: "Could you send the payslips for the last 3 months here?",
+      payslipGap: (held, missing, who) => {
+        const whose = who ? ` for ${who}` : "";
+        const heldMany = / and |,/.test(held);
+        const missingMany = / and |,/.test(missing);
+        if (!held) {
+          return missingMany
+            ? `Could you send the payslips for ${missing}${whose} here?`
+            : `Could you send the ${missing} payslip${whose} here?`;
+        }
+        const saved = `We already have the ${heldMany ? "payslips" : "payslip"} for ${held}${whose}.`;
+        const ask = missingMany
+          ? `We still need the payslips for ${missing}.`
+          : `We only need the full ${missing} payslip, including every page.`;
+        return `${saved} ${ask}`;
+      },
       ownedBy: (label, who) => `${label} for ${who}`,
       forBorrower: (line, who) => `${line.replace(/[.?!]+\s*$/, "")} for ${who}.`,
       borrowerRole: {
@@ -191,8 +206,8 @@ export const chat: ChatCopy = {
         return "Noted the update.";
       },
       retracted: "I've removed the last file. It wasn't the right document.",
-      notIdBack: "That is not the other side of the ID card. Please send the other side of the card.",
-      idBackTryAgain: "I couldn't read that photo. Please send it again.",
+      notIdBack: "I couldn't see the back of the ID card in this photo. Could you turn the card over and photograph the other side?",
+      idBackTryAgain: "I couldn't read the details in this photo. Could you take it again, in good light, with the whole card in the frame?",
       confirmChange: (kind, detail) => {
         const employment: Record<string, string> = {
           salaried: "salaried",
@@ -227,11 +242,11 @@ export const chat: ChatCopy = {
       nextStage: "We can move on to the next step. I'll send the next document list as soon as it's ready.",
       advisorFlag: (label) =>
         `One detail needs the consultant's review: ${label}. In the meantime, you can send the ID and its appendix.`,
-      received: (doc) => `I've received the ${doc}.`,
-      rejected: (doc, reason, detail) => `I couldn't approve the ${doc}: ${reason}.${detail ? ` ${detail}` : ""}`,
-      complete: "The documents have been sent for review. We'll contact you once they're processed, and then we can move on to the next step.",
+      received: (doc) => `Received: ${doc}.`,
+      rejected: (doc, reason, detail) => `We'll need to look at this document again: ${doc}.\n${reason}${/[.!?]$/.test(reason.trim()) ? "" : "."}${detail ? ` ${detail}` : ""}`,
+      complete: "Thank you for sending the documents. They've been passed on for review, and we'll update you when that's done.",
       returnFiles: (items) =>
-        `Please send these again:\n${items.map((item) => `• ${item.label} — ${item.note}`).join("\n")}\nYou can send them here. The new file replaces the previous one.`,
+        `After the review, we need an update for these documents:\n${items.map((item) => `• ${item.label}: ${item.note}`).join("\n")}\nYou can send the updated documents here. Each new file replaces its previous version.`,
       askEscalate: "Would you like me to pass this to a consultant, or try again in a bit?",
       cooldownWait: (minutes) => `You can try again in about ${minutes} minutes.`,
       escalateAccepted: "I'll pass this to a consultant. They'll get back to you soon.",

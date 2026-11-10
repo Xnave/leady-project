@@ -435,7 +435,7 @@ function startRejectCool(
 function readableList(values: string[], lang: "en" | "he"): string {
   if (values.length < 2) return values[0] ?? "";
   const last = values.at(-1) ?? "";
-  return `${values.slice(0, -1).join(", ")}${lang === "he" ? " ו-" : " and "}${last}`;
+  return `${values.slice(0, -1).join(", ")}${lang === "he" ? " ו" : " and "}${last}`;
 }
 
 function monthList(values: string[], lang: "en" | "he", now = new Date()): string {
@@ -453,6 +453,8 @@ export function customerRejection(opts: {
   fields: Record<string, unknown>;
   lang: "en" | "he";
   now?: Date;
+  /** The payslip request for months that are still open. Omitted when nothing is confirmed saved. */
+  nextAsk?: string;
 }): string | undefined {
   const now = opts.now ?? new Date();
   const payslip = opts.docType === "payslip";
@@ -462,20 +464,24 @@ export function customerRejection(opts: {
       ? needed[0] ?? ""
       : `${needed.slice(0, -1).join(", ")} ו${needed.at(-1)}`
     : monthList(priorCalendarMonths(now), opts.lang, now);
+  const request = opts.nextAsk
+    ?? (opts.lang === "he"
+      ? `אפשר לשלוח את תלושי השכר של ${need}`
+      : `Could you send the payslips for ${need}?`);
   if (opts.reason === "unrecognized") {
     if (payslip) {
       return opts.lang === "he"
-        ? `זה לא נראה כמו תלוש שכר. אשמח לתלושי שכר של ${need}`
-        : `This doesn't look like a payslip. Please send payslips for ${need}`;
+        ? `בקובץ הזה לא זיהיתי תלוש שכר. ${request}`
+        : `I couldn't see a payslip in this file. ${request}`;
     }
     if (opts.docType === "id_card" || opts.docType === "id_card_back") {
       return opts.lang === "he"
-        ? "לא זיהיתי את הקובץ. שלח בבקשה תמונה ברורה של הצד הקדמי, כך שהשם והמספר נראים"
-        : "I couldn't tell what this file is. Please send a clear photo of the front, with the name and number visible";
+        ? "לא זיהיתי את הקובץ. אפשר לשלוח צילום ברור של הצד הקדמי, כך שהשם והמספר נראים?"
+        : "I couldn't tell what this file is. Could you send a clear photo of the front, with the name and number visible?";
     }
     return opts.lang === "he"
-      ? "לא זיהיתי את הקובץ כמסמך שביקשתי"
-      : "I couldn't tell what this file is";
+      ? "לא זיהיתי את הקובץ כמסמך שביקשתי."
+      : "I couldn't tell what this file is.";
   }
   if (!payslip) return undefined;
   const found = monthsIn(opts.fields.periodEnd ?? opts.fields.payMonths);
@@ -485,13 +491,13 @@ export function customerRejection(opts: {
       ? found.map((month) => formatStatementMonth(month, "he", now)).join(", ")
       : monthList(found, opts.lang, now);
     return opts.lang === "he"
-      ? `התלוש הוא לחודש ${listed}. אשמח לתלושי שכר של ${need}`
-      : `This payslip is for ${listed}. Please send payslips for ${need}`;
+      ? `התלוש הוא לחודש ${listed}. ${request}`
+      : `This payslip is for ${listed}. ${request}`;
   }
   if (opts.reason === "field_present" && opts.field === "fullName" && !found.length) {
     return opts.lang === "he"
-      ? `לא הצלחתי לקרוא את שם העובד ואת חודש השכר. אשמח לתלושי שכר של ${need}`
-      : `I couldn't read the employee name or the pay month. Please send payslips for ${need}`;
+      ? `לא הצלחתי לקרוא את שם העובד ואת חודש השכר. ${request}`
+      : `I couldn't read the employee name or the pay month. ${request}`;
   }
   if (opts.reason === "field_present" && opts.field === "fullName") {
     return opts.lang === "he"
@@ -500,13 +506,13 @@ export function customerRejection(opts: {
   }
   if (opts.reason === "field_present") {
     return opts.lang === "he"
-      ? `לא הצלחתי לקרוא לאיזה חודש התלוש שייך. אשמח לתלוש של ${need}`
-      : `I couldn't read which month this payslip is for. Please send one for ${need}`;
+      ? `לא הצלחתי לקרוא לאיזה חודש התלוש שייך. ${request}`
+      : `I couldn't read which month this payslip is for. ${request}`;
   }
   if (opts.reason === "date_within_months") {
     return opts.lang === "he"
-      ? `התאריך שמופיע בתלוש לא נמצא ב-3 החודשים האחרונים. אשמח לתלושי שכר של ${need}`
-      : `The date on this payslip is not within the last 3 months. Please send payslips for ${need}`;
+      ? `התאריך שמופיע בתלוש לא נמצא ב-3 החודשים האחרונים. ${request}`
+      : `The date on this payslip is not within the last 3 months. ${request}`;
   }
   return undefined;
 }
@@ -788,19 +794,39 @@ function customerReply(ctx: IngestTurn, reply: string): string {
   return withFirstMessageIntro(ctx, documentsReplyLang(ctx), text);
 }
 
+function payslipAsk(
+  slots: SlotState[],
+  borrower: string | undefined,
+  lang: "en" | "he",
+  chat: DocumentChat,
+  who: string,
+  now = new Date(),
+): string {
+  const window = priorCalendarMonths(now);
+  const mine = slots.filter((slot) => slot.docType === "payslip" && (!borrower || slot.borrower === borrower));
+  const held = [...new Set(
+    mine.filter((slot) => slot.status === "uploaded").flatMap((slot) => slot.coveredMonths ?? []),
+  )].filter((month) => window.includes(month)).sort();
+  const missing = window.filter((month) => !held.includes(month));
+  if (!missing.length) return chat.documents.askPayslips;
+  return chat.documents.payslipGap(monthList(held, lang, now), monthList(missing, lang, now), who);
+}
+
 export function documentFileAsk(
   state: DossierState,
   rules: RulesDocument,
   lang: "en" | "he",
   chat: DocumentChat,
+  now = new Date(),
 ): string {
   const slot = state.slots.find((item) => isOutstanding(item, state.slots));
   if (!slot) return "";
+  if (slot.docType === "payslip") {
+    return payslipAsk(state.slots, slot.borrower, lang, chat, borrowerFileWho(state.profile, slot.borrower, lang), now);
+  }
   const line = slot.docType === "id_card"
     ? chat.documents.askIdCard
-    : slot.docType === "payslip"
-      ? chat.documents.askPayslips
-      : chat.documents.askStage(slotDisplayLabel(rules, slot, lang));
+    : chat.documents.askStage(slotDisplayLabel(rules, slot, lang));
   return withBorrower(chat, line, state.profile, slot.borrower, lang);
 }
 
@@ -1436,7 +1462,8 @@ async function judgeFileJob(opts: IngestLines & {
     detail: judgeDetail,
   });
   let state = judged.state;
-  const slotDoc = state.slots.find((slot) => slot.id === judged.slotId)?.docType ?? extracted.docType ?? "";
+  const judgedSlot = state.slots.find((slot) => slot.id === judged.slotId);
+  const slotDoc = judgedSlot?.docType ?? extracted.docType ?? "";
   const label = docLabel(opts.config.rules, slotDoc, opts.lang);
   const specific = customerRejection({
     reason: judged.reason,
@@ -1444,6 +1471,17 @@ async function judgeFileJob(opts: IngestLines & {
     docType: slotDoc,
     fields: extracted.fields,
     lang: opts.lang,
+    ...(slotDoc === "payslip"
+      ? {
+          nextAsk: payslipAsk(
+            state.slots,
+            judgedSlot?.borrower,
+            opts.lang,
+            opts.chat,
+            borrowerFileWho(state.profile, judgedSlot?.borrower, opts.lang),
+          ),
+        }
+      : {}),
   });
   const customerReason = judged.reason === "field_present" && judged.field === "nationalId"
     ? "id_number"
@@ -2443,9 +2481,9 @@ export async function runDocumentsIngest(
         : slot.docType === "id_card"
           ? chat.documents.askIdCard
           : slot.docType === "payslip"
-            ? chat.documents.askPayslips
+            ? payslipAsk(state.slots, slot.borrower, lang, chat, borrowerFileWho(state.profile, slot.borrower, lang))
             : chat.documents.askStage(slotDisplayLabel(config.rules, slot, lang));
-      lines.push(withBorrower(chat, again, state.profile, slot.borrower, lang));
+      lines.push(slot.docType === "payslip" ? again : withBorrower(chat, again, state.profile, slot.borrower, lang));
     }
   }
 

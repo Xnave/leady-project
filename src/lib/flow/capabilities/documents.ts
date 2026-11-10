@@ -65,7 +65,11 @@ export function registerDocumentsCapability(): void {
       return [
         `Document checklist is in progress (${state.status}). Still missing at this stage: ${state.missing.join(", ") || "none"}.`,
         next
-          ? `Ask only this question, then wait for the answer. Do not ask any other checklist question in the same message:\n${documentAskText(next, lang, chat)}`
+          ? [
+              "If the customer just gave a useful fact, acknowledge it in one short clause, then ask only the question below.",
+              "Do not open with אשמח, מעולה, הבנתי, or כדי להתקדם. Do not add a second question.",
+              documentAskText(next, lang, chat),
+            ].join("\n")
           : "Ask for the current stage's documents together. One file per message is fine; several in a row are fine.",
         "A file the customer sends is handled by ingest_document, including a file for a later stage.",
         "Never tell the customer a document was received unless ingest_document ran on this turn.",
