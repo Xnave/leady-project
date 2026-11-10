@@ -275,7 +275,7 @@ npm run db:verify:production     # again: "Pending migrations: none ... OK"
 
 `baseline`, `migrate` and `backfill` change the database. They ask you to type the target host first and refuse to run without a terminal (from a script, CI, or an agent).
 
-**Pull requests** run both diffs (`.github/workflows/schema-diff.yml`). `pnpm db:diff:check:production` fails the workflow when production differs from `schema.prisma`, so the migration is applied before merge. The staging diff still runs and prints any SQL, and a staging difference does not fail the workflow. The workflow reads `STAGING_DATABASE_URL` from the Preview environment and `PRODUCTION_DATABASE_URL` from the Production environment. Mark **Diff against production** required in branch protection.
+**Pull requests** run both diffs (`.github/workflows/schema-diff.yml`). A ruleset on `main` requires the **Diff against production** check, so the migration is applied before merge. The workflow run stays successful and records that result as its own check, which keeps a production diff from sending an Actions failure email. The staging diff still runs and prints any SQL, and it does not block the merge. The workflow reads `STAGING_DATABASE_URL` from the Preview environment and `PRODUCTION_DATABASE_URL` from the Production environment.
 
 If `verify` says MISMATCH, the database drifted from the migrations. Stop and compare the printed SQL before migrating.
 
