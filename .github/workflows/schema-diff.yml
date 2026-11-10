@@ -1,0 +1,52 @@
+# Production fails the pull request when this branch's schema differs from the live database,
+# so a schema change is not merged before its migration.
+# Staging runs the same diff and reports it. A staging diff does not fail the workflow.
+#
+# Secrets (repository or environment): STAGING_DATABASE_URL, PRODUCTION_DATABASE_URL.
+# Mark "Diff against production" required in branch protection. Leave staging optional.
+
+name: Schema diff
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  staging:
+    name: Diff against staging
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Schema matches staging
+        env:
+          DATABASE_URL_FROM_ENV: "1"
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: pnpm db:diff:check:staging
+
+  production:
+    name: Diff against production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Schema matches production
+        env:
+          DATABASE_URL_FROM_ENV: "1"
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: pnpm db:diff:check:production
