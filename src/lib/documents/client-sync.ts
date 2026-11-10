@@ -150,72 +150,89 @@ export async function storedClientByPhone(tenantId: string, phone: string): Prom
   };
 }
 
+export type TenantSyncResult =
+  | { status: "skipped"; reason: "test_only" | "no_key" | "invalid" }
+  | ({ status: "ran"; cursorDate: string } & SyncOutcome);
+
+/** One documents tenant. Test-only configs and a missing key do not call Smart NPV. */
+export async function syncSmartNpvTenant(tenantId: string, now = new Date()): Promise<TenantSyncResult> {
+  const row = await prisma.capabilityInstance.findFirst({
+    where: { tenantId, capabilityId: "documents", enabled: true },
+    select: { config: true },
+  });
+  if (!row) return { status: "skipped", reason: "no_key" };
+  let config;
+  try {
+    config = parseDocumentConfig(row.config);
+  } catch {
+    return { status: "skipped", reason: "invalid" };
+  }
+  if (config.testOnly) return { status: "skipped", reason: "test_only" };
+  const apiKey = documentApiKey(config);
+  if (!apiKey) return { status: "skipped", reason: "no_key" };
+  const sync = await prisma.smartNpvSync.findUnique({ where: { tenantId } });
+  const outcome = await syncTenantClients({
+    now,
+    cursorDate: sync?.cursorDate ?? null,
+    client: smartClientFor({ baseUrl: config.baseUrl, apiKey }),
+    alreadyStored: async (smartClientId) => {
+      const existing = await prisma.smartNpvClient.findFirst({
+        where: { tenantId, smartClientId },
+        select: { id: true },
+      });
+      return Boolean(existing);
+    },
+    saveCursor: async (date) => {
+      await prisma.smartNpvSync.upsert({
+        where: { tenantId },
+        create: { tenantId, cursorDate: date, lastRunAt: now },
+        update: { lastRunAt: now },
+      });
+    },
+    saveClient: async (stored) => {
+      await prisma.smartNpvClient.create({
+        data: {
+          tenantId,
+          smartClientId: stored.smartClientId,
+          phone1: stored.phone1,
+          phone2: stored.phone2,
+          profile: stored.profile as Prisma.InputJsonValue,
+          createdOn: stored.createdOn,
+        },
+      });
+    },
+  });
+  if (!outcome.firstRun && sync) {
+    await prisma.smartNpvSync.update({
+      where: { tenantId },
+      data: { lastRunAt: now },
+    });
+  }
+  const cursorDate = outcome.firstRun ? jerusalemDay(now) : (sync?.cursorDate ?? "");
+  console.log(
+    JSON.stringify({
+      msg: "documents.client_sync",
+      tenantId,
+      firstRun: outcome.firstRun,
+      imported: outcome.imported,
+      skipped: outcome.skipped,
+      failed: outcome.failed,
+    }),
+  );
+  return { status: "ran", cursorDate, ...outcome };
+}
+
 /** Every documents tenant with a real API key. Test-only configs are skipped. */
 export async function syncSmartNpvTenants(now = new Date()): Promise<Array<{ tenantId: string } & SyncOutcome>> {
   const instances = await prisma.capabilityInstance.findMany({
     where: { capabilityId: "documents", enabled: true },
-    select: { tenantId: true, config: true },
+    select: { tenantId: true },
   });
   const results: Array<{ tenantId: string } & SyncOutcome> = [];
   for (const row of instances) {
-    let config;
-    try {
-      config = parseDocumentConfig(row.config);
-    } catch {
-      continue;
-    }
-    if (config.testOnly) continue;
-    const apiKey = documentApiKey(config);
-    if (!apiKey) continue;
-    const sync = await prisma.smartNpvSync.findUnique({ where: { tenantId: row.tenantId } });
-    const outcome = await syncTenantClients({
-      now,
-      cursorDate: sync?.cursorDate ?? null,
-      client: smartClientFor({ baseUrl: config.baseUrl, apiKey }),
-      alreadyStored: async (smartClientId) => {
-        const existing = await prisma.smartNpvClient.findFirst({
-          where: { tenantId: row.tenantId, smartClientId },
-          select: { id: true },
-        });
-        return Boolean(existing);
-      },
-      saveCursor: async (date) => {
-        await prisma.smartNpvSync.upsert({
-          where: { tenantId: row.tenantId },
-          create: { tenantId: row.tenantId, cursorDate: date, lastRunAt: now },
-          update: { lastRunAt: now },
-        });
-      },
-      saveClient: async (stored) => {
-        await prisma.smartNpvClient.create({
-          data: {
-            tenantId: row.tenantId,
-            smartClientId: stored.smartClientId,
-            phone1: stored.phone1,
-            phone2: stored.phone2,
-            profile: stored.profile as Prisma.InputJsonValue,
-            createdOn: stored.createdOn,
-          },
-        });
-      },
-    });
-    if (!outcome.firstRun && sync) {
-      await prisma.smartNpvSync.update({
-        where: { tenantId: row.tenantId },
-        data: { lastRunAt: now },
-      });
-    }
+    const outcome = await syncSmartNpvTenant(row.tenantId, now);
+    if (outcome.status !== "ran") continue;
     results.push({ tenantId: row.tenantId, ...outcome });
-    console.log(
-      JSON.stringify({
-        msg: "documents.client_sync",
-        tenantId: row.tenantId,
-        firstRun: outcome.firstRun,
-        imported: outcome.imported,
-        skipped: outcome.skipped,
-        failed: outcome.failed,
-      }),
-    );
   }
   return results;
 }

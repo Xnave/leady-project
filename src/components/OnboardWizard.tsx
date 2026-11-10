@@ -139,6 +139,9 @@ export function OnboardWizard(props: Props) {
     loadRulesDocument(props.documentConfig?.rules ?? MORTGAGE_RULES),
   );
   const rulesOk = rulesIssueList(docRules).length === 0;
+  const [syncing, setSyncing] = useState(false);
+  const [syncNote, setSyncNote] = useState("");
+  const [syncError, setSyncError] = useState("");
   const catalogId: CatalogId =
     bookingEnabled || reservationsEnabled ? "inbox" : "faq";
   const [venueAddress, setVenueAddress] = useState(props.venueAddress ?? "");
@@ -336,6 +339,49 @@ export function OnboardWizard(props: Props) {
     "{{address}}",
     "{{hours}}",
   ];
+
+  async function syncClientsNow() {
+    setSyncing(true);
+    setSyncNote("");
+    setSyncError("");
+    try {
+      const res = await fetch("/api/documents/sync", { method: "POST" });
+      const data = (await res.json()) as {
+        error?: string;
+        firstRun?: boolean;
+        imported?: number;
+        failed?: number;
+        cursorDate?: string;
+      };
+      if (!res.ok) {
+        if (data.error === "no_key" || data.error === "test_only") {
+          setSyncError(ui.documentsUi.syncNeedKey);
+        } else if (data.error === "auth") {
+          setSyncError(ui.documentsUi.syncAuthFailed);
+        } else {
+          setSyncError(ui.documentsUi.syncFailed);
+        }
+        return;
+      }
+      const [year, month, day] = (data.cursorDate ?? "").split("-");
+      const date = year && month && day ? `${day}/${month}/${year}` : data.cursorDate ?? "";
+      if (data.firstRun) {
+        setSyncNote(fillUi(ui.documentsUi.syncStarted, { date }));
+        return;
+      }
+      const imported = data.imported ?? 0;
+      const failed = data.failed ?? 0;
+      setSyncNote(
+        failed > 0
+          ? fillUi(ui.documentsUi.syncDoneFailed, { imported, failed })
+          : fillUi(ui.documentsUi.syncDone, { imported }),
+      );
+    } catch {
+      setSyncError(ui.documentsUi.syncFailed);
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   function appendToken(current: string, set: (v: string) => void, token: string) {
     set(`${current}${current ? " " : ""}${token}`);
@@ -601,6 +647,22 @@ export function OnboardWizard(props: Props) {
                   />
                 </label>
                 <p className="muted">{ui.documentsUi.apiKeyHint}</p>
+                <div className="wizard-footer">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={syncing || !props.documentConfig?.hasKey}
+                    aria-busy={syncing}
+                    onClick={() => void syncClientsNow()}
+                  >
+                    {syncing ? ui.documentsUi.syncing : ui.documentsUi.syncNow}
+                  </button>
+                </div>
+                <p className="muted">
+                  {props.documentConfig?.hasKey ? ui.documentsUi.syncHint : ui.documentsUi.syncNeedKey}
+                </p>
+                {syncNote ? <p className="muted">{syncNote}</p> : null}
+                {syncError ? <p className="error">{syncError}</p> : null}
                 <label>
                   {ui.documentsUi.maxRejectTries}
                   <input

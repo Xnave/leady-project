@@ -619,6 +619,15 @@ export type UiCopy = {
     baseUrl: string;
     apiKey: string;
     apiKeyHint: string;
+    syncNow: string;
+    syncing: string;
+    syncHint: string;
+    syncNeedKey: string;
+    syncStarted: string;
+    syncDone: string;
+    syncDoneFailed: string;
+    syncFailed: string;
+    syncAuthFailed: string;
     testOnlyWarning: string;
     testPhones: string;
     testPhonesHint: string;
