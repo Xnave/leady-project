@@ -20,6 +20,7 @@ export function shellFromRow(row: LeadRowDTO): LeadViewDTO {
     messages: [],
     details: [],
     requests: [],
+    documents: null,
     openTask: null,
   };
 }

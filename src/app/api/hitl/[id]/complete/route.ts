@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { batchLeadRefreshes } from "@/lib/crm/refresh";
 import { resolveStaffActor } from "@/lib/admin-decisions";
 import { completeHitlTask, completeHitlTaskWithDirectReply, loadTurnContext } from "@/lib/conversations";
+import { returnChecklistDocuments } from "@/lib/documents/dossier";
+import { isChatLanguage, resolveReplyLanguage } from "@/lib/flow/locale";
 import { sendStaffReply } from "@/lib/staff-reply";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
 import { decideRegisteredRequest } from "@/lib/flow/registry";
@@ -33,6 +35,9 @@ async function handle(
   if (!task) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (task.status !== "open" && task.type !== REQUEST_APPROVAL_TASK) {
     return NextResponse.json({ error: "already_resolved" }, { status: 409 });
+  }
+  if (String(form.get("mode") ?? "") === "return_files") {
+    return returnChecklistFiles(tenantId, task, form);
   }
   if (task.type !== REQUEST_APPROVAL_TASK && !note.trim()) {
     return NextResponse.json({ error: "empty_reply" }, { status: 400 });
@@ -114,4 +119,57 @@ async function handle(
     console.error(JSON.stringify({ msg: "hitl.resume_failed", conversationId, error: String(err) }));
   }
   return NextResponse.json({ ok: true });
+}
+
+/** Decline specific files on a finished checklist and tell the customer what to send again. */
+async function returnChecklistFiles(
+  tenantId: string,
+  task: { id: string; leadId: string | null; conversationId: string; reason: string; status: string },
+  form: FormData,
+) {
+  if (task.status !== "open" || task.reason !== "document_checklist_complete" || !task.leadId) {
+    return NextResponse.json({ error: "not_a_document_review" }, { status: 400 });
+  }
+  const groups = form.getAll("returnGroup").map(String).filter(Boolean).map((group) => ({
+    slotIds: group.split("|").filter(Boolean),
+    note: String(form.get(`returnNote__${group}`) ?? "").trim(),
+  }));
+  if (!groups.length || groups.some((group) => group.slotIds.length === 0 || !group.note)) {
+    return NextResponse.json({ error: "empty_reply" }, { status: 400 });
+  }
+  const [tenant, latest] = await Promise.all([
+    prisma.tenant.findFirst({ where: { id: tenantId }, select: { chatLanguage: true } }),
+    prisma.message.findFirst({
+      where: { tenantId, role: "lead", conversationId: task.conversationId },
+      orderBy: { createdAt: "desc" },
+      select: { text: true },
+    }),
+  ]);
+  const stored = tenant?.chatLanguage ?? "";
+  const policy = isChatLanguage(stored) ? stored : "multi";
+  const lang = resolveReplyLanguage(policy, latest?.text ?? "");
+  const result = await returnChecklistDocuments({
+    tenantId,
+    leadId: task.leadId,
+    groups,
+    lang,
+  });
+  if (!result.ok) {
+    return NextResponse.json(result, { status: result.error === "not_found" ? 404 : 400 });
+  }
+  await sendStaffReply({
+    tenantId,
+    conversationId: task.conversationId,
+    text: result.text,
+    source: "document_return",
+  });
+  const actor = await resolveStaffActor();
+  await completeHitlTaskWithDirectReply({
+    tenantId,
+    taskId: task.id,
+    actorUserId: actor.actorUserId,
+    reply: result.text,
+    approved: false,
+  });
+  return NextResponse.json({ ok: true, returned: true });
 }

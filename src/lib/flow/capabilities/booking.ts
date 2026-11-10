@@ -419,14 +419,37 @@ export function reconcileBooking(
     priorConfirm !== "confirmed" &&
     (priorConfirm === "pending" || gapsAfter.length === 0);
 
-  // A same-turn "confirmed" without a short yes is not agreement. "לא" is a no.
-  if (!affirmed && priorConfirm !== "confirmed" && (confirm === "confirmed" || decline)) {
+  // A same-turn "confirmed" without a short yes is not agreement.
+  // "לא" drops the pending summary, so a later "כן" cannot book that slot.
+  if (decline) {
+    effects = effects.filter((e) => e.type !== "book_meeting");
+    confirm = "";
+    nextFields.booking_confirm = "";
+  } else if (!affirmed && priorConfirm !== "confirmed" && confirm === "confirmed") {
     effects = effects.filter((e) => e.type !== "book_meeting");
     confirm = priorConfirm === "pending" ? "pending" : "";
     nextFields.booking_confirm = confirm;
+  } else if (
+    affirmed &&
+    confirm === "confirmed" &&
+    priorConfirm !== "pending" &&
+    priorConfirm !== "confirmed"
+  ) {
+    effects = effects.filter((e) => e.type !== "book_meeting");
+    confirm = "";
+    nextFields.booking_confirm = "";
   }
 
-  if (!decline && gapsAfter.length === 0 && confirm === "pending" && affirmed && !committedNeed) {
+  // A summary printed on this turn still needs its own yes. Only a summary that
+  // was already pending can be confirmed by the message on this turn.
+  if (
+    !decline &&
+    gapsAfter.length === 0 &&
+    confirm === "pending" &&
+    affirmed &&
+    !committedNeed &&
+    priorConfirm === "pending"
+  ) {
     nextFields.booking_confirm = "confirmed";
     confirm = "confirmed";
   }
@@ -730,7 +753,11 @@ export function registerBookingCapability(): void {
       const bookableSchedule =
         schedule.length > 0 ? schedule : normalizeVenueSchedule(hours);
       const slotNow = zonedToday(new Date(), timeZone);
-      if (!getStaffSlotOffer({ ...ctx.lead.fields, ...collected.fields })) {
+      const required = effectiveBookingRequired(ctx);
+      if (
+        isBookingCollectActive(ctx.lead.fields, required) &&
+        !getStaffSlotOffer(ctx.lead.fields)
+      ) {
         rememberStatedVisitTime(ctx, collected, {
           lang,
           hours,
@@ -738,7 +765,6 @@ export function registerBookingCapability(): void {
           timeZone,
         });
       }
-      const required = effectiveBookingRequired(ctx);
       const fieldsForTurn = { ...ctx.lead.fields, ...collected.fields };
       const offered = getStaffSlotOffer(fieldsForTurn);
       const last = lastLeadText(ctx);
@@ -1033,6 +1059,12 @@ export function registerBookingCapability(): void {
                 booking_flow: "active",
                 ...(seeded ? { interest: seeded } : {}),
               };
+              rememberStatedVisitTime(ctx, collected, {
+                lang,
+                hours,
+                schedule: bookableSchedule,
+                timeZone,
+              });
               const stated: Record<string, string> = {};
               if (name !== undefined) stated.name = name;
               if (phone !== undefined) stated.phone = phone;

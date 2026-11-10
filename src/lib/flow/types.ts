@@ -197,6 +197,8 @@ export type TurnContext = {
   lead: { id: string; externalUserId: string; fields: LeadFields };
   messages: MessageSnapshot[];
   channel?: ChannelSnapshot;
+  /** Lead message that started this turn. Attachments on it stay in play if a newer text arrives first. */
+  triggerMessageId?: string;
   /**
    * Durable per-capability state, keyed by capability id and populated by each
    * capability's `loadState` hook. The kernel never names a domain here - read it

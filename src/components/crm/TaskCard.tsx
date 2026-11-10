@@ -7,7 +7,10 @@ import { relTime, type Clock } from "./format";
 import { Icon } from "./Icon";
 
 type Decision = "approve" | "reschedule" | "decline";
+type HandoffChoice = "bot" | "direct" | "return";
 type Result = Promise<string | null>;
+
+type ReturnFile = { id: string; label: string; slotIds: string[] };
 
 /**
  * The open task, acted on in place (this replaced the Inbox for CRM tenants).
@@ -23,6 +26,7 @@ export function TaskCard({
   clock,
   onDecide,
   onComplete,
+  documents,
 }: {
   task: OpenTaskDTO;
   ui: UiCopy;
@@ -30,11 +34,14 @@ export function TaskCard({
   clock: Clock | null;
   onDecide: (requestId: string, form: FormData) => Result;
   onComplete: (taskId: string, form: FormData) => Result;
+  /** Uploaded checklist rows, when this task is the document review. */
+  documents?: ReturnFile[];
 }) {
   const t = ui.crm.task;
   const [mode, setMode] = useState<Decision>("approve");
-  // Handoff: guide the bot (it writes the reply) or answer the customer yourself.
-  const [direct, setDirect] = useState(false);
+  // Handoff: guide the bot, answer the customer, or send specific files back.
+  const [choice, setChoice] = useState<HandoffChoice>("bot");
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const age = clock ? relTime(task.createdAt, lang, clock.now) : "";
@@ -42,6 +49,14 @@ export function TaskCard({
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
+    if (choice === "return") {
+      const selected = (documents ?? []).filter((file) => picked[file.id]);
+      const missing = selected.some((file) => !String(form.get(`returnNote__${file.slotIds.join("|")}`) ?? "").trim());
+      if (!selected.length || missing) {
+        setError(ui.documentsUi.returnNeedOne);
+        return;
+      }
+    }
     setBusy(true);
     setError(null);
     const err =
@@ -142,8 +157,8 @@ export function TaskCard({
       action={`/api/hitl/${task.id}/complete`}
       method="post"
     >
-      <input type="hidden" name="approved" value="yes" />
-      <input type="hidden" name="mode" value={direct ? "direct" : "bot"} />
+      <input type="hidden" name="approved" value={choice === "return" ? "no" : "yes"} />
+      <input type="hidden" name="mode" value={choice === "return" ? "return_files" : choice === "direct" ? "direct" : "bot"} />
       <div className="crm-task-h">
         <Icon name="hand" small />
         <b>{ui.crm.reasonsLong.handoff}</b>
@@ -157,22 +172,61 @@ export function TaskCard({
         </div>
       ) : null}
       <div className="crm-presets" role="group">
-        <button type="button" className="crm-btn-quiet crm-choice" aria-pressed={!direct} onClick={() => setDirect(false)}>
+        <button type="button" className="crm-btn-quiet crm-choice" aria-pressed={choice === "bot"} onClick={() => setChoice("bot")}>
           {t.modeBot}
         </button>
-        <button type="button" className="crm-btn-quiet crm-choice" aria-pressed={direct} onClick={() => setDirect(true)}>
+        <button type="button" className="crm-btn-quiet crm-choice" aria-pressed={choice === "direct"} onClick={() => setChoice("direct")}>
           {t.modeDirect}
         </button>
+        {task.code === "document_checklist_complete" && documents?.length ? (
+          <button type="button" className="crm-btn-quiet crm-choice" aria-pressed={choice === "return"} onClick={() => setChoice("return")}>
+            {ui.documentsUi.returnFiles}
+          </button>
+        ) : null}
       </div>
-      <label className="crm-task-field">
-        <span>{direct ? t.direct : t.guide}</span>
-        <textarea name="note" rows={3} required placeholder={direct ? t.directPlaceholder : t.guidePlaceholder} />
-      </label>
-      <p className="crm-task-muted">{direct ? t.directHint : t.guideHint}</p>
+      {choice === "return" && documents?.length ? (
+        <>
+          <p className="crm-task-muted">{ui.documentsUi.returnFilesHint}</p>
+          <ul className="crm-doc-return">
+            {documents.map((file) => {
+              const group = file.slotIds.join("|");
+              const on = Boolean(picked[file.id]);
+              return (
+                <li key={file.id}>
+                  <label className="crm-doc-return-pick">
+                    <input
+                      type="checkbox"
+                      name="returnGroup"
+                      value={group}
+                      checked={on}
+                      onChange={(event) => setPicked((current) => ({ ...current, [file.id]: event.target.checked }))}
+                    />
+                    <bdi>{file.label}</bdi>
+                  </label>
+                  {on ? (
+                    <label className="crm-task-field">
+                      <span>{ui.documentsUi.returnNote}</span>
+                      <textarea name={`returnNote__${group}`} rows={2} required placeholder={ui.documentsUi.returnNotePlaceholder} />
+                    </label>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      ) : (
+        <>
+          <label className="crm-task-field">
+            <span>{choice === "direct" ? t.direct : t.guide}</span>
+            <textarea name="note" rows={3} required placeholder={choice === "direct" ? t.directPlaceholder : t.guidePlaceholder} />
+          </label>
+          <p className="crm-task-muted">{choice === "direct" ? t.directHint : t.guideHint}</p>
+        </>
+      )}
       {error ? <p className="crm-task-error" role="alert">{error}</p> : null}
       <div className="crm-task-foot">
         <button type="submit" className="btn" disabled={busy} aria-busy={busy}>
-          {direct ? t.sendToCustomer : t.sendToBot}
+          {choice === "return" ? ui.documentsUi.returnSend : choice === "direct" ? t.sendToCustomer : t.sendToBot}
         </button>
       </div>
     </form>

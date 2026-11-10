@@ -279,6 +279,27 @@ describe("checkBookableSlot", () => {
     ).toBe("18:00");
   });
 
+  it("reads the hour after a day of the month, not the day", () => {
+    const wide = normalizeVenueSchedule("09:00-20:00");
+    const november = new Date(2026, 10, 9, 12, 0, 0);
+    expect(
+      resolvedBareHourClock({
+        slotText: "ראשון ב 3 בדצמבר ב6",
+        schedule: wide,
+        lang: "he",
+        now: november,
+      }),
+    ).toBe("18:00");
+    expect(
+      resolvedBareHourClock({
+        slotText: "מחר ב-10",
+        schedule,
+        lang: "he",
+        now: new Date(2026, 9, 29, 12, 0, 0),
+      }),
+    ).toBe("10:00");
+  });
+
   it("keeps a bare hour ambiguous when both clocks fit", () => {
     const wide = normalizeVenueSchedule("08:00-23:00");
     expect(

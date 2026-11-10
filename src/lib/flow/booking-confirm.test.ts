@@ -574,6 +574,81 @@ describe("booking confirm_details rails", () => {
     expect(collected.reply).not.toMatch(/איזה יום ושעה/);
   });
 
+  it("a decline clears the pending visit so a later yes does not book it", () => {
+    const fields = {
+      booking_flow: "active",
+      booking_confirm: "pending",
+      time_preference: "מחר ב10:00",
+      name: "נווה עיני",
+      need: "ייעוץ",
+      phone: "0526595633",
+    };
+    const ctx = ctxWithFields(fields);
+    ctx.messages = [{ role: "lead", text: "לא" }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const declined = reconcileBooking(ctx, stage, {
+      reply: "רשמתי",
+      fields: { booking_confirm: "confirmed" },
+      effects: [{ type: "book_meeting" }],
+    });
+    expect(declined.fields?.booking_confirm).toBe("");
+    expect(declined.effects?.some((effect) => effect.type === "book_meeting")).toBe(false);
+    expect(declined.reply).toMatch(/לא שומרים את הבקשה/);
+
+    const again = ctxWithFields({ ...fields, booking_confirm: "" });
+    again.messages = [{ role: "lead", text: "כן" }];
+    const yes = reconcileBooking(again, stage, {
+      reply: "מעולה",
+      fields: { booking_confirm: "confirmed" },
+      effects: [{ type: "book_meeting" }],
+    });
+    expect(yes.effects?.some((effect) => effect.type === "book_meeting")).toBe(false);
+    expect(yes.fields?.booking_confirm).not.toBe("confirmed");
+  });
+
+  it("does not book when the model reprints the summary on the same yes that followed a decline", () => {
+    const ctx = ctxWithFields({
+      booking_flow: "active",
+      booking_confirm: "",
+      time_preference: "מחר ב10:00",
+      name: "נווה עיני",
+      need: "ייעוץ",
+      phone: "0526595633",
+    });
+    ctx.messages = [{ role: "lead", text: "כן" }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const out = reconcileBooking(ctx, stage, {
+      reply: "סיכום",
+      fields: { booking_confirm: "pending" },
+      effects: [],
+    });
+    expect(out.fields?.booking_confirm).not.toBe("confirmed");
+    expect(out.effects?.some((effect) => effect.type === "book_meeting")).toBe(false);
+  });
+
+  it("stores a stated time only after booking has started", () => {
+    const stage = ctxWithFields({}).agent.flow.stages.talk as TalkStage;
+    const idle = ctxWithFields({});
+    idle.messages = [{ role: "lead", text: "אתם פתוחים ביום ראשון ב-10?" }];
+    const idleCollected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    getCapability("booking")!.tools!({ ctx: idle, stage, collected: idleCollected });
+    expect(idleCollected.fields.time_preference).toBeUndefined();
+
+    const active = ctxWithFields({ booking_flow: "active" });
+    active.messages = [{ role: "lead", text: "אתם פתוחים ביום ראשון ב-10?" }];
+    const activeCollected: {
+      reply: string;
+      fields: Record<string, unknown>;
+      effects: [];
+    } = { reply: "", fields: {}, effects: [] };
+    getCapability("booking")!.tools!({ ctx: active, stage, collected: activeCollected });
+    expect(String(activeCollected.fields.time_preference ?? "")).toMatch(/10:00/);
+  });
+
   it("does not restore an earlier visit time from a thank-you", () => {
     const ctx = ctxWithFields({});
     useVenueHours(ctx, "09:00-19:00");

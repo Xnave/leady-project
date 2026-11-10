@@ -8,7 +8,7 @@ import type { ChatLanguage } from "./locale";
 export type CatalogId = "inbox" | "faq";
 export type LegacyCatalogId = CatalogId | "book";
 export type BookingStance = "passive" | "proactive";
-export type CapabilityId = "booking" | "reservations";
+export type CapabilityId = "booking" | "reservations" | "documents";
 
 export type FlowBuildOpts = {
   capabilities?: CapabilityId[];
@@ -66,7 +66,7 @@ export function isBookingStance(value: string): value is BookingStance {
 }
 
 export function isCapabilityId(value: string): value is CapabilityId {
-  return value === "booking" || value === "reservations";
+  return value === "booking" || value === "reservations" || value === "documents";
 }
 
 /** Infer stance from legacy catalog or stored talk stage. */
@@ -191,7 +191,11 @@ export function hitlForCatalog(_id?: string): HitlPolicy {
 
 /** Derive display catalog from capabilities (for channels/demo labels). */
 export function catalogIdFromCapabilities(capabilities: string[]): CatalogId {
-  if (capabilities.includes("booking") || capabilities.includes("reservations")) {
+  if (
+    capabilities.includes("booking") ||
+    capabilities.includes("reservations") ||
+    capabilities.includes("documents")
+  ) {
     return "inbox";
   }
   return "faq";

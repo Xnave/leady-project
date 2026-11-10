@@ -107,7 +107,7 @@ export function NextStepEditor({
               {clock && at ? untilTime(at, lang, clock.now) : null}
             </span>
           </button>
-          <button type="button" className="btn-secondary crm-next-done" onClick={onDone} data-tip={ui.crm.markDoneHint} aria-description={ui.crm.markDoneHint}>
+          <button type="button" className="btn-secondary crm-next-done" onClick={onDone} data-tip={ui.crm.markDoneHint}>
             <Icon name="check" small />
             {ui.crm.markDone}
           </button>

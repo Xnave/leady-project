@@ -149,15 +149,38 @@ function statedClocks(text: string): string[] {
   return [...found];
 }
 
+const BARE_HOUR = /(?:ב־|ב-|at\s+|בשעה\s+|ב\s*)(\d{1,2})(?!\d)(?!\s*:)/gi;
+
+/** A "ב 3" before "בדצמבר" is the day, not the hour. */
+function monthFollowsDigit(text: string, digitEnd: number): boolean {
+  const rest = text.slice(digitEnd).replace(/^\s*ב?\s*/, "").toLowerCase();
+  return [...HE_MONTHS, ...EN_MONTHS].some((name) => rest.startsWith(name.toLowerCase()));
+}
+
+/** Last bare hour that is not a day of the month. "ב-10" stays 10. */
+export function lastBareHourDigit(text: string): number | null {
+  const re = new RegExp(BARE_HOUR.source, "gi");
+  let found: number | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    const hour = Number(match[1]);
+    if (!Number.isInteger(hour) || hour < 1 || hour > 12) continue;
+    if (monthFollowsDigit(text, match.index + match[0].length)) continue;
+    found = hour;
+  }
+  return found;
+}
+
 /** "ב-10" states 10:00. It does not state 22:00; morning/evening stays a hours-gate decision. */
 function bareTypedHourClocks(text: string): { clock: string; index: number }[] {
   if (!isAmbiguousBareHour(text)) return [];
   const hits: { clock: string; index: number }[] = [];
-  const re = /(?:ב־|ב-|at\s+|בשעה\s+|ב\s*)(\d{1,2})(?!\d)(?!\s*:)/gi;
+  const re = new RegExp(BARE_HOUR.source, "gi");
   let match: RegExpExecArray | null;
   while ((match = re.exec(text))) {
     const h = Number(match[1]);
     if (h < 1 || h > 12) continue;
+    if (monthFollowsDigit(text, match.index + match[0].length)) continue;
     const clock = hhmm(h, 0);
     const digitAt = match.index + match[0].lastIndexOf(match[1]);
     if (clock) hits.push({ clock, index: digitAt });
