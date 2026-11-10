@@ -1,6 +1,18 @@
+import { isProductionRuntime } from "@/lib/dev-auth-bypass";
 import { borrowersOf, factsFromClient } from "./facts";
 import { isUploadableFile, uploadFileName } from "./file-types";
 import type { Profile } from "./rules";
+
+/** The only host that may receive a tenant's Smart NPV key. */
+export const SMART_NPV_HOST = "https://www.snpv.co.il";
+
+/** The key or the permission was rejected. This is not "client not found". */
+export class SmartNpvAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SmartNpvAuthError";
+  }
+}
 
 export { isUploadableFile, uploadFileName };
 
@@ -161,6 +173,7 @@ export function createHttpSmartClient(opts: { baseUrl: string; apiKey: string; f
   async function get(path: string, params: Record<string, string>): Promise<Envelope> {
     const query = new URLSearchParams({ api_key: opts.apiKey, ...params });
     const res = await fetchImpl(`${root}${path}?${query}`);
+    if (res.status === 401 || res.status === 403) throw new SmartNpvAuthError(`smart ${path} ${res.status}`);
     if (!res.ok) throw new Error(`smart ${path} ${res.status}`);
     return readEnvelope(res);
   }
@@ -182,7 +195,11 @@ export function createHttpSmartClient(opts: { baseUrl: string; apiKey: string; f
         return null;
       }
       const body = await get("/clients/get", params);
-      if (body.response === false) return null;
+      if (body.response === false) {
+        const message = text(body.responseMessage) || text(body.message);
+        if (smartAuthMessage(message)) throw new SmartNpvAuthError(message || "smart key rejected");
+        return null;
+      }
       const fields = body.responseClientFields;
       if (!fields || typeof fields !== "object") return null;
       return hitFromClient(fields, query.nationalId ?? "");
@@ -236,7 +253,14 @@ export function createHttpSmartClient(opts: { baseUrl: string; apiKey: string; f
   };
 }
 
+function smartAuthMessage(message: string): boolean {
+  return /api[_\s-]?key|invalid key|unauthorized|permission|not authorized|authentication/i.test(message);
+}
+
 export function smartClientFor(opts: { baseUrl: string; apiKey: string }): SmartClient {
-  if (opts.baseUrl.startsWith("fake:")) return createFakeSmartClient();
-  return createHttpSmartClient(opts);
+  if (opts.baseUrl.startsWith("fake:")) {
+    if (!isProductionRuntime()) return createFakeSmartClient();
+    throw new Error("smart npv test host is not available in production");
+  }
+  return createHttpSmartClient({ baseUrl: SMART_NPV_HOST, apiKey: opts.apiKey });
 }

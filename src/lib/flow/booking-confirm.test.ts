@@ -612,6 +612,26 @@ describe("booking confirm_details rails", () => {
     expect(yes.fields?.booking_confirm).not.toBe("confirmed");
   });
 
+  it("does not book when the model reprints the summary on the same yes that followed a decline", () => {
+    const ctx = ctxWithFields({
+      booking_flow: "active",
+      booking_confirm: "",
+      time_preference: "מחר ב10:00",
+      name: "נווה עיני",
+      need: "ייעוץ",
+      phone: "0526595633",
+    });
+    ctx.messages = [{ role: "lead", text: "כן" }];
+    const stage = ctx.agent.flow.stages.talk as TalkStage;
+    const out = reconcileBooking(ctx, stage, {
+      reply: "סיכום",
+      fields: { booking_confirm: "pending" },
+      effects: [],
+    });
+    expect(out.fields?.booking_confirm).not.toBe("confirmed");
+    expect(out.effects?.some((effect) => effect.type === "book_meeting")).toBe(false);
+  });
+
   it("stores a stated time only after booking has started", () => {
     const stage = ctxWithFields({}).agent.flow.stages.talk as TalkStage;
     const idle = ctxWithFields({});

@@ -128,7 +128,6 @@ export function OnboardWizard(props: Props) {
   const bookingEnabled = capabilities.includes("booking");
   const reservationsEnabled = capabilities.includes("reservations");
   const documentsEnabled = capabilities.includes("documents");
-  const [docBaseUrl, setDocBaseUrl] = useState(props.documentConfig?.baseUrl || "fake://smart");
   const [docApiKey, setDocApiKey] = useState("");
   const [docMaxRejectTries, setDocMaxRejectTries] = useState(
     String(props.documentConfig?.maxRejectTries ?? 5),
@@ -281,7 +280,6 @@ export function OnboardWizard(props: Props) {
         reservationConfig,
         documentConfig: documentsEnabled
           ? {
-              baseUrl: docBaseUrl,
               apiKey: docApiKey,
               rules: docRules,
               maxRejectTries: docMaxRejectTries,
@@ -592,10 +590,6 @@ export function OnboardWizard(props: Props) {
               <fieldset>
                 <legend>{ui.documentsUi.settingsTitle}</legend>
                 <p className="muted rules-hint">{ui.documentsUi.rulesHint}</p>
-                <label>
-                  {ui.documentsUi.baseUrl}
-                  <input value={docBaseUrl} onChange={(e) => setDocBaseUrl(e.target.value)} />
-                </label>
                 <label>
                   {ui.documentsUi.apiKey}
                   <input

@@ -30,7 +30,6 @@ export default async function DocumentsSettingsPage() {
       <DocumentsSettingsForm
         ui={ui}
         enabled={enabled}
-        baseUrl={pub.baseUrl || "fake://smart"}
         hasKey={pub.hasKey}
         testPhones={pub.testPhones.join("\n")}
         maxRejectTries={pub.maxRejectTries}

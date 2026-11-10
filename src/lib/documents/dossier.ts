@@ -38,7 +38,7 @@ import { docLabel, type BlankFormDef, type Profile, type RulesDocument, type Slo
 import { checklistSlots, nextCollectionStageId, releasedStageId } from "./mortgage-rules";
 import { isImageFile, isUploadableFile, smartUploadName, uploadDay } from "./file-types";
 import { filesToPdf, photoDone } from "./images";
-import { slotNeedsUpload, smartClientFor, type SmartClient } from "./smart-npv";
+import { slotNeedsUpload, SMART_NPV_HOST, SmartNpvAuthError, smartClientFor, type SmartClient } from "./smart-npv";
 import {
   activeStageOf,
   commitSlot,
@@ -142,8 +142,11 @@ export function nationalIdFromText(text: string): string {
 async function readConfig(tenantId: string): Promise<DocumentConfig | null> {
   try {
     const raw = await loadInstanceConfig({ tenantId, capabilityId: "documents" });
-    if (!raw.baseUrl) return null;
-    return parseDocumentConfig(raw, typeof raw.apiKeyEnc === "string" ? raw.apiKeyEnc : "");
+    if (!raw.baseUrl && !raw.apiKeyEnc && !raw.rules) return null;
+    return parseDocumentConfig(
+      { ...raw, baseUrl: SMART_NPV_HOST },
+      typeof raw.apiKeyEnc === "string" ? raw.apiKeyEnc : "",
+    );
   } catch {
     return null;
   }
@@ -1157,9 +1160,18 @@ async function matchClient(opts: IngestLines & {
 }): Promise<{ row: DossierRow | null; done?: { ok: boolean; reply: string } }> {
   let { row } = opts;
   if (row && row.status !== "needs_id") return { row };
-  const found =
-    (await opts.client.findClient({ phone: phoneOf(opts.ctx) })) ||
-    (opts.typedId ? await opts.client.findClient({ nationalId: opts.typedId }) : null);
+  let found: Awaited<ReturnType<SmartClient["findClient"]>>;
+  try {
+    found =
+      (await opts.client.findClient({ phone: phoneOf(opts.ctx) })) ||
+      (opts.typedId ? await opts.client.findClient({ nationalId: opts.typedId }) : null);
+  } catch (err) {
+    if (err instanceof SmartNpvAuthError) {
+      warnDocuments("documents.smart_auth_failed", { tenantId: opts.ctx.tenantId });
+      return { row, done: { ok: true, reply: opts.chat.documents.connectionDown } };
+    }
+    throw err;
+  }
   if (!found) {
     const reply = opts.typedId ? opts.chat.documents.notFound : opts.chat.documents.askId;
     if (row && sameNeedsId(row, opts.typedId)) return { row, done: { ok: true, reply } };

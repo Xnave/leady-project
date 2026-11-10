@@ -75,6 +75,7 @@ export type ChatCopy = {
   documents: {
     askId: string;
     notFound: string;
+    connectionDown: string;
     notConfigured: string;
     askStage: (docs: string) => string;
     askIdCard: string;

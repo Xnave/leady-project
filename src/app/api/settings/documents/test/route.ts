@@ -8,20 +8,22 @@ export async function POST(req: Request) {
   if (access instanceof Response) return access;
   const { tenantId } = access;
   const body = (await req.json().catch(() => null)) as {
-    baseUrl?: string;
     apiKey?: string;
     phone?: string;
   } | null;
   try {
     const found = await testDocumentsConnection({
       tenantId,
-      baseUrl: body?.baseUrl,
       apiKey: body?.apiKey,
       phone: body?.phone,
     });
     return NextResponse.json({ found });
   } catch (err) {
-    const message = err instanceof FlowConfigError ? err.errors.join("\n") : "Connection failed";
+    const message = err instanceof FlowConfigError
+      ? err.errors.join("\n")
+      : err instanceof Error && err.message
+        ? err.message
+        : "Connection failed";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

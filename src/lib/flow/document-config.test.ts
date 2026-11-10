@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { FlowConfigError } from "./types";
 import { documentApiKey, isTestLead, parseDocumentConfig } from "./document-config";
 import { MORTGAGE_RULES } from "@/lib/documents/mortgage-rules";
+import { SMART_NPV_HOST } from "@/lib/documents/smart-npv";
 
 const KEY = "ab".repeat(32);
 
@@ -10,12 +11,19 @@ describe("parseDocumentConfig", () => {
     delete process.env.APP_ENCRYPTION_KEY;
   });
 
-  it("refuses a save with no base URL or rules that fail", () => {
-    expect(() => parseDocumentConfig({})).toThrow(FlowConfigError);
+  it("uses the Smart NPV host and refuses any other", () => {
     process.env.APP_ENCRYPTION_KEY = KEY;
+    expect(parseDocumentConfig({ rules: MORTGAGE_RULES }).baseUrl).toBe(SMART_NPV_HOST);
+    expect(parseDocumentConfig({ baseUrl: `${SMART_NPV_HOST}/api/v2`, rules: MORTGAGE_RULES }).baseUrl).toBe(
+      SMART_NPV_HOST,
+    );
+    expect(() => parseDocumentConfig({ baseUrl: "https://smart.example", rules: MORTGAGE_RULES })).toThrow(
+      FlowConfigError,
+    );
+    expect(() => parseDocumentConfig({ baseUrl: "fake://smart", rules: MORTGAGE_RULES })).toThrow(FlowConfigError);
     expect(() =>
       parseDocumentConfig({
-        baseUrl: "https://smart.example",
+        baseUrl: SMART_NPV_HOST,
         apiKey: "secret",
         rules: { stages: [], requirements: [], documents: {} },
       }),
@@ -25,14 +33,14 @@ describe("parseDocumentConfig", () => {
   it("stores the key encrypted and keeps a blank resubmit", () => {
     process.env.APP_ENCRYPTION_KEY = KEY;
     const saved = parseDocumentConfig({
-      baseUrl: "fake://smart",
+      baseUrl: SMART_NPV_HOST,
       apiKey: "secret",
       rules: MORTGAGE_RULES,
     });
     expect(saved.apiKeyEnc).not.toContain("secret");
     expect(documentApiKey(saved)).toBe("secret");
     const again = parseDocumentConfig(
-      { baseUrl: "fake://smart", apiKey: "", rules: MORTGAGE_RULES },
+      { baseUrl: SMART_NPV_HOST, apiKey: "", rules: MORTGAGE_RULES },
       saved.apiKeyEnc,
     );
     expect(documentApiKey(again)).toBe("secret");
@@ -42,7 +50,7 @@ describe("parseDocumentConfig", () => {
   it("allows a missing key and treats listed phones as test leads", () => {
     process.env.APP_ENCRYPTION_KEY = KEY;
     const saved = parseDocumentConfig({
-      baseUrl: "fake://smart",
+      baseUrl: SMART_NPV_HOST,
       rules: MORTGAGE_RULES,
       testPhones: "0501234567\n0501234567",
     });
@@ -53,7 +61,7 @@ describe("parseDocumentConfig", () => {
     expect(saved.rejectCooldownMinutes).toBe(5);
     expect(isTestLead(saved, "+972501234567")).toBe(true);
     const keyed = parseDocumentConfig({
-      baseUrl: "fake://smart",
+      baseUrl: SMART_NPV_HOST,
       apiKey: "secret",
       rules: MORTGAGE_RULES,
       testPhones: "0501234567",
@@ -65,7 +73,7 @@ describe("parseDocumentConfig", () => {
   it("keeps a stored key and phone list when the save omits both", () => {
     process.env.APP_ENCRYPTION_KEY = KEY;
     const again = parseDocumentConfig(
-      { baseUrl: "fake://smart", rules: MORTGAGE_RULES },
+      { baseUrl: SMART_NPV_HOST, rules: MORTGAGE_RULES },
       "stored-key",
       ["0501234567"],
     );
@@ -77,7 +85,7 @@ describe("parseDocumentConfig", () => {
   it("keeps reject try and cool-off settings within range", () => {
     process.env.APP_ENCRYPTION_KEY = KEY;
     const saved = parseDocumentConfig({
-      baseUrl: "fake://smart",
+      baseUrl: SMART_NPV_HOST,
       rules: MORTGAGE_RULES,
       maxRejectTries: "12",
       rejectCooldownMinutes: 0,

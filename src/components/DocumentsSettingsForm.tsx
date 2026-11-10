@@ -9,7 +9,6 @@ import type { UiCopy } from "@/lib/ui";
 type Props = {
   ui: UiCopy;
   enabled: boolean;
-  baseUrl: string;
   hasKey: boolean;
   testPhones: string;
   maxRejectTries: number;
@@ -20,7 +19,6 @@ type Props = {
 export function DocumentsSettingsForm(props: Props) {
   const copy = props.ui.documentsUi;
   const [enabled, setEnabled] = useState(props.enabled);
-  const [baseUrl, setBaseUrl] = useState(props.baseUrl);
   const [apiKey, setApiKey] = useState("");
   const [rules, setRules] = useState<RulesDocument>(() => loadRulesDocument(props.rules));
   const rulesOk = rulesIssueList(rules).length === 0;
@@ -43,7 +41,6 @@ export function DocumentsSettingsForm(props: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           enabled,
-          baseUrl,
           apiKey,
           rules,
           testPhones,
@@ -70,7 +67,7 @@ export function DocumentsSettingsForm(props: Props) {
       const res = await fetch("/api/settings/documents/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ baseUrl, apiKey, phone }),
+        body: JSON.stringify({ apiKey, phone }),
       });
       const data = (await res.json()) as { error?: string; found?: boolean };
       if (!res.ok) throw new Error(data.error ?? copy.failed);
@@ -87,10 +84,6 @@ export function DocumentsSettingsForm(props: Props) {
       <label className="chip-toggle">
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
         {copy.enabled}
-      </label>
-      <label>
-        {copy.baseUrl}
-        <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} required />
       </label>
       <label>
         {copy.apiKey}

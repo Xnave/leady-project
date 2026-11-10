@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { createHttpSmartClient, mapSmartProfile, slotNeedsUpload, toSmartPhone } from "./smart-npv";
+import {
+  createHttpSmartClient,
+  mapSmartProfile,
+  SmartNpvAuthError,
+  slotNeedsUpload,
+  smartClientFor,
+  toSmartPhone,
+} from "./smart-npv";
 
 const CLIENT = {
   uuid: "12345678-1234-1234-1234-1234567891099",
@@ -175,5 +182,34 @@ describe("createHttpSmartClient", () => {
     expect(await client.findClient({ nationalId: "123456782" })).toBeNull();
     expect(href).toContain("type=id_number");
     expect(href).toContain("id_number=123456782");
+  });
+
+  it("throws when the key is rejected and keeps a real miss as not found", async () => {
+    const client = createHttpSmartClient({
+      baseUrl: "https://www.snpv.co.il",
+      apiKey: "secret",
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ response: false, responseMessage: "invalid api_key" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })) as typeof fetch,
+    });
+    await expect(client.findClient({ phone: "0500000000" })).rejects.toBeInstanceOf(SmartNpvAuthError);
+  });
+
+  it("uses the fake client only outside production", async () => {
+    const previous = process.env.VERCEL;
+    try {
+      delete process.env.VERCEL;
+      const local = smartClientFor({ baseUrl: "fake://smart", apiKey: "secret" });
+      expect((await local.findClient({ phone: "0500000000" }))?.clientId).toBe("fake-client");
+      process.env.VERCEL = "1";
+      expect(() => smartClientFor({ baseUrl: "fake://smart", apiKey: "secret" })).toThrow(
+        /not available in production/,
+      );
+    } finally {
+      if (previous === undefined) delete process.env.VERCEL;
+      else process.env.VERCEL = previous;
+    }
   });
 });

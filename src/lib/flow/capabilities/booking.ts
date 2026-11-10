@@ -440,7 +440,16 @@ export function reconcileBooking(
     nextFields.booking_confirm = "";
   }
 
-  if (!decline && gapsAfter.length === 0 && confirm === "pending" && affirmed && !committedNeed) {
+  // A summary printed on this turn still needs its own yes. Only a summary that
+  // was already pending can be confirmed by the message on this turn.
+  if (
+    !decline &&
+    gapsAfter.length === 0 &&
+    confirm === "pending" &&
+    affirmed &&
+    !committedNeed &&
+    priorConfirm === "pending"
+  ) {
     nextFields.booking_confirm = "confirmed";
     confirm = "confirmed";
   }

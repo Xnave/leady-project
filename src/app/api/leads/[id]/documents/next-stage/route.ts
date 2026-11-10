@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { releaseNextDocumentStage } from "@/lib/documents/dossier";
 import { isChatLanguage, resolveReplyLanguage } from "@/lib/flow/locale";
-import { requireTenantId } from "@/lib/tenant";
+import { tenantRoleOr403 } from "@/lib/tenant-role";
 
 /** Advisor action: tell the lead the next document stage is starting. Does not add document types. */
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const access = await tenantRoleOr403("manager");
+  if (access instanceof Response) return access;
+  const { tenantId } = access;
   const { id: leadId } = await params;
-  const tenantId = await requireTenantId();
   const [tenant, latest] = await Promise.all([
     prisma.tenant.findFirst({ where: { id: tenantId }, select: { chatLanguage: true } }),
     prisma.message.findFirst({

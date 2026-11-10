@@ -1,5 +1,6 @@
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { MORTGAGE_RULES } from "@/lib/documents/mortgage-rules";
+import { SMART_NPV_HOST } from "@/lib/documents/smart-npv";
 import { parseRules, type RulesDocument } from "@/lib/documents/rules";
 import { FlowConfigError } from "@/lib/flow/types";
 
@@ -31,6 +32,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+/** Empty uses the Smart NPV host. Any other host, including fake:, is rejected. */
+export function officialSmartHost(value: string): string {
+  const trimmed = value.trim().replace(/\/$/, "").replace(/\/api\/v2$/i, "");
+  if (!trimmed || trimmed.toLowerCase() === SMART_NPV_HOST) return SMART_NPV_HOST;
+  return "";
+}
+
 function phoneList(value: unknown, fallback: string[]): string[] {
   if (value === undefined) return fallback;
   const raw = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[\s,]+/) : [];
@@ -58,8 +66,8 @@ export function parseDocumentConfig(
 ): DocumentConfig {
   const errors: string[] = [];
   const body = isRecord(raw) ? raw : {};
-  const baseUrl = typeof body.baseUrl === "string" ? body.baseUrl.trim() : "";
-  if (!baseUrl) errors.push("baseUrl is required");
+  const baseUrl = officialSmartHost(typeof body.baseUrl === "string" ? body.baseUrl : "");
+  if (!baseUrl) errors.push("baseUrl must be https://www.snpv.co.il");
   const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
   let apiKeyEnc = existingKeyEnc;
   if (apiKey) {
