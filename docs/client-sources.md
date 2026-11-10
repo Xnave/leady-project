@@ -8,7 +8,7 @@ Client campaigns PR 2 (ClickUp `z8rp3ff7x5`). A tenant's **own CRM** is synced i
 | --- | --- |
 | Connector interface | `src/lib/client-sources/types.ts` |
 | Registered connectors | `src/lib/client-sources/registry.ts` (Smart NPV; plus `fake` outside production) |
-| Smart NPV connector | `src/lib/client-sources/smartnpv.ts` |
+| Smart NPV connector | `src/lib/client-sources/smartnpv.ts` (field catalog, paging, deal date). HTTP goes through `fetchSmartClientList` in `src/lib/documents/smart-npv.ts`, the one module that talks to Smart NPV and only to `www.snpv.co.il`. |
 | Generic sync (pure, store injected) | `src/lib/client-sources/sync.ts` |
 | Prisma store, encryption, public view | `src/lib/client-sources/store.ts` |
 | Inngest | `client-source-sync` (event `client-sources/sync.requested`, one step per page, one run per source) and `client-sources-daily` (04:00 Asia/Jerusalem, incremental) in `src/inngest/functions.ts` |
@@ -21,7 +21,9 @@ Write a connector (`kind`, `credentialsSchema`, `credentialFields`, `parseConfig
 
 ## Credentials
 
-Stored AES-256-GCM encrypted (`src/lib/crypto.ts`) on `ClientSource.credentialsEnc`. They are decrypted only inside `store.ts` to call the connector. API responses carry `credentialKeys` (names) only. Error text is masked with `safeErrorMessage` before it is stored or returned.
+Stored AES-256-GCM encrypted (`src/lib/crypto.ts`) on `ClientSource.credentialsEnc`. They are decrypted only inside `store.ts` to call the connector.
+
+A connector can declare `sharedCredentials(tenantId)`: credentials the tenant already saved elsewhere. Smart NPV reads the key from the tenant's documents capability instance (Documents settings). When that key exists it wins, the source keeps `credentialsEnc = ""`, and the admin screen shows a note instead of the key field, so a tenant has one Smart NPV key in one place. Without a documents key, the admin enters it on the source. API responses carry `credentialKeys` (names) only. Error text is masked with `safeErrorMessage` before it is stored or returned.
 
 ## Smart NPV settings (per tenant, JSON on the admin screen)
 
@@ -52,5 +54,4 @@ Without Inngest (local dev), "sync now" falls back to syncing inside the request
 
 ## Known gaps
 
-- Smart NPV HTTP code also lives on the unmerged `docs-capability` branch (`src/lib/documents/smart-npv.ts`), with the key on the documents capability instance. Once that merges, the list call should move there and the key should be read from one place.
 - A client deleted in the CRM stays as a `Contact` (incremental sync sees changes, not deletions).

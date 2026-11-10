@@ -40,11 +40,24 @@ export type PublicClientSource = {
   lastSyncStats: Partial<SyncStats>;
   contactCount: number;
   credentialKeys: string[];
+  /** The key comes from another capability (Documents settings), not from this source. */
+  sharedCredentials: boolean;
 };
 
 type SourceRow = Prisma.ClientSourceGetPayload<object>;
 
-function publicSource(row: SourceRow, contactCount: number): PublicClientSource {
+/** True when the connector finds credentials the tenant saved elsewhere. Never returns them. */
+export async function hasSharedCredentials(tenantId: string, kind: string): Promise<boolean> {
+  const connector = getConnector(kind);
+  if (!connector?.sharedCredentials) return false;
+  try {
+    return Boolean(await connector.sharedCredentials(tenantId));
+  } catch {
+    return false;
+  }
+}
+
+function publicSource(row: SourceRow, contactCount: number, sharedCredentials: boolean): PublicClientSource {
   const connector = getConnector(row.kind);
   return {
     id: row.id,
@@ -59,6 +72,7 @@ function publicSource(row: SourceRow, contactCount: number): PublicClientSource 
     lastSyncStats: (row.lastSyncStats ?? {}) as Partial<SyncStats>,
     contactCount,
     credentialKeys: connector?.credentialFields.map((f) => f.key) ?? [],
+    sharedCredentials,
   };
 }
 
@@ -71,7 +85,8 @@ export async function listClientSources(tenantId: string): Promise<PublicClientS
     _count: { _all: true },
   });
   const bySource = new Map(counts.map((c) => [c.sourceId, c._count._all]));
-  return rows.map((r) => publicSource(r, bySource.get(r.id) ?? 0));
+  const shared = await Promise.all(rows.map((r) => hasSharedCredentials(tenantId, r.kind)));
+  return rows.map((r, i) => publicSource(r, bySource.get(r.id) ?? 0, shared[i]));
 }
 
 export async function hasClientSources(tenantId: string): Promise<boolean> {
@@ -116,18 +131,21 @@ export async function saveClientSource(
   }
 
   const existing = await prisma.clientSource.findUnique({ where: { tenantId_kind: { tenantId, kind: input.kind } } });
-  if (!existing && !credentialsEnc) return { error: "credentials_required" };
+  const shared = await hasSharedCredentials(tenantId, input.kind);
+  // A shared key wins, so do not keep a second copy that would silently go stale.
+  if (shared) credentialsEnc = "";
+  if (!existing && credentialsEnc === undefined) return { error: "credentials_required" };
 
   const data = {
     label: (input.label ?? existing?.label ?? "").trim().slice(0, 80),
     config: config as unknown as Prisma.InputJsonValue,
-    ...(credentialsEnc ? { credentialsEnc, status: "idle", lastError: "" } : {}),
+    ...(credentialsEnc !== undefined ? { credentialsEnc, status: "idle", lastError: "" } : {}),
   };
   const row = existing
     ? await prisma.clientSource.update({ where: { id: existing.id }, data })
     : await prisma.clientSource.create({ data: { tenantId, kind: input.kind, credentialsEnc: credentialsEnc!, ...data } });
   const count = await prisma.contact.count({ where: { tenantId, sourceId: row.id } });
-  return { source: publicSource(row, count) };
+  return { source: publicSource(row, count, shared) };
 }
 
 type LoadedSource = {
@@ -142,7 +160,9 @@ async function loadForSync(tenantId: string, sourceId: string): Promise<LoadedSo
   if (!row) throw new Error("source_not_found");
   const connector = getConnector(row.kind);
   if (!connector) throw new Error(`unknown_kind:${row.kind}`);
-  const credentials = JSON.parse(decryptSecret(row.credentialsEnc)) as unknown;
+  const shared = connector.sharedCredentials ? await connector.sharedCredentials(tenantId) : null;
+  if (!shared && !row.credentialsEnc) throw new Error("credentials_required");
+  const credentials = shared ?? (JSON.parse(decryptSecret(row.credentialsEnc)) as unknown);
   const config = connector.parseConfig(row.config);
   return { row, connector, credentials, config };
 }

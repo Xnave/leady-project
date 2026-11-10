@@ -910,6 +910,7 @@ export const en: UiCopy = {
       labelHint: "Shown to the business, e.g. \"Smart NPV - main office\".",
       credentials: "Credentials",
       keepCredentials: "Leave empty to keep the saved credentials.",
+      sharedCredentials: "Uses the key saved in this tenant's Documents settings. Change it there.",
       config: "Settings (JSON)",
       configHint: "Deal-date order, skip rules and country code. Empty uses the defaults.",
       save: "Save",

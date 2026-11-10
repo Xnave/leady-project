@@ -69,6 +69,12 @@ export type ClientConnector<Credentials = unknown, Session = unknown, Config ext
   label: Localized;
   credentialsSchema: z.ZodType<Credentials>;
   credentialFields: CredentialFieldDef[];
+  /**
+   * Credentials the tenant already saved elsewhere (e.g. the Smart NPV key on the
+   * documents capability). When this returns a value it wins over the source's
+   * own credentials, so one key lives in one place.
+   */
+  sharedCredentials?(tenantId: string): Promise<Credentials | null>;
   /** Fills defaults; throws ZodError on a bad tenant config. */
   parseConfig(raw: unknown): Config;
   /** CRM-specific login. Throw ConnectorAuthError on bad credentials. */

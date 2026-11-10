@@ -910,6 +910,7 @@ export const he: UiCopy = {
       labelHint: "מוצג לעסק, למשל \"Smart NPV - משרד ראשי\".",
       credentials: "פרטי התחברות",
       keepCredentials: "להשאיר ריק כדי לשמור את הפרטים הקיימים.",
+      sharedCredentials: "משתמשים במפתח שנשמר בהגדרות המסמכים של העסק. משנים אותו שם.",
       config: "הגדרות (JSON)",
       configHint: "סדר תאריך העסקה, כללי דילוג וקידומת מדינה. ריק = ברירת מחדל.",
       save: "שמירה",

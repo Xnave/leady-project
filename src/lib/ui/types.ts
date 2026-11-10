@@ -631,6 +631,8 @@ export type UiCopy = {
       labelHint: string;
       credentials: string;
       keepCredentials: string;
+      /** The Smart NPV key is already saved in Documents settings and is reused. */
+      sharedCredentials: string;
       config: string;
       configHint: string;
       save: string;

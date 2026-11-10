@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { fetchSmartClientList, SmartNpvAuthError } from "@/lib/documents/smart-npv";
 import { baseConfigSchema, dealDateStepSchema } from "./config";
 import { deriveDealDate, parseClientDate, type DealDateStep } from "./dates";
 import {
@@ -10,21 +11,17 @@ import {
 } from "./types";
 
 /**
- * Smart NPV (any tenant on it). API: https://api.snpv.co.il, host www.snpv.co.il.
+ * Smart NPV (any tenant on it). HTTP lives in `src/lib/documents/smart-npv.ts`,
+ * the one module that talks to Smart NPV and only to its official host.
  * Auth is one static api_key per account, so `authenticate` only checks it is
  * there; a bad key surfaces on the first `clients/list`.
  *
- * Only `clients/list` is used. Every row is the full client payload (100+
- * fields); we keep only the catalog below and never store id numbers,
- * birthdays, income or amounts.
+ * The key is read from the documents capability when the tenant has one there
+ * (`sharedCredentials`), so a tenant keeps one Smart NPV key in one place.
  *
- * TODO(docs-capability): `src/lib/documents/smart-npv.ts` on that branch is the
- * Smart NPV HTTP module for document upload. Once it merges, move the list call
- * there (it currently maps rows to a document profile and drops raw fields)
- * and read the tenant's key from one place.
+ * Every `clients/list` row is the full client payload (100+ fields); we keep
+ * only the catalog below and never store id numbers, birthdays, income or amounts.
  */
-
-export const SMARTNPV_DEFAULT_BASE_URL = "https://www.snpv.co.il";
 
 /** Default ladder from the client-campaigns design. Tenants override it in config. */
 export const SMARTNPV_DEFAULT_DEAL_DATE: DealDateStep[] = [
@@ -40,7 +37,6 @@ const credentialsSchema = z.object({ apiKey: z.string().trim().min(8) });
 export type SmartNpvCredentials = z.infer<typeof credentialsSchema>;
 
 const configSchema = baseConfigSchema.extend({
-  baseUrl: z.string().url().default(SMARTNPV_DEFAULT_BASE_URL),
   pageSize: z.number().int().min(10).max(500).default(100),
   /** Pause between pages, to stay polite to the CRM. */
   pageDelayMs: z.number().int().min(0).max(5000).default(300),
@@ -78,11 +74,6 @@ function ddmmyyyy(d: Date): string {
   return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
 }
 
-export function apiRoot(baseUrl: string): string {
-  const base = baseUrl.replace(/\/$/, "");
-  return /\/api\/v2$/i.test(base) ? base : `${base}/api/v2`;
-}
-
 /** Map one `clients/list` row. Returns null when the row has no uuid. */
 export function mapSmartNpvRow(row: Record<string, unknown>): ClientRecord | null {
   const externalId = text(row.uuid);
@@ -99,13 +90,6 @@ export function mapSmartNpvRow(row: Record<string, unknown>): ClientRecord | nul
   return { externalId, phone: text(row.phone_1), name, fields, updatedAt };
 }
 
-type ListEnvelope = {
-  response?: boolean;
-  responseMessage?: string;
-  responseClientsCount?: number;
-  responseClients?: Record<string, unknown>[];
-};
-
 export function createSmartNpvConnector(opts: { fetchImpl?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {}): ClientConnector<
   SmartNpvCredentials,
   SmartNpvSession,
@@ -121,6 +105,15 @@ export function createSmartNpvConnector(opts: { fetchImpl?: typeof fetch; sleep?
     sessionTtlSeconds: null,
     fieldCatalog: SMARTNPV_FIELDS,
 
+    async sharedCredentials(tenantId) {
+      // Dynamic: keeps the connector importable in unit tests without a DB.
+      const { loadInstanceConfig } = await import("@/lib/capability-instances");
+      const { decryptSecret } = await import("@/lib/crypto");
+      const docs = await loadInstanceConfig({ tenantId, capabilityId: "documents" });
+      const enc = typeof docs.apiKeyEnc === "string" ? docs.apiKeyEnc : "";
+      return enc ? { apiKey: decryptSecret(enc) } : null;
+    },
+
     async authenticate(credentials) {
       const parsed = credentialsSchema.safeParse(credentials);
       if (!parsed.success) throw new ConnectorAuthError("missing_api_key");
@@ -133,28 +126,26 @@ export function createSmartNpvConnector(opts: { fetchImpl?: typeof fetch; sleep?
       if (offset > 0 && config.pageDelayMs > 0) await sleep(config.pageDelayMs);
       // The API filters by day; step back one so an edit late on the last sync day is not missed.
       const from = updatedSince ? new Date(updatedSince.getTime() - 24 * 3600 * 1000) : new Date(Date.UTC(2000, 0, 1));
-      const query = new URLSearchParams({
-        api_key: session.apiKey,
-        range_type: updatedSince ? "2" : "1",
-        from: ddmmyyyy(from),
-        until: ddmmyyyy(new Date(Date.now() + 24 * 3600 * 1000)),
-        limit: String(config.pageSize),
-        offset: String(offset),
-      });
-      const res = await session.fetchImpl(`${apiRoot(config.baseUrl)}/clients/list?${query}`);
-      if (res.status === 401 || res.status === 403) throw new ConnectorAuthError(`smartnpv_http_${res.status}`);
-      if (!res.ok) throw new Error(`smartnpv clients/list HTTP ${res.status}`);
-      const body = ((await res.json().catch(() => ({}))) ?? {}) as ListEnvelope;
-      if (body.response === false) {
-        // Smart NPV answers a bad key with response:false and a message.
-        const message = text(body.responseMessage) || "clients/list failed";
-        if (/key|auth|permission|הרשא|מפתח/i.test(message)) throw new ConnectorAuthError(`smartnpv: ${message}`);
-        throw new Error(`smartnpv: ${message}`);
+      let page;
+      try {
+        page = await fetchSmartClientList({
+          apiKey: session.apiKey,
+          fetchImpl: session.fetchImpl,
+          query: {
+            rangeType: updatedSince ? 2 : 1,
+            from: ddmmyyyy(from),
+            until: ddmmyyyy(new Date(Date.now() + 24 * 3600 * 1000)),
+            limit: config.pageSize,
+            offset,
+          },
+        });
+      } catch (err) {
+        if (err instanceof SmartNpvAuthError) throw new ConnectorAuthError(`smartnpv: ${err.message}`);
+        throw err;
       }
-      const rows = Array.isArray(body.responseClients) ? body.responseClients : [];
+      const { rows, total } = page;
       const clients = rows.map(mapSmartNpvRow).filter((c): c is ClientRecord => c !== null);
       const seen = offset + rows.length;
-      const total = typeof body.responseClientsCount === "number" ? body.responseClientsCount : null;
       const more = rows.length >= config.pageSize && (total == null || seen < total);
       return { clients, nextCursor: more ? String(seen) : null };
     },
