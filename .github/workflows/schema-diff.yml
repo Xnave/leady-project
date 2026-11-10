@@ -2,7 +2,9 @@
 # so a schema change is not merged before its migration.
 # Staging runs the same diff and reports it. A staging diff does not fail the workflow.
 #
-# Secrets (repository or environment): STAGING_DATABASE_URL, PRODUCTION_DATABASE_URL.
+# Secrets live on the GitHub environments, not the repository:
+# Preview has STAGING_DATABASE_URL, Production has PRODUCTION_DATABASE_URL.
+# A job only receives an environment secret when it names that environment.
 # Mark "Diff against production" required in branch protection. Leave staging optional.
 
 name: Schema diff
@@ -15,6 +17,7 @@ jobs:
   staging:
     name: Diff against staging
     runs-on: ubuntu-latest
+    environment: Preview
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +38,7 @@ jobs:
   production:
     name: Diff against production
     runs-on: ubuntu-latest
+    environment: Production
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
