@@ -46,6 +46,8 @@ export type ChatCopy = {
   bookingConfirmIntro: string;
   /** Closing ask after the booking confirm fact block. */
   bookingConfirmAsk: string;
+  /** Customer said no to saving the visit. Ask whether to change the time or stop. */
+  bookingDeclineAsk: string;
   askVisitKind: string;
   askTime: (hours: string) => string;
   /** When a proposed time is outside venue hours. */
@@ -70,6 +72,64 @@ export type ChatCopy = {
   notePrefix: string;
   /** Span-request mechanics (dates, availability, approvals) - nouns come from config. */
   request: RequestChatCopy;
+  documents: {
+    askId: string;
+    notFound: string;
+    connectionDown: string;
+    notConfigured: string;
+    askStage: (docs: string) => string;
+    askIdCard: string;
+    askPayslips: string;
+    /**
+     * Ask for the payslip months still required. `held` is empty when none are
+     * confirmed saved. `who` is empty when the file has one borrower.
+     */
+    payslipGap: (held: string, missing: string, who: string) => string;
+    /** Attach a borrower to a document name: "ID card for Dana". */
+    ownedBy: (label: string, who: string) => string;
+    /** Attach a borrower to a full sentence that already asks for a file. */
+    forBorrower: (line: string, who: string) => string;
+    borrowerRole: Record<"salaried" | "self_employed" | "controlling_shareholder" | "both", string>;
+    borrowerOrder: Record<"1" | "2", string>;
+    askEmployment: (name: string) => string;
+    askSecondBorrower: string;
+    askCouple: string;
+    /** Who is self-employed when one borrower is salaried and the other is not. */
+    askSplitWho: (first: string, second: string) => string;
+    askIdBiometric: (name: string) => string;
+    askIdBack: string;
+    askFirstHome: string;
+    askLoans: string;
+    askMoreLoans: string;
+    askAccounts: string;
+    askSalaryDeposit: (name: string) => string;
+    askMorePhotos: string;
+    howTo: (docType: string) => string;
+    howToDetail: (docType: string) => string;
+    revised: (kind: string, detail?: string) => string;
+    retracted: string;
+    notIdBack: string;
+    idBackTryAgain: string;
+    confirmChange: (kind: string, detail?: string) => string;
+    confirmTurn: (changes: string[]) => string;
+    noLoans: string;
+    blankForm: (doc: string) => string;
+    nextStage: string;
+    advisorFlag: (label: string) => string;
+    received: (doc: string) => string;
+    rejected: (doc: string, reason: string, detail?: string) => string;
+    complete: string;
+    /** What the customer receives when an advisor sends files back. */
+    returnFiles: (items: { label: string; note: string }[]) => string;
+    askEscalate: string;
+    cooldownWait: (minutes: number) => string;
+    escalateAccepted: string;
+    escalateDeclined: string;
+    /** Kept for older dossiers that were already handed off. */
+    escalated: string;
+    uploadFailed: string;
+    reasons: Record<string, string>;
+  };
 };
 
 /**
@@ -103,6 +163,7 @@ export type RequestChatCopy = {
   sendBookingLink: (noun: string, url: string) => string;
   offerAltDates: (from: string, to: string) => string;
   offerDeclineAsk: string;
+  offerReplacement: (from: string, to: string) => string;
   offerUnclearAsk: string;
 };
 

@@ -6,7 +6,7 @@ export type LeadStatusId = "new" | "open" | "in_progress" | "won" | "lost";
 
 export type CatalogUiId = "inbox" | "faq";
 
-export type CapabilityUiId = "booking" | "reservations";
+export type CapabilityUiId = "booking" | "reservations" | "documents";
 
 export type BookingStanceUiId = "passive" | "proactive";
 
@@ -66,6 +66,8 @@ export type UiCopy = {
     digest: string;
     agent: string;
     clients: string;
+    documents: string;
+    campaigns: string;
   };
   langToggle: { he: string; en: string; uiLanguage: string };
   themeToggle: { appearance: string; system: string; light: string; dark: string };
@@ -90,6 +92,8 @@ export type UiCopy = {
     /** "expires {when}" on the acting-as chip. */
     actingExpires: string;
     clientSources: string;
+    /** Tenant row action: open the client campaigns add-on settings. */
+    campaigns: string;
   };
   page: {
     homeTitle: string;
@@ -678,6 +682,228 @@ export type UiCopy = {
       total: string;
       prev: string;
       next: string;
+    };
+  };
+  documentsUi: {
+    title: string;
+    settingsTitle: string;
+    settingsBlurb: string;
+    enabled: string;
+    baseUrl: string;
+    apiKey: string;
+    apiKeyHint: string;
+    testOnlyWarning: string;
+    testPhones: string;
+    testPhonesHint: string;
+    maxRejectTries: string;
+    maxRejectTriesHint: string;
+    rejectCooldownMinutes: string;
+    rejectCooldownMinutesHint: string;
+    rules: string;
+    rulesHint: string;
+    editor: {
+      stagesTitle: string;
+      stagesHint: string;
+      collectionTitle: string;
+      collectionHint: string;
+      addStage: string;
+      addWave: string;
+      moveUp: string;
+      moveDown: string;
+      remove: string;
+      nameHe: string;
+      nameEn: string;
+      id: string;
+      idHint: string;
+      documentsTitle: string;
+      documentsHint: string;
+      addDocument: string;
+      checks: string;
+      checkKind: string;
+      addCheck: string;
+      checkOps: Record<"field_present" | "matches_profile" | "date_within_months" | "prior_calendar_months" | "min_items", string>;
+      checkSentence: Record<"field_present" | "matches_profile" | "date_within_months" | "prior_calendar_months" | "min_items", string>;
+      checkField: string;
+      checkProfileKey: string;
+      checkMonths: string;
+      checkCount: string;
+      fields: string;
+      fieldsHint: string;
+      addField: string;
+      fieldPlaceholder: string;
+      blankForm: string;
+      blankFile: string;
+      askTitle: string;
+      askHint: string;
+      addRequirement: string;
+      document: string;
+      stage: string;
+      count: string;
+      when: string;
+      always: string;
+      onlyWhenAll: string;
+      onlyWhenAny: string;
+      condKey: string;
+      condValue: string;
+      valueKind: string;
+      condOps: Record<"eq" | "neq" | "gt" | "truthy", string>;
+      valueText: string;
+      valueNumber: string;
+      valueYes: string;
+      valueNo: string;
+      addCondition: string;
+      nestedCondition: string;
+      collectionWave: string;
+      each: string;
+      eachOnce: string;
+      eachBorrower: string;
+      eachAccount: string;
+      yearField: string;
+      yearNone: string;
+      monthsField: string;
+      countFromField: string;
+      countFixed: string;
+      countLoans: string;
+      taxYear: string;
+      accountantYear: string;
+      alwaysOpened: string;
+      fromFile: string;
+      engineTitle: string;
+      jsonTitle: string;
+      jsonHint: string;
+      jsonApply: string;
+      jsonDiscard: string;
+      jsonStale: string;
+      jsonInvalid: string;
+      reset: string;
+      resetConfirm: string;
+      resetYes: string;
+      cancel: string;
+      newStage: string;
+      newStageEn: string;
+      newWave: string;
+      newWaveEn: string;
+      newDocument: string;
+      newDocumentEn: string;
+      checksCount: string;
+      inUse: string;
+      issuesTitle: string;
+      nameHeRequired: string;
+      nameEnRequired: string;
+      idRequired: string;
+      idTaken: string;
+      fieldRequired: string;
+      checkUnknown: string;
+      docMissing: string;
+      stageMissing: string;
+      countInvalid: string;
+      condKeyRequired: string;
+      condValueRequired: string;
+      monthsInvalid: string;
+      stagesRequired: string;
+      collectionRequired: string;
+      blankFileRequired: string;
+      removeField: string;
+      openDocument: string;
+    };
+    testPhone: string;
+    test: string;
+    testOk: string;
+    testMissing: string;
+    saved: string;
+    failed: string;
+    missing: string;
+    uploaded: string;
+    releaseNext: string;
+    nextStageReleased: string;
+    releaseFailed: string;
+    openFile: string;
+    closeFile: string;
+    returnFiles: string;
+    returnFilesHint: string;
+    returnNote: string;
+    returnNotePlaceholder: string;
+    returnNeedOne: string;
+    returnSend: string;
+    markInvalid: string;
+    saveMark: string;
+    cancelMark: string;
+    sendToFix: string;
+    previousFile: string;
+    nextFile: string;
+    reason: string;
+    remote: string;
+    attach: string;
+    dropFile: string;
+    reasons: Record<string, string>;
+  };
+  /** Client campaigns add-on: templates tab (PR 1) and admin settings. */
+  campaigns: {
+    title: string;
+    blurb: string;
+    termsTitle: string;
+    termsBody: string[];
+    termsAccept: string;
+    termsAccepting: string;
+    whatsappFrom: string;
+    noWhatsApp: string;
+    templatesTitle: string;
+    templatesEmpty: string;
+    newTemplate: string;
+    fieldTitle: string;
+    fieldTitleHint: string;
+    categoryNames: Record<"MARKETING", string>;
+    fieldLanguage: string;
+    languageNames: Record<"he" | "en", string>;
+    fieldBody: string;
+    fieldBodyHint: string;
+    addVariable: string;
+    exampleFor: string;
+    lockedNote: string;
+    preview: string;
+    submit: string;
+    submitting: string;
+    confirmTitle: string;
+    confirmBody: string;
+    confirm: string;
+    cancel: string;
+    submitted: string;
+    refresh: string;
+    submittedBy: string;
+    status: Record<"DRAFT" | "PENDING" | "APPROVED" | "REJECTED" | "IN_APPEAL" | "PAUSED" | "DISABLED" | "PENDING_DELETION" | "FAILED", string>;
+    issues: Record<
+      | "title_required"
+      | "title_too_long"
+      | "body_required"
+      | "body_too_long"
+      | "variables_not_sequential"
+      | "example_missing"
+      | "variable_at_start"
+      | "variable_at_end"
+      | "prefix_in_body",
+      string
+    >;
+    errors: Record<"not_enabled" | "terms_required" | "no_whatsapp" | "provider_unavailable" | "submit_failed" | "failed", string>;
+    admin: {
+      title: string;
+      back: string;
+      enabled: string;
+      enabledHint: string;
+      adPrefix: string;
+      adPrefixHint: string;
+      adPrefixNote: string;
+      adPrefixNoteHint: string;
+      adPrefixOffBy: string;
+      ceiling: string;
+      ceilingHint: string;
+      whatsapp: string;
+      noWhatsApp: string;
+      terms: string;
+      termsNone: string;
+      save: string;
+      saving: string;
+      saved: string;
+      errors: Record<"prefix_note_required" | "ceiling_invalid" | "failed", string>;
     };
   };
 };

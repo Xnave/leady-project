@@ -88,7 +88,7 @@ async function zernio<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!key) throw new Error("Set ZERNIO_API_KEY or zerino_api_key in .env");
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${key}`);
-  if (init.body && !headers.has("Content-Type")) {
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   const res = await fetch(`${API}${path}`, { ...init, headers });
@@ -281,19 +281,70 @@ export async function sendZernioInboxMessage(opts: {
   accountId: string;
   conversationId: string;
   text: string;
+  file?: { filename: string; mime: string; bytes: Buffer };
 }): Promise<void> {
-  await zernio(`/inbox/conversations/${encodeURIComponent(opts.conversationId)}/messages`, {
-    method: "POST",
-    body: JSON.stringify({
-      accountId: opts.accountId,
-      message: opts.text,
-    }),
-  });
+  const route = `/inbox/conversations/${encodeURIComponent(opts.conversationId)}/messages`;
+  if (!opts.file) {
+    await zernio(route, {
+      method: "POST",
+      body: JSON.stringify({ accountId: opts.accountId, message: opts.text }),
+    });
+    return;
+  }
+  const form = new FormData();
+  form.append("accountId", opts.accountId);
+  form.append("message", opts.text);
+  form.append(
+    "file",
+    new Blob([new Uint8Array(opts.file.bytes)], { type: opts.file.mime || "application/pdf" }),
+    opts.file.filename,
+  );
+  await zernio(route, { method: "POST", body: form });
 }
 
 function asTrimmedString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
+
+function attachmentFrom(raw: unknown): ZernioAttachment | null {
+  if (!raw || typeof raw !== "object") return null;
+  const item = raw as Record<string, unknown>;
+  const url =
+    asTrimmedString(item.url) ||
+    asTrimmedString(item.link) ||
+    asTrimmedString(item.downloadUrl);
+  if (!url) return null;
+  const filename =
+    asTrimmedString(item.filename) ||
+    asTrimmedString(item.fileName) ||
+    asTrimmedString(item.name) ||
+    "file";
+  const mime =
+    asTrimmedString(item.mime) ||
+    asTrimmedString(item.mimeType) ||
+    asTrimmedString(item.contentType) ||
+    "application/octet-stream";
+  return { url, mime, filename };
+}
+
+/** Read every file on a Zernio message. Text-only messages return an empty list. */
+export function parseZernioAttachments(message: Record<string, unknown>): ZernioAttachment[] {
+  const found: ZernioAttachment[] = [];
+  const push = (raw: unknown) => {
+    const attachment = attachmentFrom(raw);
+    if (attachment) found.push(attachment);
+  };
+  if (Array.isArray(message.attachments)) message.attachments.forEach(push);
+  if (Array.isArray(message.files)) message.files.forEach(push);
+  if (message.media && typeof message.media === "object") push(message.media);
+  return found;
+}
+
+export type ZernioAttachment = {
+  url: string;
+  mime: string;
+  filename: string;
+};
 
 export type ZernioInbound = {
   eventId: string;
@@ -305,6 +356,7 @@ export type ZernioInbound = {
   platform?: string;
   senderName?: string;
   senderUsername?: string;
+  attachments: ZernioAttachment[];
 };
 
 export type ZernioInboxContact = {
@@ -407,5 +459,6 @@ export function parseZernioMessageReceived(payload: unknown): ZernioInbound | nu
     platform,
     senderName: senderName || undefined,
     senderUsername: senderUsername || undefined,
+    attachments: parseZernioAttachments(message),
   };
 }

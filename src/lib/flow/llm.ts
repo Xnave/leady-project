@@ -9,7 +9,7 @@ import { askBookingField } from "./booking";
 import { venueHoursFromCtx } from "./booking-config";
 import { callbackPhone, effectiveBookingRequired } from "./booking-collect";
 import { ensureFlowRegistry } from "./capabilities";
-import { getCapability, resolveTalkCapabilities } from "./registry";
+import { getCapability, resolveTalkCapabilities, runBeforeTalk } from "./registry";
 import { buildNudgeSystemPrompt, buildTalkSystemPrompt, talkTransitionTargets } from "./prompt-builder";
 import { canCallStartNewConversation } from "./affirm";
 import { hasAgentReplied } from "./intro";
@@ -225,6 +225,9 @@ export async function draftNudgeReply(
 
 export async function talkTurn(ctx: TurnContext, stage: TalkStage): Promise<TalkOutcome> {
   ensureFlowRegistry();
+
+  const early = runBeforeTalk(ctx, stage);
+  if (early) return early;
 
   // A bare first "hi" needs no model: the persona greeting answers it.
   const greeting = greetingOnlyReply(ctx);

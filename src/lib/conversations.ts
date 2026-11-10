@@ -94,6 +94,8 @@ export async function persistInboundIfNew(opts: {
   text: string;
   displayName?: string;
   extraFields?: Record<string, unknown>;
+  /** Files on this inbound message. Bytes, when present, are already encrypted. */
+  attachments?: { url?: string; mime: string; filename: string; bytesEnc?: string }[];
   /** Skip a second channel+agent+tenant read when the webhook already loaded them. */
   channel?: InboundChannel;
 }): Promise<{ conversationId: string; messageId: string; leadId: string } | null> {
@@ -267,6 +269,9 @@ export async function persistInboundIfNew(opts: {
           role: "lead",
           text: opts.text,
           providerMessageId: opts.providerMessageId,
+          metadata: opts.attachments?.length
+            ? { attachments: opts.attachments }
+            : {},
           createdAt: now,
         },
       }),
@@ -292,6 +297,7 @@ const TURN_MESSAGE_TAKE = 16;
 export async function loadTurnContext(
   tenantId: string,
   conversationId: string,
+  opts?: { triggerMessageId?: string },
 ): Promise<TurnContext & { connection: ConnectionView }> {
   const loadStarted = Date.now();
   ensureFlowRegistry();
@@ -413,6 +419,7 @@ export async function loadTurnContext(
         tenantId,
         leadId: conversation.lead.id,
         conversationId: conversation.id,
+        triggerMessageId: opts?.triggerMessageId,
       });
       if (state !== undefined) capabilityState[id] = state;
     }),
@@ -463,6 +470,7 @@ export async function loadTurnContext(
       customerPhone: leadPhone,
       agentRepliesEnabled: conversation.channel.agentRepliesEnabled !== false,
     },
+    triggerMessageId: opts?.triggerMessageId,
     capabilityState,
     connection: {
       id: conversation.channel.id,
@@ -656,6 +664,8 @@ export async function completeHitlTaskWithDirectReply(opts: {
   taskId: string;
   actorUserId: string;
   reply: string;
+  /** A file return is a decline. Omitted means the teammate answered the customer. */
+  approved?: boolean;
 }) {
   const task = await prisma.hitlTask.findFirstOrThrow({
     where: { id: opts.taskId, tenantId: opts.tenantId, status: "open" },
@@ -665,7 +675,7 @@ export async function completeHitlTaskWithDirectReply(opts: {
       where: { id: task.id },
       data: {
         status: "done",
-        resolution: { note: opts.reply, approved: true, directReply: true },
+        resolution: { note: opts.reply, approved: opts.approved !== false, directReply: true },
         completedBy: opts.actorUserId,
         completedAt: new Date(),
       },
@@ -676,7 +686,7 @@ export async function completeHitlTaskWithDirectReply(opts: {
         leadId: task.leadId,
         conversationId: task.conversationId,
         category: "hitl",
-        action: "reply",
+        action: opts.approved === false ? "decline" : "reply",
         actorUserId: opts.actorUserId,
         actorLabel: resolveActorLabel(opts.actorUserId),
         summary: "",

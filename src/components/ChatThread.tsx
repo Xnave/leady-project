@@ -17,9 +17,40 @@ type Labels = {
   yesterday?: string;
 };
 
+const BLANK_FORM_NAMES: Record<string, string> = {
+  accountant_letter: "אישור רואה חשבון עוסק מורשה.pdf",
+  controlling_shareholder_letter: "אישור רואה חשבון לבעל שליטה (1).pdf",
+};
+
+function blankFormName(href: string): string | null {
+  try {
+    const url = new URL(href);
+    if (!url.pathname.endsWith("/api/documents/blank-form")) return null;
+    const type = url.searchParams.get("type") ?? "";
+    return url.searchParams.get("file") || BLANK_FORM_NAMES[type] || "form.pdf";
+  } catch {
+    return null;
+  }
+}
+
 function renderMessageText(text: string) {
-  return parseMessageTextParts(text).map((part, i) =>
-    part.kind === "url" ? (
+  return parseMessageTextParts(text).map((part, i) => {
+    if (part.kind !== "url") return <Fragment key={`t-${i}`}>{part.value}</Fragment>;
+    const form = blankFormName(part.href);
+    if (form) {
+      return (
+        <a
+          key={`a-${i}`}
+          className="bubble-file"
+          href={part.href}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {form}
+        </a>
+      );
+    }
+    return (
       <a
         key={`a-${i}`}
         className="bubble-link"
@@ -30,10 +61,8 @@ function renderMessageText(text: string) {
       >
         {part.href}
       </a>
-    ) : (
-      <Fragment key={`t-${i}`}>{part.value}</Fragment>
-    ),
-  );
+    );
+  });
 }
 
 function toDate(value: string | Date | null | undefined): Date | null {

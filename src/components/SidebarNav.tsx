@@ -20,6 +20,8 @@ const OWNER_ITEMS: { href: string; key: NavKey; countKey?: "leads" }[] = [
   { href: "/demo", key: "chat" },
   { href: "/settings/team", key: "team" },
   { href: "/settings/digest", key: "digest" },
+  { href: "/settings/documents", key: "documents" },
+  { href: "/campaigns", key: "campaigns" },
 ];
 
 const STAFF_ITEMS: { href: string; key: NavKey; adminOnly?: boolean }[] = [
@@ -48,6 +50,7 @@ const ICONS: Partial<Record<NavKey, ReactNode>> = {
   digest: <Icon d="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5" />,
   clients: <Icon d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6M3 20a6 6 0 0 1 12 0M16 4h5M16 8h5M17 12h4" />,
   agent: <Icon d="M12 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8M4 21a8 8 0 0 1 16 0M18 3l1.5 1.5M20 7h1.5" />,
+  campaigns: <Icon d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1M15 9a3 3 0 0 1 0 6M18 6a7 7 0 0 1 0 12" />,
 };
 
 const THEME_OPTIONS: { id: UiTheme; key: "system" | "light" | "dark"; icon: ReactNode }[] = [
@@ -80,6 +83,7 @@ export function SidebarNav({
   showTeam = false,
   showSettings = false,
   showClients = false,
+  showCampaigns = false,
   showAccount = false,
 }: {
   ui: UiCopy;
@@ -93,6 +97,8 @@ export function SidebarNav({
   showSettings?: boolean;
   /** A CRM is connected for this tenant and the user is owner/admin. */
   showClients?: boolean;
+  /** Client campaigns add-on is on and the user is owner/admin. */
+  showCampaigns?: boolean;
   showAccount?: boolean;
 }) {
   const pathname = usePathname();
@@ -107,6 +113,7 @@ export function SidebarNav({
     if (item.key === "team") return showTeam;
     if (item.key === "setup" || item.key === "channels") return showSettings;
     if (item.key === "clients") return showClients;
+    if (item.key === "campaigns") return showCampaigns;
     return true;
   });
   const staffItems = STAFF_ITEMS.filter((item) => !item.adminOnly || admin);

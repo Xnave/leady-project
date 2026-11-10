@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { applyTemplateStatusEvent } from "@/lib/campaigns/store";
+import { parseTemplateStatusEvent } from "@/lib/campaigns/templates";
 import { persistInboundIfNew } from "@/lib/conversations";
 import { verifyZernioSignature } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
@@ -43,26 +45,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  const templateStatus = parseTemplateStatusEvent(payload);
+  if (templateStatus) {
+    const rejected = checkSignature(req, raw);
+    if (rejected) return rejected;
+    if (!templateStatus.accountId) {
+      console.warn(JSON.stringify({ msg: "zernio.template_status.no_account", name: templateStatus.name }));
+      return NextResponse.json({ ok: true, updated: 0 });
+    }
+    const updated = await applyTemplateStatusEvent(templateStatus);
+    console.log(
+      JSON.stringify({ msg: "zernio.template_status", name: templateStatus.name, status: templateStatus.status, updated }),
+    );
+    return NextResponse.json({ ok: true, updated });
+  }
+
   const inbound = parseZernioMessageReceived(payload);
   if (!inbound) {
     return new Response("ignored", { status: 200 });
   }
 
   const secret = zernioWebhookSecret();
-  const signature =
-    req.headers.get("X-Zernio-Signature") ?? req.headers.get("X-Late-Signature");
-  // Production must never skip HMAC - without a secret anyone who knows a
-  // channel providerExternalId can inject inbound traffic.
-  if (!secret) {
-    if (isProductionRuntime()) {
-      console.error(
-        JSON.stringify({ msg: "zernio.webhook_secret_missing", status: 401 }),
-      );
-      return new Response("webhook secret not configured", { status: 401 });
-    }
-  } else if (!verifyZernioSignature(raw, signature, secret)) {
-    return new Response("bad signature", { status: 401 });
-  }
+  const rejected = checkSignature(req, raw);
+  if (rejected) return rejected;
 
   const { handleDigestReply } = await import("@/lib/crm/digest-send");
   // Digest traffic is owners on the platform number, not leads, so it runs
@@ -159,6 +164,7 @@ export async function POST(req: Request) {
           ? instagramIdentityFields(senderName, senderUsername)
           : {}),
       },
+      attachments: inbound.attachments,
       channel,
     }),
   );
@@ -217,4 +223,28 @@ export async function POST(req: Request) {
     }),
   );
   return NextResponse.json({ ok: true });
+}
+
+/**
+ * Production must never skip HMAC - without a secret anyone who knows a
+ * channel providerExternalId can inject inbound traffic. Returns the error
+ * response to send, or null when the request may proceed.
+ */
+function checkSignature(req: Request, raw: string): Response | null {
+  const secret = zernioWebhookSecret();
+  const signature =
+    req.headers.get("X-Zernio-Signature") ?? req.headers.get("X-Late-Signature");
+  if (!secret) {
+    if (isProductionRuntime()) {
+      console.error(
+        JSON.stringify({ msg: "zernio.webhook_secret_missing", status: 401 }),
+      );
+      return new Response("webhook secret not configured", { status: 401 });
+    }
+    return null;
+  }
+  if (!verifyZernioSignature(raw, signature, secret)) {
+    return new Response("bad signature", { status: 401 });
+  }
+  return null;
 }

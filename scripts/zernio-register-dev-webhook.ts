@@ -55,7 +55,7 @@ async function main() {
   const webhook = await createZernioWebhookSettings({
     name: `Zapidly local dev ${new Date().toISOString().slice(0, 10)}`,
     url: webhookUrl,
-    events: ["message.received"],
+    events: ["message.received", "whatsapp.template.status_updated"],
     ...(secret ? { secret } : {}),
   });
 
