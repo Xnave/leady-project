@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { SYNC_PAGE, createdAfter, matchesStoredPhone, syncTenantClients } from "./client-sync";
+import { SYNC_PAGE, createdOnOrAfter, matchesStoredPhone, syncTenantClients } from "./client-sync";
 import type { SmartClient, SmartClientHit } from "./smart-npv";
 
 function hit(id: string, createdOn: string, phone1 = "0501111111", phone2 = "0522222222"): SmartClientHit {
@@ -25,9 +25,9 @@ describe("syncTenantClients", () => {
     expect(saveClient).not.toHaveBeenCalled();
   });
 
-  it("stores only clients created after the cursor, including a second page, and retries a failed GET", async () => {
+  it("stores clients created on the cursor day or later, including a second page, and retries a failed GET", async () => {
     const first = Array.from({ length: SYNC_PAGE }, (_, index) =>
-      hit(index === 0 ? "new-a" : index === 1 ? "fail-b" : `old-${index}`, index < 2 ? "2026-11-12" : "2026-11-10"),
+      hit(index === 0 ? "new-a" : index === 1 ? "fail-b" : `old-${index}`, index < 2 ? "2026-11-12" : "2026-11-09"),
     );
     const second = [hit("new-c", "2026-11-13", "0503333333", ""), hit("same-day", "2026-11-10")];
     const listClients = vi.fn(async (query: { offset?: number; rangeType?: number; from?: string; until?: string }) => {
@@ -40,6 +40,7 @@ describe("syncTenantClients", () => {
       if (query.clientId === "fail-b") throw new Error("timeout");
       if (query.clientId === "new-a") return hit("new-a", "2026-11-12");
       if (query.clientId === "new-c") return hit("new-c", "2026-11-13", "0503333333", "0524444444");
+      if (query.clientId === "same-day") return hit("same-day", "2026-11-10");
       throw new Error(`unexpected ${query.clientId}`);
     });
     const saved: string[] = [];
@@ -53,14 +54,15 @@ describe("syncTenantClients", () => {
         saved.push(row.smartClientId);
       },
     });
-    expect(saved).toEqual(["new-c"]);
-    expect(outcome.imported).toBe(1);
+    expect(saved).toEqual(["new-c", "same-day"]);
+    expect(outcome.imported).toBe(2);
     expect(outcome.failed).toBe(1);
     expect(findClient).toHaveBeenCalledWith({ clientId: "fail-b" });
-    expect(findClient).not.toHaveBeenCalledWith({ clientId: "same-day" });
+    expect(findClient).toHaveBeenCalledWith({ clientId: "same-day" });
     expect(findClient.mock.calls.every((call) => "clientId" in (call[0] as object))).toBe(true);
-    expect(createdAfter("2026-11-10", "2026-11-10")).toBe(false);
-    expect(createdAfter("2026-11-11", "2026-11-10")).toBe(true);
+    expect(createdOnOrAfter("2026-11-09", "2026-11-10")).toBe(false);
+    expect(createdOnOrAfter("2026-11-10", "2026-11-10")).toBe(true);
+    expect(createdOnOrAfter("2026-11-11", "2026-11-10")).toBe(true);
   });
 });
 

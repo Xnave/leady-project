@@ -442,14 +442,14 @@ model SmartNpvSync {
   id         String   @id @default(cuid())
   tenantId   String   @unique
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  /** YYYY-MM-DD in Asia/Jerusalem. Set on the first run; nothing is imported that day. */
+  /** YYYY-MM-DD in Asia/Jerusalem. Set on the first run, which imports nothing. Later runs include this day. */
   cursorDate String
   lastRunAt  DateTime @default(now())
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
 
-/** A Smart NPV client created after the sync cursor. Not a lead until they message. */
+/** A Smart NPV client created on or after the sync cursor day. Not a lead until they message. */
 model SmartNpvClient {
   id            String   @id @default(cuid())
   tenantId      String

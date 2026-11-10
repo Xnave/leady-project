@@ -1,7 +1,8 @@
 /**
- * Hourly import of Smart NPV clients created after the first run.
+ * Hourly import of Smart NPV clients created on or after the first run.
  * The first run only records today's date. Later runs keep rows whose
- * `created` date is after that day. No lead, dossier, or WhatsApp message.
+ * `created` date is that day or later. The date has no time, so the whole
+ * cursor day is included. No lead, dossier, or WhatsApp message.
  */
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -52,9 +53,9 @@ export function smartListDay(iso: string): string {
   return `${day}/${month}/${year}`;
 }
 
-/** True when the list row's created date is strictly after the cursor day. */
-export function createdAfter(createdOn: string, cursorDate: string): boolean {
-  return Boolean(createdOn && cursorDate && createdOn > cursorDate);
+/** True when the list row's created date is the cursor day or later. */
+export function createdOnOrAfter(createdOn: string, cursorDate: string): boolean {
+  return Boolean(createdOn && cursorDate && createdOn >= cursorDate);
 }
 
 /** Same 05… form stored on SmartNpvClient and used to match a WhatsApp sender. */
@@ -101,7 +102,7 @@ export async function syncTenantClients(deps: SyncDeps): Promise<SyncOutcome> {
       until,
     });
     for (const row of page) {
-      if (!createdAfter(row.createdOn, deps.cursorDate)) {
+      if (!createdOnOrAfter(row.createdOn, deps.cursorDate)) {
         skipped += 1;
         continue;
       }
@@ -224,8 +225,8 @@ export async function syncSmartNpvTenant(tenantId: string, now = new Date()): Pr
 
 /**
  * The first time a tenant saves a real key, record today's cursor and import
- * nothing. A later sync, including Sync now, only keeps clients created after
- * that day. Saving again does not move the cursor.
+ * nothing. A later sync, including Sync now, keeps clients created on that
+ * day or later. Saving again does not move the cursor.
  */
 export async function startClientSyncOnKeySave(
   tenantId: string,
