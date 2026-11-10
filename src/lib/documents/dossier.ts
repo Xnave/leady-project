@@ -37,6 +37,7 @@ import { applyCustomerAnswers, applyExtractedBiometric, borrowerFileWho, borrowe
 import { docLabel, type BlankFormDef, type Profile, type RulesDocument, type Slot } from "./rules";
 import { checklistSlots, nextCollectionStageId, releasedStageId } from "./mortgage-rules";
 import { isImageFile, isUploadableFile, smartUploadName, uploadDay } from "./file-types";
+import { storedClientByPhone } from "./client-sync";
 import { filesToPdf, photoDone } from "./images";
 import { slotNeedsUpload, SMART_NPV_HOST, SmartNpvAuthError, smartClientFor, type SmartClient } from "./smart-npv";
 import {
@@ -81,6 +82,10 @@ export type DocumentsTurnState = {
   asks: OpenQuestion[];
   /** A file arrived on this turn, so ingest runs even before the intro. */
   pendingFile: boolean;
+  /** The sender's phone is not in the hourly client table. */
+  unrecognized?: boolean;
+  /** Prefix the unrecognized sentence once, then keep answering. */
+  sayUnrecognized?: boolean;
 };
 
 /** The turn already carries the Zernio ids. `connection` is set by loadTurnContext. */
@@ -313,9 +318,11 @@ export async function loadDocumentsTurnState(args: {
       missing: [],
       asks: [],
       pendingFile: false,
+      unrecognized: false,
+      sayUnrecognized: false,
     };
   }
-  const [dossier, inbound, stored, lastAgent] = await Promise.all([
+  const [dossier, inbound, stored, lastAgent, lead] = await Promise.all([
     prisma.dossier.findFirst({
       where: { tenantId: args.tenantId, leadId: args.leadId },
       orderBy: { createdAt: "desc" },
@@ -328,6 +335,10 @@ export async function loadDocumentsTurnState(args: {
       where: { tenantId: args.tenantId, conversationId: args.conversationId, role: { in: ["agent", "human"] } },
       orderBy: { createdAt: "desc" },
       select: { text: true },
+    }),
+    prisma.lead.findFirst({
+      where: { id: args.leadId, tenantId: args.tenantId },
+      select: { externalUserId: true, fields: true },
     }),
   ]);
   const state = dossier ? stateOf(dossier) : null;
@@ -343,7 +354,7 @@ export async function loadDocumentsTurnState(args: {
   const closingPhotos = Boolean(state?.profile.imageBatchSlot && photoDone(inbound.newestText));
   const escalatePending = Boolean(state && escalateOfferPending(state.profile));
   const coolPending = Boolean(state && coolActive(state.profile));
-  const runIngest =
+  let runIngest =
     !state ||
     state.status === "needs_id" ||
     inbound.files.length > 0 ||
@@ -353,6 +364,24 @@ export async function loadDocumentsTurnState(args: {
     (escalatePending && Boolean(inbound.newestText.trim())) ||
     (coolPending && inbound.files.length > 0) ||
     (state.status === "gathering" && Boolean(inbound.newestText.trim()));
+  const fields = isRecord(lead?.fields) ? lead.fields : {};
+  const phone = (typeof fields.phone === "string" ? fields.phone : "") || lead?.externalUserId || "";
+  let unrecognized = false;
+  let sayUnrecognized = false;
+  if (!isTestLead(config, phone) && (!state || state.status === "needs_id")) {
+    const known = await storedClientByPhone(args.tenantId, phone);
+    if (!known) {
+      runIngest = false;
+      unrecognized = true;
+      sayUnrecognized = fields.documentsUnrecognized !== true;
+      if (sayUnrecognized && lead) {
+        await prisma.lead.update({
+          where: { id: args.leadId },
+          data: { fields: { ...fields, documentsUnrecognized: true } as Prisma.InputJsonValue },
+        });
+      }
+    }
+  }
   return {
     configured: true,
     runIngest,
@@ -362,6 +391,8 @@ export async function loadDocumentsTurnState(args: {
     missing: state ? missingLabels(state, config.rules, "en") : [],
     asks: state ? openQuestions(state.profile) : [],
     pendingFile: inbound.files.length > 0,
+    unrecognized,
+    sayUnrecognized,
   };
 }
 
@@ -1119,6 +1150,9 @@ function offlineSmartClient(): SmartClient {
       return {
         clientId: "test",
         profile: factsFromClient({}),
+        createdOn: "",
+        phone1: "",
+        phone2: "",
       };
     },
     async listClients() {
@@ -1147,7 +1181,7 @@ function uploadNameFor(state: DossierState, rules: RulesDocument, slotId: string
   return name;
 }
 
-/** Find the Smart NPV client, or leave the dossier on needs_id. */
+/** Find the stored client, or leave a test lead on needs_id. Live phones never call clients/get. */
 async function matchClient(opts: IngestLines & {
   config: DocumentConfig;
   client: SmartClient;
@@ -1160,6 +1194,12 @@ async function matchClient(opts: IngestLines & {
 }): Promise<{ row: DossierRow | null; done?: { ok: boolean; reply: string } }> {
   let { row } = opts;
   if (row && row.status !== "needs_id") return { row };
+  const testing = isTestLead(opts.config, phoneOf(opts.ctx));
+  if (!testing) {
+    const stored = await storedClientByPhone(opts.ctx.tenantId, phoneOf(opts.ctx));
+    if (!stored) return { row, done: { ok: true, reply: "" } };
+    return openMatchedDossier(opts, row, { clientId: stored.smartClientId, profile: stored.profile });
+  }
   let found: Awaited<ReturnType<SmartClient["findClient"]>>;
   try {
     found =
@@ -1191,6 +1231,14 @@ async function matchClient(opts: IngestLines & {
     await safeRefreshLeadState(opts.ctx.tenantId, opts.ctx.lead.id);
     return { row, done: { ok: true, reply } };
   }
+  return openMatchedDossier(opts, row, found);
+}
+
+async function openMatchedDossier(
+  opts: IngestLines & { config: DocumentConfig; answerText: string; bare: boolean },
+  row: DossierRow | null,
+  found: { clientId: string; profile: Profile },
+): Promise<{ row: DossierRow | null; done?: { ok: boolean; reply: string } }> {
   const answered = applyCustomerAnswers(found.profile, opts.answerText, new Date(), { bare: opts.bare });
   const opened = freshDossier({
     smartClientId: found.clientId,
@@ -1205,12 +1253,12 @@ async function matchClient(opts: IngestLines & {
     activeStage: opened.activeStage,
     conversationId: opts.ctx.conversation.id,
   };
-  row = row
+  const next = row
     ? await prisma.dossier.update({ where: { id: row.id }, data })
     : await prisma.dossier.create({
         data: { tenantId: opts.ctx.tenantId, leadId: opts.ctx.lead.id, ...data },
       });
-  return { row };
+  return { row: next };
 }
 
 async function rejectEmptyStored(tenantId: string, dossierId: string): Promise<void> {

@@ -53,6 +53,8 @@ model Tenant {
   alertSettings        TenantAlertSettings?
   dossiers             Dossier[]
   leadDocuments        LeadDocument[]
+  smartNpvSync         SmartNpvSync?
+  smartNpvClients      SmartNpvClient[]
   campaignSettings     TenantCampaignSettings?
   whatsAppTemplates    WhatsAppTemplate[]
 }
@@ -433,6 +435,37 @@ model LeadDocument {
   @@index([tenantId, dossierId])
   @@index([tenantId, leadId])
   @@index([tenantId, messageId])
+}
+
+/** The day the hourly client sync started. Clients created on or before this day stay out. */
+model SmartNpvSync {
+  id         String   @id @default(cuid())
+  tenantId   String   @unique
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /** YYYY-MM-DD in Asia/Jerusalem. Set on the first run; nothing is imported that day. */
+  cursorDate String
+  lastRunAt  DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+/** A Smart NPV client created after the sync cursor. Not a lead until they message. */
+model SmartNpvClient {
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  smartClientId String
+  phone1        String   @default("")
+  phone2        String   @default("")
+  /** Checklist facts from clients/get. */
+  profile       Json     @default("{}")
+  /** YYYY-MM-DD from the list row's created field. */
+  createdOn     String   @default("")
+  syncedAt      DateTime @default(now())
+
+  @@unique([tenantId, smartClientId])
+  @@index([tenantId, phone1])
+  @@index([tenantId, phone2])
 }
 
 model MediaAsset {

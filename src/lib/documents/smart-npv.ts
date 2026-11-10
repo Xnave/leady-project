@@ -21,7 +21,14 @@ function isPdfUpload(mime: string, filename: string): boolean {
   return mime.toLowerCase() === "application/pdf" || filename.toLowerCase().endsWith(".pdf");
 }
 
-export type SmartClientHit = { clientId: string; profile: Profile };
+export type SmartClientHit = {
+  clientId: string;
+  profile: Profile;
+  /** YYYY-MM-DD from the list row, when Smart NPV sent `created`. */
+  createdOn: string;
+  phone1: string;
+  phone2: string;
+};
 
 export type SmartListQuery = {
   limit?: number;
@@ -43,7 +50,7 @@ export type SmartListQuery = {
  * call is recorded under the file_name we sent. There is no delete.
  */
 export type SmartClient = {
-  findClient(query: { phone?: string; nationalId?: string }): Promise<SmartClientHit | null>;
+  findClient(query: { phone?: string; nationalId?: string; clientId?: string }): Promise<SmartClientHit | null>;
   listClients(query?: SmartListQuery): Promise<SmartClientHit[]>;
   upload(opts: {
     clientId: string;
@@ -119,17 +126,37 @@ export function mapSmartProfile(raw: Record<string, unknown>, preferId = ""): Pr
 function hitFromClient(raw: Record<string, unknown>, preferId = ""): SmartClientHit | null {
   const clientId = text(raw.uuid) || text(raw.clientId);
   if (!clientId) return null;
-  return { clientId, profile: mapSmartProfile(raw, preferId) };
+  return {
+    clientId,
+    profile: mapSmartProfile(raw, preferId),
+    createdOn: createdDay(raw.created),
+    phone1: toSmartPhone(text(raw.phone_1) || text(raw.phone)),
+    phone2: toSmartPhone(text(raw.phone_2)),
+  };
+}
+
+/** `created` on a list row is a calendar date. Empty when it cannot be read. */
+export function createdDay(value: unknown): string {
+  const raw = text(value);
+  const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (dmy) {
+    return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+  }
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return iso ? `${iso[1]}-${iso[2]}-${iso[3]}` : "";
 }
 
 export function createFakeSmartClient(profile: Profile = FAKE_SMART_PROFILE): SmartClient {
   const hit = (phone?: string): SmartClientHit => ({
     clientId: "fake-client",
     profile: { ...profile, phone: phone || profile.phone },
+    createdOn: "",
+    phone1: toSmartPhone(phone || String(profile.phone ?? "")),
+    phone2: "",
   });
   return {
     async findClient(query) {
-      if (!query.phone && !query.nationalId) return null;
+      if (!query.phone && !query.nationalId && !query.clientId) return null;
       return hit(query.phone);
     },
     async listClients() {
@@ -186,6 +213,11 @@ export function createHttpSmartClient(opts: { baseUrl: string; apiKey: string; f
         if (!phone) return null;
         params.type = "phone";
         params.phone = phone;
+      } else if (query.clientId) {
+        const uuid = query.clientId.trim();
+        if (!uuid) return null;
+        params.type = "uuid";
+        params.uuid = uuid;
       } else if (query.nationalId) {
         const idNumber = digits(query.nationalId);
         if (!idNumber) return null;

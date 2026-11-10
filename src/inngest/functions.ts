@@ -176,6 +176,19 @@ export const crmDigest = inngest.createFunction(
   },
 );
 
+/** Hourly: import Smart NPV clients created after each tenant's cursor day. */
+export const syncSmartNpvClients = inngest.createFunction(
+  { id: "sync-smart-npv-clients", retries: 2 },
+  { cron: "0 * * * *" },
+  async ({ step }) => {
+    const nowIso = await step.run("now", () => new Date().toISOString());
+    return step.run("sync-new-clients", async () => {
+      const { syncSmartNpvTenants } = await import("@/lib/documents/client-sync");
+      return syncSmartNpvTenants(new Date(nowIso));
+    });
+  },
+);
+
 /**
  * Instant WhatsApp alert to the owner for one approval or handoff task. In
  * off hours with "hold", it sleeps until they end; recipients are re-read
@@ -228,6 +241,6 @@ export const ownerAlert = inngest.createFunction(
 //     }),
 // );
 
-export const inngestFunctions = [runAgentTurn, nudgeIfSilent, crmDigest, ownerAlert
+export const inngestFunctions = [runAgentTurn, nudgeIfSilent, crmDigest, syncSmartNpvClients, ownerAlert
     // , purgeRapidDemos
 ];

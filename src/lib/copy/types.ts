@@ -74,6 +74,8 @@ export type ChatCopy = {
   request: RequestChatCopy;
   documents: {
     askId: string;
+    /** One line when the sender's phone was not imported. Later turns omit it. */
+    unrecognized: string;
     notFound: string;
     connectionDown: string;
     notConfigured: string;

@@ -50,6 +50,22 @@ describe("reconcileDocuments", () => {
     expect(next.complete).toBe(false);
   });
 
+  it("prefixes the unrecognized line once and leaves later replies alone", () => {
+    const waiting = ctx(false);
+    waiting.tenant = { id: "t1", name: "Office", chatLanguage: "en" } as unknown as TurnContext["tenant"];
+    const bag = waiting.capabilityState;
+    if (!bag) throw new Error("documents state missing");
+    const documents = bag.documents as { sayUnrecognized?: boolean; unrecognized?: boolean };
+    documents.sayUnrecognized = true;
+    documents.unrecognized = true;
+    const first = reconcileDocuments({ ctx: waiting, outcome: { reply: "Hours are 9 to 5." } });
+    expect(first.reply).toBe("This number isn't in the office system yet. I can still answer questions.\nHours are 9 to 5.");
+    expect(first.effects).toBeUndefined();
+    documents.sayUnrecognized = false;
+    const again = reconcileDocuments({ ctx: waiting, outcome: { reply: "Hours are 9 to 5." } });
+    expect(again.reply).toBe("Hours are 9 to 5.");
+  });
+
   it("leaves an ordinary reply alone when nothing is waiting", () => {
     const outcome: TalkOutcome = { reply: "What else can I help with?" };
     expect(reconcileDocuments({ ctx: ctx(false), outcome })).toEqual(outcome);
