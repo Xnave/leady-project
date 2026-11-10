@@ -50,6 +50,12 @@ function ctxWithFields(fields: Record<string, unknown>): TurnContext {
   };
 }
 
+function useVenueHours(ctx: TurnContext, venueHours: string) {
+  const tenant = ctx.tenant;
+  if (!tenant) throw new Error("tenant");
+  tenant.capabilityInstances = [bookingInstance({ venueHours, venueAddress: "1 Main" })];
+}
+
 describe("booking confirm_details rails", () => {
   beforeEach(() => {
     ensureFlowRegistry();
@@ -447,11 +453,7 @@ describe("booking confirm_details rails", () => {
 
   it("stores מחר ב-10 from the opener and asks the next gap", async () => {
     const ctx = ctxWithFields({});
-    if (ctx.tenant) {
-      ctx.tenant.capabilityInstances = [
-        bookingInstance({ venueHours: "09:00-19:00", venueAddress: "1 Main" }),
-      ];
-    }
+    useVenueHours(ctx, "09:00-19:00");
     ctx.messages = [{ role: "lead", text: "היי, אפשר לקבוע ביקור מחר ב-10?" }];
     const stage = ctx.agent.flow.stages.talk as TalkStage;
     const collected: {
@@ -472,11 +474,7 @@ describe("booking confirm_details rails", () => {
 
   it("stores a name passed on start and keeps the visit time already saved", async () => {
     const ctx = ctxWithFields({});
-    if (ctx.tenant) {
-      ctx.tenant.capabilityInstances = [
-        bookingInstance({ venueHours: "09:00-19:00", venueAddress: "1 Main" }),
-      ];
-    }
+    useVenueHours(ctx, "09:00-19:00");
     ctx.messages = [{ role: "lead", text: "היי, אני דנה כהן, אפשר לקבוע ביקור מחר ב-10?" }];
     const stage = ctx.agent.flow.stages.talk as TalkStage;
     const collected: {
@@ -553,11 +551,7 @@ describe("booking confirm_details rails", () => {
 
   it("stores a corrected מחר ב-10 even when ask_field names time", async () => {
     const ctx = ctxWithFields({ booking_flow: "active" });
-    if (ctx.tenant) {
-      ctx.tenant.capabilityInstances = [
-        bookingInstance({ venueHours: "09:00-19:00", venueAddress: "1 Main" }),
-      ];
-    }
+    useVenueHours(ctx, "09:00-19:00");
     ctx.messages = [
       { role: "lead", text: "אפשר לקבוע ביקור ב-25:00" },
       { role: "agent", text: "השעה 25:00 פחות עובדת לנו" },
@@ -657,11 +651,7 @@ describe("booking confirm_details rails", () => {
 
   it("does not restore an earlier visit time from a thank-you", () => {
     const ctx = ctxWithFields({});
-    if (ctx.tenant) {
-      ctx.tenant.capabilityInstances = [
-        bookingInstance({ venueHours: "09:00-19:00", venueAddress: "1 Main" }),
-      ];
-    }
+    useVenueHours(ctx, "09:00-19:00");
     ctx.messages = [
       { role: "lead", text: "היי, אפשר לקבוע ביקור מחר ב-10?" },
       { role: "agent", text: "רשמתי בקשה לפגישה" },

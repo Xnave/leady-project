@@ -125,7 +125,10 @@ export async function POST(req: Request) {
     if (body.action === "purge") {
       const before = body.before ? parseScenarioBefore(body.before) ?? undefined : undefined;
       if (body.before && !before) return jsonError(400, "bad_before");
-      const result = await purgeScenarioLeads(resolved.tenantIds, { leadId: body.leadId, before });
+      const result = await purgeScenarioLeads(resolved.tenantIds, {
+        leadId: body.leadId,
+        before: before ?? undefined,
+      });
       return NextResponse.json({ ok: true, ...result });
     }
     return jsonError(400, "bad_action");

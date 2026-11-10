@@ -25,16 +25,16 @@ Read [scripts/agent-scenarios/results.md](scripts/agent-scenarios/results.md) an
 
 ## Run
 
-This repo's dev server is on port **3001**. Port 3000 is a different app. Pass the base URL every time. Confirm with `lsof -nP -iTCP:3001 -sTCP:LISTEN` if the port may have changed.
+Pass the base URL every time. The runner's own default is `http://localhost:3000`. Confirm which port this repo's Next process is listening on with `lsof -nP -iTCP:3000 -sTCP:LISTEN` (and 3001 if that is empty) before a run.
 
 ```bash
-npm run scenarios -- --base-url http://localhost:3001
-npm run scenarios -- --base-url http://localhost:3001 --suite full
-npm run scenarios -- --base-url http://localhost:3001 --suite link
-npm run scenarios -- --base-url http://localhost:3001 --suite extra
-npm run scenarios -- --base-url http://localhost:3001 --only <id>[,<id>]
-npm run scenarios -- --base-url http://localhost:3001 --due
-npm run scenarios -- --base-url http://localhost:3001 --sample 2
+npm run scenarios -- --base-url http://localhost:3000
+npm run scenarios -- --base-url http://localhost:3000 --suite full
+npm run scenarios -- --base-url http://localhost:3000 --suite link
+npm run scenarios -- --base-url http://localhost:3000 --suite extra
+npm run scenarios -- --base-url http://localhost:3000 --only <id>[,<id>]
+npm run scenarios -- --base-url http://localhost:3000 --due
+npm run scenarios -- --base-url http://localhost:3000 --sample 2
 ```
 
 `--only` ignores suite, so an extra or link scenario runs without `--suite`. Default suite is smoke. `full` is smoke plus full. `link` and `extra` run only themselves.
@@ -75,7 +75,7 @@ Smoke and full use the hold tenant. Link uses the link tenant (`pool: "link"`). 
 3. `expect` is the hard state check (request, approval task, weekday, session, reply substrings). `review` is the note for a person reading the transcript.
 4. One line in [catalog.md](scripts/agent-scenarios/catalog.md).
 5. An empty row in [results.md](scripts/agent-scenarios/results.md) so the map shows it before the first run. Columns: Scenario, Variant, Cadence, Last run, Result, What went wrong, Conversation.
-6. Run `--only` that id on port 3001. The runner fills the row and the Conversation link.
+6. Run `--only` that id against this repo's dev server. The runner fills the row and the Conversation link.
 
 ## Change a scenario
 
@@ -86,12 +86,33 @@ Edit the turns, `expect`, or `review`, then run `--only` that id. Do not hand-ed
 One command. It deletes leads whose sender starts with `demo-scenario-`, on the booking, hold, and link tenants the server already allows. Real customer leads are not deleted. The results table and `scenario-runs/` files stay.
 
 ```bash
-npm run scenarios -- --base-url http://localhost:3001 --purge
-npm run scenarios -- --base-url http://localhost:3001 --purge-before 2026-11-01
-npm run scenarios -- --base-url http://localhost:3001 --purge-lead <leadId>
+npm run scenarios -- --base-url http://localhost:3000 --purge
+npm run scenarios -- --base-url http://localhost:3000 --purge-before 2026-11-01
+npm run scenarios -- --base-url http://localhost:3000 --purge-lead <leadId>
 ```
 
 `--purge-before` deletes leads created before local midnight of that day. Leads created on that day stay. Pass a `YYYY-MM-DD` date. Do not combine `--purge-lead` and `--purge-before`.
+
+## Provision the scenario tenants
+
+Smoke and full use two saved tenants. They are JSON fixtures, loaded by a Prisma script. `npm run db:seed` is a different tenant (the generic `dev-org` demo) and does not create these.
+
+| Fixture | Org created when no env id is set | What the scripts assume |
+| --- | --- | --- |
+| [tenants/booking.json](scripts/agent-scenarios/tenants/booking.json) | `scenario-booking` | מטבחי הזהב. Visit collect, in order: time, name, meeting purpose, phone (`talk.required_for_book`). |
+| [tenants/reservation.json](scripts/agent-scenarios/tenants/reservation.json) | `scenario-reservation` | וילה ג'ספר hold flow. Stay collect: name, phone, guests, unit. `submitMode` is `hitl`, so a pending request is expected. The visit instance on this tenant is disabled. |
+
+The link suite is a third tenant (`SCENARIO_RESERVATION_LINK_TENANT_ID`) and is not in these fixtures.
+
+```bash
+npm run scenarios:load-tenants
+```
+
+The script updates the tenant the runner already uses. Booking follows `SCENARIO_BOOKING_TENANT_ID`, or `DEV_TENANT_ID` when that is unset. Holds follow `SCENARIO_RESERVATION_TENANT_ID`. When the matching variable is empty, the script creates or updates the org in the table and prints the id to put in `.env`. A shell variable still wins over `.env`.
+
+Loading writes tenant profile, agent flow, persona, knowledge, and capability instances. It does not copy leads, messages, or channel tokens. It adds a local demo channel when the tenant has none. Reloading the same flow leaves `flowVersion` as it is. A changed flow bumps it and writes an `AgentConfigRevision`.
+
+Visit scripts answer a name, a meeting purpose, and a phone number only after the agent asks. That order is the booking fixture's collect list. If a load or a catalog rebuild drops phone, those scenarios fail on purpose.
 
 ## When the flow changes
 

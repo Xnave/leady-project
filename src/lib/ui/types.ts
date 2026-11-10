@@ -66,6 +66,7 @@ export type UiCopy = {
     digest: string;
     agent: string;
     documents: string;
+    campaigns: string;
   };
   langToggle: { he: string; en: string; uiLanguage: string };
   themeToggle: { appearance: string; system: string; light: string; dark: string };
@@ -89,6 +90,8 @@ export type UiCopy = {
     statusExpired: string;
     /** "expires {when}" on the acting-as chip. */
     actingExpires: string;
+    /** Tenant row action: open the client campaigns add-on settings. */
+    campaigns: string;
   };
   page: {
     homeTitle: string;
@@ -760,5 +763,74 @@ export type UiCopy = {
     attach: string;
     dropFile: string;
     reasons: Record<string, string>;
+  };
+  /** Client campaigns add-on: templates tab (PR 1) and admin settings. */
+  campaigns: {
+    title: string;
+    blurb: string;
+    termsTitle: string;
+    termsBody: string[];
+    termsAccept: string;
+    termsAccepting: string;
+    whatsappFrom: string;
+    noWhatsApp: string;
+    templatesTitle: string;
+    templatesEmpty: string;
+    newTemplate: string;
+    fieldTitle: string;
+    fieldTitleHint: string;
+    categoryNames: Record<"MARKETING", string>;
+    fieldLanguage: string;
+    languageNames: Record<"he" | "en", string>;
+    fieldBody: string;
+    fieldBodyHint: string;
+    addVariable: string;
+    exampleFor: string;
+    lockedNote: string;
+    preview: string;
+    submit: string;
+    submitting: string;
+    confirmTitle: string;
+    confirmBody: string;
+    confirm: string;
+    cancel: string;
+    submitted: string;
+    refresh: string;
+    submittedBy: string;
+    status: Record<"DRAFT" | "PENDING" | "APPROVED" | "REJECTED" | "IN_APPEAL" | "PAUSED" | "DISABLED" | "PENDING_DELETION" | "FAILED", string>;
+    issues: Record<
+      | "title_required"
+      | "title_too_long"
+      | "body_required"
+      | "body_too_long"
+      | "variables_not_sequential"
+      | "example_missing"
+      | "variable_at_start"
+      | "variable_at_end"
+      | "prefix_in_body",
+      string
+    >;
+    errors: Record<"not_enabled" | "terms_required" | "no_whatsapp" | "provider_unavailable" | "submit_failed" | "failed", string>;
+    admin: {
+      title: string;
+      back: string;
+      enabled: string;
+      enabledHint: string;
+      adPrefix: string;
+      adPrefixHint: string;
+      adPrefixNote: string;
+      adPrefixNoteHint: string;
+      adPrefixOffBy: string;
+      ceiling: string;
+      ceilingHint: string;
+      whatsapp: string;
+      noWhatsApp: string;
+      terms: string;
+      termsNone: string;
+      save: string;
+      saving: string;
+      saved: string;
+      errors: Record<"prefix_note_required" | "ceiling_invalid" | "failed", string>;
+    };
   };
 };
