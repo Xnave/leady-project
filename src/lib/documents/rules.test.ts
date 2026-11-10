@@ -64,7 +64,7 @@ describe("mortgage checklist", () => {
     expect(alone.secondBorrower).toBe("no");
     expect(alone.borrowers).toHaveLength(1);
     const pair = applyCustomerAnswers(profile, "כן").profile;
-    expect(pair.borrowers?.map((borrower) => borrower.slot)).toEqual(["1", "2"]);
+    expect(borrowersOf(pair).map((borrower) => borrower.slot)).toEqual(["1", "2"]);
     expect(nextQuestion(pair)?.kind).toBe("employment");
     expect(documentAskText(nextQuestion(pair)!, "he", copyFor("he").chat)).toContain("הלווה");
   });
@@ -79,11 +79,11 @@ describe("mortgage checklist", () => {
     const pair = applyCustomerAnswers(factsFromClient({}), "כן").profile;
     expect(nextQuestion(pair)?.kind).toBe("employment");
     const one = applyCustomerAnswers(pair, "שכיר").profile;
-    expect(one.borrowers?.map((borrower) => borrower.employment)).toEqual(["salaried", "unknown"]);
+    expect(borrowersOf(one).map((borrower) => borrower.employment)).toEqual(["salaried", "unknown"]);
     expect(nextQuestion(one)?.kind).toBe("employment");
     expect(documentAskText(nextQuestion(one)!, "he", copyFor("he").chat)).toContain("הלווה הנוסף");
     const mixed = applyCustomerAnswers(one, "עצמאי").profile;
-    expect(mixed.borrowers?.map((borrower) => borrower.employment)).toEqual(["salaried", "self_employed"]);
+    expect(borrowersOf(mixed).map((borrower) => borrower.employment)).toEqual(["salaried", "self_employed"]);
     const mixedSlots = checklistSlots({ ...mixed, firstHome: "true", loans: "none" }, MORTGAGE_RULES);
     expect(mixedSlots.filter((slot) => slot.docType === "payslip").map((slot) => slot.borrower)).toEqual(["1", "1", "1"]);
     expect(mixedSlots.filter((slot) => slot.docType === "tax_assessment").map((slot) => slot.borrower)).toEqual(["2"]);
@@ -98,7 +98,7 @@ describe("mortgage checklist", () => {
   it("reads לא שנינו שכירים as both borrowers salaried", () => {
     const pair = applyCustomerAnswers(factsFromClient({}), "כן").profile;
     const both = applyCustomerAnswers(pair, "לא שנינו שכירים").profile;
-    expect(both.borrowers?.map((borrower) => borrower.employment)).toEqual(["salaried", "salaried"]);
+    expect(borrowersOf(both).map((borrower) => borrower.employment)).toEqual(["salaried", "salaried"]);
     expect(nextQuestion(both)?.kind).toBe("first_home");
     const slots = checklistSlots({ ...both, firstHome: "true", loans: "none" }, MORTGAGE_RULES);
     expect(slots.filter((slot) => slot.docType === "payslip")).toHaveLength(6);
@@ -301,8 +301,8 @@ describe("mortgage checklist", () => {
     expect(openQuestions(answered).map((question) => question.kind)[0]).toBe("employment");
     expect(applyCustomerAnswers(answered, "לא").changed).toBe(false);
     const employed = applyCustomerAnswers(answered, "הוא עצמאי").profile;
-    expect(employed.borrowers?.find((borrower) => borrower.slot === "2")?.employment).toBe("self_employed");
-    expect(employed.borrowers?.find((borrower) => borrower.slot === "1")?.employment).toBe("salaried");
+    expect(borrowersOf(employed).find((borrower) => borrower.slot === "2")?.employment).toBe("self_employed");
+    expect(borrowersOf(employed).find((borrower) => borrower.slot === "1")?.employment).toBe("salaried");
     const home = applyCustomerAnswers(employed, "כן").profile;
     expect(home.firstHome).toBe("true");
     expect(applyCustomerAnswers(home, "לא").profile.loans).toBe("none");

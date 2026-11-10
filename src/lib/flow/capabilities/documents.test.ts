@@ -23,7 +23,7 @@ function ctx(runIngest: boolean): TurnContext {
       nudgeCountByStage: {},
     },
     lead: { id: "l1", externalUserId: "+1", fields: {} },
-    messages: [{ id: "m1", role: "agent", text: "שלום", createdAt: new Date() }],
+    messages: [{ role: "agent", text: "שלום", createdAt: new Date() }],
     capabilityState: {
         documents: {
           configured: true,
@@ -57,7 +57,7 @@ describe("reconcileDocuments", () => {
 
   it("lets the first hello stay the intro", () => {
     const first = ctx(true);
-    first.messages = [{ id: "m1", role: "lead", text: "שלום", createdAt: new Date() }];
+    first.messages = [{ role: "lead", text: "שלום", createdAt: new Date() }];
     const outcome: TalkOutcome = { reply: "היי, אני העוזרת." };
     expect(reconcileDocuments({ ctx: first, outcome })).toEqual(outcome);
   });
@@ -66,7 +66,9 @@ describe("reconcileDocuments", () => {
 describe("documentsBeforeTalk", () => {
   it("skips the model when every new file is an unsupported type", () => {
     const state = ctx(true);
-    const documents = state.capabilityState.documents as { unsupportedOnly: boolean };
+    const bag = state.capabilityState;
+    if (!bag) throw new Error("documents state missing");
+    const documents = bag.documents as { unsupportedOnly: boolean };
     documents.unsupportedOnly = true;
     expect(documentsBeforeTalk(state)?.effects?.map((effect) => effect.type)).toEqual(["ingest_document"]);
   });

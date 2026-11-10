@@ -349,7 +349,7 @@ export async function loadDocumentsTurnState(args: {
     closingPhotos ||
     (escalatePending && Boolean(inbound.newestText.trim())) ||
     (coolPending && inbound.files.length > 0) ||
-    ((state.status === "gathering" || state.status === "needs_id") && Boolean(inbound.newestText.trim()));
+    (state.status === "gathering" && Boolean(inbound.newestText.trim()));
   return {
     configured: true,
     runIngest,
@@ -1981,7 +1981,7 @@ async function closeImageBatch(opts: IngestLines & {
     docType: slot?.docType ?? "",
   });
   if (!uploaded.accepted) return opts.state;
-  let next = { ...uploaded.state, profile: { ...uploaded.state.profile, imageBatchSlot: "" } };
+  let next: DossierState = { ...uploaded.state, profile: { ...uploaded.state.profile, imageBatchSlot: "" } };
   if (slot?.docType === "id_card") next = commitSeenAppendix(next, slotId);
   await prisma.$transaction(
     pages.map((page) =>
