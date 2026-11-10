@@ -536,6 +536,59 @@ describe("reconcileBooking (booking capability reconcile hook)", () => {
     expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBe(true);
   });
 
+  it("does not book when לא answers a pending confirm", async () => {
+    const { reconcileBooking } = await import("./capabilities/booking");
+    const stage = {
+      type: "talk" as const,
+      prompt: "",
+      allowBook: true,
+      required_for_book: ["time_preference", "name", "need"],
+      on_complete: "done",
+      on_escalate: "escalate",
+    };
+    const state = ctx({
+      conversation: {
+        id: "c1",
+        status: "open",
+        flowState: "talk",
+        flowVersion: 1,
+        nudgeCountByStage: {},
+      },
+      agent: {
+        id: "a1",
+        tenantId: "t1",
+        systemPrompt: "",
+        knowledgeText: "",
+        flow: defaultFlow(),
+        flowVersion: 1,
+        leadSchema: defaultLeadSchema,
+        hitlPolicy: defaultHitlPolicy,
+      },
+      lead: {
+        id: "l1",
+        externalUserId: "+972501234567",
+        fields: {
+          booking_flow: "active",
+          booking_confirm: "pending",
+          time_preference: "מחר ב10:00",
+          name: "נווה עיני",
+          need: "demo",
+          phone: "+972501234567",
+        },
+      },
+      messages: [{ role: "lead", text: "לא" }],
+    });
+    const out = reconcileBooking(state, stage, {
+      reply: "רשמתי בקשה לפגישה",
+      fields: { booking_confirm: "confirmed" },
+      effects: [{ type: "book_meeting" }],
+    });
+    expect(out.fields?.booking_confirm).not.toBe("confirmed");
+    expect(out.effects?.some((e: { type: string }) => e.type === "book_meeting")).toBeFalsy();
+    expect(out.reply).toMatch(/won't save the request/);
+    expect(out.book).toBe(false);
+  });
+
   it("verifies single-token name on כן so book_meeting still runs", async () => {
     const { reconcileBooking } = await import("./capabilities/booking");
     const stage = {

@@ -212,7 +212,6 @@ export function Select({
         className={`select-trigger${invalid ? " has-error" : ""}`}
         disabled={disabled}
         aria-busy={busy}
-        aria-invalid={invalid || undefined}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}

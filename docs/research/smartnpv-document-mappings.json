@@ -1,0 +1,140 @@
+{
+  "checked_on": "2026-11-02",
+  "live_authenticated_tests_performed": false,
+  "warning": "These namespaces must not be merged. Neither API example metadata nor library IDs prove document validity or supported upload parameters.",
+  "public_library_category": {
+    "source": "https://www.snpv.co.il/public/documents",
+    "html_selector": "#docsType option",
+    "mappings": [
+      {
+        "external_type_id": "5",
+        "label_he": "אישור הכנסות מרו\"ח",
+        "evidence_level": "observed_vendor_html",
+        "scope": "public_library_only",
+        "verified_for_uploaded_document_api": false,
+        "verified_writable_via_upload": false
+      },
+      {
+        "external_type_id": "28",
+        "label_he": "אישור עקרוני",
+        "evidence_level": "observed_vendor_html",
+        "scope": "public_library_only",
+        "verified_for_uploaded_document_api": false,
+        "verified_writable_via_upload": false
+      },
+      {
+        "external_type_id": "67",
+        "label_he": "בקשה לבקשת הלוואה",
+        "evidence_level": "observed_vendor_html",
+        "scope": "public_library_only",
+        "verified_for_uploaded_document_api": false,
+        "verified_writable_via_upload": false
+      },
+      {
+        "external_type_id": "31",
+        "label_he": "הסכמה למסירת נתוני אשראי",
+        "evidence_level": "observed_vendor_html",
+        "scope": "public_library_only",
+        "verified_for_uploaded_document_api": false,
+        "verified_writable_via_upload": false
+      },
+      {
+        "external_type_id": "64",
+        "label_he": "זכאות",
+        "evidence_level": "observed_vendor_html",
+        "scope": "public_library_only",
+        "verified_for_uploaded_document_api": false,
+        "verified_writable_via_upload": false
+      },
+      {
+        "external_type_id": "15",
+        "label_he": "כתב הסמכה",
+        "evidence_level": "observed_vendor_html",
+        "scope": "public_library_only",
+        "verified_for_uploaded_document_api": false,
+        "verified_writable_via_upload": false
+      },
+      {
+        "external_type_id": "40",
+        "label_he": "מסמך כללי",
+        "evidence_level": "observed_vendor_html",
+        "scope": "public_library_only",
+        "verified_for_uploaded_document_api": false,
+        "verified_writable_via_upload": false
+      },
+      {
+        "external_type_id": "30",
+        "label_he": "תצהיר",
+        "evidence_level": "observed_vendor_html",
+        "scope": "public_library_only",
+        "verified_for_uploaded_document_api": false,
+        "verified_writable_via_upload": false
+      }
+    ]
+  },
+  "uploaded_document_category": {
+    "source": "https://api.snpv.co.il/api/collections/17090513/UyrDEw47?segregateAuth=true&versionTag=latest",
+    "evidence_level": "vendor_response_example_only",
+    "mappings": [
+      {
+        "external_type_id": "1",
+        "label_he": "תעודת זהות",
+        "scope": "example_only_not_verified_global"
+      }
+    ],
+    "filter_type_example": "3",
+    "filter_example_inconsistency": "The saved response includes null and type 1 despite type=3 in the saved request."
+  },
+  "ai_document_type": {
+    "evidence_level": "vendor_response_example_only",
+    "mappings": [
+      {
+        "external_type_id": "eligibility",
+        "label_he": "זכאות"
+      },
+      {
+        "external_type_id": "unsupported_or_unknown",
+        "label_he": "מסמך כללי (לא נמצא סיווג מתאים)"
+      }
+    ],
+    "complete_enum_available": false,
+    "example_confidence": null,
+    "category_agreement_guaranteed": false
+  },
+  "public_access_template": {
+    "evidence_level": "third_party_capture_not_vendor_verified",
+    "source": "https://github.com/haiku-code/cia-knowledge/blob/main/poc1/reference/snpv_lookups.md",
+    "mappings": [
+      {
+        "external_type_id": "1",
+        "label_he": "כתב הסמכה",
+        "scope": "captured_advisor_account_only"
+      }
+    ],
+    "merge_with_uploaded_categories": false
+  },
+  "upload_contract": {
+    "method": "POST",
+    "url": "https://www.snpv.co.il/api/v2/clients/upload_document",
+    "encoding": "multipart/form-data",
+    "documented_fields": [
+      "api_key",
+      "uuid",
+      "file_name",
+      "file"
+    ],
+    "example_returns_document_uuid": false,
+    "document_type_parameter_documented": false,
+    "second_call_to_set_type_documented": false
+  },
+  "unknown_numeric_mappings": [
+    "payslip",
+    "bank_statement",
+    "mortgage_balance_report"
+  ],
+  "recommended_key": [
+    "advisor_account",
+    "namespace",
+    "external_type_id"
+  ]
+}

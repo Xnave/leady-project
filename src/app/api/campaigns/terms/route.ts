@@ -9,6 +9,6 @@ export async function POST() {
   if (access instanceof Response) return access;
   if (!(await campaignsEnabled(access.tenantId))) return NextResponse.json({ error: "not_enabled" }, { status: 403 });
   const { actorLabel } = await resolveStaffActor();
-  const settings = await acceptCampaignTerms(access.tenantId, actorLabel);
-  return NextResponse.json({ settings });
+  await acceptCampaignTerms(access.tenantId, actorLabel);
+  return NextResponse.json({ ok: true });
 }

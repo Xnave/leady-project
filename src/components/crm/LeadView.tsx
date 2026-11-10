@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { LeadViewDTO, LeadViewScope } from "@/lib/crm/view";
 import type { UiCopy } from "@/lib/ui";
+import { DocumentChecklist } from "./DocumentChecklist";
 import { FollowUpBar } from "./FollowUpBar";
 import { initials } from "./format";
 import { LeadChat } from "./LeadChat";
@@ -111,8 +112,26 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
       clock={clock}
       onDecide={(requestId, form) => lv.runTask(() => crmApi.decideRequest(requestId, form))}
       onComplete={(taskId, form) => lv.runTask(() => crmApi.completeTask(taskId, form))}
+      documents={
+        d.openTask?.code === "document_checklist_complete"
+          ? (d.documents?.slots ?? [])
+              .filter((slot) => slot.status === "uploaded" && slot.slotIds.length > 0)
+              .map((slot) => ({ id: slot.id, label: slot.label, slotIds: slot.slotIds }))
+          : undefined
+      }
     />
   ) : null;
+
+  const reviewTaskId = d.openTask?.code === "document_checklist_complete" ? d.openTask.id : "";
+  const documents = (
+    <DocumentChecklist
+      leadId={d.id}
+      checklist={d.documents}
+      ui={ui}
+      lang={lang}
+      onReturn={reviewTaskId ? (form) => lv.runTask(() => crmApi.completeTask(reviewTaskId, form)) : undefined}
+    />
+  );
 
   const next = (
     <NextStepEditor
@@ -161,6 +180,7 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
         <div className="crm-full-main">
           {head}
           {task}
+          {documents}
           {fubar}
           {tabs}
         </div>
@@ -178,6 +198,7 @@ export function LeadView({ dto, ui, lang, variant, onChanged, wonLabel, tab: tab
     <div ref={rootRef} className="crm-lv">
       {head}
       {task}
+      {documents}
       {fubar}
       {stand}
       {next}

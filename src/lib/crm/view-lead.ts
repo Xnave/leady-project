@@ -2,6 +2,7 @@
 import type { Prisma } from "@prisma/client";
 import { isBookingSessionKey } from "@/lib/flow/booking";
 import { loadInstanceFieldLabels } from "@/lib/capability-instances";
+import { loadDocumentChecklist } from "@/lib/documents/dossier";
 import { prisma } from "@/lib/db";
 import {
   formatPhoneDisplay,
@@ -394,6 +395,7 @@ export async function loadLeadView(
     openTask = {
       id: task.id,
       kind: task.type === REQUEST_APPROVAL_TASK ? "approval" : "handoff",
+      code: task.reason,
       reason: task.type === REQUEST_APPROVAL_TASK ? "" : hitlReasonLabel(ui, task.reason),
       summary: typeof payload.summary === "string" ? payload.summary : "",
       createdAt: task.createdAt.toISOString(),
@@ -419,6 +421,8 @@ export async function loadLeadView(
         : null,
     };
   }
+
+  const documents = await loadDocumentChecklist(tenantId, leadId, lang === "he" ? "he" : "en");
 
   const dto: LeadViewDTO = {
     ...row,
@@ -449,6 +453,7 @@ export async function loadLeadView(
             status: r.status,
           }))
         : [],
+    documents,
   };
   logCrmPerf("crm.load_lead_view", {
     tenantId,

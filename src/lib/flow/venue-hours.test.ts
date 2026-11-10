@@ -4,6 +4,7 @@ import {
   isSlotWithinVenueHours,
   lastBookableMinutes,
   normalizeVenueSchedule,
+  resolvedBareHourClock,
   parseDaysFromHoursPrefix,
   parseVenueHoursSegments,
   parseVenueHoursWindow,
@@ -226,6 +227,86 @@ describe("checkBookableSlot", () => {
         slotText: "רביעי ב6",
         hoursLabel: list,
         schedule,
+        lang: "he",
+        now: wedMorning,
+      }).status,
+    ).toBe("ambiguous_time");
+    expect(
+      resolvedBareHourClock({
+        slotText: "רביעי ב6",
+        schedule,
+        lang: "he",
+        now: wedMorning,
+      }),
+    ).toBeNull();
+  });
+
+  it("accepts a bare hour when only one clock is inside that day", () => {
+    const thursday = new Date(2026, 9, 29, 12, 0, 0);
+    expect(
+      checkBookableSlot({
+        slotText: "מחר ב-10",
+        hoursLabel: list,
+        schedule,
+        lang: "he",
+        now: thursday,
+      }).status,
+    ).toBe("ok");
+    expect(
+      resolvedBareHourClock({
+        slotText: "מחר ב-10",
+        schedule,
+        lang: "he",
+        now: thursday,
+      }),
+    ).toBe("10:00");
+    expect(
+      checkBookableSlot({
+        slotText: "שלישי ב6",
+        hoursLabel: list,
+        schedule,
+        lang: "he",
+        now: wedMorning,
+      }).status,
+    ).toBe("ok");
+    expect(
+      resolvedBareHourClock({
+        slotText: "שלישי ב6",
+        schedule,
+        lang: "he",
+        now: wedMorning,
+      }),
+    ).toBe("18:00");
+  });
+
+  it("reads the hour after a day of the month, not the day", () => {
+    const wide = normalizeVenueSchedule("09:00-20:00");
+    const november = new Date(2026, 10, 9, 12, 0, 0);
+    expect(
+      resolvedBareHourClock({
+        slotText: "ראשון ב 3 בדצמבר ב6",
+        schedule: wide,
+        lang: "he",
+        now: november,
+      }),
+    ).toBe("18:00");
+    expect(
+      resolvedBareHourClock({
+        slotText: "מחר ב-10",
+        schedule,
+        lang: "he",
+        now: new Date(2026, 9, 29, 12, 0, 0),
+      }),
+    ).toBe("10:00");
+  });
+
+  it("keeps a bare hour ambiguous when both clocks fit", () => {
+    const wide = normalizeVenueSchedule("08:00-23:00");
+    expect(
+      checkBookableSlot({
+        slotText: "מחר ב-10",
+        hoursLabel: "08:00-23:00",
+        schedule: wide,
         lang: "he",
         now: wedMorning,
       }).status,

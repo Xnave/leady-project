@@ -5,10 +5,9 @@ import { absTime } from "@/components/crm/format";
 import { listCampaigns } from "@/lib/campaigns/manage";
 import { campaignPageAccess } from "@/lib/campaigns/page-data";
 import { termsAccepted } from "@/lib/campaigns/settings";
-import { tenantWhatsAppAccount } from "@/lib/campaigns/store";
+import { footerPhone, tenantWhatsAppAccount } from "@/lib/campaigns/store";
 import { getUiLang } from "@/lib/cookies";
 import { prisma } from "@/lib/db";
-import { formatPhoneDisplay } from "@/lib/leads";
 import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
@@ -35,9 +34,10 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
   if (tab === "templates") {
     const [account, tenant] = await Promise.all([
       tenantWhatsAppAccount(tenantId),
-      prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true, phone: true } }),
+      prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }),
     ]);
-    const phone = account ? formatPhoneDisplay(account.phone) || account.phone : null;
+    // Same number in "Sent from" and in the template footer that Meta receives.
+    const phone = footerPhone(account);
     return (
       <div>
         <PageHeader title={ui.campaigns.title} blurb={ui.campaigns.blurb} />
@@ -47,8 +47,8 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
           lang={lang}
           initialTermsAccepted={termsAccepted(settings)}
           adPrefixEnabled={settings.adPrefixEnabled}
-          business={{ name: tenant?.name ?? "", phone: tenant?.phone ?? "" }}
-          whatsappPhone={phone}
+          business={{ name: tenant?.name ?? "", phone }}
+          whatsappPhone={phone || null}
         />
       </div>
     );

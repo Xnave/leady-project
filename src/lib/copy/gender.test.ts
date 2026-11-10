@@ -6,8 +6,20 @@ const MASC_IMPERATIVE = /(^|[\s.,!?])(ספר|כתוב|שלח|בחר|תגיד|ת�
 function strings(obj: unknown, out: string[] = []): string[] {
   if (typeof obj === "string") out.push(obj);
   else if (typeof obj === "function") {
-    const r = (obj as (...a: unknown[]) => unknown)("X", "Y", "Z");
-    if (typeof r === "string") out.push(r);
+    const probes = [
+      ["X", "Y", "Z"],
+      [["X"], "Y", "Z"],
+      [[{ label: "X", note: "Y" }], "Y"],
+      [{ agentName: "X", business: "Y", gender: "female" }],
+    ];
+    for (const args of probes) {
+      try {
+        const r = (obj as (...a: unknown[]) => unknown)(...args);
+        if (typeof r === "string") out.push(r);
+      } catch {
+        // This function takes a different argument shape.
+      }
+    }
   } else if (obj && typeof obj === "object") Object.values(obj).forEach((v) => strings(v, out));
   return out;
 }

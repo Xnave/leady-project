@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { formatPhoneDisplay } from "@/lib/leads";
 import { createWhatsAppTemplate, listWhatsAppTemplates, zernioConfigured } from "@/lib/zernio";
 import {
   CAMPAIGN_TERMS_VERSION,
@@ -38,15 +39,19 @@ export async function saveAdminSettings(tenantId: string, patch: AdminSettingsPa
   return settingsFromRow(row);
 }
 
-export async function acceptCampaignTerms(tenantId: string, actor: string, now = new Date()): Promise<CampaignSettings> {
-  const row = await prisma.tenantCampaignSettings.update({
+export async function acceptCampaignTerms(tenantId: string, actor: string, now = new Date()): Promise<void> {
+  await prisma.tenantCampaignSettings.update({
     where: { tenantId },
     data: { termsVersion: CAMPAIGN_TERMS_VERSION, termsAcceptedAt: now, termsAcceptedBy: actor },
   });
-  return settingsFromRow(row);
 }
 
 export type TenantWhatsAppAccount = { accountId: string; phone: string };
+
+/** Footer phone: the connected number campaigns go out from, as the client sees it. */
+export function footerPhone(account: TenantWhatsAppAccount | null): string {
+  return account ? formatPhoneDisplay(account.phone) || account.phone : "";
+}
 
 /**
  * The tenant's own WhatsApp number connected through Zernio. Campaigns never
@@ -112,14 +117,31 @@ export async function listTemplates(tenantId: string): Promise<TemplateRow[]> {
 }
 
 const WAITING = ["PENDING", "IN_APPEAL", "PENDING_DELETION"];
+/** Submits with no provider id yet (crash mid-submit, or Zernio returned none) are re-checked for this long. */
+const UNCONFIRMED_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** A DRAFT Meta still does not list after this long was never received. */
+const DRAFT_GIVE_UP_MS = 15 * 60 * 1000;
 
 /**
  * Polling fallback for the status webhook: re-read templates still waiting on
- * Meta. One Zernio call per account. Failures leave the stored status as is.
+ * Meta, plus recent submits that never got a provider id. One Zernio call per
+ * account. Failures leave the stored status as is.
  */
-export async function refreshPendingTemplates(tenantId: string): Promise<void> {
+export async function refreshPendingTemplates(tenantId: string, now: Date = new Date()): Promise<void> {
   if (!zernioConfigured()) return;
-  const waiting = await prisma.whatsAppTemplate.findMany({ where: { tenantId, status: { in: WAITING } } });
+  const waiting = await prisma.whatsAppTemplate.findMany({
+    where: {
+      tenantId,
+      OR: [
+        { status: { in: WAITING } },
+        {
+          status: { in: ["DRAFT", "FAILED"] },
+          providerId: "",
+          submittedAt: { gte: new Date(now.getTime() - UNCONFIRMED_WINDOW_MS) },
+        },
+      ],
+    },
+  });
   const accounts = [...new Set(waiting.map((t) => t.accountId))];
   for (const accountId of accounts) {
     let live;
@@ -130,10 +152,19 @@ export async function refreshPendingTemplates(tenantId: string): Promise<void> {
     }
     for (const t of waiting.filter((w) => w.accountId === accountId)) {
       const found = live.find((l) => l.name === t.name && l.language === t.language);
-      if (!found) continue;
+      if (!found) {
+        const stale = t.status === "DRAFT" && t.submittedAt && now.getTime() - t.submittedAt.getTime() > DRAFT_GIVE_UP_MS;
+        if (stale) {
+          await prisma.whatsAppTemplate.update({
+            where: { id: t.id },
+            data: { status: "FAILED", statusReason: "Meta did not receive this template." },
+          });
+        }
+        continue;
+      }
       const status = normalizeTemplateStatus(found.status);
       const reason = found.rejectedReason && found.rejectedReason !== "NONE" ? found.rejectedReason : "";
-      if (status === t.status && reason === t.statusReason) continue;
+      if (status === t.status && reason === t.statusReason && (found.id || "") === t.providerId) continue;
       await prisma.whatsAppTemplate.update({
         where: { id: t.id },
         data: { status, statusReason: reason, providerId: found.id || t.providerId },
@@ -142,13 +173,15 @@ export async function refreshPendingTemplates(tenantId: string): Promise<void> {
   }
 }
 
-/** Webhook path: update every matching template on that number. Unknown templates (digest, other apps) are ignored. */
+/**
+ * Webhook path: update the matching template on that number. Unknown templates
+ * (digest, other apps) match nothing. Template names are unique per tenant, not
+ * globally, so an event without an account id updates nothing.
+ */
 export async function applyTemplateStatusEvent(e: TemplateStatusEvent): Promise<number> {
-  const where = e.accountId
-    ? { accountId: e.accountId, name: e.name, language: e.language }
-    : { name: e.name, language: e.language };
+  if (!e.accountId) return 0;
   const res = await prisma.whatsAppTemplate.updateMany({
-    where,
+    where: { accountId: e.accountId, name: e.name, language: e.language },
     data: { status: e.status, statusReason: e.reason, ...(e.providerId ? { providerId: e.providerId } : {}) },
   });
   return res.count;
@@ -157,11 +190,15 @@ export async function applyTemplateStatusEvent(e: TemplateStatusEvent): Promise<
 export type SubmitResult =
   | { ok: true; template: TemplateRow }
   | { ok: false; error: "not_enabled" | "terms_required" | "no_whatsapp" | "provider_unavailable" }
+  | { ok: false; error: "submit_failed"; template: TemplateRow }
   | { ok: false; error: "invalid"; issues: TemplateIssue[] };
 
 /**
- * Saves the template with its locked additions and submits it to Meta. A
- * submit failure keeps the row as FAILED with the reason, so the owner sees it.
+ * Saves the template with its locked additions and submits it to Meta. The row
+ * stays DRAFT until Zernio returns a template id; only then is it PENDING. A
+ * submit failure keeps the row as FAILED with the reason, so the owner sees it,
+ * and returns `submit_failed`. A crash mid-submit leaves a DRAFT with
+ * `submittedAt` set, which `refreshPendingTemplates` reconciles.
  */
 export async function submitTemplate(opts: {
   tenantId: string;
@@ -176,11 +213,11 @@ export async function submitTemplate(opts: {
   if (!account) return { ok: false, error: "no_whatsapp" };
   if (!zernioConfigured()) return { ok: false, error: "provider_unavailable" };
 
-  const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: opts.tenantId }, select: { name: true, phone: true } });
+  const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: opts.tenantId }, select: { name: true } });
   const composed = composeTemplate(opts.draft, {
     adPrefixEnabled: settings.adPrefixEnabled,
     businessName: tenant.name,
-    businessPhone: tenant.phone,
+    businessPhone: footerPhone(account),
   });
   const issues = validateTemplate(opts.draft, composed);
   if (issues.length > 0) return { ok: false, error: "invalid", issues };
@@ -213,9 +250,13 @@ export async function submitTemplate(opts: {
     const res = await createWhatsAppTemplate(
       templateCreateBody({ accountId: account.accountId, name, draft: opts.draft, composed }),
     );
-    status = normalizeTemplateStatus(res?.status ?? "PENDING");
-    statusReason = res?.rejectedReason && res.rejectedReason !== "NONE" ? res.rejectedReason : "";
-    providerId = res?.id ?? "";
+    providerId = res?.id?.trim() ?? "";
+    if (providerId) {
+      status = normalizeTemplateStatus(res?.status ?? "PENDING");
+      statusReason = res?.rejectedReason && res.rejectedReason !== "NONE" ? res.rejectedReason : "";
+    } else {
+      statusReason = "Meta did not return a template id.";
+    }
   } catch (err) {
     statusReason = (err instanceof Error ? err.message : String(err)).slice(0, 500);
   }
@@ -223,5 +264,6 @@ export async function submitTemplate(opts: {
     where: { id: created.id },
     data: { status, statusReason, providerId },
   });
+  if (status === "FAILED" || !providerId) return { ok: false, error: "submit_failed", template: toRow(saved) };
   return { ok: true, template: toRow(saved) };
 }

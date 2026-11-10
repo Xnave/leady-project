@@ -121,6 +121,7 @@ function proposedClocks(text: string): string[] {
   const found = new Set(clocksInText(text));
   const parsed = parseTime(text);
   if (parsed) found.add(parsed);
+  for (const hit of bareTypedHourClocks(text)) found.add(hit.clock);
   return [...found];
 }
 
@@ -136,6 +137,9 @@ function statedClocks(text: string): string[] {
   for (const hit of bareMeridianClocks(text)) {
     if (!clockDiscarded(text, hit.index)) found.add(hit.clock);
   }
+  for (const hit of bareTypedHourClocks(text)) {
+    if (!clockDiscarded(text, hit.index)) found.add(hit.clock);
+  }
   const parsed = parseTime(text);
   if (parsed && !found.has(parsed)) {
     const idx = text.indexOf(parsed);
@@ -143,6 +147,45 @@ function statedClocks(text: string): string[] {
     if (at >= 0 && !clockDiscarded(text, at)) found.add(parsed);
   }
   return [...found];
+}
+
+const BARE_HOUR = /(?:ב־|ב-|at\s+|בשעה\s+|ב\s*)(\d{1,2})(?!\d)(?!\s*:)/gi;
+
+/** A "ב 3" before "בדצמבר" is the day, not the hour. */
+function monthFollowsDigit(text: string, digitEnd: number): boolean {
+  const rest = text.slice(digitEnd).replace(/^\s*ב?\s*/, "").toLowerCase();
+  return [...HE_MONTHS, ...EN_MONTHS].some((name) => rest.startsWith(name.toLowerCase()));
+}
+
+/** Last bare hour that is not a day of the month. "ב-10" stays 10. */
+export function lastBareHourDigit(text: string): number | null {
+  const re = new RegExp(BARE_HOUR.source, "gi");
+  let found: number | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    const hour = Number(match[1]);
+    if (!Number.isInteger(hour) || hour < 1 || hour > 12) continue;
+    if (monthFollowsDigit(text, match.index + match[0].length)) continue;
+    found = hour;
+  }
+  return found;
+}
+
+/** "ב-10" states 10:00. It does not state 22:00; morning/evening stays a hours-gate decision. */
+function bareTypedHourClocks(text: string): { clock: string; index: number }[] {
+  if (!isAmbiguousBareHour(text)) return [];
+  const hits: { clock: string; index: number }[] = [];
+  const re = new RegExp(BARE_HOUR.source, "gi");
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    const h = Number(match[1]);
+    if (h < 1 || h > 12) continue;
+    if (monthFollowsDigit(text, match.index + match[0].length)) continue;
+    const clock = hhmm(h, 0);
+    const digitAt = match.index + match[0].lastIndexOf(match[1]);
+    if (clock) hits.push({ clock, index: digitAt });
+  }
+  return hits;
 }
 
 /** "ב6 בערב" is 18:00. The discard check uses the digit the customer typed. */
@@ -177,7 +220,8 @@ export function clockGroundedInLeadText(proposed: string, leadTexts: readonly st
 
 /**
  * True when the text has a bare hour 1–12 with no morning/evening/am/pm marker
- * (e.g. "רביעי ב6"). Callers should ask for clarification instead of assuming AM.
+ * (e.g. "רביעי ב6"). The hours gate may still accept it when exactly one of the
+ * two clocks falls inside that day's window.
  */
 export function isAmbiguousBareHour(text: string): boolean {
   const forTime = stripDateFragments(text);
@@ -486,8 +530,8 @@ export function normalizeSlot(
   }
 
   const day = resolveDay(text, now, lang);
-  // Bare "ב12" stays ambiguous for the hours gate (isAmbiguousBareHour), but
-  // customer-facing display still needs a clock hour so templates are not blank.
+  // A bare "ב12" has no meridian. Display still needs a clock so templates are
+  // not blank; the hours gate picks 12:00 vs 00:00 when only one is bookable.
   let time = parseTime(text);
   if (!time) {
     const bare = bareHourDigit(text);
@@ -530,8 +574,8 @@ export function normalizeSlot(
 
 /**
  * Confirm / CRM-facing slot line. Relative wording ("מחר ב12") becomes a
- * calendar date + HH:MM. Bare 1–12 hours are shown as that clock hour (:00);
- * the hours gate still asks morning/evening before save when configured.
+ * calendar date + HH:MM. A bare 1–12 hour is shown as that clock hour (:00)
+ * unless the caller already appended the clock the hours gate accepted.
  */
 export function formatSlotForDisplay(
   raw: string,

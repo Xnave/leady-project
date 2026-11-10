@@ -1,5 +1,5 @@
 import { DEFAULT_TZ, zonedToday } from "./clock";
-import { isAmbiguousBareHour, normalizeSlot } from "./slot";
+import { isAmbiguousBareHour, lastBareHourDigit, normalizeSlot } from "./slot";
 
 export type VenueHoursWindow = {
   openMinutes: number;
@@ -338,10 +338,54 @@ export type BookableSlotStatus =
 
 export type BookableSlotResult = { status: BookableSlotStatus };
 
+function bareHourDigitIn(text: string): number | null {
+  return lastBareHourDigit(text);
+}
+
+/** 10 → 10:00 and 22:00. 12 → noon and midnight. */
+function candidateHours(hour: number): number[] {
+  if (hour === 12) return [0, 12];
+  return [hour, hour + 12];
+}
+
+/**
+ * When the customer named a bare hour ("ב-10"), the clock to keep if exactly
+ * one of the two readings falls inside that day's bookable window.
+ * Zero or two matches, or no day, returns null.
+ */
+export function resolvedBareHourClock(opts: {
+  slotText: string;
+  schedule: VenueScheduleSegment[];
+  now: Date;
+  lang?: "en" | "he";
+}): string | null {
+  if (!isAmbiguousBareHour(opts.slotText) || opts.schedule.length === 0) return null;
+  const hour = bareHourDigitIn(opts.slotText);
+  if (hour === null) return null;
+  const slot = normalizeSlot(opts.slotText, {
+    now: opts.now,
+    lang: opts.lang ?? "he",
+  });
+  if (!slot.dateIso) return null;
+  const weekday = weekdayFromIso(slot.dateIso);
+  if (weekday === null) return null;
+  const window = windowFromSchedule(opts.schedule, weekday);
+  if (!window) return null;
+  const latest = lastBookableMinutes(window);
+  if (latest < window.openMinutes) return null;
+  const fits = candidateHours(hour).filter((h) => {
+    const mins = h * 60;
+    return mins >= window.openMinutes && mins <= latest;
+  });
+  if (fits.length !== 1) return null;
+  return minutesToClock(fits[0]! * 60);
+}
+
 /**
  * Deterministic booking hours gate. Fail-closed when hours are configured but
  * unusable, or when the customer time is ambiguous / missing a clock.
- * When no hours are configured at all, returns `ok` (gate off).
+ * A bare hour 1–12 is accepted when exactly one clock is inside that day's
+ * window. When no hours are configured at all, returns `ok` (gate off).
  */
 export function checkBookableSlot(opts: {
   slotText: string;
@@ -362,14 +406,19 @@ export function checkBookableSlot(opts: {
   if (schedule.length === 0) return { status: "invalid_hours" };
 
   const slotText = opts.slotText.trim();
-  if (isAmbiguousBareHour(slotText)) return { status: "ambiguous_time" };
-
   const timeZone = opts.timeZone?.trim() || DEFAULT_TZ;
   const now = opts.now ?? new Date();
-  const slot = normalizeSlot(slotText, {
-    now: zonedToday(now, timeZone),
-    lang: opts.lang ?? "he",
-  });
+  const lang = opts.lang ?? "he";
+  const zoned = zonedToday(now, timeZone);
+
+  let gatedText = slotText;
+  if (isAmbiguousBareHour(slotText)) {
+    const clock = resolvedBareHourClock({ slotText, schedule, now: zoned, lang });
+    if (!clock) return { status: "ambiguous_time" };
+    gatedText = `${slotText} ${clock}`;
+  }
+
+  const slot = normalizeSlot(gatedText, { now: zoned, lang });
   if (!slot.time) return { status: "unclear_time" };
 
   const weekday = slot.dateIso ? weekdayFromIso(slot.dateIso) : null;

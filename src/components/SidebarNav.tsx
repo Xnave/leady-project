@@ -20,6 +20,7 @@ const OWNER_ITEMS: { href: string; key: NavKey; countKey?: "leads" }[] = [
   { href: "/demo", key: "chat" },
   { href: "/settings/team", key: "team" },
   { href: "/settings/digest", key: "digest" },
+  { href: "/settings/documents", key: "documents" },
   { href: "/campaigns", key: "campaigns" },
 ];
 

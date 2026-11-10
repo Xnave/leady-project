@@ -49,6 +49,10 @@ export async function POST(req: Request) {
   if (templateStatus) {
     const rejected = checkSignature(req, raw);
     if (rejected) return rejected;
+    if (!templateStatus.accountId) {
+      console.warn(JSON.stringify({ msg: "zernio.template_status.no_account", name: templateStatus.name }));
+      return NextResponse.json({ ok: true, updated: 0 });
+    }
     const updated = await applyTemplateStatusEvent(templateStatus);
     console.log(
       JSON.stringify({ msg: "zernio.template_status", name: templateStatus.name, status: templateStatus.status, updated }),
@@ -160,6 +164,7 @@ export async function POST(req: Request) {
           ? instagramIdentityFields(senderName, senderUsername)
           : {}),
       },
+      attachments: inbound.attachments,
       channel,
     }),
   );

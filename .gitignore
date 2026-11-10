@@ -19,3 +19,6 @@ marketing-materials/
 .env*
 eval-out/
 tsconfig.tsbuildinfo
+scenario-runs/
+# Real borrower PDFs pulled from Smart NPV for local testing
+test/fixtures/documents/

@@ -2,18 +2,20 @@
  * Tenant WhatsApp templates for client campaigns: what the owner writes, what
  * Meta receives, and the rules between them. Pure - no DB, no network.
  *
- * Marketing templates always carry the locked additions: the "פרסומת" prefix
+ * Campaign templates are MARKETING only. Section 30A applies to the content,
+ * not to Meta's category, so there is no UTILITY path an owner could use to
+ * skip the locked additions. Every template carries them: the "פרסומת" prefix
  * (Communications Law 30A(e), unless a platform admin turned it off with a
- * recorded legal note), a footer with the business name and phone, and three
- * quick-reply buttons whose last one is the opt-out. The owner edits only the
- * body, so none of these can be removed from the editor.
+ * recorded legal note), a footer with the business name and the connected
+ * WhatsApp number, and three quick-reply buttons whose last one is the
+ * opt-out. The owner edits only the body, so none of these can be removed.
  */
 
 export type TemplateLanguage = "he" | "en";
-export type TemplateCategory = "MARKETING" | "UTILITY";
+export type TemplateCategory = "MARKETING";
 
 export const TEMPLATE_LANGUAGES: readonly TemplateLanguage[] = ["he", "en"];
-export const TEMPLATE_CATEGORIES: readonly TemplateCategory[] = ["MARKETING", "UTILITY"];
+export const TEMPLATE_CATEGORIES: readonly TemplateCategory[] = ["MARKETING"];
 
 export const AD_PREFIX = "פרסומת";
 const AD_SEPARATOR = " | ";
@@ -84,7 +86,6 @@ export function composeTemplate(
   opts: { adPrefixEnabled: boolean; businessName: string; businessPhone: string },
 ): ComposedTemplate {
   const body = d.body.trim();
-  if (d.category !== "MARKETING") return { text: body, footer: "", buttons: [] };
   return {
     text: hasAdPrefix(d, opts.adPrefixEnabled) ? `${AD_PREFIX}${AD_SEPARATOR}${body}` : body,
     footer: footerLine(opts.businessName, opts.businessPhone),
@@ -195,7 +196,10 @@ export type TemplateStatusEvent = {
   providerId: string;
 };
 
-/** Zernio `whatsapp.template.status_updated`. Anything else returns null. */
+/**
+ * Zernio `whatsapp.template.status_updated`. Anything else returns null. The
+ * account id may come back empty; the caller must not apply such an event.
+ */
 export function parseTemplateStatusEvent(payload: unknown): TemplateStatusEvent | null {
   if (!payload || typeof payload !== "object") return null;
   const root = payload as Record<string, unknown>;
@@ -208,7 +212,8 @@ export function parseTemplateStatusEvent(payload: unknown): TemplateStatusEvent 
   if (!name || !language) return null;
   const reason = str(t.reason);
   return {
-    accountId: str(account.id) || str(account._id) || str(root.accountId),
+    // whatsapp.template.* carries the connected account on account.accountId.
+    accountId: str(account.accountId) || str(account.id),
     name,
     language,
     status: normalizeTemplateStatus(t.status),

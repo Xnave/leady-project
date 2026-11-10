@@ -30,6 +30,7 @@ import {
   getRequest,
   isoDateToUtc,
   utcToIsoDate,
+  REQUEST_APPROVAL_TASK,
   REQUEST_DECISION_CATEGORY,
 } from "@/lib/requests";
 import { AUTOMATIC_ACTOR } from "@/lib/decision-actor";
@@ -370,6 +371,52 @@ export async function acceptOfferedReservationDates(opts: {
     customerConfirmed: true,
   });
   return { text: result.text };
+}
+
+/**
+ * The customer named different dates instead of accepting the staff offer.
+ * The same pending request moves onto that range, and the owner has to approve it again.
+ */
+export async function movePendingReservationDates(opts: {
+  tenantId: string;
+  reservationId: string;
+  checkIn: string;
+  checkOut: string;
+}): Promise<void> {
+  const { retimeRequest } = await import("@/lib/requests");
+  const timeText = `${opts.checkIn} → ${opts.checkOut}`;
+  await retimeRequest({
+    tenantId: opts.tenantId,
+    requestId: opts.reservationId,
+    startAt: isoDateToUtc(opts.checkIn),
+    endAt: isoDateToUtc(opts.checkOut),
+    timeText,
+    status: "pending",
+  });
+  const request = await getRequest({ tenantId: opts.tenantId, requestId: opts.reservationId });
+  if (!request) return;
+  const tasks = await prisma.hitlTask.findMany({
+    where: {
+      tenantId: opts.tenantId,
+      conversationId: request.conversationId,
+      type: REQUEST_APPROVAL_TASK,
+      status: "open",
+    },
+  });
+  for (const task of tasks) {
+    const payload = (task.payload as Record<string, unknown>) ?? {};
+    if (payload.requestId !== opts.reservationId) continue;
+    await prisma.hitlTask.update({
+      where: { id: task.id },
+      data: {
+        payload: {
+          ...payload,
+          timeText,
+          awaitingCustomerConfirm: false,
+        } as Prisma.InputJsonValue,
+      },
+    });
+  }
 }
 
 export type ReservationDecision = "approve" | "decline" | "reschedule";

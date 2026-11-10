@@ -12,6 +12,7 @@ import type { CapabilityInstanceSnapshot } from "@/lib/flow/types";
 export const DEFAULT_INSTANCE_KIND: Record<string, string> = {
   booking: "visit",
   reservations: "stay",
+  documents: "mortgage",
 };
 
 function toSnapshot(row: {

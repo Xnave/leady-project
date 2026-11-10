@@ -53,6 +53,8 @@ model Tenant {
   alertSettings        TenantAlertSettings?
   clientSources        ClientSource[]
   contacts             Contact[]
+  dossiers             Dossier[]
+  leadDocuments        LeadDocument[]
   campaignSettings     TenantCampaignSettings?
   whatsAppTemplates    WhatsAppTemplate[]
   campaigns            Campaign[]
@@ -205,6 +207,8 @@ model Lead {
   notes         LeadNote[]
   contacts      Contact[]
   campaignSends CampaignSend[]
+  dossiers      Dossier[]
+  leadDocuments LeadDocument[]
 
   @@unique([tenantId, channelId, externalUserId])
   @@index([tenantId])
@@ -384,6 +388,59 @@ model HitlTask {
   completedAt    DateTime?
 
   @@index([tenantId, status])
+}
+
+/**
+ * One open document checklist for a lead. Slots are computed once from the
+ * SmartNPV profile and the tenant's rules, then updated as files are accepted.
+ */
+model Dossier {
+  id             String   @id @default(cuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leadId         String
+  lead           Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  conversationId String   @default("")
+  smartClientId  String   @default("")
+  profile        Json     @default("{}")
+  slots          Json     @default("[]")
+  activeStage    String   @default("")
+  /** needs_id | gathering | complete | blocked */
+  status         String   @default("gathering")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  documents LeadDocument[]
+
+  @@index([tenantId, leadId])
+  @@index([tenantId, status])
+}
+
+/** One received file. Ciphertext is cleared after upload or rejection. */
+model LeadDocument {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leadId     String
+  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  dossierId  String
+  dossier    Dossier  @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+  messageId  String   @default("")
+  docType    String   @default("")
+  filename   String   @default("")
+  mime       String   @default("")
+  /** stored | rejected | uploaded */
+  status     String   @default("stored")
+  validation Json     @default("{}")
+  remoteId   String   @default("")
+  /** Smart NPV file link after a real upload. Never logged. */
+  downloadUrl String? @db.Text
+  bytesEnc   String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, dossierId])
+  @@index([tenantId, leadId])
+  @@index([tenantId, messageId])
 }
 
 model MediaAsset {
@@ -621,7 +678,7 @@ model WhatsAppTemplate {
   title          String
   name           String
   language       String
-  /// "MARKETING" | "UTILITY"
+  /// "MARKETING" (campaign templates are marketing only)
   category       String
   body           String
   /// Example value per {{n}} variable, in order.

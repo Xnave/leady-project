@@ -18,7 +18,14 @@ export async function GET() {
   return NextResponse.json({ templates: await listTemplates(access.tenantId) });
 }
 
-const ERROR_STATUS = { not_enabled: 403, terms_required: 403, no_whatsapp: 409, provider_unavailable: 503, invalid: 400 } as const;
+const ERROR_STATUS = {
+  not_enabled: 403,
+  terms_required: 403,
+  no_whatsapp: 409,
+  provider_unavailable: 503,
+  invalid: 400,
+  submit_failed: 502,
+} as const;
 
 export async function POST(req: Request) {
   const access = await gate();
@@ -40,9 +47,13 @@ export async function POST(req: Request) {
     },
   });
   if (!result.ok) {
-    return NextResponse.json(result.error === "invalid" ? { error: "invalid", issues: result.issues } : { error: result.error }, {
-      status: ERROR_STATUS[result.error],
-    });
+    const body =
+      result.error === "invalid"
+        ? { error: "invalid", issues: result.issues }
+        : result.error === "submit_failed"
+          ? { error: "submit_failed", template: result.template }
+          : { error: result.error };
+    return NextResponse.json(body, { status: ERROR_STATUS[result.error] });
   }
   return NextResponse.json({ template: result.template });
 }

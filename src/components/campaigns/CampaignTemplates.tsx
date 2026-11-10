@@ -17,7 +17,8 @@ import { fillUi, type UiCopy, type UiLang } from "@/lib/ui";
 type Copy = UiCopy["campaigns"];
 type ErrorKey = keyof Copy["errors"];
 
-const CATEGORIES = ["MARKETING", "UTILITY"] as const;
+/** Campaign templates are marketing only, so every one carries the locked additions. */
+const category: TemplateCategory = "MARKETING";
 const LANGUAGES = ["he", "en"] as const;
 
 const STATUS_TONE: Record<string, string> = {
@@ -50,7 +51,6 @@ export function CampaignTemplates({
   const [notice, setNotice] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState<TemplateCategory>("MARKETING");
   const [language, setLanguage] = useState<TemplateLanguage>(lang);
   const [body, setBody] = useState("");
   const [examples, setExamples] = useState<string[]>([]);
@@ -59,7 +59,6 @@ export function CampaignTemplates({
   const [submitting, setSubmitting] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
-  const categoryOptions = useMemo(() => CATEGORIES.map((c) => ({ value: c, label: copy.categoryNames[c] })), [copy]);
   const languageOptions = useMemo(() => LANGUAGES.map((l) => ({ value: l, label: copy.languageNames[l] })), [copy]);
 
   const errorText = (key: string) => copy.errors[key as ErrorKey] ?? copy.errors.failed;
@@ -84,7 +83,7 @@ export function CampaignTemplates({
   const draft = { title, category, language, body, examples };
   const composed = useMemo(
     () => composeTemplate({ category, language, body }, { adPrefixEnabled, businessName: business.name, businessPhone: business.phone }),
-    [category, language, body, adPrefixEnabled, business.name, business.phone],
+    [language, body, adPrefixEnabled, business.name, business.phone],
   );
   const issues = validateTemplate(draft, composed);
   const vars = templateVariables(body);
@@ -139,6 +138,8 @@ export function CampaignTemplates({
       });
       const data = (await res.json().catch(() => ({}))) as { template?: TemplateRow; error?: string; issues?: string[] };
       if (!res.ok || !data.template) {
+        // A failed submit is still saved, so the owner sees it in the list with the reason.
+        if (data.error === "submit_failed" && data.template) setTemplates((prev) => [data.template!, ...(prev ?? [])]);
         if (data.error === "invalid" && data.issues?.length) {
           setError(data.issues.map((i) => copy.issues[i as keyof Copy["issues"]] ?? i).join(" "));
         } else {
@@ -203,15 +204,6 @@ export function CampaignTemplates({
             </label>
             <div className="campaign-row">
               <label>
-                <span>{copy.fieldCategory}</span>
-                <Select
-                  value={category}
-                  ariaLabel={copy.fieldCategory}
-                  options={categoryOptions}
-                  onChange={(v) => setCategory(v as TemplateCategory)}
-                />
-              </label>
-              <label>
                 <span>{copy.fieldLanguage}</span>
                 <Select
                   value={language}
@@ -221,7 +213,6 @@ export function CampaignTemplates({
                 />
               </label>
             </div>
-            <p className="muted campaign-hint">{copy.categoryHints[category]}</p>
             <label>
               <span>{copy.fieldBody}</span>
               <textarea
@@ -244,7 +235,7 @@ export function CampaignTemplates({
                 <input value={examples[i] ?? ""} onChange={(e) => setExample(i, e.target.value)} />
               </label>
             ))}
-            {category === "MARKETING" ? <p className="muted campaign-hint">{copy.lockedNote}</p> : null}
+            <p className="muted campaign-hint">{copy.lockedNote}</p>
             {shownIssues.length > 0 ? (
               <ul className="campaign-error campaign-issues">
                 {shownIssues.map((i) => (
@@ -316,7 +307,7 @@ export function CampaignTemplates({
                   </span>
                 </div>
                 <p className="muted campaign-template-meta">
-                  {copy.categoryNames[t.category as TemplateCategory] ?? t.category} · {copy.languageNames[t.language as TemplateLanguage] ?? t.language}
+                  {copy.categoryNames[t.category as keyof Copy["categoryNames"]] ?? t.category} · {copy.languageNames[t.language as TemplateLanguage] ?? t.language}
                   {t.submittedAt
                     ? ` · ${fillUi(copy.submittedBy, { when: absTime(t.submittedAt, lang), who: t.submittedBy || "-" })}`
                     : ""}

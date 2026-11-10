@@ -28,12 +28,16 @@ import {
   type ReservationSubmitMode,
 } from "@/lib/flow/reservation-config";
 import { isChatLanguage, looksHebrew, type ChatLanguage } from "@/lib/flow/locale";
+import { RulesEditor } from "@/components/documents/RulesEditor";
+import { MORTGAGE_RULES } from "@/lib/documents/mortgage-rules";
+import { loadRulesDocument, rulesIssueList } from "@/lib/documents/rules-form";
+import type { RulesDocument } from "@/lib/documents/rules";
 import { copyFor } from "@/lib/copy";
 import { fillUi, stepLabel, uiCopy, type UiLang } from "@/lib/ui";
 
 const WIZARD_STEPS = ["knowledge", "business", "flow", "done"] as const;
-const PRODUCT_CAPABILITIES: CapabilityId[] = ["booking", "reservations"];
-const READY_CAPABILITIES = new Set<CapabilityId>(["booking", "reservations"]);
+const PRODUCT_CAPABILITIES: CapabilityId[] = ["booking", "reservations", "documents"];
+const READY_CAPABILITIES = new Set<CapabilityId>(["booking", "reservations", "documents"]);
 
 type Props = {
   name: string;
@@ -52,6 +56,13 @@ type Props = {
   bookingApprovedTemplate?: string;
   bookingRejectedTemplate?: string;
   reservationConfig?: unknown;
+  documentConfig?: {
+    baseUrl?: string;
+    rules?: unknown;
+    hasKey?: boolean;
+    maxRejectTries?: number;
+    rejectCooldownMinutes?: number;
+  };
   /** Stored Agent.persona; the wizard edits it in place so re-running setup keeps it. */
   persona?: unknown;
   uiLang?: UiLang;
@@ -116,6 +127,18 @@ export function OnboardWizard(props: Props) {
   const [customFieldDraft, setCustomFieldDraft] = useState("");
   const bookingEnabled = capabilities.includes("booking");
   const reservationsEnabled = capabilities.includes("reservations");
+  const documentsEnabled = capabilities.includes("documents");
+  const [docApiKey, setDocApiKey] = useState("");
+  const [docMaxRejectTries, setDocMaxRejectTries] = useState(
+    String(props.documentConfig?.maxRejectTries ?? 5),
+  );
+  const [docRejectCooldownMinutes, setDocRejectCooldownMinutes] = useState(
+    String(props.documentConfig?.rejectCooldownMinutes ?? 5),
+  );
+  const [docRules, setDocRules] = useState<RulesDocument>(() =>
+    loadRulesDocument(props.documentConfig?.rules ?? MORTGAGE_RULES),
+  );
+  const rulesOk = rulesIssueList(docRules).length === 0;
   const catalogId: CatalogId =
     bookingEnabled || reservationsEnabled ? "inbox" : "faq";
   const [venueAddress, setVenueAddress] = useState(props.venueAddress ?? "");
@@ -255,6 +278,14 @@ export function OnboardWizard(props: Props) {
         bookingApprovedTemplate,
         bookingRejectedTemplate,
         reservationConfig,
+        documentConfig: documentsEnabled
+          ? {
+              apiKey: docApiKey,
+              rules: docRules,
+              maxRejectTries: docMaxRejectTries,
+              rejectCooldownMinutes: docRejectCooldownMinutes,
+            }
+          : undefined,
         persona: cleanDraft(persona),
       }),
     });
@@ -555,6 +586,46 @@ export function OnboardWizard(props: Props) {
                 })}
               </div>
             </fieldset>
+            {documentsEnabled ? (
+              <fieldset>
+                <legend>{ui.documentsUi.settingsTitle}</legend>
+                <p className="muted rules-hint">{ui.documentsUi.rulesHint}</p>
+                <label>
+                  {ui.documentsUi.apiKey}
+                  <input
+                    type="password"
+                    value={docApiKey}
+                    onChange={(e) => setDocApiKey(e.target.value)}
+                    placeholder={props.documentConfig?.hasKey ? "••••" : ""}
+                    autoComplete="off"
+                  />
+                </label>
+                <p className="muted">{ui.documentsUi.apiKeyHint}</p>
+                <label>
+                  {ui.documentsUi.maxRejectTries}
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={docMaxRejectTries}
+                    onChange={(e) => setDocMaxRejectTries(e.target.value)}
+                  />
+                </label>
+                <p className="muted">{ui.documentsUi.maxRejectTriesHint}</p>
+                <label>
+                  {ui.documentsUi.rejectCooldownMinutes}
+                  <input
+                    type="number"
+                    min={1}
+                    max={1440}
+                    value={docRejectCooldownMinutes}
+                    onChange={(e) => setDocRejectCooldownMinutes(e.target.value)}
+                  />
+                </label>
+                <p className="muted">{ui.documentsUi.rejectCooldownMinutesHint}</p>
+                <RulesEditor value={docRules} onChange={setDocRules} copy={ui.documentsUi.editor} />
+              </fieldset>
+            ) : null}
             {bookingEnabled ? (
               <>
               <fieldset>
@@ -738,7 +809,8 @@ export function OnboardWizard(props: Props) {
                 type="button"
                 className="btn"
                 onClick={save}
-                disabled={saving || (reservationsEnabled && !bookingLinkValid)}
+                disabled={saving || (reservationsEnabled && !bookingLinkValid) || (documentsEnabled && !rulesOk)}
+                aria-busy={saving}
               >
                 {saving ? ui.common.saving : ui.common.save}
               </button>

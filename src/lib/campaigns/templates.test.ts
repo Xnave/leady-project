@@ -3,6 +3,7 @@ import {
   AD_PREFIX,
   LOCKED_BUTTONS,
   composeTemplate,
+  TEMPLATE_CATEGORIES,
   footerLine,
   newTemplateName,
   normalizeTemplateStatus,
@@ -47,9 +48,8 @@ describe("composeTemplate: locked additions", () => {
     expect(c.footer).not.toBe("");
   });
 
-  it("leaves utility templates as written", () => {
-    const c = composeTemplate(draft({ category: "UTILITY", body: "התור שלך מחר ב-{{1}} בבוקר." }), biz);
-    expect(c).toEqual({ text: "התור שלך מחר ב-{{1}} בבוקר.", footer: "", buttons: [] });
+  it("offers no category that skips the locked additions", () => {
+    expect(TEMPLATE_CATEGORIES).toEqual(["MARKETING"]);
   });
 
   it("every locked button fits Meta's 25 characters", () => {
@@ -115,10 +115,10 @@ describe("templateCreateBody", () => {
     });
   });
 
-  it("omits the example and extra components when there is nothing to add", () => {
-    const d = draft({ category: "UTILITY", body: "התור שלך אושר, נתראה." , examples: [] });
+  it("omits the example when the body has no variables", () => {
+    const d = draft({ body: "נשמח לבדוק אם מחזור יכול לחסוך לך.", examples: [] });
     const body = templateCreateBody({ accountId: "a", name: "n", draft: d, composed: composeTemplate(d, biz) });
-    expect(body.components).toEqual([{ type: "BODY", text: "התור שלך אושר, נתראה." }]);
+    expect(body.components[0]).toEqual({ type: "BODY", text: `${AD_PREFIX} | נשמח לבדוק אם מחזור יכול לחסוך לך.` });
   });
 });
 
@@ -148,10 +148,19 @@ describe("parseTemplateStatusEvent", () => {
     expect(
       parseTemplateStatusEvent({
         event: "whatsapp.template.status_updated",
-        account: { id: "acc1" },
+        account: { accountId: "acc1", profileId: "p1", platform: "whatsapp" },
         template: { templateId: "123", name: "zc_x", language: "he", status: "REJECTED", reason: "INVALID_FORMAT" },
       }),
     ).toEqual({ accountId: "acc1", name: "zc_x", language: "he", status: "REJECTED", reason: "INVALID_FORMAT", providerId: "123" });
+  });
+
+  it("leaves the account id empty when the event has none, and ignores the inbox top-level shape", () => {
+    const e = parseTemplateStatusEvent({
+      event: "whatsapp.template.status_updated",
+      accountId: "acc1",
+      template: { name: "zc_x", language: "he", status: "APPROVED" },
+    });
+    expect(e?.accountId).toBe("");
   });
 
   it("clears Meta's NONE reason and ignores other events", () => {

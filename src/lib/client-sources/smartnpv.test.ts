@@ -101,6 +101,22 @@ describe("smartnpv connector", () => {
     await expect(c.authenticate({ apiKey: "" }, config)).rejects.toBeInstanceOf(ConnectorAuthError);
   });
 
+  it("reports HTTP 401 as an auth error", async () => {
+    const impl = (async () => new Response("", { status: 401 })) as typeof fetch;
+    const c = createSmartNpvConnector({ fetchImpl: impl, sleep: noSleep });
+    const config = c.parseConfig({});
+    const session = await c.authenticate({ apiKey: "secret-key-123" }, config);
+    await expect(c.fetchClients(session, config, { cursor: null, updatedSince: null })).rejects.toBeInstanceOf(ConnectorAuthError);
+  });
+
+  it("only sends the key to the official Smart NPV host, whatever the stored config says", async () => {
+    const { impl, calls } = fakeFetch([[]]);
+    const c = createSmartNpvConnector({ fetchImpl: impl, sleep: noSleep });
+    const config = c.parseConfig({ baseUrl: "https://evil.example.com" });
+    await c.fetchClients(await c.authenticate({ apiKey: "secret-key-123" }, config), config, { cursor: null, updatedSince: null });
+    expect(calls[0].origin).toBe("https://www.snpv.co.il");
+  });
+
   it("derives deal_date from the default ladder", () => {
     const c = createSmartNpvConnector();
     const config = c.parseConfig({});
