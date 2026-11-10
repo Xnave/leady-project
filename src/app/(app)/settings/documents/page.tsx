@@ -15,9 +15,10 @@ export default async function DocumentsSettingsPage() {
   const { tenantId } = await requireTenantRoleForPage("manager");
   const lang = await getUiLang();
   const ui = uiCopy(lang);
-  const [config, agent] = await Promise.all([
+  const [config, agent, sync] = await Promise.all([
     loadInstanceConfig({ tenantId, capabilityId: "documents" }),
     prisma.agent.findFirst({ where: { tenantId }, select: { flow: true } }),
+    prisma.smartNpvSync.findUnique({ where: { tenantId }, select: { cursorDate: true } }),
   ]);
   const pub = publicDocumentConfig(config);
   const talk = (agent?.flow as FlowDefinition | undefined)?.stages?.talk as TalkStage | undefined;
@@ -31,6 +32,7 @@ export default async function DocumentsSettingsPage() {
         ui={ui}
         enabled={enabled}
         hasKey={pub.hasKey}
+        syncCursorDate={sync?.cursorDate}
         testPhones={pub.testPhones.join("\n")}
         maxRejectTries={pub.maxRejectTries}
         rejectCooldownMinutes={pub.rejectCooldownMinutes}

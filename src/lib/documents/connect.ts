@@ -2,12 +2,11 @@ import { loadInstanceConfig } from "@/lib/capability-instances";
 import { documentApiKey, parseDocumentConfig } from "@/lib/flow/document-config";
 import { SMART_NPV_HOST, smartClientFor } from "./smart-npv";
 
-/** Lookup a phone with the saved connection, or with the key the form is about to save. */
+/** Ask Smart NPV for one list row. A successful response means the key is accepted. */
 export async function testDocumentsConnection(opts: {
   tenantId: string;
   apiKey?: string;
-  phone?: string;
-}): Promise<boolean> {
+}): Promise<void> {
   const existing = await loadInstanceConfig({ tenantId: opts.tenantId, capabilityId: "documents" });
   const config = parseDocumentConfig(
     {
@@ -18,6 +17,5 @@ export async function testDocumentsConnection(opts: {
     typeof existing.apiKeyEnc === "string" ? existing.apiKeyEnc : "",
   );
   const client = smartClientFor({ baseUrl: config.baseUrl, apiKey: documentApiKey(config) });
-  const found = await client.findClient({ phone: opts.phone || "0500000000" });
-  return Boolean(found);
+  await client.listClients({ limit: 1 });
 }

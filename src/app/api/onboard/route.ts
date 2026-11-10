@@ -19,7 +19,8 @@ import {
   loadInstanceConfig,
   upsertCapabilityInstance,
 } from "@/lib/capability-instances";
-import { parseDocumentConfig } from "@/lib/flow/document-config";
+import { parseDocumentConfig, type DocumentConfig } from "@/lib/flow/document-config";
+import { startClientSyncOnKeySave } from "@/lib/documents/client-sync";
 import { isChatLanguage, type ChatLanguage } from "@/lib/flow/locale";
 import { defaultLeadSchema, validateFlow } from "@/lib/flow/validate";
 import { FlowConfigError } from "@/lib/flow/types";
@@ -121,17 +122,19 @@ export async function POST(req: Request) {
     );
   }
   let documentConfig: unknown = {};
+  let savedDocuments: DocumentConfig | null = null;
   if (capabilities.includes("documents")) {
     const existing = await loadInstanceConfig({ tenantId, capabilityId: "documents" });
     try {
       const existingPhones = Array.isArray(existing.testPhones)
         ? existing.testPhones.filter((item): item is string => typeof item === "string")
         : [];
-      documentConfig = parseDocumentConfig(
+      savedDocuments = parseDocumentConfig(
         body.documentConfig,
         typeof existing.apiKeyEnc === "string" ? existing.apiKeyEnc : "",
         existingPhones,
       );
+      documentConfig = savedDocuments;
     } catch (e) {
       const msg = e instanceof FlowConfigError ? e.errors.join("\n") : String(e);
       return NextResponse.json({ error: msg }, { status: 400 });
@@ -224,5 +227,33 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true });
+  let documentsSync: { firstRun: true; cursorDate: string; imported: number; failed: number } | null = null;
+  if (savedDocuments?.apiKeyEnc) {
+    try {
+      const started = await startClientSyncOnKeySave(tenantId);
+      if (started) {
+        documentsSync = {
+          firstRun: true,
+          cursorDate: started.cursorDate,
+          imported: started.imported,
+          failed: started.failed,
+        };
+      }
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          msg: "documents.client_sync_failed",
+          tenantId,
+          code: err instanceof Error ? err.name : "failed",
+        }),
+      );
+    }
+  }
+
+  return NextResponse.json({
+    ok: true,
+    documents: savedDocuments
+      ? { hasKey: Boolean(savedDocuments.apiKeyEnc), sync: documentsSync }
+      : null,
+  });
 }

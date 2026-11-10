@@ -108,6 +108,15 @@ export function parseDocumentConfig(
   };
 }
 
+/** Read a row already stored on the capability instance. The key lives in `apiKeyEnc`, not `apiKey`. */
+export function documentConfigFromStored(raw: unknown): DocumentConfig {
+  const body = isRecord(raw) ? raw : {};
+  const phones = Array.isArray(body.testPhones)
+    ? body.testPhones.filter((item): item is string => typeof item === "string")
+    : [];
+  return parseDocumentConfig(body, typeof body.apiKeyEnc === "string" ? body.apiKeyEnc : "", phones);
+}
+
 export function documentApiKey(config: DocumentConfig): string {
   if (!config.apiKeyEnc) throw new Error("documents key missing");
   return decryptSecret(config.apiKeyEnc);

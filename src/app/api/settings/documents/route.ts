@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadInstanceConfig, upsertCapabilityInstance } from "@/lib/capability-instances";
+import { startClientSyncOnKeySave } from "@/lib/documents/client-sync";
 import { syncTalkCapability } from "@/lib/documents/enable";
 import { parseDocumentConfig, publicDocumentConfig } from "@/lib/flow/document-config";
 import { FlowConfigError } from "@/lib/flow/types";
@@ -57,5 +58,27 @@ export async function POST(req: Request) {
     config,
   });
   await syncTalkCapability({ tenantId, capabilityId: "documents", enabled });
-  return NextResponse.json({ ok: true, hasKey: Boolean(config.apiKeyEnc), testOnly: config.testOnly });
+  let sync: { firstRun: true; cursorDate: string; imported: number; failed: number } | null = null;
+  if (enabled && config.apiKeyEnc) {
+    try {
+      const started = await startClientSyncOnKeySave(tenantId);
+      if (started) {
+        sync = {
+          firstRun: true,
+          cursorDate: started.cursorDate,
+          imported: started.imported,
+          failed: started.failed,
+        };
+      }
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          msg: "documents.client_sync_failed",
+          tenantId,
+          code: err instanceof Error ? err.name : "failed",
+        }),
+      );
+    }
+  }
+  return NextResponse.json({ ok: true, hasKey: Boolean(config.apiKeyEnc), testOnly: config.testOnly, sync });
 }

@@ -7,17 +7,13 @@ export async function POST(req: Request) {
   const access = await tenantRoleOr403("manager");
   if (access instanceof Response) return access;
   const { tenantId } = access;
-  const body = (await req.json().catch(() => null)) as {
-    apiKey?: string;
-    phone?: string;
-  } | null;
+  const body = (await req.json().catch(() => null)) as { apiKey?: string } | null;
   try {
-    const found = await testDocumentsConnection({
+    await testDocumentsConnection({
       tenantId,
       apiKey: body?.apiKey,
-      phone: body?.phone,
     });
-    return NextResponse.json({ found });
+    return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof FlowConfigError
       ? err.errors.join("\n")

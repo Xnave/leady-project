@@ -5,7 +5,7 @@
  */
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { documentApiKey, parseDocumentConfig } from "@/lib/flow/document-config";
+import { documentApiKey, documentConfigFromStored } from "@/lib/flow/document-config";
 import type { Profile } from "./rules";
 import { smartClientFor, toSmartPhone, type SmartClient } from "./smart-npv";
 
@@ -163,7 +163,7 @@ export async function syncSmartNpvTenant(tenantId: string, now = new Date()): Pr
   if (!row) return { status: "skipped", reason: "no_key" };
   let config;
   try {
-    config = parseDocumentConfig(row.config);
+    config = documentConfigFromStored(row.config);
   } catch {
     return { status: "skipped", reason: "invalid" };
   }
@@ -220,6 +220,30 @@ export async function syncSmartNpvTenant(tenantId: string, now = new Date()): Pr
     }),
   );
   return { status: "ran", cursorDate, ...outcome };
+}
+
+/**
+ * The first time a tenant saves a real key, record today's cursor and import
+ * nothing. A later sync, including Sync now, only keeps clients created after
+ * that day. Saving again does not move the cursor.
+ */
+export async function startClientSyncOnKeySave(
+  tenantId: string,
+  now = new Date(),
+): Promise<Extract<TenantSyncResult, { status: "ran" }> | null> {
+  const existing = await prisma.smartNpvSync.findUnique({
+    where: { tenantId },
+    select: { id: true },
+  });
+  if (existing) return null;
+  const outcome = await syncSmartNpvTenant(tenantId, now);
+  if (outcome.status === "skipped") {
+    console.warn(
+      JSON.stringify({ msg: "documents.client_sync_skipped", tenantId, reason: outcome.reason }),
+    );
+    return null;
+  }
+  return outcome.firstRun ? outcome : null;
 }
 
 /** Every documents tenant with a real API key. Test-only configs are skipped. */

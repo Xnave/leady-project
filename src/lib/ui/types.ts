@@ -742,10 +742,8 @@ export type UiCopy = {
       removeField: string;
       openDocument: string;
     };
-    testPhone: string;
     test: string;
     testOk: string;
-    testMissing: string;
     saved: string;
     failed: string;
     missing: string;

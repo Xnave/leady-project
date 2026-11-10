@@ -4,12 +4,13 @@ import { useState } from "react";
 import { RulesEditor } from "@/components/documents/RulesEditor";
 import { loadRulesDocument, rulesIssueList } from "@/lib/documents/rules-form";
 import type { RulesDocument } from "@/lib/documents/rules";
-import type { UiCopy } from "@/lib/ui";
+import { fillUi, type UiCopy } from "@/lib/ui";
 
 type Props = {
   ui: UiCopy;
   enabled: boolean;
   hasKey: boolean;
+  syncCursorDate?: string;
   testPhones: string;
   maxRejectTries: number;
   rejectCooldownMinutes: number;
@@ -25,7 +26,6 @@ export function DocumentsSettingsForm(props: Props) {
   const [testPhones, setTestPhones] = useState(props.testPhones);
   const [maxRejectTries, setMaxRejectTries] = useState(String(props.maxRejectTries));
   const [rejectCooldownMinutes, setRejectCooldownMinutes] = useState(String(props.rejectCooldownMinutes));
-  const [phone, setPhone] = useState("");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,10 +48,17 @@ export function DocumentsSettingsForm(props: Props) {
           rejectCooldownMinutes,
         }),
       });
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as {
+        error?: string;
+        sync?: { firstRun?: boolean; cursorDate?: string } | null;
+      };
       if (!res.ok) throw new Error(data.error ?? copy.failed);
       setApiKey("");
-      setMessage(copy.saved);
+      const [year, month, day] = (data.sync?.cursorDate ?? "").split("-");
+      const date = year && month && day ? `${day}/${month}/${year}` : data.sync?.cursorDate ?? "";
+      setMessage(
+        data.sync?.firstRun ? `${copy.saved} ${fillUi(copy.syncStarted, { date })}` : copy.saved,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : copy.failed);
     } finally {
@@ -67,11 +74,17 @@ export function DocumentsSettingsForm(props: Props) {
       const res = await fetch("/api/settings/documents/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ apiKey, phone }),
+        body: JSON.stringify({ apiKey }),
       });
-      const data = (await res.json()) as { error?: string; found?: boolean };
-      if (!res.ok) throw new Error(data.error ?? copy.failed);
-      setMessage(data.found ? copy.testOk : copy.testMissing);
+      const data = (await res.json()) as { error?: string; ok?: boolean };
+      if (!res.ok) {
+        const message = data.error ?? "";
+        if (/key missing/i.test(message)) setError(copy.syncNeedKey);
+        else if (/rejected|401|403|invalid api_key|unauthorized/i.test(message)) setError(copy.syncAuthFailed);
+        else setError(copy.syncFailed);
+        return;
+      }
+      setMessage(copy.testOk);
     } catch (err) {
       setError(err instanceof Error ? err.message : copy.failed);
     } finally {
@@ -96,6 +109,13 @@ export function DocumentsSettingsForm(props: Props) {
         />
       </label>
       <p className="muted">{copy.apiKeyHint}</p>
+      {props.syncCursorDate ? (
+        <p className="muted">
+          {fillUi(copy.syncStarted, {
+            date: props.syncCursorDate.split("-").reverse().join("/"),
+          })}
+        </p>
+      ) : null}
       {!props.hasKey && !apiKey.trim() ? <p className="muted">{copy.testOnlyWarning}</p> : null}
       <label>
         {copy.testPhones}
@@ -131,10 +151,6 @@ export function DocumentsSettingsForm(props: Props) {
           {props.ui.common.save}
         </button>
       </div>
-      <label>
-        {copy.testPhone}
-        <input value={phone} onChange={(e) => setPhone(e.target.value)} />
-      </label>
       <button type="button" className="btn-secondary" disabled={pending} onClick={() => void testConnection()}>
         {copy.test}
       </button>

@@ -200,8 +200,19 @@ export function createHttpSmartClient(opts: { baseUrl: string; apiKey: string; f
   async function get(path: string, params: Record<string, string>): Promise<Envelope> {
     const query = new URLSearchParams({ api_key: opts.apiKey, ...params });
     const res = await fetchImpl(`${root}${path}?${query}`);
-    if (res.status === 401 || res.status === 403) throw new SmartNpvAuthError(`smart ${path} ${res.status}`);
-    if (!res.ok) throw new Error(`smart ${path} ${res.status}`);
+    if (!res.ok) {
+      let message = "";
+      try {
+        const body = await readEnvelope(res);
+        message = text(body.responseMessage) || text(body.message);
+      } catch {
+        message = "";
+      }
+      if (res.status === 401 || res.status === 403 || smartAuthMessage(message)) {
+        throw new SmartNpvAuthError(message || `smart ${path} ${res.status}`);
+      }
+      throw new Error(`smart ${path} ${res.status}`);
+    }
     return readEnvelope(res);
   }
 
