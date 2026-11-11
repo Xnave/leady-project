@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { IntroFieldChips } from "@/components/IntroFieldChips";
 import { RulesEditor } from "@/components/documents/RulesEditor";
 import { loadRulesDocument, rulesIssueList } from "@/lib/documents/rules-form";
 import type { RulesDocument } from "@/lib/documents/rules";
@@ -12,6 +13,7 @@ type Props = {
   hasKey: boolean;
   syncCursorDate?: string;
   testPhones: string;
+  unrecognizedIntro: string;
   maxRejectTries: number;
   rejectCooldownMinutes: number;
   rules: string;
@@ -24,6 +26,7 @@ export function DocumentsSettingsForm(props: Props) {
   const [rules, setRules] = useState<RulesDocument>(() => loadRulesDocument(props.rules));
   const rulesOk = rulesIssueList(rules).length === 0;
   const [testPhones, setTestPhones] = useState(props.testPhones);
+  const [unrecognizedIntro, setUnrecognizedIntro] = useState(props.unrecognizedIntro);
   const [maxRejectTries, setMaxRejectTries] = useState(String(props.maxRejectTries));
   const [rejectCooldownMinutes, setRejectCooldownMinutes] = useState(String(props.rejectCooldownMinutes));
   const [pending, setPending] = useState(false);
@@ -44,6 +47,7 @@ export function DocumentsSettingsForm(props: Props) {
           apiKey,
           rules,
           testPhones,
+          unrecognizedIntro,
           maxRejectTries,
           rejectCooldownMinutes,
         }),
@@ -122,6 +126,14 @@ export function DocumentsSettingsForm(props: Props) {
         <textarea rows={3} value={testPhones} onChange={(e) => setTestPhones(e.target.value)} />
       </label>
       <p className="muted">{copy.testPhonesHint}</p>
+      <label>
+        {copy.unrecognizedIntro}
+        <textarea rows={3} value={unrecognizedIntro} onChange={(e) => setUnrecognizedIntro(e.target.value)} />
+      </label>
+      <IntroFieldChips
+        onInsert={(token) => setUnrecognizedIntro((current) => `${current}${current ? " " : ""}${token}`)}
+      />
+      <p className="muted">{copy.unrecognizedIntroHint}</p>
       <label>
         {copy.maxRejectTries}
         <input

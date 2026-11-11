@@ -5,6 +5,7 @@ import type { BookingVars } from "./types";
 import type { ChatLanguage } from "@/lib/flow/locale";
 import { stickyReplyLanguage } from "@/lib/flow/locale";
 import type { TurnContext } from "@/lib/flow/types";
+import { fillIntro, introVars } from "@/lib/flow/intro-fields";
 import { formatPhoneDisplay } from "@/lib/leads";
 
 export type { BookingVars } from "./types";
@@ -113,7 +114,7 @@ export function introGreeting(
         !line.startsWith("Always reply") &&
         !line.startsWith("Reply in"),
     );
-  const intro = (ctx.tenant?.intro?.trim() || fromPrompt || "").replace(/\s+/g, " ");
+  const intro = fillIntro(ctx.tenant?.intro?.trim() || fromPrompt || "", introVars(ctx)).replace(/\s+/g, " ");
   const ask = opts?.askHowCanIHelp !== false;
 
   if (!intro) return ask ? chat.helloHelp(name) : chat.hello(name);
@@ -126,7 +127,7 @@ export function introGreeting(
 }
 
 export function cannedFallbackIntro(ctx: TurnContext): string {
-  const intro = ctx.tenant?.intro?.trim();
+  const intro = fillIntro(ctx.tenant?.intro?.trim() ?? "", introVars(ctx));
   if (intro) return intro;
   const lang = replyLang(ctx);
   const name = ctx.tenant?.name?.trim();

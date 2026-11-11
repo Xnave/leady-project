@@ -24,13 +24,7 @@ export function reconcileDocuments(opts: {
   outcome: TalkOutcome;
 }): TalkOutcome {
   const state = documentsState(opts.ctx);
-  let outcome = opts.outcome;
-  if (state?.sayUnrecognized) {
-    const line = copyFor(documentsReplyLang(opts.ctx), { gender: opts.ctx.agent.persona?.gender }).chat.documents
-      .unrecognized;
-    const reply = outcome.reply?.trim() ? `${line}\n${outcome.reply}` : line;
-    outcome = { ...outcome, reply };
-  }
+  const outcome = opts.outcome;
   if (!state?.runIngest) return outcome;
   // The first turn is the intro. Checklist questions start on the next message,
   // unless a file already arrived and has to be stored.
@@ -59,7 +53,8 @@ export function registerDocumentsCapability(): void {
       }
       if (state.unrecognized) {
         return [
-          "This phone number is not in the office system. Answer the question. Do not ask for an ID or for documents.",
+          "This phone number is not in the office system. The first message already used the unrecognized intro.",
+          "Answer the question. Do not say the number is missing, and do not ask for an ID or for documents.",
         ];
       }
       if (state.status === "needs_id" || !state.status) {

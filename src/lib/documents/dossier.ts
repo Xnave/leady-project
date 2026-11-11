@@ -37,7 +37,7 @@ import { applyCustomerAnswers, applyExtractedBiometric, borrowerFileWho, borrowe
 import { docLabel, type BlankFormDef, type Profile, type RulesDocument, type Slot } from "./rules";
 import { checklistSlots, nextCollectionStageId, releasedStageId } from "./mortgage-rules";
 import { exceedsWhatsAppImage, isImageFile, isUploadableFile, smartUploadName, uploadDay, ZERNIO_UPLOAD_BYTES, ZERNIO_UPLOAD_LABEL } from "./file-types";
-import { storedClientByPhone } from "./client-sync";
+import { phoneKey, storedClientByPhone } from "./client-sync";
 import { senderPhone } from "@/lib/demo-phone";
 import { filesToPdf, photoDone } from "./images";
 import { slotNeedsUpload, SMART_NPV_HOST, SmartNpvAuthError, smartClientFor, type SmartClient } from "./smart-npv";
@@ -86,8 +86,12 @@ export type DocumentsTurnState = {
   pendingFile: boolean;
   /** The sender's phone is not in the hourly client table. */
   unrecognized?: boolean;
-  /** Prefix the unrecognized sentence once, then keep answering. */
+  /** The first message uses the unrecognized intro. Later turns do not. */
   sayUnrecognized?: boolean;
+  /** Values for `{{name}}` and the other intro tokens. */
+  introFields?: Record<string, string>;
+  /** Owner opening used instead of the business intro when the phone is unknown. */
+  unrecognizedIntro?: string;
 };
 
 /** The turn already carries the Zernio ids. `connection` is set by loadTurnContext. */
@@ -344,6 +348,8 @@ export async function loadDocumentsTurnState(args: {
       pendingFile: false,
       unrecognized: false,
       sayUnrecognized: false,
+      introFields: {},
+      unrecognizedIntro: "",
     };
   }
   const [dossier, inbound, stored, lastAgent, lead] = await Promise.all([
@@ -395,6 +401,7 @@ export async function loadDocumentsTurnState(args: {
   );
   let unrecognized = false;
   let sayUnrecognized = false;
+  let introFields = state ? introFieldsFromProfile(state.profile, phone) : {};
   if (!isTestLead(config, phone) && (!state || state.status === "needs_id")) {
     const known = await storedClientByPhone(args.tenantId, phone);
     if (!known) {
@@ -407,6 +414,8 @@ export async function loadDocumentsTurnState(args: {
           data: { fields: { ...fields, documentsUnrecognized: true } as Prisma.InputJsonValue },
         });
       }
+    } else {
+      introFields = introFieldsFromProfile(known.profile, phone);
     }
   }
   return {
@@ -420,7 +429,27 @@ export async function loadDocumentsTurnState(args: {
     pendingFile: inbound.files.length > 0,
     unrecognized,
     sayUnrecognized,
+    introFields,
+    unrecognizedIntro: config.unrecognizedIntro,
   };
+}
+
+function introFieldsFromProfile(profile: Profile, phone: string): Record<string, string> {
+  const people = borrowersOf(profile);
+  const key = phoneKey(phone);
+  const match = (key ? people.find((person) => phoneKey(person.phone) === key) : undefined) ?? people[0];
+  const full = (match?.fullName || (typeof profile.fullName === "string" ? profile.fullName : "")).trim();
+  const out: Record<string, string> = {};
+  if (full) {
+    out.name = full;
+    out.full_name = full;
+    out.fullName = full;
+  }
+  const personPhone = (match?.phone || (typeof profile.phone === "string" ? profile.phone : "")).trim();
+  if (personPhone) out.phone = personPhone;
+  const nationalId = (match?.nationalId || (typeof profile.nationalId === "string" ? profile.nationalId : "")).trim();
+  if (nationalId) out.national_id = nationalId;
+  return out;
 }
 
 function reasonText(chat: ReturnType<typeof copyFor>["chat"], reason: string): string {

@@ -34,6 +34,7 @@ export default async function DocumentsSettingsPage() {
         hasKey={pub.hasKey}
         syncCursorDate={sync?.cursorDate}
         testPhones={pub.testPhones.join("\n")}
+        unrecognizedIntro={pub.unrecognizedIntro}
         maxRejectTries={pub.maxRejectTries}
         rejectCooldownMinutes={pub.rejectCooldownMinutes}
         rules={rules}

@@ -2,6 +2,7 @@
 
 import { useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { IntroFieldChips } from "@/components/IntroFieldChips";
 import { RadioCard } from "@/components/RadioCard";
 import { PresetGallery } from "@/components/persona/PresetGallery";
 import { SegmentedControl } from "@/components/persona/SegmentedControl";
@@ -68,6 +69,7 @@ type Props = {
     syncCursorDate?: string;
     maxRejectTries?: number;
     rejectCooldownMinutes?: number;
+    unrecognizedIntro?: string;
   };
   /** Stored Agent.persona; the wizard edits it in place so re-running setup keeps it. */
   persona?: unknown;
@@ -135,6 +137,9 @@ export function OnboardWizard(props: Props) {
   const reservationsEnabled = capabilities.includes("reservations");
   const documentsEnabled = capabilities.includes("documents");
   const [docApiKey, setDocApiKey] = useState("");
+  const [docUnrecognizedIntro, setDocUnrecognizedIntro] = useState(
+    props.documentConfig?.unrecognizedIntro ?? "",
+  );
   const [docMaxRejectTries, setDocMaxRejectTries] = useState(
     String(props.documentConfig?.maxRejectTries ?? 5),
   );
@@ -300,6 +305,7 @@ export function OnboardWizard(props: Props) {
         documentConfig: documentsEnabled
           ? {
               apiKey: docApiKey,
+              unrecognizedIntro: docUnrecognizedIntro,
               rules: docRules,
               maxRejectTries: docMaxRejectTries,
               rejectCooldownMinutes: docRejectCooldownMinutes,
@@ -540,6 +546,8 @@ export function OnboardWizard(props: Props) {
                 placeholder={ui.onboard.fieldIntroPlaceholder}
               />
             </label>
+            <IntroFieldChips onInsert={(token) => appendToken(intro, setIntro, token)} />
+            <p className="muted">{ui.onboard.fieldIntroHint}</p>
             <div className="row">
               <label>
                 {ui.onboard.fieldAddress}
@@ -698,6 +706,18 @@ export function OnboardWizard(props: Props) {
                   />
                 </label>
                 <p className="muted">{ui.documentsUi.apiKeyHint}</p>
+                <label>
+                  {ui.documentsUi.unrecognizedIntro}
+                  <textarea
+                    rows={3}
+                    value={docUnrecognizedIntro}
+                    onChange={(e) => setDocUnrecognizedIntro(e.target.value)}
+                  />
+                </label>
+                <IntroFieldChips
+                  onInsert={(token) => appendToken(docUnrecognizedIntro, setDocUnrecognizedIntro, token)}
+                />
+                <p className="muted">{ui.documentsUi.unrecognizedIntroHint}</p>
                 <div className="">
                   <button
                     type="button"

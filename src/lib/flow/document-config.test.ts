@@ -97,6 +97,17 @@ describe("parseDocumentConfig", () => {
     expect(again.testOnly).toBe(false);
   });
 
+  it("keeps a saved unrecognized intro when the save omits it", () => {
+    process.env.APP_ENCRYPTION_KEY = KEY;
+    const again = parseDocumentConfig(
+      { rules: MORTGAGE_RULES },
+      "",
+      [],
+      "היי, אפשר לשאול אותי כאן.",
+    );
+    expect(again.unrecognizedIntro).toBe("היי, אפשר לשאול אותי כאן.");
+  });
+
   it("keeps reject try and cool-off settings within range", () => {
     process.env.APP_ENCRYPTION_KEY = KEY;
     const saved = parseDocumentConfig({

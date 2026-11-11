@@ -111,6 +111,7 @@ export const chat: ChatCopy = {
   documents: {
       askId: "To find your file, please send your 9-digit ID number.",
       unrecognized: "This number isn't in the office system yet. I can still answer questions.",
+      unrecognizedIntro: "You can ask me here?",
       notFound: "I couldn't find a file with that number. Please check it and send it again.",
       connectionDown: "I can't reach the office system right now. A teammate will follow up.",
       notConfigured: "Document collection hasn't been set up yet. A teammate will follow up shortly.",

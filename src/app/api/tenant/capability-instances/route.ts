@@ -69,6 +69,7 @@ export async function PUT(req: Request) {
         body?.config,
         typeof existing.apiKeyEnc === "string" ? existing.apiKeyEnc : "",
         phones,
+        typeof existing.unrecognizedIntro === "string" ? existing.unrecognizedIntro : "",
       );
     } else if (parse) {
       config = parse(body?.config);

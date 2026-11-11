@@ -16,6 +16,8 @@ export type DocumentConfig = {
   maxRejectTries: number;
   /** Minutes to wait after the try limit before the customer can send that file again. Default 5. */
   rejectCooldownMinutes: number;
+  /** First message when the phone is not in the client table. Empty uses the short default. */
+  unrecognizedIntro: string;
   rules: RulesDocument;
 };
 
@@ -63,6 +65,7 @@ export function parseDocumentConfig(
   raw: unknown,
   existingKeyEnc = "",
   existingTestPhones: string[] = [],
+  existingUnrecognizedIntro = "",
 ): DocumentConfig {
   const errors: string[] = [];
   const body = isRecord(raw) ? raw : {};
@@ -85,6 +88,11 @@ export function parseDocumentConfig(
     1,
     1440,
   );
+  const unrecognizedIntro = (
+    typeof body.unrecognizedIntro === "string" ? body.unrecognizedIntro : existingUnrecognizedIntro
+  )
+    .trim()
+    .slice(0, 1000);
 
   let rules: RulesDocument = MORTGAGE_RULES;
   if (body.rules !== undefined) {
@@ -104,6 +112,7 @@ export function parseDocumentConfig(
     testOnly: !apiKeyEnc,
     maxRejectTries,
     rejectCooldownMinutes,
+    unrecognizedIntro,
     rules,
   };
 }
@@ -142,6 +151,7 @@ export function publicDocumentConfig(config: Record<string, unknown>): {
   testPhones: string[];
   maxRejectTries: number;
   rejectCooldownMinutes: number;
+  unrecognizedIntro: string;
   rules: unknown;
 } {
   const parsed = isRecord(config) ? config : {};
@@ -161,6 +171,7 @@ export function publicDocumentConfig(config: Record<string, unknown>): {
       1,
       1440,
     ),
+    unrecognizedIntro: typeof parsed.unrecognizedIntro === "string" ? parsed.unrecognizedIntro : "",
     rules: parsed.rules ?? MORTGAGE_RULES,
   };
 }

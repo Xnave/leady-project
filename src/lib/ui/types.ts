@@ -353,6 +353,7 @@ export type UiCopy = {
     fieldPhone: string;
     fieldIntro: string;
     fieldIntroPlaceholder: string;
+    fieldIntroHint: string;
     fieldAddress: string;
     fieldAddressPlaceholder: string;
     fieldHours: string;
@@ -625,6 +626,8 @@ export type UiCopy = {
     baseUrl: string;
     apiKey: string;
     apiKeyHint: string;
+    unrecognizedIntro: string;
+    unrecognizedIntroHint: string;
     syncNow: string;
     syncing: string;
     syncHint: string;

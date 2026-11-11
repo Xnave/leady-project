@@ -133,6 +133,7 @@ export async function POST(req: Request) {
         body.documentConfig,
         typeof existing.apiKeyEnc === "string" ? existing.apiKeyEnc : "",
         existingPhones,
+        typeof existing.unrecognizedIntro === "string" ? existing.unrecognizedIntro : "",
       );
       documentConfig = savedDocuments;
     } catch (e) {

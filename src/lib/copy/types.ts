@@ -76,6 +76,8 @@ export type ChatCopy = {
     askId: string;
     /** One line when the sender's phone was not imported. Later turns omit it. */
     unrecognized: string;
+    /** First message when that phone is not in the client table. */
+    unrecognizedIntro: string;
     notFound: string;
     connectionDown: string;
     notConfigured: string;
