@@ -31,6 +31,8 @@ export type SyncStore = {
   upsertContacts(rows: ContactUpsert[]): Promise<{ created: number; updated: number }>;
   /** Lead ids by normalized phone, for this tenant only. */
   leadIdsByPhone(phones: string[]): Promise<Map<string, string>>;
+  /** Which of these external ids are already stored for this source. */
+  existingExternalIds(externalIds: string[]): Promise<Set<string>>;
 };
 
 export type SyncCounts = {
@@ -39,6 +41,8 @@ export type SyncCounts = {
   created: number;
   updated: number;
   skipped: number;
+  /** New clients that failed the keep rules, so they were not stored. */
+  outOfScope: number;
   noPhone: number;
   invalidPhone: number;
   linkedLeads: number;
@@ -46,7 +50,7 @@ export type SyncCounts = {
 };
 
 export function emptyCounts(): SyncCounts {
-  return { fetched: 0, synced: 0, created: 0, updated: 0, skipped: 0, noPhone: 0, invalidPhone: 0, linkedLeads: 0, pages: 0 };
+  return { fetched: 0, synced: 0, created: 0, updated: 0, skipped: 0, outOfScope: 0, noPhone: 0, invalidPhone: 0, linkedLeads: 0, pages: 0 };
 }
 
 export function addCounts(a: SyncCounts, b: SyncCounts): SyncCounts {
@@ -63,15 +67,40 @@ export function isSkipped(record: ClientRecord, config: BaseSourceConfig): boole
   return config.skip.some((rule) => rule.in.includes(fieldText(record.fields[rule.field])));
 }
 
-/** Turn connector records into rows for the store. Pure, so it is easy to test. */
+function yearsBetween(from: Date, to: Date): number {
+  return (to.getTime() - from.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+}
+
+/** True when the client passes every keep rule that is set. No rules = everyone is kept. */
+export function isKept(fields: Record<string, unknown>, dealDate: DealDate, config: BaseSourceConfig, now: Date): boolean {
+  const keep = config.keep ?? { fields: [] };
+  for (const rule of keep.fields) {
+    if (rule.in.length && !rule.in.includes(fieldText(fields[rule.field]))) return false;
+  }
+  const window = keep.dealYearsAgo;
+  if (window && (window.min != null || window.max != null)) {
+    if (!dealDate.date) return false;
+    const years = yearsBetween(dealDate.date, now);
+    if (window.min != null && years < window.min) return false;
+    if (window.max != null && years > window.max) return false;
+  }
+  return true;
+}
+
+/**
+ * Turn connector records into rows for the store. Pure, so it is easy to test.
+ * `outOfScope` holds rows that failed the keep rules: the sync stores them only
+ * when they already exist (a stored client is never dropped, it keeps updating).
+ */
 export function prepareContacts(
   connector: AnyClientConnector,
   config: BaseSourceConfig,
   records: ClientRecord[],
   now: Date,
-): { rows: ContactUpsert[]; counts: SyncCounts } {
+): { rows: ContactUpsert[]; outOfScope: ContactUpsert[]; counts: SyncCounts } {
   const counts = emptyCounts();
   const rows: ContactUpsert[] = [];
+  const outOfScope: ContactUpsert[] = [];
   const seen = new Set<string>();
   for (const record of records) {
     counts.fetched += 1;
@@ -85,18 +114,20 @@ export function prepareContacts(
     if (phone.status === "missing") counts.noPhone += 1;
     if (phone.status === "invalid") counts.invalidPhone += 1;
     const derived = connector.derive(record, config, now);
-    rows.push({
+    const fields = { ...record.fields, ...derived.fields };
+    const row: ContactUpsert = {
       externalId: record.externalId,
       phone: phone.phone,
       phoneStatus: phone.status,
       name: record.name.slice(0, 200),
-      fields: { ...record.fields, ...derived.fields },
+      fields,
       dealDate: derived.dealDate,
       sourceUpdatedAt: record.updatedAt,
       leadId: null,
-    });
+    };
+    (isKept(fields, derived.dealDate, config, now) ? rows : outOfScope).push(row);
   }
-  return { rows, counts };
+  return { rows, outOfScope, counts };
 }
 
 /**
@@ -155,8 +186,18 @@ export async function syncPage(input: SyncPageInput): Promise<SyncPageResult> {
     page = await fetchOnce();
   }
 
-  const { rows, counts } = prepareContacts(input.connector, input.config, page.clients, input.now);
+  const prepared = prepareContacts(input.connector, input.config, page.clients, input.now);
+  const { counts } = prepared;
+  const rows = prepared.rows;
   counts.pages = 1;
+  if (prepared.outOfScope.length) {
+    // Already stored clients stay and keep updating; only new ones are left out.
+    const known = await input.store.existingExternalIds(prepared.outOfScope.map((r) => r.externalId));
+    for (const row of prepared.outOfScope) {
+      if (known.has(row.externalId)) rows.push(row);
+      else counts.outOfScope += 1;
+    }
+  }
   const fieldKeys = [...new Set(page.clients.flatMap((c) => Object.keys(c.fields)))].sort();
 
   const phones = [...new Set(rows.filter((r) => r.phone).map((r) => r.phone))];

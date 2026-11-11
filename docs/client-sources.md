@@ -31,6 +31,10 @@ A connector can declare `sharedCredentials(tenantId)`: credentials the tenant al
 {
   "defaultCountryCode": "972",
   "skip": [{ "field": "archive", "in": ["1"] }],
+  "keep": {
+    "dealYearsAgo": { "min": 3, "max": 7 },
+    "fields": [{ "field": "status_id", "in": ["<relevant status ids>"] }]
+  },
   "pageSize": 100,
   "dealDate": [
     { "field": "last_date_execution", "offsetMonths": 0, "confidence": "high" },
@@ -41,6 +45,8 @@ A connector can declare `sharedCredentials(tenantId)`: credentials the tenant al
   ]
 }
 ```
+
+`keep` limits the sync to clients relevant for campaigns. Every part that is set must match: the deal date is `min` to `max` years ago (a client with no deal date fails), and each field rule's value is in its list (an empty list is ignored). Both are off by default. A **new** client that fails is not stored and is counted as `outOfScope`. A client **already stored** is never removed when it stops matching: it keeps syncing, so its history (campaign sends, opt-outs) stays attached. The status ids are tenant-specific; read them from the admin "test" result (`status_id`, `status_title`).
 
 `dealDate` is a ladder: the first rung with a usable date wins, and the contact keeps the source field and confidence. A rung with `whenField` and an empty `whenIn` never matches, so the `archive_time` rung is off until the tenant's "completed" status ids are known (PR 0 still-open item 2).
 

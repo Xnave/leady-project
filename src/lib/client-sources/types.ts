@@ -62,6 +62,14 @@ export type BaseSourceConfig = {
   defaultCountryCode: string;
   /** Skip a client when `fields[field]` is one of `in` (e.g. archived files). */
   skip: { field: string; in: string[] }[];
+  /**
+   * Store only relevant clients (e.g. a campaign's deal-date window and statuses).
+   * New clients that fail it are not stored; stored ones are never removed.
+   */
+  keep: {
+    dealYearsAgo?: { min?: number; max?: number };
+    fields: { field: string; in: string[] }[];
+  };
 };
 
 export type ClientConnector<Credentials = unknown, Session = unknown, Config extends BaseSourceConfig = BaseSourceConfig> = {

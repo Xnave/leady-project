@@ -20,7 +20,7 @@ type TestResult =
   | { ok: true; counts: { synced: number; noPhone: number; invalidPhone: number; skipped: number }; fieldKeys: string[]; morePages: boolean }
   | { ok: false; error: string };
 
-const STAT_KEYS = ["synced", "created", "updated", "skipped", "noPhone", "invalidPhone", "duplicatePhone", "linkedLeads"] as const;
+const STAT_KEYS = ["synced", "created", "updated", "skipped", "outOfScope", "noPhone", "invalidPhone", "duplicatePhone", "linkedLeads"] as const;
 
 export function AdminClientSources({
   tenantId,

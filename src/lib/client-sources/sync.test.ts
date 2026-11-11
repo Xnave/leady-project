@@ -25,6 +25,9 @@ function memoryStore(leads: Record<string, string> = {}) {
     async leadIdsByPhone(phones) {
       return new Map(phones.filter((p) => leads[p]).map((p) => [p, leads[p]]));
     },
+    async existingExternalIds(ids) {
+      return new Set(ids.filter((id) => contacts.has(id)));
+    },
   };
   return { store, contacts };
 }
@@ -111,6 +114,41 @@ describe("runSync", () => {
     await runSync(input(undefined, store, { dealDate: [{ field: "opened_at", offsetMonths: 0, confidence: "medium" }] }));
     expect(contacts.get("c1")?.dealDate.date).toBeNull();
     expect(contacts.get("c2")?.dealDate).toEqual({ date: new Date("2017-01-15T00:00:00Z"), source: "opened_at", confidence: "medium" });
+  });
+});
+
+describe("keep rules", () => {
+  it("stores only new clients inside the deal-date window", async () => {
+    const { store, contacts } = memoryStore();
+    const result = await runSync(input(undefined, store, { keep: { dealYearsAgo: { min: 7, max: 8 } } }));
+    // c1 signed 03/2019, ~7.7 years before `now`; c2 ~9.6 years; the rest have no deal date.
+    expect([...contacts.keys()]).toEqual(["c1"]);
+    expect(result.counts.outOfScope).toBe(4);
+    expect(result.counts.synced).toBe(1);
+  });
+
+  it("stores only new clients whose field is in the allowed list", async () => {
+    const { store, contacts } = memoryStore();
+    await runSync(input(undefined, store, { keep: { fields: [{ field: "archived", in: ["1"] }] } }));
+    expect([...contacts.keys()]).toEqual(["c4"]);
+  });
+
+  it("ignores a field rule with an empty list", async () => {
+    const { store, contacts } = memoryStore();
+    await runSync(input(undefined, store, { keep: { fields: [{ field: "archived", in: [] }] } }));
+    expect(contacts.size).toBe(5);
+  });
+
+  it("never drops a stored client that stops matching; it keeps updating", async () => {
+    const { store, contacts } = memoryStore();
+    await runSync(input(undefined, store));
+    expect(contacts.size).toBe(5);
+    const renamed = FAKE_CLIENTS.map((c) => (c.externalId === "c2" ? { ...c, name: "Avi Renamed" } : c));
+    const result = await runSync(input(createFakeConnector({ clients: renamed }), store, { keep: { dealYearsAgo: { min: 7, max: 8 } } }));
+    expect(contacts.size).toBe(5);
+    expect(contacts.get("c2")?.name).toBe("Avi Renamed");
+    expect(result.counts.outOfScope).toBe(0);
+    expect(result.counts.updated).toBe(5);
   });
 });
 
