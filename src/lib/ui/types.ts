@@ -616,7 +616,7 @@ export type UiCopy = {
   /** Tenant CRM clients (client campaigns PR 2): admin connect screen and the Clients tab. */
   clientSources: {
     statuses: Record<"idle" | "syncing" | "ok" | "error", string>;
-    stats: Record<"synced" | "created" | "updated" | "skipped" | "noPhone" | "invalidPhone" | "duplicatePhone" | "linkedLeads", string>;
+    stats: Record<"synced" | "created" | "updated" | "skipped" | "outOfScope" | "noPhone" | "invalidPhone" | "duplicatePhone" | "linkedLeads", string>;
     confidence: Record<"high" | "medium_high" | "medium" | "low", string>;
     admin: {
       title: string;

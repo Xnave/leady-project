@@ -185,6 +185,15 @@ export function prismaSyncStore(tenantId: string, sourceId: string): SyncStore {
       return out;
     },
 
+    async existingExternalIds(externalIds) {
+      if (!externalIds.length) return new Set<string>();
+      const rows = await prisma.contact.findMany({
+        where: { tenantId, sourceId, externalId: { in: externalIds } },
+        select: { externalId: true },
+      });
+      return new Set(rows.map((r) => r.externalId));
+    },
+
     async upsertContacts(rows: ContactUpsert[]) {
       const existing = await prisma.contact.findMany({
         where: { tenantId, sourceId, externalId: { in: rows.map((r) => r.externalId) } },
