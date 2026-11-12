@@ -3,6 +3,8 @@
 #
 #   diff      Read-only. Prints the SQL that would bring the database to prisma/schema.prisma.
 #             Before `migrate` it must equal the pending migration file(s); after, it must be empty.
+#   check     Read-only. Same as diff, and exits non-zero when that SQL is not empty.
+#             CI runs this against staging and production. Only the production result fails the pull request.
 #   verify    Read-only. Checks that `diff` is exactly the pending migrations (order aside),
 #             i.e. the database matches the last applied migration and nothing else drifted.
 #   status    Read-only. Which migrations the database has applied, and which are pending.
@@ -37,13 +39,24 @@ database_url_from_file() {
 }
 
 cmd="${1:-}"
-DATABASE_URL="$(database_url_from_file "$ENV_FILE")"
-export DATABASE_URL
+# CI passes the URL in the environment (DATABASE_URL_FROM_ENV=1) so the secret
+# stays out of a file. Local commands keep reading ENV_FILE.
+if [[ "${DATABASE_URL_FROM_ENV:-}" == "1" ]]; then
+  if [[ -z "${DATABASE_URL:-}" ]]; then
+    echo "DATABASE_URL is empty." >&2
+    exit 1
+  fi
+  source_label="the environment"
+else
+  DATABASE_URL="$(database_url_from_file "$ENV_FILE")"
+  export DATABASE_URL
+  source_label="${ENV_FILE}"
+fi
 cd "$ROOT"
 # Show the target (host/db, no credentials) so a wrong env file is obvious.
 target="${DATABASE_URL#*@}"
 target="${target%%\?*}"
-echo "Target database: ${target} (from ${ENV_FILE})" >&2
+echo "Target database: ${target} (from ${source_label})" >&2
 
 # Changes need a person at a terminal typing the host back. With no terminal (a script,
 # CI, an agent, a stray command substitution) the answer can't be given, so it aborts.
@@ -69,6 +82,22 @@ esac
 case "$cmd" in
   diff)
     npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --script
+    ;;
+  check)
+    # Empty diff exits 0. A real SQL diff exits 2. Anything else is a connection or schema error.
+    set +e
+    npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --script --exit-code
+    code=$?
+    set -e
+    if [[ "$code" -eq 0 ]]; then
+      echo "OK: no schema diff."
+      exit 0
+    fi
+    if [[ "$code" -eq 2 ]]; then
+      echo "Schema diff is not empty. Apply the migration to this database before merging." >&2
+      exit 1
+    fi
+    exit "$code"
     ;;
   verify)
     # Pending = what `migrate status` lists; before the baseline, 0_init counts as already there.
@@ -98,7 +127,7 @@ case "$cmd" in
     npx tsx scripts/crm-backfill.ts
     ;;
   *)
-    echo "Usage: db-production.sh diff|verify|status|baseline|migrate|backfill" >&2
+    echo "Usage: db-production.sh diff|check|verify|status|baseline|migrate|backfill" >&2
     exit 1
     ;;
 esac
