@@ -179,6 +179,7 @@ type Envelope = {
   uuid?: string;
   remoteId?: string;
   responseClientFields?: Record<string, unknown> | null;
+  responseClientsCount?: number;
   responseClients?: Record<string, unknown>[];
   responseDocuments?: unknown;
 };
@@ -216,6 +217,47 @@ export function createHttpSmartClient(opts: { baseUrl: string; apiKey: string; f
     return readEnvelope(res);
   }
 
+export type SmartListPage = {
+  /** Raw clients/list rows (100+ fields each). Callers keep only what they need. */
+  rows: Record<string, unknown>[];
+  /** responseClientsCount, when Smart NPV sends it. */
+  total: number | null;
+};
+
+/** One page of clients/list, unmapped. Used by the document lookup and by client sources. */
+export async function fetchSmartClientList(opts: {
+  apiKey: string;
+  query?: SmartListQuery;
+  fetchImpl?: typeof fetch;
+  baseUrl?: string;
+}): Promise<SmartListPage> {
+  const query = opts.query ?? {};
+  const params: Record<string, string> = {};
+  if (query.limit != null) params.limit = String(query.limit);
+  if (query.offset != null) params.offset = String(query.offset);
+  if (query.rangeType != null) params.range_type = String(query.rangeType);
+  if (query.from) params.from = query.from;
+  if (query.until) params.until = query.until;
+  const body = await smartGet(opts, "/clients/list", params);
+  if (body.response === false) {
+    const message = text(body.responseMessage) || text(body.message);
+    if (smartAuthMessage(message)) throw new SmartNpvAuthError(message || "smart key rejected");
+    throw new Error(message || "smart list failed");
+  }
+  return {
+    rows: Array.isArray(body.responseClients) ? body.responseClients : [],
+    total: typeof body.responseClientsCount === "number" ? body.responseClientsCount : null,
+  };
+}
+
+export function createHttpSmartClient(opts: { baseUrl: string; apiKey: string; fetchImpl?: typeof fetch }): SmartClient {
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const root = apiRoot(opts.baseUrl);
+
+  function get(path: string, params: Record<string, string>): Promise<Envelope> {
+    return smartGet({ apiKey: opts.apiKey, fetchImpl, baseUrl: opts.baseUrl }, path, params);
+  }
+
   return {
     async findClient(query) {
       const params: Record<string, string> = {};
@@ -248,15 +290,8 @@ export function createHttpSmartClient(opts: { baseUrl: string; apiKey: string; f
       return hitFromClient(fields, query.nationalId ?? "");
     },
     async listClients(query = {}) {
-      const params: Record<string, string> = {};
-      if (query.limit != null) params.limit = String(query.limit);
-      if (query.offset != null) params.offset = String(query.offset);
-      if (query.rangeType != null) params.range_type = String(query.rangeType);
-      if (query.from) params.from = query.from;
-      if (query.until) params.until = query.until;
-      const body = await get("/clients/list", params);
-      if (body.response === false) throw new Error(body.responseMessage || "smart list failed");
-      return (body.responseClients ?? [])
+      const { rows } = await fetchSmartClientList({ apiKey: opts.apiKey, fetchImpl, baseUrl: opts.baseUrl, query });
+      return rows
         .map((row) => hitFromClient(row))
         .filter((hit): hit is SmartClientHit => hit !== null);
     },
@@ -297,7 +332,7 @@ export function createHttpSmartClient(opts: { baseUrl: string; apiKey: string; f
 }
 
 function smartAuthMessage(message: string): boolean {
-  return /api[_\s-]?key|invalid key|unauthorized|permission|not authorized|authentication/i.test(message);
+  return /api[_\s-]?key|invalid key|unauthorized|permission|not authorized|authentication|הרשא|מפתח/i.test(message);
 }
 
 export function smartClientFor(opts: { baseUrl: string; apiKey: string }): SmartClient {

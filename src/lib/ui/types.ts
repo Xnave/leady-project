@@ -65,6 +65,7 @@ export type UiCopy = {
     team: string;
     digest: string;
     agent: string;
+    clients: string;
     documents: string;
     campaigns: string;
   };
@@ -90,6 +91,7 @@ export type UiCopy = {
     statusExpired: string;
     /** "expires {when}" on the acting-as chip. */
     actingExpires: string;
+    clientSources: string;
     /** Tenant row action: open the client campaigns add-on settings. */
     campaigns: string;
   };
@@ -617,6 +619,79 @@ export type UiCopy = {
     /** Demo → settings: strip showing which persona is live. */
     liveStyle: string;
     changeStyle: string;
+  };
+  /** Tenant CRM clients (client campaigns PR 2): admin connect screen and the Clients tab. */
+  clientSources: {
+    statuses: Record<"idle" | "syncing" | "ok" | "error", string>;
+    stats: Record<"synced" | "created" | "updated" | "skipped" | "outOfScope" | "noPhone" | "invalidPhone" | "duplicatePhone" | "linkedLeads", string>;
+    confidence: Record<"high" | "medium_high" | "medium" | "low", string>;
+    admin: {
+      title: string;
+      back: string;
+      blurb: string;
+      sources: string;
+      empty: string;
+      connect: string;
+      edit: string;
+      kind: string;
+      label: string;
+      labelHint: string;
+      credentials: string;
+      keepCredentials: string;
+      /** The Smart NPV key is already saved in Documents settings and is reused. */
+      sharedCredentials: string;
+      config: string;
+      configHint: string;
+      save: string;
+      saving: string;
+      saved: string;
+      test: string;
+      testing: string;
+      /** "{n}" clients on the first page. */
+      testOk: string;
+      testMore: string;
+      testFields: string;
+      syncNow: string;
+      syncing: string;
+      syncQueued: string;
+      syncDone: string;
+      status: string;
+      lastSync: string;
+      never: string;
+      lastError: string;
+      contacts: string;
+      errors: Record<"unknown_kind" | "bad_credentials" | "bad_config" | "credentials_required" | "bad_json" | "failed", string>;
+    };
+    page: {
+      title: string;
+      blurb: string;
+      search: string;
+      confidenceLabel: string;
+      confidenceAll: string;
+      confidenceNone: string;
+      dealFrom: string;
+      dealTo: string;
+      filter: string;
+      clear: string;
+      cols: { name: string; phone: string; dealDate: string; source: string };
+      linkedLead: string;
+      phoneMissing: string;
+      phoneInvalid: string;
+      empty: string;
+      emptyFiltered: string;
+      syncNow: string;
+      syncing: string;
+      syncQueued: string;
+      syncDone: string;
+      syncFailed: string;
+      /** "{when}" */
+      lastSync: string;
+      never: string;
+      /** "{n}" */
+      total: string;
+      prev: string;
+      next: string;
+    };
   };
   documentsUi: {
     title: string;
