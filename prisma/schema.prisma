@@ -55,8 +55,6 @@ model Tenant {
   contacts             Contact[]
   dossiers             Dossier[]
   leadDocuments        LeadDocument[]
-  smartNpvSync         SmartNpvSync?
-  smartNpvClients      SmartNpvClient[]
   campaignSettings     TenantCampaignSettings?
   whatsAppTemplates    WhatsAppTemplate[]
 }
@@ -440,37 +438,6 @@ model LeadDocument {
   @@index([tenantId, messageId])
 }
 
-/** The day the hourly client sync started. Clients created on or before this day stay out. */
-model SmartNpvSync {
-  id         String   @id @default(cuid())
-  tenantId   String   @unique
-  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  /** YYYY-MM-DD in Asia/Jerusalem. Set on the first run, which imports nothing. Later runs include this day. */
-  cursorDate String
-  lastRunAt  DateTime @default(now())
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-}
-
-/** A Smart NPV client created on or after the sync cursor day. Not a lead until they message. */
-model SmartNpvClient {
-  id            String   @id @default(cuid())
-  tenantId      String
-  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  smartClientId String
-  phone1        String   @default("")
-  phone2        String   @default("")
-  /** Checklist facts from clients/get. */
-  profile       Json     @default("{}")
-  /** YYYY-MM-DD from the list row's created field. */
-  createdOn     String   @default("")
-  syncedAt      DateTime @default(now())
-
-  @@unique([tenantId, smartClientId])
-  @@index([tenantId, phone1])
-  @@index([tenantId, phone2])
-}
-
 model MediaAsset {
   id          String   @id @default(cuid())
   tenantId    String
@@ -619,6 +586,8 @@ model ClientSource {
   credentialsEnc String
   /** Per-tenant connector settings: derived-field order, filters, default country code. */
   config         Json      @default("{}")
+  /** Sync contacts from this moment. Set once on connect. */
+  syncSince      DateTime?
   /** idle | syncing | ok | error */
   status         String    @default("idle")
   lastError      String    @default("")
@@ -651,7 +620,10 @@ model Contact {
   /** ok | missing | invalid */
   phoneStatus        String       @default("missing")
   name               String       @default("")
-  fields             Json         @default("{}")
+  /** The CRM row. Empty when the source's storeRaw setting is off. */
+  raw                Json         @default("{}")
+  /** Catalog columns, checklist facts, and phone keys. Every reader uses this. */
+  mapped             Json         @default("{}")
   dealDate           DateTime?
   /** Source field the deal date came from, "" when none matched. */
   dealDateSource     String       @default("")

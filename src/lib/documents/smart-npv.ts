@@ -194,28 +194,30 @@ async function readEnvelope(res: Response): Promise<Envelope> {
   return body && typeof body === "object" ? body : {};
 }
 
-export function createHttpSmartClient(opts: { baseUrl: string; apiKey: string; fetchImpl?: typeof fetch }): SmartClient {
-  const root = apiRoot(opts.baseUrl);
+async function smartGet(
+  opts: { apiKey: string; fetchImpl?: typeof fetch; baseUrl?: string },
+  path: string,
+  params: Record<string, string>,
+): Promise<Envelope> {
+  const root = apiRoot(opts.baseUrl ?? SMART_NPV_HOST);
   const fetchImpl = opts.fetchImpl ?? fetch;
-
-  async function get(path: string, params: Record<string, string>): Promise<Envelope> {
-    const query = new URLSearchParams({ api_key: opts.apiKey, ...params });
-    const res = await fetchImpl(`${root}${path}?${query}`);
-    if (!res.ok) {
-      let message = "";
-      try {
-        const body = await readEnvelope(res);
-        message = text(body.responseMessage) || text(body.message);
-      } catch {
-        message = "";
-      }
-      if (res.status === 401 || res.status === 403 || smartAuthMessage(message)) {
-        throw new SmartNpvAuthError(message || `smart ${path} ${res.status}`);
-      }
-      throw new Error(`smart ${path} ${res.status}`);
+  const query = new URLSearchParams({ api_key: opts.apiKey, ...params });
+  const res = await fetchImpl(`${root}${path}?${query}`);
+  if (!res.ok) {
+    let message = "";
+    try {
+      const body = await readEnvelope(res);
+      message = text(body.responseMessage) || text(body.message);
+    } catch {
+      message = "";
     }
-    return readEnvelope(res);
+    if (res.status === 401 || res.status === 403 || smartAuthMessage(message)) {
+      throw new SmartNpvAuthError(message || `smart ${path} ${res.status}`);
+    }
+    throw new Error(`smart ${path} ${res.status}`);
   }
+  return readEnvelope(res);
+}
 
 export type SmartListPage = {
   /** Raw clients/list rows (100+ fields each). Callers keep only what they need. */

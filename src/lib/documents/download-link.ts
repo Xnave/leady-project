@@ -1,6 +1,7 @@
 import { loadInstanceConfig } from "@/lib/capability-instances";
 import { prisma } from "@/lib/db";
 import { documentApiKey, documentConfigFromStored } from "@/lib/flow/document-config";
+import { smartNpvApiKey } from "./client-sync";
 import { presignedUrlStale, uploadDay } from "./file-types";
 import { SMART_NPV_HOST, smartClientFor } from "./smart-npv";
 
@@ -26,13 +27,14 @@ export async function currentDownloadUrl(doc: StoredDownload): Promise<string | 
   try {
     const raw = await loadInstanceConfig({ tenantId: doc.tenantId, capabilityId: "documents" });
     const config = documentConfigFromStored({ ...raw, baseUrl: SMART_NPV_HOST });
-    if (!config.apiKeyEnc) return null;
+    const apiKey = (await smartNpvApiKey(doc.tenantId)) || (config.apiKeyEnc ? documentApiKey(config) : "");
+    if (!apiKey) return null;
     const dossier = await prisma.dossier.findFirst({
       where: { id: doc.dossierId, tenantId: doc.tenantId },
       select: { smartClientId: true },
     });
     if (!dossier?.smartClientId) return null;
-    const client = smartClientFor({ baseUrl: config.baseUrl, apiKey: documentApiKey(config) });
+    const client = smartClientFor({ baseUrl: config.baseUrl, apiKey });
     if (!client.listUploads) return null;
     const names = new Set([doc.remoteId, doc.filename].filter(Boolean));
     const days = [...new Set([uploadDay(doc.createdAt), uploadDay(new Date())])];

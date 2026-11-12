@@ -92,4 +92,4 @@ The script fails when the fetched client mismatches before the chat, the next qu
 
 Known answers the runner sends without a script line: biometric "לא", another loan "אין הלוואות נוספות", no more photos "אין עוד". Identity photos for borrower 2 come from `BORROWER_2_FIXTURES`. Other borrower 2 files use the shared fixtures.
 
-The local purge deletes that lead's conversations, messages, dossiers, and documents, and the stored `SmartNpvClient` rows for that phone. It leaves the Lead row. It does not delete a standing remote client.
+The local purge deletes that lead's conversations, messages, dossiers, and documents, and the stored Smart NPV `Contact` rows for that phone. It leaves the Lead row. It does not delete a standing remote client.

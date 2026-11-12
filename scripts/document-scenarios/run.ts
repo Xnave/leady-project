@@ -22,10 +22,11 @@ import { prisma } from "../../src/lib/db";
 import { encryptBytes } from "../../src/lib/crypto";
 import { persistInboundIfNew } from "../../src/lib/conversations";
 import { DEMO_PHONE_PREFIX } from "../../src/lib/demo-phone";
+import { normalizeClientPhone } from "../../src/lib/client-sources/phone";
 import { phoneKey, storedClientByPhone } from "../../src/lib/documents/client-sync";
 import { factsOpen, nextQuestion } from "../../src/lib/documents/facts";
 import type { Profile } from "../../src/lib/documents/rules";
-import { createdDay, mapSmartProfile, toSmartPhone } from "../../src/lib/documents/smart-npv";
+import { mapSmartProfile, toSmartPhone } from "../../src/lib/documents/smart-npv";
 import type { SlotState } from "../../src/lib/documents/validate";
 import { documentConfigFromStored } from "../../src/lib/flow/document-config";
 import { runTurnNow, tryDispatchNudgeEvent, tryDispatchOwnerAlertEvents } from "../../src/lib/flow/run-turn";
@@ -329,9 +330,42 @@ async function purgeLocal(tenantId: string, leadId: string, phone: string, uuid:
   await prisma.dossier.deleteMany({ where: { tenantId, leadId } });
   await prisma.conversation.deleteMany({ where: { tenantId, leadId } });
   const ids = [TEST_UUID, STATUS_ZERO_PROBE_UUID, MIXED_COUPLE_UUID, uuid].filter(Boolean);
-  await prisma.smartNpvClient.deleteMany({
-    where: { tenantId, OR: [{ smartClientId: { in: ids } }, { phone1: phone }, { phone2: phone }] },
+  const key = contactPhone(phone);
+  await prisma.contact.deleteMany({
+    where: {
+      tenantId,
+      source: { kind: "smartnpv" },
+      OR: [
+        { externalId: { in: ids } },
+        ...(key
+          ? [{ phone: key }, { mapped: { path: ["phone_2"], equals: key } }]
+          : []),
+      ],
+    },
   });
+}
+
+function contactPhone(phone: string): string {
+  const normalized = normalizeClientPhone(phone, "972");
+  return normalized.status === "ok" ? normalized.phone : "";
+}
+
+async function scenarioSourceId(tenantId: string): Promise<string> {
+  const existing = await prisma.clientSource.findFirst({
+    where: { tenantId, kind: "smartnpv" },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  const created = await prisma.clientSource.create({
+    data: {
+      tenantId,
+      kind: "smartnpv",
+      credentialsEnc: "",
+      syncSince: new Date(),
+      config: { storeRaw: false, freezeAfterFirstSync: true },
+    },
+  });
+  return created.id;
 }
 
 function formatRow(cells: string[]): string {
@@ -451,14 +485,22 @@ async function main() {
 
     if (!resume) {
       await purgeLocal(tenantId, lead.id, phone, uuid);
-      await prisma.smartNpvClient.create({
+      const phone1 = contactPhone(phone);
+      const phone2 = contactPhone(toSmartPhone(textOf(fields.phone_2)));
+      await prisma.contact.create({
         data: {
           tenantId,
-          smartClientId: uuid,
-          phone1: phone,
-          phone2: toSmartPhone(textOf(fields.phone_2)),
-          profile: mapSmartProfile(fields) as Prisma.InputJsonValue,
-          createdOn: createdDay(fields.created),
+          sourceId: await scenarioSourceId(tenantId),
+          externalId: uuid,
+          phone: phone1,
+          phoneStatus: phone1 ? "ok" : "missing",
+          name: name.slice(0, 200),
+          mapped: {
+            phone_1: phone1,
+            ...(phone2 ? { phone_2: phone2 } : {}),
+            checklist: mapSmartProfile(fields),
+            created: fields.created ?? "",
+          } as Prisma.InputJsonValue,
         },
       });
     }

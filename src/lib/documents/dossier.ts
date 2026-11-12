@@ -37,7 +37,7 @@ import { applyCustomerAnswers, applyExtractedBiometric, borrowerFileWho, borrowe
 import { docLabel, type BlankFormDef, type Profile, type RulesDocument, type Slot } from "./rules";
 import { checklistSlots, nextCollectionStageId, releasedStageId } from "./mortgage-rules";
 import { exceedsWhatsAppImage, isImageFile, isUploadableFile, smartUploadName, uploadDay, ZERNIO_UPLOAD_BYTES, ZERNIO_UPLOAD_LABEL } from "./file-types";
-import { phoneKey, storedClientByPhone } from "./client-sync";
+import { phoneKey, smartNpvApiKey, storedClientByPhone } from "./client-sync";
 import { senderPhone } from "@/lib/demo-phone";
 import { filesToPdf, photoDone } from "./images";
 import { slotNeedsUpload, SMART_NPV_HOST, SmartNpvAuthError, smartClientFor, type SmartClient } from "./smart-npv";
@@ -2266,10 +2266,14 @@ export async function runDocumentsIngest(
   const chat = copyFor(lang, { gender: ctx.agent.persona?.gender }).chat;
   if (!config) return { ok: false, reply: customerReply(ctx, chat.documents.notConfigured) };
 
-  const testing = isTestLead(config, phoneOf(ctx));
-  const client = deps?.client ?? (testing
+  const apiKey = deps?.client
+    ? ""
+    : (await smartNpvApiKey(ctx.tenantId)) || (config.apiKeyEnc ? documentApiKey(config) : "");
+  const withKey = deps?.client ? config : { ...config, apiKeyEnc: apiKey ? "present" : "" };
+  const testing = isTestLead(withKey, phoneOf(ctx));
+  const client = deps?.client ?? (testing || !apiKey
     ? offlineSmartClient()
-    : smartClientFor({ baseUrl: config.baseUrl, apiKey: documentApiKey(config) }));
+    : smartClientFor({ baseUrl: config.baseUrl, apiKey }));
   const extract = deps?.extract ?? extractDocument;
   const lines: string[] = [];
   const inbound = await loadIngestWindow({

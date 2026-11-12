@@ -19,11 +19,10 @@ export default async function OnboardPage() {
   const ui = uiCopy(lang);
   const tenant = await prisma.tenant.findFirst({ where: { id: tenantId } });
   if (!tenant) return <p className="empty-state">{ui.errors.noTenant}</p>;
-  const [bookingConfig, reservationConfig, documentConfig, sync] = await Promise.all([
+  const [bookingConfig, reservationConfig, documentConfig] = await Promise.all([
     loadInstanceConfig({ tenantId, capabilityId: "booking" }),
     loadInstanceConfig({ tenantId, capabilityId: "reservations" }),
     loadInstanceConfig({ tenantId, capabilityId: "documents" }),
-    prisma.smartNpvSync.findUnique({ where: { tenantId }, select: { cursorDate: true } }),
   ]);
   const booking = parseBookingConfig(bookingConfig);
   const agent = await prisma.agent.findFirst({ where: { tenantId } });
@@ -59,10 +58,7 @@ export default async function OnboardPage() {
         bookingApprovedTemplate={booking.messageTemplates.approved ?? ""}
         bookingRejectedTemplate={booking.messageTemplates.rejected ?? ""}
         reservationConfig={reservationConfig}
-        documentConfig={{
-          ...publicDocumentConfig(documentConfig),
-          syncCursorDate: sync?.cursorDate,
-        }}
+        documentConfig={publicDocumentConfig(documentConfig)}
         bookingCollect={bookingCollectFromFlow(flow)}
         persona={agent?.persona}
       />

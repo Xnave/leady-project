@@ -1,6 +1,6 @@
 # Documents capability
 
-A lead sends files on WhatsApp, Instagram, or `/demo`. The agent matches the sender to a Smart NPV client, opens a checklist from JSON rules, checks each file, and uploads an accepted file once. The checklist is data on the tenant's `documents` capability instance. A new document type that uses a check the engine already knows is a JSON edit. A new kind of check is a code change in one place.
+A lead sends files on WhatsApp, Instagram, or `/demo`. The agent matches the sender to a Smart NPV client, opens a checklist from JSON rules, checks each file, and uploads an accepted file once. The checklist is data on the tenant's `documents` capability instance. The Smart NPV key, the connection test, and the client sync live on the tenant's Smart NPV client source. A sender matches a stored contact by the primary phone and the phone keys on `Contact.mapped`. A new document type that uses a check the engine already knows is a JSON edit. A new kind of check is a code change in one place.
 
 File formats (PDF, PNG, JPG, JPEG) are not document types. They live only in `src/lib/documents/file-types.ts`.
 

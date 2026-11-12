@@ -38,10 +38,6 @@ import { fillUi, stepLabel, uiCopy, type UiLang } from "@/lib/ui";
 
 const WIZARD_STEPS = ["knowledge", "business", "flow", "done"] as const;
 
-function showSyncDay(iso?: string): string {
-  const [year, month, day] = (iso ?? "").split("-");
-  return year && month && day ? `${day}/${month}/${year}` : iso ?? "";
-}
 const PRODUCT_CAPABILITIES: CapabilityId[] = ["booking", "reservations", "documents"];
 const READY_CAPABILITIES = new Set<CapabilityId>(["booking", "reservations", "documents"]);
 
@@ -65,8 +61,6 @@ type Props = {
   documentConfig?: {
     baseUrl?: string;
     rules?: unknown;
-    hasKey?: boolean;
-    syncCursorDate?: string;
     maxRejectTries?: number;
     rejectCooldownMinutes?: number;
     unrecognizedIntro?: string;
@@ -136,7 +130,6 @@ export function OnboardWizard(props: Props) {
   const bookingEnabled = capabilities.includes("booking");
   const reservationsEnabled = capabilities.includes("reservations");
   const documentsEnabled = capabilities.includes("documents");
-  const [docApiKey, setDocApiKey] = useState("");
   const [docUnrecognizedIntro, setDocUnrecognizedIntro] = useState(
     props.documentConfig?.unrecognizedIntro ?? "",
   );
@@ -150,19 +143,6 @@ export function OnboardWizard(props: Props) {
     loadRulesDocument(props.documentConfig?.rules ?? MORTGAGE_RULES),
   );
   const rulesOk = rulesIssueList(docRules).length === 0;
-  const [keyReady, setKeyReady] = useState(Boolean(props.documentConfig?.hasKey));
-  const [syncing, setSyncing] = useState(false);
-  const [syncNote, setSyncNote] = useState(() =>
-    props.documentConfig?.syncCursorDate
-      ? fillUi(ui.documentsUi.syncStarted, {
-          date: showSyncDay(props.documentConfig.syncCursorDate),
-        })
-      : "",
-  );
-  const [syncError, setSyncError] = useState("");
-  const [testing, setTesting] = useState(false);
-  const [testNote, setTestNote] = useState("");
-  const [testError, setTestError] = useState("");
   const catalogId: CatalogId =
     bookingEnabled || reservationsEnabled ? "inbox" : "faq";
   const [venueAddress, setVenueAddress] = useState(props.venueAddress ?? "");
@@ -304,7 +284,6 @@ export function OnboardWizard(props: Props) {
         reservationConfig,
         documentConfig: documentsEnabled
           ? {
-              apiKey: docApiKey,
               unrecognizedIntro: docUnrecognizedIntro,
               rules: docRules,
               maxRejectTries: docMaxRejectTries,
@@ -315,49 +294,12 @@ export function OnboardWizard(props: Props) {
       }),
     });
     setSaving(false);
-    const data = (await res.json().catch(() => ({}))) as {
-      error?: string;
-      documents?: {
-        hasKey?: boolean;
-        sync?: { firstRun?: boolean; cursorDate?: string } | null;
-      } | null;
-    };
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) {
       setError(data.error ?? ui.onboard.saveFailed);
       return;
     }
-    if (data.documents?.hasKey) setKeyReady(true);
-    if (data.documents?.sync?.firstRun) {
-      setSyncNote(fillUi(ui.documentsUi.syncStarted, { date: showSyncDay(data.documents.sync.cursorDate) }));
-    }
     setStep(3);
-  }
-
-  async function testKey() {
-    setTesting(true);
-    setTestNote("");
-    setTestError("");
-    try {
-      const res = await fetch("/api/settings/documents/test", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ apiKey: docApiKey }),
-      });
-      const data = (await res.json()) as { error?: string; ok?: boolean };
-      if (!res.ok) {
-        const message = data.error ?? "";
-        if (/key missing/i.test(message)) setTestError(ui.documentsUi.syncNeedKey);
-        else if (/rejected|401|403|invalid api_key|unauthorized/i.test(message)) {
-          setTestError(ui.documentsUi.syncAuthFailed);
-        } else setTestError(ui.documentsUi.syncFailed);
-        return;
-      }
-      setTestNote(ui.documentsUi.testOk);
-    } catch {
-      setTestError(ui.documentsUi.failed);
-    } finally {
-      setTesting(false);
-    }
   }
 
   function toggleReservationCollect(id: string) {
@@ -398,47 +340,6 @@ export function OnboardWizard(props: Props) {
     "{{address}}",
     "{{hours}}",
   ];
-
-  async function syncClientsNow() {
-    setSyncing(true);
-    setSyncNote("");
-    setSyncError("");
-    try {
-      const res = await fetch("/api/documents/sync", { method: "POST" });
-      const data = (await res.json()) as {
-        error?: string;
-        firstRun?: boolean;
-        imported?: number;
-        failed?: number;
-        cursorDate?: string;
-      };
-      if (!res.ok) {
-        if (data.error === "no_key" || data.error === "test_only") {
-          setSyncError(ui.documentsUi.syncNeedKey);
-        } else if (data.error === "auth") {
-          setSyncError(ui.documentsUi.syncAuthFailed);
-        } else {
-          setSyncError(ui.documentsUi.syncFailed);
-        }
-        return;
-      }
-      if (data.firstRun) {
-        setSyncNote(fillUi(ui.documentsUi.syncStarted, { date: showSyncDay(data.cursorDate) }));
-        return;
-      }
-      const imported = data.imported ?? 0;
-      const failed = data.failed ?? 0;
-      setSyncNote(
-        failed > 0
-          ? fillUi(ui.documentsUi.syncDoneFailed, { imported, failed })
-          : fillUi(ui.documentsUi.syncDone, { imported }),
-      );
-    } catch {
-      setSyncError(ui.documentsUi.syncFailed);
-    } finally {
-      setSyncing(false);
-    }
-  }
 
   function appendToken(current: string, set: (v: string) => void, token: string) {
     set(`${current}${current ? " " : ""}${token}`);
@@ -695,17 +596,7 @@ export function OnboardWizard(props: Props) {
               <fieldset>
                 <legend>{ui.documentsUi.settingsTitle}</legend>
                 <p className="muted rules-hint">{ui.documentsUi.rulesHint}</p>
-                <label>
-                  {ui.documentsUi.apiKey}
-                  <input
-                    type="password"
-                    value={docApiKey}
-                    onChange={(e) => setDocApiKey(e.target.value)}
-                    placeholder={props.documentConfig?.hasKey ? "••••" : ""}
-                    autoComplete="off"
-                  />
-                </label>
-                <p className="muted">{ui.documentsUi.apiKeyHint}</p>
+                <p className="muted">{ui.documentsUi.keyOnSources}</p>
                 <label>
                   {ui.documentsUi.unrecognizedIntro}
                   <textarea
@@ -718,31 +609,6 @@ export function OnboardWizard(props: Props) {
                   onInsert={(token) => appendToken(docUnrecognizedIntro, setDocUnrecognizedIntro, token)}
                 />
                 <p className="muted">{ui.documentsUi.unrecognizedIntroHint}</p>
-                <div className="">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={testing || (!docApiKey.trim() && !keyReady)}
-                    aria-busy={testing}
-                    onClick={() => void testKey()}
-                  >
-                    {ui.documentsUi.test}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={syncing || !keyReady}
-                    aria-busy={syncing}
-                    onClick={() => void syncClientsNow()}
-                  >
-                    {syncing ? ui.documentsUi.syncing : ui.documentsUi.syncNow}
-                  </button>
-                </div>
-                {/* <p className="muted">{keyReady ? ui.documentsUi.syncHint : ui.documentsUi.syncNeedKey}</p> */}
-                {testNote ? <p className="muted">{testNote}</p> : null}
-                {testError ? <p className="error">{testError}</p> : null}
-                {syncNote ? <p className="muted">{syncNote}</p> : null}
-                {syncError ? <p className="error">{syncError}</p> : null}
                 <label>
                   {ui.documentsUi.maxRejectTries}
                   <input
@@ -964,7 +830,6 @@ export function OnboardWizard(props: Props) {
           <>
             <h2>{ui.common.done}</h2>
             <p className="muted">{ui.onboard.doneHint}</p>
-            {syncNote ? <p className="muted">{syncNote}</p> : null}
             <dl className="detail-list">
               <dt>{ui.onboard.fieldName}</dt>
               <dd>{name}</dd>

@@ -177,19 +177,6 @@ export const crmDigest = inngest.createFunction(
   },
 );
 
-/** Hourly: import Smart NPV clients created after each tenant's cursor day. */
-export const syncSmartNpvClients = inngest.createFunction(
-  { id: "sync-smart-npv-clients", retries: 2 },
-  { cron: "0 * * * *" },
-  async ({ step }) => {
-    const nowIso = await step.run("now", () => new Date().toISOString());
-    return step.run("sync-new-clients", async () => {
-      const { syncSmartNpvTenants } = await import("@/lib/documents/client-sync");
-      return syncSmartNpvTenants(new Date(nowIso));
-    });
-  },
-);
-
 /**
  * Instant WhatsApp alert to the owner for one approval or handoff task. In
  * off hours with "hold", it sleeps until they end; recipients are re-read
@@ -273,10 +260,10 @@ export const clientSourceSync = inngest.createFunction(
   },
 );
 
-/** Daily incremental pull of every connected CRM (before the smart campaign trigger runs). */
-export const clientSourcesDaily = inngest.createFunction(
-  { id: "client-sources-daily", retries: 1 },
-  { cron: "TZ=Asia/Jerusalem 0 4 * * *" },
+/** Hourly incremental pull of every connected CRM. A full sync stays manual. */
+export const clientSourcesHourly = inngest.createFunction(
+  { id: "client-sources-hourly", retries: 1 },
+  { cron: "0 * * * *" },
   async ({ step }) => {
     const sources = await step.run("sources", () =>
       prisma.clientSource.findMany({ select: { id: true, tenantId: true } }),
@@ -302,6 +289,6 @@ export const clientSourcesDaily = inngest.createFunction(
 //     }),
 // );
 
-export const inngestFunctions = [runAgentTurn, nudgeIfSilent, crmDigest, syncSmartNpvClients, ownerAlert, clientSourceSync, clientSourcesDaily
+export const inngestFunctions = [runAgentTurn, nudgeIfSilent, crmDigest, ownerAlert, clientSourceSync, clientSourcesHourly
     // , purgeRapidDemos
 ];

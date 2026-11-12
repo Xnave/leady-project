@@ -20,7 +20,6 @@ import {
   upsertCapabilityInstance,
 } from "@/lib/capability-instances";
 import { parseDocumentConfig, type DocumentConfig } from "@/lib/flow/document-config";
-import { startClientSyncOnKeySave } from "@/lib/documents/client-sync";
 import { isChatLanguage, type ChatLanguage } from "@/lib/flow/locale";
 import { defaultLeadSchema, validateFlow } from "@/lib/flow/validate";
 import { FlowConfigError } from "@/lib/flow/types";
@@ -228,33 +227,8 @@ export async function POST(req: Request) {
     }
   }
 
-  let documentsSync: { firstRun: true; cursorDate: string; imported: number; failed: number } | null = null;
-  if (savedDocuments?.apiKeyEnc) {
-    try {
-      const started = await startClientSyncOnKeySave(tenantId);
-      if (started) {
-        documentsSync = {
-          firstRun: true,
-          cursorDate: started.cursorDate,
-          imported: started.imported,
-          failed: started.failed,
-        };
-      }
-    } catch (err) {
-      console.warn(
-        JSON.stringify({
-          msg: "documents.client_sync_failed",
-          tenantId,
-          code: err instanceof Error ? err.name : "failed",
-        }),
-      );
-    }
-  }
-
   return NextResponse.json({
     ok: true,
-    documents: savedDocuments
-      ? { hasKey: Boolean(savedDocuments.apiKeyEnc), sync: documentsSync }
-      : null,
+    documents: savedDocuments ? { hasKey: Boolean(savedDocuments.apiKeyEnc) } : null,
   });
 }

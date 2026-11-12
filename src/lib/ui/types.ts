@@ -640,6 +640,8 @@ export type UiCopy = {
       keepCredentials: string;
       /** The Smart NPV key is already saved in Documents settings and is reused. */
       sharedCredentials: string;
+      storeRaw: string;
+      freezeAfterFirstSync: string;
       config: string;
       configHint: string;
       save: string;
@@ -700,6 +702,8 @@ export type UiCopy = {
     enabled: string;
     baseUrl: string;
     apiKey: string;
+    /** The Smart NPV key is entered on the client source, not here. */
+    keyOnSources: string;
     apiKeyHint: string;
     unrecognizedIntro: string;
     unrecognizedIntroHint: string;

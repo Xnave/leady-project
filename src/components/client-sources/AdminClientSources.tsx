@@ -11,8 +11,6 @@ export type ConnectorOption = {
   kind: string;
   label: string;
   credentialFields: { key: string; label: string; secret: boolean }[];
-  /** The tenant already saved this CRM's key elsewhere (Documents settings). */
-  sharedCredentials: boolean;
   defaultConfig: string;
 };
 
@@ -21,6 +19,27 @@ type TestResult =
   | { ok: false; error: string };
 
 const STAT_KEYS = ["synced", "created", "updated", "skipped", "outOfScope", "noPhone", "invalidPhone", "duplicatePhone", "linkedLeads"] as const;
+
+function readFlag(config: string, key: string, fallback: boolean): boolean {
+  try {
+    const parsed = JSON.parse(config) as Record<string, unknown>;
+    return typeof parsed[key] === "boolean" ? parsed[key] : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeFlag(config: string, key: string, value: boolean): string {
+  let parsed: Record<string, unknown> = {};
+  try {
+    const current = JSON.parse(config) as unknown;
+    if (current && typeof current === "object" && !Array.isArray(current)) parsed = { ...(current as Record<string, unknown>) };
+  } catch {
+    parsed = {};
+  }
+  parsed[key] = value;
+  return JSON.stringify(parsed, null, 2);
+}
 
 export function AdminClientSources({
   tenantId,
@@ -211,8 +230,7 @@ export function AdminClientSources({
         <p className="muted">{a.labelHint}</p>
         <fieldset>
           <legend>{a.credentials}</legend>
-          {connector?.sharedCredentials ? <p className="muted">{a.sharedCredentials}</p> : null}
-          {connector?.sharedCredentials ? null : connector?.credentialFields.map((f) => (
+          {connector?.credentialFields.map((f) => (
             <label key={f.key}>
               {f.label}
               <input
@@ -225,8 +243,24 @@ export function AdminClientSources({
               />
             </label>
           ))}
-          {existing && !connector?.sharedCredentials ? <p className="muted">{a.keepCredentials}</p> : null}
+          {existing ? <p className="muted">{a.keepCredentials}</p> : null}
         </fieldset>
+        <label className="chip-toggle">
+          <input
+            type="checkbox"
+            checked={readFlag(config, "storeRaw", true)}
+            onChange={(e) => setConfig(writeFlag(config, "storeRaw", e.target.checked))}
+          />
+          {a.storeRaw}
+        </label>
+        <label className="chip-toggle">
+          <input
+            type="checkbox"
+            checked={readFlag(config, "freezeAfterFirstSync", kind === "smartnpv")}
+            onChange={(e) => setConfig(writeFlag(config, "freezeAfterFirstSync", e.target.checked))}
+          />
+          {a.freezeAfterFirstSync}
+        </label>
         <label>
           {a.config}
           <textarea rows={12} dir="ltr" className="mono" value={config} onChange={(e) => setConfig(e.target.value)} />
