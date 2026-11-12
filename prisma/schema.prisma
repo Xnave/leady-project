@@ -625,6 +625,8 @@ model Contact {
   /** high | medium_high | medium | low | "" */
   dealDateConfidence String       @default("")
   sourceUpdatedAt    DateTime?
+  /** Stored client that now matches a skip rule (e.g. archived): still synced, left out of audiences. */
+  skipped            Boolean      @default(false)
   leadId             String?
   lead               Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
   syncedAt           DateTime     @default(now())
