@@ -104,6 +104,7 @@ export function createSmartNpvConnector(opts: { fetchImpl?: typeof fetch; sleep?
     parseConfig: (raw) => configSchema.parse(raw ?? {}) as SmartNpvConfig,
     sessionTtlSeconds: null,
     fieldCatalog: SMARTNPV_FIELDS,
+    archivedField: "archive",
 
     async sharedCredentials(tenantId) {
       // Dynamic: keeps the connector importable in unit tests without a DB.

@@ -5477,3 +5477,11 @@ button.rules-chip:hover { border-color: var(--accent-bright); background: var(--
 .campaign-admin-facts { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: var(--fs-sm); }
 .campaign-admin-facts dt { color: var(--muted); }
 .campaign-admin-facts dd { margin: 0; }
+
+/* Client campaigns: campaigns tab and editor */
+.campaign-tabs { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid var(--line); }
+.campaign-tabs a { padding: 8px 14px; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.campaign-tabs a.active { color: var(--text); border-bottom-color: var(--accent, currentColor); font-weight: 600; }
+.campaign-checks { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.campaign-declaration { align-items: flex-start; font-weight: 600; }
+.campaign-actions { justify-content: flex-start; flex-wrap: wrap; }

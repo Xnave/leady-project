@@ -278,6 +278,73 @@ export const clientSourcesDaily = inngest.createFunction(
   },
 );
 
+/**
+ * Every 5 minutes: queue a run for each campaign that is due. The event id is
+ * per campaign per 5-minute slot, so overlapping ticks queue one run.
+ */
+export const campaignsTick = inngest.createFunction(
+  { id: "campaigns-tick", retries: 1 },
+  { cron: "*/5 * * * *" },
+  async ({ step }) => {
+    const nowIso = await step.run("now", () => new Date().toISOString());
+    const due = await step.run("due", async () => {
+      const { dueCampaigns } = await import("@/lib/campaigns/engine");
+      return dueCampaigns(new Date(nowIso));
+    });
+    if (!due.length) return { campaigns: 0 };
+    const slot = Math.floor(new Date(nowIso).getTime() / (5 * 60 * 1000));
+    await step.sendEvent(
+      "run-campaigns",
+      due.map((c) => ({
+        id: `campaign-run-${c.id}-${slot}`,
+        name: "campaigns/run.requested",
+        data: { tenantId: c.tenantId, campaignId: c.id },
+      })),
+    );
+    return { campaigns: due.length };
+  },
+);
+
+/**
+ * One campaign run. One run per tenant at a time, so the daily ceiling for the
+ * tenant's number is counted against settled numbers. Each chunk is a durable
+ * step; inside it every row is claimed (queued → sending) before the send, so
+ * a retried chunk skips rows it already sent.
+ */
+export const campaignRun = inngest.createFunction(
+  {
+    id: "campaign-run",
+    retries: 2,
+    concurrency: [{ key: "event.data.tenantId", limit: 1 }],
+  },
+  { event: "campaigns/run.requested" },
+  async ({ event, step }) => {
+    const { tenantId, campaignId } = event.data as { tenantId: string; campaignId: string };
+    const prep = await step.run("prepare", async () => {
+      const { prepareCampaignRun } = await import("@/lib/campaigns/engine");
+      return prepareCampaignRun(tenantId, campaignId);
+    });
+    if (!prep.go) return { skipped: prep.reason };
+    const CHUNK = 20;
+    let left = prep.budget;
+    let sent = 0;
+    for (let i = 0; left > 0 && i < 100; i++) {
+      const chunk = await step.run(`chunk-${i}`, async () => {
+        const { sendCampaignChunk } = await import("@/lib/campaigns/engine");
+        return sendCampaignChunk(tenantId, campaignId, Math.min(CHUNK, left));
+      });
+      sent += chunk.sent;
+      left -= chunk.attempted + chunk.skipped;
+      if (chunk.queuedLeft === 0 || chunk.attempted + chunk.skipped === 0) break;
+    }
+    const status = await step.run("finish", async () => {
+      const { finishCampaignRun } = await import("@/lib/campaigns/engine");
+      return finishCampaignRun(tenantId, campaignId);
+    });
+    return { sent, status };
+  },
+);
+
 /** Drop expired demo tenants and wipe page text still inside the rate-limit window. */
 // export const purgeRapidDemos = inngest.createFunction(
 //   { id: "purge-rapid-demos", retries: 1 },
@@ -289,6 +356,6 @@ export const clientSourcesDaily = inngest.createFunction(
 //     }),
 // );
 
-export const inngestFunctions = [runAgentTurn, nudgeIfSilent, crmDigest, ownerAlert, clientSourceSync, clientSourcesDaily
+export const inngestFunctions = [runAgentTurn, nudgeIfSilent, crmDigest, ownerAlert, clientSourceSync, clientSourcesDaily, campaignsTick, campaignRun
     // , purgeRapidDemos
 ];

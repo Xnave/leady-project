@@ -58,6 +58,8 @@ function describe(it: Item, ui: UiCopy, lang: Lang, wonLabel: string, clock: Clo
         : { icon: "hand", title: t.handoffOpened, sub: d.reason ? hitlReasonLabel(ui, str(d.reason)) : undefined };
     case "conversation":
       return { icon: "msg", title: d.event === "ended" ? t.convoEnded : t.convoStarted };
+    case "campaign":
+      return { icon: "msg", accent: true, title: fillUi(t.campaignSent, { campaign: str(d.campaign) }), sub: str(d.text) };
   }
 }
 

@@ -2,7 +2,7 @@
  * Pure activity-timeline builder for a lead. No Prisma, no business domain
  * names - see architecture.test.ts ("crm purity").
  */
-export type TimelineKind = "stage" | "note" | "next_step" | "snooze" | "request" | "handoff" | "conversation";
+export type TimelineKind = "stage" | "note" | "next_step" | "snooze" | "request" | "handoff" | "conversation" | "campaign";
 export type TimelineItem = { id: string; at: Date; kind: TimelineKind; data: Record<string, unknown> };
 
 export type TimelineSources = {
@@ -13,6 +13,8 @@ export type TimelineSources = {
   /** `info`: something the bot did on its own (e.g. sent a link), logged as one item, not a handoff. */
   handoffs: { id: string; reason: string; status: string; createdAt: Date; completedAt: Date | null; info?: boolean }[];
   conversations: { id: string; status: string; lifecycleReason: string; createdAt: Date; updatedAt: Date }[];
+  /** Campaign templates sent to this lead. */
+  campaignSends?: { id: string; campaignName: string; templateText: string; sentAt: Date }[];
 };
 
 export function buildLeadTimeline(src: TimelineSources): TimelineItem[] {
@@ -52,6 +54,9 @@ export function buildLeadTimeline(src: TimelineSources): TimelineItem[] {
     if (c.status === "closed") {
       items.push({ id: `convo-end-${c.id}`, at: c.updatedAt, kind: "conversation", data: { event: "ended", reason: c.lifecycleReason, conversationId: c.id } });
     }
+  }
+  for (const c of src.campaignSends ?? []) {
+    items.push({ id: `campaign-${c.id}`, at: c.sentAt, kind: "campaign", data: { campaign: c.campaignName, text: c.templateText } });
   }
   return items.sort((a, b) => b.at.getTime() - a.at.getTime());
 }

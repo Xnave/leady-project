@@ -33,7 +33,7 @@ export type CrmCopy = {
   lostReasons: string[]; notRelevantReasons: string[]; reasonPrompt: string;
   stageSet: string; undo: string; openFull: string; close: string; message: string; openLead: string; changeStage: string; moreActions: string; channelFilter: string;
   needsEmptyTitle: string; needsEmpty: string; coldEmptyTitle: string; coldEmpty: string; emptyTitle: string; empty: string; loadFailed: string; retry: string;
-  selected: string; bulkStage: string; bulkSnooze: string; bulkRead: string; bulkUnread: string; clearSelection: string;
+  selected: string; bulkStage: string; bulkSnooze: string; bulkRead: string; bulkUnread: string; bulkCampaign: string; clearSelection: string;
   keysHint: string; search: string;
   digestTitle: string; digestBlurb: string; digestEnabled: string; digestHour: string;
   digestFeatureOff: string; saved: string;
@@ -886,6 +886,115 @@ export type UiCopy = {
       string
     >;
     errors: Record<"not_enabled" | "terms_required" | "no_whatsapp" | "provider_unavailable" | "submit_failed" | "failed", string>;
+    run: {
+      tabs: { campaigns: string; templates: string };
+      listTitle: string;
+      listEmpty: string;
+      newCampaign: string;
+      back: string;
+      cols: { name: string; template: string; status: string; when: string; sent: string; skipped: string; failed: string };
+      statuses: Record<"draft" | "scheduled" | "sending" | "paused" | "done" | "canceled", string>;
+      pauseReasons: Record<"owner" | "batch_done" | "template_not_approved" | "addon_off" | "no_whatsapp" | "no_declaration", string>;
+      waitReasons: Record<"quiet_hours" | "daily_ceiling", string>;
+      skipReasons: Record<
+        | "no_phone"
+        | "invalid_phone"
+        | "suppressed"
+        | "not_allowlisted"
+        | "frequency_cap"
+        | "open_conversation"
+        | "active_case"
+        | "lost_lead"
+        | "archived_client"
+        | "missing_param"
+        | "canceled",
+        string
+      >;
+      sendStatuses: Record<"queued" | "sending" | "sent" | "failed" | "skipped", string>;
+      form: {
+        name: string;
+        template: string;
+        noApproved: string;
+        audience: string;
+        audienceClients: string;
+        audienceLeads: string;
+        /** "{n}" */
+        leadsPicked: string;
+        noClientSource: string;
+        yearsMin: string;
+        yearsMax: string;
+        yearsHint: string;
+        confidence: string;
+        confidenceHint: string;
+        includeNoDate: string;
+        params: string;
+        /** "{n}" */
+        paramLabel: string;
+        paramSources: Record<"first_name" | "full_name" | "business_name" | "text", string>;
+        paramValue: string;
+        paramFallback: string;
+        goal: string;
+        goals: Record<"handoff" | "book", string>;
+        brief: string;
+        briefHint: string;
+        batch: string;
+        batchHint: string;
+        schedule: string;
+        scheduleHint: string;
+        saveDraft: string;
+        saving: string;
+        saved: string;
+      };
+      confirm: {
+        title: string;
+        check: string;
+        checking: string;
+        /** "{n}" */
+        recipients: string;
+        /** "{n}" of "{total}" */
+        recipientsOf: string;
+        skippedTitle: string;
+        sample: string;
+        /** "${usd}" */
+        cost: string;
+        costHint: string;
+        preview: string;
+        rulesNote: string;
+        confirm: string;
+        confirming: string;
+        /** "{when}" */
+        scheduled: string;
+      };
+      /** Owner responsibility declaration. Versioned in DECLARATION_VERSION; change both together. */
+      declaration: string;
+      actions: { pause: string; resume: string; cancel: string; cancelConfirm: string };
+      detail: {
+        metrics: string;
+        recent: string;
+        noSends: string;
+        declaredBy: string;
+        /** "{n}" */
+        batchOf: string;
+        goal: string;
+        audience: string;
+      };
+      errors: Record<
+        | "not_enabled"
+        | "terms_required"
+        | "invalid"
+        | "template_not_found"
+        | "template_not_approved"
+        | "params_mismatch"
+        | "not_found"
+        | "not_draft"
+        | "declaration_required"
+        | "no_recipients"
+        | "bad_transition"
+        | "bad_audience"
+        | "failed",
+        string
+      >;
+    };
     admin: {
       title: string;
       back: string;

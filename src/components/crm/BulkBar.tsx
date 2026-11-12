@@ -12,6 +12,7 @@ export function BulkBar({
   onRead,
   onUnread,
   onClear,
+  onCampaign,
 }: {
   count: number;
   ui: UiCopy;
@@ -19,6 +20,8 @@ export function BulkBar({
   onRead: () => void;
   onUnread: () => void;
   onClear: () => void;
+  /** Present only when the campaigns add-on is on for an owner/admin. */
+  onCampaign?: () => void;
 }) {
   const at = (fn: (a: HTMLElement) => void) => (e: MouseEvent<HTMLButtonElement>) => fn(e.currentTarget);
   return (
@@ -33,6 +36,11 @@ export function BulkBar({
       <button type="button" onClick={onUnread}>
         {ui.crm.bulkUnread}
       </button>
+      {onCampaign ? (
+        <button type="button" onClick={onCampaign}>
+          {ui.crm.bulkCampaign}
+        </button>
+      ) : null}
       <button type="button" className="crm-bulk-x" onClick={onClear} aria-label={ui.crm.clearSelection} title={ui.crm.clearSelection}>
         <Icon name="x" />
       </button>

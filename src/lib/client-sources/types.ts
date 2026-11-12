@@ -90,6 +90,8 @@ export type ClientConnector<Credentials = unknown, Session = unknown, Config ext
   /** Throw SessionExpiredError and the sync re-authenticates once and retries. */
   fetchClients(session: Session, config: Config, opts: FetchClientsOptions): Promise<ClientPage>;
   fieldCatalog: ClientFieldDef[];
+  /** Field that marks an archived client file; campaigns skip those. */
+  archivedField?: string;
   /** Derived values computed from a client's raw fields. */
   derive(record: ClientRecord, config: Config, now: Date): { dealDate: DealDate; fields: Record<string, unknown> };
   /** Seconds a session stays valid; null = until the CRM says otherwise. */

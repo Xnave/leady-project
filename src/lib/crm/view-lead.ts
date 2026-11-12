@@ -17,6 +17,12 @@ import { requestHeadline, requestSummaryLines, requestTimeShape } from "@/lib/re
 import type { UiCopy, UiLang } from "@/lib/ui";
 import { hitlReasonLabel, intentLabel, leadFieldLabel, requestKindLabel } from "@/lib/ui/labels";
 import { buildLeadTimeline, groupTimelineByDay } from "./timeline";
+import { previewText } from "@/lib/campaigns/templates";
+
+/** The template text with the values that were sent. */
+function fillTemplateText(text: string, params: unknown): string {
+  return previewText(text, Array.isArray(params) ? params.filter((p): p is string => typeof p === "string") : []);
+}
 import { buildLeadRowDTO, requestFieldLabels, summarizeRequest, toRequestRow, type LeadViewDTO, type OpenTaskDTO } from "./view";
 
 export type LeadViewScope = "lite" | "full";
@@ -186,6 +192,12 @@ const fullSelect = {
     },
   },
   conversations: conversationsArgs(8),
+  campaignSends: {
+    where: { status: "sent", sentAt: { not: null } },
+    orderBy: { sentAt: "desc" },
+    take: 20,
+    select: { id: true, sentAt: true, params: true, campaign: { select: { name: true, template: { select: { text: true } } } } },
+  },
 } satisfies Prisma.LeadSelect;
 
 /** Full lead detail for `GET /api/leads/[id]/view`. Null when the lead is not in this tenant. */
@@ -294,6 +306,12 @@ export async function loadLeadView(
               actorUserId: string | null;
               createdAt: Date;
             }[];
+            campaignSends: {
+              id: string;
+              sentAt: Date | null;
+              params: unknown;
+              campaign: { name: string; template: { text: string } };
+            }[];
             adminDecisionLogs: {
               id: string;
               category: string;
@@ -348,6 +366,12 @@ export async function loadLeadView(
                   completedAt: h.completedAt,
                   info: h.type === RESERVATION_LINK_SENT_TASK,
                 })),
+              campaignSends: full.campaignSends.map((c) => ({
+                id: c.id,
+                campaignName: c.campaign.name,
+                templateText: fillTemplateText(c.campaign.template.text, c.params),
+                sentAt: c.sentAt ?? new Date(0),
+              })),
               conversations: full.conversations.map((c) => ({
                 id: c.id,
                 status: c.status,
