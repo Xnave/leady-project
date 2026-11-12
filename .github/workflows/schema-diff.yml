@@ -1,0 +1,80 @@
+# The production result is a required check on main. The workflow run itself
+# stays successful, so GitHub does not send a failure email for this workflow.
+# The required check is the separate "Diff against production" check run.
+# Staging reports its diff and does not block the merge.
+#
+# Secrets live on GitHub environments: Preview has STAGING_DATABASE_URL,
+# Production has PRODUCTION_DATABASE_URL.
+
+name: Schema diff
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  staging:
+    name: Diff against staging
+    runs-on: ubuntu-latest
+    environment: Preview
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Schema matches staging
+        env:
+          DATABASE_URL_FROM_ENV: "1"
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: pnpm db:diff:check:staging
+
+  production:
+    name: production-schema-diff
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Schema matches production
+        id: diff
+        continue-on-error: true
+        env:
+          DATABASE_URL_FROM_ENV: "1"
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: pnpm db:diff:check:production
+      - name: Publish required check
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "${{ steps.diff.outcome }}" == "success" ]]; then
+            conclusion=success
+            title="Schema matches production"
+          else
+            conclusion=failure
+            title="Schema differs from production"
+          fi
+          jq -n \
+            --arg sha "${{ github.event.pull_request.head.sha }}" \
+            --arg conclusion "$conclusion" \
+            --arg title "$title" \
+            --arg url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            '{name:"Diff against production", head_sha:$sha, status:"completed", conclusion:$conclusion, details_url:$url, output:{title:$title, summary:"Production must match schema.prisma before merge. The SQL is in this workflow log."}}' \
+            | gh api --method POST "repos/${{ github.repository }}/check-runs" --input -
