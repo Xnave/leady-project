@@ -48,6 +48,12 @@ Stored AES-256-GCM encrypted (`src/lib/crypto.ts`) on `ClientSource.credentialsE
 
 `ClientSource.syncSince` is set to now on the first connect. It means "sync contacts from this moment." Smart NPV uses the Asia/Jerusalem calendar day and asks the list from the start of that day. Moving `syncSince` earlier and running a full sync is how older contacts get stored.
 
+`skip` works the same way for stored clients: a **new** client matching a skip rule is not stored (counted as skipped), and a client **already stored** keeps updating with `skipped = true`, so audiences leave it out while its history stays. It flips back when the rule stops matching.
+
+A contact's `leadId` (the "also a lead" link, matched by phone) is kept while the phone is unchanged. When the phone changes, the link is set from the new phone, or cleared when no lead has it.
+
+Sessions are cached per source while a process is warm, keyed on a hash of the credentials, so a newly saved key is used on the next test or sync. A rejected key (`ConnectorAuthError` during a fetch) drops the session and retries once, like an expired session.
+
 `dealDate` is a ladder: the first rung with a usable date wins, and the contact keeps the source field and confidence. A rung with `whenField` and an empty `whenIn` never matches, so the `archive_time` rung is off until the tenant's "completed" status ids are known (PR 0 still-open item 2).
 
 ## Sync modes

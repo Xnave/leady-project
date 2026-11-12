@@ -30,6 +30,7 @@ CREATE TABLE "Contact" (
     "dealDateSource" TEXT NOT NULL DEFAULT '',
     "dealDateConfidence" TEXT NOT NULL DEFAULT '',
     "sourceUpdatedAt" TIMESTAMP(3),
+    "skipped" BOOLEAN NOT NULL DEFAULT false,
     "leadId" TEXT,
     "syncedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
