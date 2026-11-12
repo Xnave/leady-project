@@ -522,6 +522,45 @@ function startRejectCool(
   };
 }
 
+function seenText(value: unknown): string {
+  return String(value ?? "").trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Name the detail that failed. The number or name is the one read on the
+ * file the customer sent. The value stored on the client stays unsaid.
+ */
+function profileMismatchText(field: string | undefined, fields: Record<string, unknown>, lang: "en" | "he"): string {
+  const name = seenText(fields.fullName) || [seenText(fields.firstName), seenText(fields.lastName)].filter(Boolean).join(" ");
+  const id = seenText(fields.nationalId).replace(/\D/g, "");
+  if (field === "nationalId") {
+    if (lang === "he") {
+      const who = name ? `זיהיתי תעודה על שם ${name}. ` : "";
+      const number = id
+        ? `מספר תעודת הזהות שזיהיתי הוא ${id}, והוא לא תואם למספר שבתיק.`
+        : "מספר תעודת הזהות שזיהיתי במסמך לא תואם למספר שבתיק.";
+      return `${who}${number} בבקשה בדוק שזו התעודה של הלווה הנכון`;
+    }
+    const who = name ? `I read a card for ${name}. ` : "";
+    const number = id
+      ? `The ID number I read is ${id}, and it doesn't match the number on file.`
+      : "The ID number I read doesn't match the number on file.";
+    return `${who}${number} Please check that this is the right person's card`;
+  }
+  if (field === "fullName") {
+    if (lang === "he") {
+      return name
+        ? `השם שזיהיתי במסמך הוא ${name}, והוא לא תואם לשם שבתיק`
+        : "השם שזיהיתי במסמך לא תואם לשם שבתיק";
+    }
+    return name
+      ? `The name I read is ${name}, and it doesn't match the name on file`
+      : "The name I read doesn't match the name on file";
+  }
+  if (lang === "he") return "פרט שזיהיתי במסמך לא תואם לפרט שבתיק. אפשר לבדוק שצורף המסמך של הלווה הנכון";
+  return "A detail I read doesn't match the same detail on file. Please check that this is the right person's document";
+}
+
 function readableList(values: string[], lang: "en" | "he"): string {
   if (values.length < 2) return values[0] ?? "";
   const last = values.at(-1) ?? "";
@@ -556,7 +595,7 @@ export function customerRejection(opts: {
     : monthList(priorCalendarMonths(now), opts.lang, now);
   const request = opts.nextAsk
     ?? (opts.lang === "he"
-      ? `אפשר לשלוח את תלושי השכר של ${need}`
+      ? `שלח/י לי בבקשה את תלושי השכר של ${need}`
       : `Could you send the payslips for ${need}?`);
   if (opts.reason === "unrecognized") {
     if (payslip) {
@@ -566,13 +605,14 @@ export function customerRejection(opts: {
     }
     if (opts.docType === "id_card" || opts.docType === "id_card_back") {
       return opts.lang === "he"
-        ? "לא זיהיתי את הקובץ. אפשר לשלוח צילום ברור של הצד הקדמי, כך שהשם והמספר נראים?"
+        ? "לא זיהיתי את הקובץ. שלח/י לי בבקשה צילום ברור של הצד הקדמי, כך שהשם והמספר נראים?"
         : "I couldn't tell what this file is. Could you send a clear photo of the front, with the name and number visible?";
     }
     return opts.lang === "he"
       ? "לא זיהיתי את הקובץ כמסמך שביקשתי."
       : "I couldn't tell what this file is.";
   }
+  if (opts.reason === "matches_profile") return profileMismatchText(opts.field, opts.fields, opts.lang);
   if (!payslip) return undefined;
   const found = monthsIn(opts.fields.periodEnd ?? opts.fields.payMonths);
   const recent = recentPayslipMonths(found.join(","), 3, now);
@@ -785,7 +825,7 @@ function mergeSlots(previous: SlotState[], next: Slot[]): SlotState[] {
   return merged;
 }
 
-function refreshDossier(state: DossierState, rules: RulesDocument, text: string, bare = false): DossierState {
+export function refreshDossier(state: DossierState, rules: RulesDocument, text: string, bare = false): DossierState {
   const applied = applyCustomerAnswers(state.profile, text, new Date(), { bare });
   const profile = applied.profile;
   const next = checklistSlots(profile, rules);
@@ -804,7 +844,18 @@ function refreshDossier(state: DossierState, rules: RulesDocument, text: string,
   const waitingForLoan = loansFilled && withLoans.loanMore === "pending";
   const done = dossierDone(slots) && !waitingForLoan;
   const loansSame = withLoans.loanMore === state.profile.loanMore;
-  if (same && loansSame) return { ...state, profile: withLoans };
+  // The extra-loan answer can already be on the profile before this refresh.
+  // Slot shape is then unchanged, and the old status would stay "gathering"
+  // with nothing left to ask, so the customer would get no reply.
+  if (same && loansSame) {
+    return {
+      ...state,
+      profile: withLoans,
+      slots,
+      status: done ? "complete" : "gathering",
+      activeStage: activeStageOf(slots),
+    };
+  }
   return {
     ...state,
     profile: withLoans,
@@ -1019,6 +1070,15 @@ async function notifyAdvisor(ctx: TurnContext, state: DossierState): Promise<Dos
 function offeredForms(profile: Profile): string[] {
   const raw = profile.formsOffered;
   return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
+}
+
+/** The blank form for the document this turn is asking for. Earlier slots do not send it. */
+export function blankFormDue(state: DossierState, rules: RulesDocument): string {
+  if (nextQuestion(state.profile)) return "";
+  const slot = state.slots.find((item) => isOutstanding(item, state.slots));
+  if (!slot || !rules.documents[slot.docType]?.blankForm) return "";
+  if (offeredForms(state.profile).includes(slot.docType)) return "";
+  return slot.docType;
 }
 
 function rememberOfferedForm(state: DossierState, docType: string): DossierState {
@@ -2640,34 +2700,25 @@ export async function runDocumentsIngest(
     state = refreshDossier(state, config.rules, "");
   }
 
-  const seenForms = new Set<string>();
-  for (const slot of state.slots) {
-    const form = config.rules.documents[slot.docType]?.blankForm;
-    if (!form || seenForms.has(slot.docType) || !isOutstanding(slot, state.slots)) continue;
-    if (offeredForms(state.profile).includes(slot.docType)) continue;
-    seenForms.add(slot.docType);
-    const label = docLabel(config.rules, slot.docType, lang);
+  const dueForm = blankFormDue(state, config.rules);
+  const form = dueForm ? config.rules.documents[dueForm]?.blankForm : undefined;
+  if (dueForm && form) {
+    const label = docLabel(config.rules, dueForm, lang);
     const caption = chat.documents.blankForm(label);
     try {
-      const sent = await sendBlankForm(ctx, chat, slot.docType, form, label);
-      if (sent === "already") {
-        state = rememberOfferedForm(state, slot.docType);
-        continue;
-      }
-      if (sent === "sent" || sent === "skipped") {
-        state = rememberOfferedForm(state, slot.docType);
+      const sent = await sendBlankForm(ctx, chat, dueForm, form, label);
+      if (sent === "already" || sent === "sent" || sent === "skipped") {
+        state = rememberOfferedForm(state, dueForm);
       }
       if (sent === "skipped") {
-        lines.push(`${caption}\n${blankFormHref(ctx.tenantId, slot.docType, form.file)}`);
+        lines.push(`${caption}\n${blankFormHref(ctx.tenantId, dueForm, form.file)}`);
       }
-      break;
     } catch (err) {
       warnDocuments("documents.form_failed", {
         conversationId: ctx.conversation.id,
         error: err instanceof Error ? err.message : String(err),
       });
       lines.push(caption);
-      break;
     }
   }
 

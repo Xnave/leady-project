@@ -5,6 +5,21 @@ export function photoDone(text: string): boolean {
   return /^(אין עוד|אין עוד תמונות|זה הכל|זהו|סיימתי|no more|that'?s all|last one|לא+|no)[.!?\s]*$/i.test(text.trim());
 }
 
+function isPng(bytes: Buffer): boolean {
+  return bytes.length >= 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+}
+
+function isJpeg(bytes: Buffer): boolean {
+  return bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xd8;
+}
+
+/** A `.png` name can still be a JPEG. The bytes decide. */
+function pngBytes(mime: string, bytes: Buffer): boolean {
+  if (isPng(bytes)) return true;
+  if (isJpeg(bytes)) return false;
+  return mime.includes("png");
+}
+
 /** Photos and PDF pages, in order, become one PDF. */
 export async function filesToPdf(pages: { mime: string; bytes: Buffer }[]): Promise<Buffer> {
   const pdf = await PDFDocument.create();
@@ -17,7 +32,7 @@ export async function filesToPdf(pages: { mime: string; bytes: Buffer }[]): Prom
       for (const sheet of copied) pdf.addPage(sheet);
       continue;
     }
-    const image = mime.includes("png") ? await pdf.embedPng(page.bytes) : await pdf.embedJpg(page.bytes);
+    const image = pngBytes(mime, page.bytes) ? await pdf.embedPng(page.bytes) : await pdf.embedJpg(page.bytes);
     const sheet = pdf.addPage([image.width, image.height]);
     sheet.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
   }
@@ -29,7 +44,7 @@ export async function imagesToPdf(pages: { mime: string; bytes: Buffer }[]): Pro
   const pdf = await PDFDocument.create();
   for (const page of pages) {
     const mime = page.mime.toLowerCase();
-    const image = mime.includes("png") ? await pdf.embedPng(page.bytes) : await pdf.embedJpg(page.bytes);
+    const image = pngBytes(mime, page.bytes) ? await pdf.embedPng(page.bytes) : await pdf.embedJpg(page.bytes);
     const sheet = pdf.addPage([image.width, image.height]);
     sheet.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
   }

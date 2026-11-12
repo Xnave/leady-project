@@ -218,12 +218,13 @@ export function secondBorrowerOf(profile: Profile): "yes" | "no" | "unknown" {
   return "unknown";
 }
 
-/** Case-level reason to hand the income list to the advisor. Empty when the two lists still apply. */
+/**
+ * Case-level reason to hand the income list to the advisor. Empty when the lists still apply.
+ * Employment `both` stays on the borrower and currently gathers the self-employed list.
+ */
 export function advisorReason(profile: Profile): string {
   if (firstHomeOf(profile) === "false") return "לא דירה ראשונה";
-  const flagged = borrowersOf(profile).filter(
-    (borrower) => borrower.employment === "both" || borrower.employment === "other",
-  );
+  const flagged = borrowersOf(profile).filter((borrower) => borrower.employment === "other");
   if (!flagged.length) return "";
   return flagged
     .map((borrower) => `${borrower.fullName || borrower.slot}: ${borrower.employmentLabel || "אחר"}`)

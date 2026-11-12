@@ -226,7 +226,7 @@ export const he: UiCopy = {
     flowLabel: "סגנון שיחה",
     languageLabel: "שפת סוכן",
     sendFailed: "השליחה נכשלה",
-    fileTooLarge: "הקובץ גדול מדי ולא נשלח. אפשר לשלוח קובץ קטן יותר.",
+    fileTooLarge: "הקובץ גדול מדי ולא נשלח. שלח/י לי בבקשה קובץ קטן יותר.",
     today: "היום",
     yesterday: "אתמול",
   },

@@ -262,7 +262,7 @@ export const chat: ChatCopy = {
       reasons: {
         field_present: "a required detail is missing",
         id_number: "I couldn't read the ID number. Please send a clearer photo of the card, with the name and number visible",
-        matches_profile: "its details don't match the file we have",
+        matches_profile: "a detail I read doesn't match the same detail on file",
         date_within_months: "the date on it is too old",
         prior_calendar_months: "it doesn't cover the three previous months",
         min_items: "some required items are missing",
