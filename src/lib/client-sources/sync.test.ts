@@ -18,7 +18,9 @@ function memoryStore(leads: Record<string, string> = {}) {
       for (const r of rows) {
         const prev = contacts.get(r.externalId);
         if (!prev) created += 1;
-        contacts.set(r.externalId, { ...r, leadId: r.leadId ?? prev?.leadId ?? null });
+        // Mirrors the Prisma store: a new phone replaces the link, even with none.
+        const phoneChanged = prev != null && prev.phone !== r.phone;
+        contacts.set(r.externalId, { ...r, leadId: phoneChanged ? r.leadId : r.leadId ?? prev?.leadId ?? null });
       }
       return { created, updated: rows.length - created };
     },
@@ -78,6 +80,31 @@ describe("runSync", () => {
     expect(first.counts.linkedLeads).toBe(2);
   });
 
+  it("moves the lead link with the phone, and clears it when the new phone has no lead", async () => {
+    const { store, contacts } = memoryStore({ "972501234567": "lead-1" });
+    await runSync(input(undefined, store));
+    expect(contacts.get("c1")?.leadId).toBe("lead-1");
+    const moved = FAKE_CLIENTS.map((c) => (c.externalId === "c1" ? { ...c, phone: "0529999999" } : c));
+    await runSync(input(createFakeConnector({ clients: moved }), store));
+    expect(contacts.get("c1")?.leadId).toBeNull();
+    // Same phone, no lead found on this page: the link stays.
+    expect(contacts.get("c5")?.leadId).toBe("lead-1");
+  });
+
+  it("keeps updating a stored client that now matches a skip rule, marked skipped", async () => {
+    const { store, contacts } = memoryStore();
+    await runSync(input(undefined, store));
+    expect(contacts.get("c1")?.skipped).toBe(false);
+    const archived = FAKE_CLIENTS.map((c) => (c.externalId === "c1" ? { ...c, name: "Dana Moved", fields: { ...c.fields, archived: "1" } } : c));
+    const result = await runSync(input(createFakeConnector({ clients: archived }), store, { skip: [{ field: "archived", in: ["1"] }] }));
+    expect(contacts.get("c1")).toMatchObject({ name: "Dana Moved", skipped: true });
+    expect(contacts.get("c4")?.skipped).toBe(true);
+    expect(result.counts.skipped).toBe(0);
+    // Un-archived later: back in.
+    await runSync(input(undefined, store, { skip: [{ field: "archived", in: ["1"] }] }));
+    expect(contacts.get("c1")?.skipped).toBe(false);
+  });
+
   it("skips clients matching a skip rule", async () => {
     const { store, contacts } = memoryStore();
     const result = await runSync(input(undefined, store, { skip: [{ field: "archived", in: ["1"] }] }));
@@ -88,6 +115,28 @@ describe("runSync", () => {
   it("re-authenticates once when the session expires mid-sync", async () => {
     let auths = 0;
     const connector = createFakeConnector({ expireOnceAtCursor: "2", onAuthenticate: () => (auths += 1) });
+    const { store, contacts } = memoryStore();
+    const result = await runSync(input(connector, store));
+    expect(result.complete).toBe(true);
+    expect(auths).toBe(2);
+    expect(contacts.size).toBe(5);
+  });
+
+  it("re-authenticates when the saved credentials change on a warm process", async () => {
+    let auths = 0;
+    const connector = createFakeConnector({ onAuthenticate: () => (auths += 1) });
+    const sessions = new SessionCache();
+    const { store } = memoryStore();
+    await runSync({ ...input(connector, store), sessions });
+    await runSync({ ...input(connector, store), sessions });
+    expect(auths).toBe(1);
+    await runSync({ ...input(connector, store), sessions, credentials: { token: "new-key" } });
+    expect(auths).toBe(2);
+  });
+
+  it("drops the session and retries once when the CRM rejects the key", async () => {
+    let auths = 0;
+    const connector = createFakeConnector({ rejectOnceAtCursor: "2", onAuthenticate: () => (auths += 1) });
     const { store, contacts } = memoryStore();
     const result = await runSync(input(connector, store));
     expect(result.complete).toBe(true);

@@ -46,11 +46,12 @@ export const FAKE_CLIENTS: ClientRecord[] = [
 ];
 
 export function createFakeConnector(
-  opts: { clients?: ClientRecord[]; expireOnceAtCursor?: string; onAuthenticate?: () => void } = {},
+  opts: { clients?: ClientRecord[]; expireOnceAtCursor?: string; rejectOnceAtCursor?: string; onAuthenticate?: () => void } = {},
 ): ClientConnector<FakeCredentials, FakeSession, FakeConfig> {
   const clients = opts.clients ?? FAKE_CLIENTS;
   let sessions = 0;
   let expired = false;
+  let rejected = false;
   return {
     kind: "fake",
     label: { he: "בדיקה (מקומי)", en: "Fake (local)" },
@@ -70,6 +71,10 @@ export function createFakeConnector(
       if (opts.expireOnceAtCursor != null && cursor === opts.expireOnceAtCursor && !expired && session.id === 1) {
         expired = true;
         throw new SessionExpiredError();
+      }
+      if (opts.rejectOnceAtCursor != null && cursor === opts.rejectOnceAtCursor && !rejected) {
+        rejected = true;
+        throw new ConnectorAuthError("rejected_key");
       }
       const start = cursor ? Number(cursor) : 0;
       const page = clients.slice(start, start + config.pageSize);

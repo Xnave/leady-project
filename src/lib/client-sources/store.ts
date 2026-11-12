@@ -197,9 +197,10 @@ export function prismaSyncStore(tenantId: string, sourceId: string): SyncStore {
     async upsertContacts(rows: ContactUpsert[]) {
       const existing = await prisma.contact.findMany({
         where: { tenantId, sourceId, externalId: { in: rows.map((r) => r.externalId) } },
-        select: { externalId: true },
+        select: { externalId: true, phone: true },
       });
       const known = new Set(existing.map((e) => e.externalId));
+      const phoneBefore = new Map(existing.map((e) => [e.externalId, e.phone]));
       const syncedAt = new Date();
       await prisma.$transaction(
         rows.map((r) => {
@@ -212,12 +213,15 @@ export function prismaSyncStore(tenantId: string, sourceId: string): SyncStore {
             dealDateSource: r.dealDate.source,
             dealDateConfidence: r.dealDate.confidence,
             sourceUpdatedAt: r.sourceUpdatedAt,
+            skipped: r.skipped,
             syncedAt,
           };
+          // Same phone: keep the link unless this page found one. New phone: the link follows it, even to none.
+          const phoneChanged = phoneBefore.has(r.externalId) && phoneBefore.get(r.externalId) !== r.phone;
           return prisma.contact.upsert({
             where: { tenantId_sourceId_externalId: { tenantId, sourceId, externalId: r.externalId } },
             create: { tenantId, sourceId, externalId: r.externalId, leadId: r.leadId, ...values },
-            update: { ...values, ...(r.leadId ? { leadId: r.leadId } : {}) },
+            update: { ...values, ...(phoneChanged || r.leadId ? { leadId: r.leadId } : {}) },
           });
         }),
       );

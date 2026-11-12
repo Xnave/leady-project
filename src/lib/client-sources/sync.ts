@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { normalizeClientPhone } from "./phone";
 import {
   ConnectorAuthError,
@@ -22,8 +23,16 @@ export type ContactUpsert = {
   fields: Record<string, unknown>;
   dealDate: DealDate;
   sourceUpdatedAt: Date | null;
-  /** Existing Lead with the same phone, if any. Never cleared by a later sync. */
+  /**
+   * Lead with the same phone, if any. Kept by a later sync while the phone is
+   * unchanged; when the phone changes the store replaces it, including with null.
+   */
   leadId: string | null;
+  /**
+   * The client now matches a skip rule (e.g. archived). Only stored clients get
+   * here: they keep updating but drop out of audiences. New ones are not stored.
+   */
+  skipped: boolean;
 };
 
 export type SyncStore = {
@@ -89,27 +98,24 @@ export function isKept(fields: Record<string, unknown>, dealDate: DealDate, conf
 
 /**
  * Turn connector records into rows for the store. Pure, so it is easy to test.
- * `outOfScope` holds rows that failed the keep rules: the sync stores them only
- * when they already exist (a stored client is never dropped, it keeps updating).
+ * `onlyIfStored` holds rows that match a skip rule (`skipped: true`) or fail the
+ * keep rules: the sync writes them only when the client is already stored, so a
+ * stored client is never dropped and keeps updating, and new ones are left out.
  */
 export function prepareContacts(
   connector: AnyClientConnector,
   config: BaseSourceConfig,
   records: ClientRecord[],
   now: Date,
-): { rows: ContactUpsert[]; outOfScope: ContactUpsert[]; counts: SyncCounts } {
+): { rows: ContactUpsert[]; onlyIfStored: ContactUpsert[]; counts: SyncCounts } {
   const counts = emptyCounts();
   const rows: ContactUpsert[] = [];
-  const outOfScope: ContactUpsert[] = [];
+  const onlyIfStored: ContactUpsert[] = [];
   const seen = new Set<string>();
   for (const record of records) {
     counts.fetched += 1;
     if (seen.has(record.externalId)) continue;
     seen.add(record.externalId);
-    if (isSkipped(record, config)) {
-      counts.skipped += 1;
-      continue;
-    }
     const phone = normalizeClientPhone(record.phone, config.defaultCountryCode);
     if (phone.status === "missing") counts.noPhone += 1;
     if (phone.status === "invalid") counts.invalidPhone += 1;
@@ -124,25 +130,32 @@ export function prepareContacts(
       dealDate: derived.dealDate,
       sourceUpdatedAt: record.updatedAt,
       leadId: null,
+      skipped: isSkipped(record, config),
     };
-    (isKept(fields, derived.dealDate, config, now) ? rows : outOfScope).push(row);
+    (!row.skipped && isKept(fields, derived.dealDate, config, now) ? rows : onlyIfStored).push(row);
   }
-  return { rows, outOfScope, counts };
+  return { rows, onlyIfStored, counts };
 }
 
 /**
  * Caches one session per source while a process is warm, and re-authenticates
  * when the connector reports it expired or its TTL has passed.
  */
-export class SessionCache {
-  private sessions = new Map<string, { session: unknown; expiresAt: number | null }>();
+function credentialsFingerprint(credentials: unknown): string {
+  return createHash("sha256").update(JSON.stringify(credentials ?? null)).digest("hex");
+}
 
+export class SessionCache {
+  private sessions = new Map<string, { session: unknown; expiresAt: number | null; fingerprint: string }>();
+
+  /** A hit counts only for the same credentials, so a newly saved key is used at once. */
   async get(key: string, connector: AnyClientConnector, credentials: unknown, config: BaseSourceConfig, now = Date.now()) {
+    const fingerprint = credentialsFingerprint(credentials);
     const hit = this.sessions.get(key);
-    if (hit && (hit.expiresAt == null || hit.expiresAt > now)) return hit.session;
+    if (hit && hit.fingerprint === fingerprint && (hit.expiresAt == null || hit.expiresAt > now)) return hit.session;
     const session = await connector.authenticate(credentials, config);
     const ttl = connector.sessionTtlSeconds;
-    this.sessions.set(key, { session, expiresAt: ttl == null ? null : now + ttl * 1000 });
+    this.sessions.set(key, { session, expiresAt: ttl == null ? null : now + ttl * 1000, fingerprint });
     return session;
   }
 
@@ -181,7 +194,8 @@ export async function syncPage(input: SyncPageInput): Promise<SyncPageResult> {
   try {
     page = await fetchOnce();
   } catch (err) {
-    if (!(err instanceof SessionExpiredError)) throw err;
+    // A rejected key looks like an auth error, not an expiry; both drop the session and retry once.
+    if (!(err instanceof SessionExpiredError) && !(err instanceof ConnectorAuthError)) throw err;
     sessions.drop(input.key);
     page = await fetchOnce();
   }
@@ -190,11 +204,12 @@ export async function syncPage(input: SyncPageInput): Promise<SyncPageResult> {
   const { counts } = prepared;
   const rows = prepared.rows;
   counts.pages = 1;
-  if (prepared.outOfScope.length) {
+  if (prepared.onlyIfStored.length) {
     // Already stored clients stay and keep updating; only new ones are left out.
-    const known = await input.store.existingExternalIds(prepared.outOfScope.map((r) => r.externalId));
-    for (const row of prepared.outOfScope) {
+    const known = await input.store.existingExternalIds(prepared.onlyIfStored.map((r) => r.externalId));
+    for (const row of prepared.onlyIfStored) {
       if (known.has(row.externalId)) rows.push(row);
+      else if (row.skipped) counts.skipped += 1;
       else counts.outOfScope += 1;
     }
   }
