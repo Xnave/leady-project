@@ -69,10 +69,11 @@ export async function resolveAudience(tenantId: string, audience: Audience, now:
       dealDate: { not: null, ...(range.gte ? { gte: range.gte } : {}), ...(range.lte ? { lte: range.lte } : {}) },
       ...(audience.confidence.length ? { dealDateConfidence: { in: audience.confidence } } : {}),
     };
+    // A stored client that now matches a skip rule (e.g. archived) is never an audience member.
     const where =
       audience.includeNoDealDate && !hasRange
-        ? { tenantId, OR: [dated, { dealDate: null }] }
-        : { tenantId, ...dated };
+        ? { tenantId, skipped: false, OR: [dated, { dealDate: null }] }
+        : { tenantId, skipped: false, ...dated };
     const contacts = await prisma.contact.findMany({
       where,
       select: { id: true, phone: true, phoneStatus: true, name: true, leadId: true, fields: true, source: { select: { kind: true } } },
