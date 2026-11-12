@@ -5302,6 +5302,21 @@ button.crm-stage { cursor: pointer; }
   .digest-intro .btn { width: 100%; justify-content: center; }
 }
 
+/* Client sources (admin) and the Clients tab */
+.client-source { padding: 12px 0; border-top: 1px solid var(--line); }
+.client-source:first-of-type { border-top: 0; }
+.client-source-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.client-source-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 8px; font-size: var(--fs-sm, 0.9rem); }
+.client-source-facts dt { color: var(--muted); }
+.client-source-facts dd { margin: 0; }
+.client-source-stat { display: contents; }
+.client-source-error { color: var(--danger, #c62828); }
+.client-source .field-form-actions { justify-content: flex-start; }
+textarea.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }
+.clients-toolbar { flex-wrap: wrap; align-items: flex-end; }
+.clients-toolbar input[type="number"] { min-width: 90px; width: 90px; }
+.clients-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 8px 0; }
+.clients-pager { display: flex; gap: 8px; justify-content: center; margin: 12px 0; }
 /* Document rules editor. Uses the app tokens so it matches the wizard in both themes. */
 .rules-editor { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .rules-editor-head { display: flex; flex-direction: column; gap: 4px; }

@@ -51,6 +51,8 @@ model Tenant {
   digestLogs           DigestLog[]
   rapidDemos           RapidDemo[]
   alertSettings        TenantAlertSettings?
+  clientSources        ClientSource[]
+  contacts             Contact[]
   dossiers             Dossier[]
   leadDocuments        LeadDocument[]
   campaignSettings     TenantCampaignSettings?
@@ -199,6 +201,7 @@ model Lead {
   mediaAssets   MediaAsset[]
   stageEvents   LeadStageEvent[]
   notes         LeadNote[]
+  contacts      Contact[]
   dossiers      Dossier[]
   leadDocuments LeadDocument[]
 
@@ -567,6 +570,73 @@ model AgreementAcceptance {
 model ZernioSenderGate {
   senderKey String   @id
   createdAt DateTime @default(now())
+}
+
+/**
+ * A tenant's own CRM, connected by platform staff. `kind` names a connector in
+ * `src/lib/client-sources/registry.ts`; credentials are AES-GCM encrypted and
+ * never leave the server. Synced rows land in `Contact`, never in `Lead`.
+ */
+model ClientSource {
+  id             String    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kind           String
+  label          String    @default("")
+  credentialsEnc String
+  /** Per-tenant connector settings: derived-field order, filters, default country code. */
+  config         Json      @default("{}")
+  /** idle | syncing | ok | error */
+  status         String    @default("idle")
+  lastError      String    @default("")
+  lastSyncAt     DateTime?
+  /** Counts from the last finished sync: synced, created, updated, noPhone, invalidPhone, duplicatePhone, linkedLeads. */
+  lastSyncStats  Json      @default("{}")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  contacts Contact[]
+
+  @@unique([tenantId, kind])
+  @@index([tenantId])
+}
+
+/**
+ * One client from a tenant's CRM. Not a Lead: syncing never touches the
+ * pipeline, digest or lead counts. `leadId` links an existing Lead with the
+ * same phone; only a reply to a campaign creates a Lead.
+ */
+model Contact {
+  id                 String       @id @default(cuid())
+  tenantId           String
+  tenant             Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sourceId           String
+  source             ClientSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  externalId         String
+  /** Digits with country code, no "+" (the form Zernio sends to). "" when missing or invalid. */
+  phone              String       @default("")
+  /** ok | missing | invalid */
+  phoneStatus        String       @default("missing")
+  name               String       @default("")
+  fields             Json         @default("{}")
+  dealDate           DateTime?
+  /** Source field the deal date came from, "" when none matched. */
+  dealDateSource     String       @default("")
+  /** high | medium_high | medium | low | "" */
+  dealDateConfidence String       @default("")
+  sourceUpdatedAt    DateTime?
+  /** Stored client that now matches a skip rule (e.g. archived): still synced, left out of audiences. */
+  skipped            Boolean      @default(false)
+  leadId             String?
+  lead               Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  syncedAt           DateTime     @default(now())
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@unique([tenantId, sourceId, externalId])
+  @@index([tenantId, phone])
+  @@index([tenantId, dealDate])
+  @@index([leadId])
 }
 
 /// Client campaigns add-on (business-initiated WhatsApp templates to the tenant's own

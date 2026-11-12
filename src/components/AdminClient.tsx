@@ -10,6 +10,7 @@ type Labels = {
   tenantPhone: string;
   ownerEmail: string;
   openAsTenant: string;
+  clientSources: string;
   campaigns: string;
   createFailed: string;
   createdClaimOnSignIn: string;
@@ -271,6 +272,9 @@ export function AdminClient({
                   <td className="muted">{t.ownerEmail || "-"}</td>
                   <td className="muted">{t.phone || t.id}</td>
                   <td className="table-actions">
+                    <a className="btn-ghost" href={`/admin/client-sources/${encodeURIComponent(t.id)}`}>
+                      {labels.clientSources}
+                    </a>
                     <a className="btn-ghost" href={`/admin/campaigns/${encodeURIComponent(t.id)}`}>
                       {labels.campaigns}
                     </a>
