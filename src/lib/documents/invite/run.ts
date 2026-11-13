@@ -499,3 +499,17 @@ export async function tenantsWithAutoInvite(): Promise<string[]> {
     .map((r) => r.tenantId);
   return [...new Set(ids)];
 }
+
+/** `recordInviteReply` for the inbound routes: never fails the webhook. */
+export async function safeRecordInviteReply(
+  tenantId: string,
+  from: string,
+  text: string,
+): Promise<"stopped" | "started" | "none"> {
+  try {
+    return await recordInviteReply(tenantId, from, text, new Date());
+  } catch (err) {
+    console.warn(JSON.stringify({ msg: "documents.invite.reply_failed", tenantId, error: String(err) }));
+    return "none";
+  }
+}

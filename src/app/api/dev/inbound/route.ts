@@ -27,7 +27,9 @@ export async function POST(req: Request) {
     from,
     text,
   });
-  if (inserted) {
+  const { safeRecordInviteReply } = await import("@/lib/documents/invite/run");
+  const stopped = inserted ? (await safeRecordInviteReply(tenantId, from, text)) === "stopped" : false;
+  if (inserted && !stopped) {
     const enqueued = await tryEnqueueAgentTurn({
       tenantId,
       conversationId: inserted.conversationId,

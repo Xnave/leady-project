@@ -181,6 +181,24 @@ export async function POST(req: Request) {
     return new Response("ok", { status: 200 });
   }
 
+  const { safeRecordInviteReply } = await import("@/lib/documents/invite/run");
+  // An invited client: any message starts the invite; a bare "הסר"/"stop" stops it and gets no bot reply.
+  const inviteReply =
+    channel.provider === "whatsapp" ? await safeRecordInviteReply(channel.tenantId, inbound.from, inbound.text) : "none";
+  if (inviteReply === "stopped") {
+    await safeRefreshLeadState(channel.tenantId, inserted.leadId);
+    console.log(
+      JSON.stringify({
+        msg: "zernio.inbound",
+        tenantId: channel.tenantId,
+        conversationId: inserted.conversationId,
+        agent: "skipped",
+        reason: "invite-stop",
+      }),
+    );
+    return NextResponse.json({ ok: true, ignored: "invite-stop" });
+  }
+
   if (pauseAgent) {
     await safeRefreshLeadState(channel.tenantId, inserted.leadId);
     console.log(
