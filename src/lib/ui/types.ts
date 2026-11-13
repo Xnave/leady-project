@@ -725,6 +725,22 @@ export type UiCopy = {
     rejectCooldownMinutesHint: string;
     rules: string;
     rulesHint: string;
+    invite: {
+      title: string;
+      blurb: string;
+      toggle: string;
+      toggleHint: string;
+      displayName: string;
+      displayNameHint: string;
+      templates: string;
+      opener: string;
+      reminder: string;
+      status: Record<"approved" | "pending" | "rejected" | "missing" | "no_whatsapp" | "error", string>;
+      notApprovedWarning: string;
+      noNameWarning: string;
+      testModeNote: string;
+      stats: Record<"invited" | "started" | "waiting" | "handedOff" | "stopped", string>;
+    };
     editor: {
       stagesTitle: string;
       stagesHint: string;

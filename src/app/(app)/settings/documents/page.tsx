@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { loadInstanceConfig } from "@/lib/capability-instances";
 import { getUiLang } from "@/lib/cookies";
 import { MORTGAGE_RULES } from "@/lib/documents/mortgage-rules";
+import { inviteStats, inviteTemplateStates } from "@/lib/documents/invite/run";
 import { publicDocumentConfig } from "@/lib/flow/document-config";
 import { prisma } from "@/lib/db";
 import { requireTenantRoleForPage } from "@/lib/tenant-role";
@@ -15,9 +16,12 @@ export default async function DocumentsSettingsPage() {
   const { tenantId } = await requireTenantRoleForPage("manager");
   const lang = await getUiLang();
   const ui = uiCopy(lang);
-  const [config, agent] = await Promise.all([
+  const [config, agent, tenant, stats, templates] = await Promise.all([
     loadInstanceConfig({ tenantId, capabilityId: "documents" }),
     prisma.agent.findFirst({ where: { tenantId }, select: { flow: true } }),
+    prisma.tenant.findFirst({ where: { id: tenantId }, select: { name: true } }),
+    inviteStats(tenantId),
+    inviteTemplateStates(tenantId),
   ]);
   const pub = publicDocumentConfig(config);
   const talk = (agent?.flow as FlowDefinition | undefined)?.stages?.talk as TalkStage | undefined;
@@ -35,6 +39,10 @@ export default async function DocumentsSettingsPage() {
         maxRejectTries={pub.maxRejectTries}
         rejectCooldownMinutes={pub.rejectCooldownMinutes}
         rules={rules}
+        autoInvite={pub.autoInvite}
+        clientDisplayName={pub.clientDisplayName || tenant?.name || ""}
+        inviteStats={stats}
+        inviteTemplates={templates}
       />
     </div>
   );
