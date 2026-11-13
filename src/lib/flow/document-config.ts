@@ -19,7 +19,23 @@ export type DocumentConfig = {
   /** First message when the phone is not in the client table. Empty uses the short default. */
   unrecognizedIntro: string;
   rules: RulesDocument;
+  /** Owner switch: message new source clients first. Default off. */
+  autoInvite: boolean;
+  /** ISO time the switch last went on. Only contacts stored after it are invited. */
+  autoInviteOnAt: string;
+  /** `{{2}}` in the invite templates, e.g. "ליאור - לייבל משכנתאות". Nothing is sent while empty. */
+  clientDisplayName: string;
+  /** ISO time the test phone list was last emptied. Contacts stored before it are not invited. */
+  testModeEndedAt: string;
 };
+
+const DISPLAY_NAME_MAX = 60;
+
+function isoOrEmpty(value: unknown): string {
+  if (typeof value !== "string" || !value) return "";
+  const t = new Date(value);
+  return Number.isNaN(t.getTime()) ? "" : t.toISOString();
+}
 
 export const DEFAULT_MAX_REJECT_TRIES = 5;
 export const DEFAULT_REJECT_COOLDOWN_MINUTES = 5;
@@ -66,6 +82,8 @@ export function parseDocumentConfig(
   existingKeyEnc = "",
   existingTestPhones: string[] = [],
   existingUnrecognizedIntro = "",
+  /** The stored config. Invite settings the body leaves out are kept; the stamps only ever come from here. */
+  existing: Record<string, unknown> = {},
 ): DocumentConfig {
   const errors: string[] = [];
   const body = isRecord(raw) ? raw : {};
@@ -104,6 +122,18 @@ export function parseDocumentConfig(
     }
   }
 
+  const autoInvite = typeof body.autoInvite === "boolean" ? body.autoInvite : existing.autoInvite === true;
+  const clientDisplayName = (
+    typeof body.clientDisplayName === "string"
+      ? body.clientDisplayName
+      : typeof existing.clientDisplayName === "string"
+        ? existing.clientDisplayName
+        : ""
+  )
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, DISPLAY_NAME_MAX);
+
   if (errors.length) throw new FlowConfigError(errors);
   return {
     baseUrl,
@@ -114,7 +144,39 @@ export function parseDocumentConfig(
     rejectCooldownMinutes,
     unrecognizedIntro,
     rules,
+    autoInvite,
+    autoInviteOnAt: isoOrEmpty(existing.autoInviteOnAt),
+    clientDisplayName,
+    testModeEndedAt: isoOrEmpty(existing.testModeEndedAt),
   };
+}
+
+/** Invites go only to the test phones while the owner lists any. */
+export function inviteTestMode(config: Pick<DocumentConfig, "testPhones">): boolean {
+  return config.testPhones.length > 0;
+}
+
+/**
+ * Stamp the moments that bound the invite backlog: the switch going on, and
+ * the test phone list being emptied. `prev` is the stored config before this save.
+ */
+export function applyInviteSettings(prev: DocumentConfig | null, next: DocumentConfig, now: Date): DocumentConfig {
+  const wasOn = prev?.autoInvite === true;
+  const wasTesting = prev ? inviteTestMode(prev) : false;
+  return {
+    ...next,
+    autoInviteOnAt: next.autoInvite ? (wasOn && next.autoInviteOnAt ? next.autoInviteOnAt : now.toISOString()) : "",
+    testModeEndedAt: wasTesting && !inviteTestMode(next) ? now.toISOString() : next.testModeEndedAt,
+  };
+}
+
+/** Contacts stored after this moment may be invited. Null when the switch is off. */
+export function inviteCutoff(config: DocumentConfig): Date | null {
+  if (!config.autoInvite || !config.autoInviteOnAt) return null;
+  const on = new Date(config.autoInviteOnAt);
+  if (inviteTestMode(config) || !config.testModeEndedAt) return on;
+  const ended = new Date(config.testModeEndedAt);
+  return ended > on ? ended : on;
 }
 
 /** Read a row already stored on the capability instance. The key lives in `apiKeyEnc`, not `apiKey`. */
@@ -123,7 +185,7 @@ export function documentConfigFromStored(raw: unknown): DocumentConfig {
   const phones = Array.isArray(body.testPhones)
     ? body.testPhones.filter((item): item is string => typeof item === "string")
     : [];
-  return parseDocumentConfig(body, typeof body.apiKeyEnc === "string" ? body.apiKeyEnc : "", phones);
+  return parseDocumentConfig(body, typeof body.apiKeyEnc === "string" ? body.apiKeyEnc : "", phones, "", body);
 }
 
 export function documentApiKey(config: DocumentConfig): string {
@@ -153,6 +215,8 @@ export function publicDocumentConfig(config: Record<string, unknown>): {
   rejectCooldownMinutes: number;
   unrecognizedIntro: string;
   rules: unknown;
+  autoInvite: boolean;
+  clientDisplayName: string;
 } {
   const parsed = isRecord(config) ? config : {};
   const hasKey = typeof parsed.apiKeyEnc === "string" && parsed.apiKeyEnc.length > 0;
@@ -173,5 +237,7 @@ export function publicDocumentConfig(config: Record<string, unknown>): {
     ),
     unrecognizedIntro: typeof parsed.unrecognizedIntro === "string" ? parsed.unrecognizedIntro : "",
     rules: parsed.rules ?? MORTGAGE_RULES,
+    autoInvite: parsed.autoInvite === true,
+    clientDisplayName: typeof parsed.clientDisplayName === "string" ? parsed.clientDisplayName : "",
   };
 }
