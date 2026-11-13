@@ -253,10 +253,16 @@ export const clientSourceSync = inngest.createFunction(
         break;
       }
     }
-    return step.run("finish", async () => {
+    const stats = await step.run("finish", async () => {
       const { finishSourceSync } = await import("@/lib/client-sources/store");
       return finishSourceSync(tenantId, sourceId, counts, mode, complete);
     });
+    if (stats.created > 0) {
+      // New clients: invite them now (the runner sends nothing while the owner's switch is off).
+      const { documentInvitesEvent } = await import("@/lib/documents/invite/run");
+      await step.sendEvent("invite-new-clients", documentInvitesEvent(tenantId));
+    }
+    return stats;
   },
 );
 
@@ -278,6 +284,41 @@ export const clientSourcesHourly = inngest.createFunction(
   },
 );
 
+/**
+ * Documents auto-invite for one tenant: openers to new source clients,
+ * reminders, and advisor tasks. No retries: every send is claimed on the row
+ * first, so a retry could not double-send, but an unknown result is better
+ * handed to the advisor than re-run.
+ */
+export const documentInvites = inngest.createFunction(
+  { id: "documents-invites", retries: 0, concurrency: [{ key: "event.data.tenantId", limit: 1 }] },
+  { event: "documents/invites.requested" },
+  async ({ event, step }) => {
+    const { tenantId } = event.data as { tenantId: string };
+    const nowIso = await step.run("now", () => new Date().toISOString());
+    return step.run("invite", async () => {
+      const { runInvitesForTenant } = await import("@/lib/documents/invite/run");
+      return runInvitesForTenant(tenantId, new Date(nowIso));
+    });
+  },
+);
+
+/** Hourly pass: reminders, advisor tasks, and clients synced outside send hours. */
+export const documentInvitesHourly = inngest.createFunction(
+  { id: "documents-invites-hourly", retries: 1 },
+  { cron: "30 * * * *" },
+  async ({ step }) => {
+    const tenants = await step.run("tenants", async () => {
+      const { tenantsWithAutoInvite } = await import("@/lib/documents/invite/run");
+      return tenantsWithAutoInvite();
+    });
+    if (!tenants.length) return { tenants: 0 };
+    const { documentInvitesEvent } = await import("@/lib/documents/invite/run");
+    await step.sendEvent("invite-tenants", tenants.map((t) => documentInvitesEvent(t)));
+    return { tenants: tenants.length };
+  },
+);
+
 /** Drop expired demo tenants and wipe page text still inside the rate-limit window. */
 // export const purgeRapidDemos = inngest.createFunction(
 //   { id: "purge-rapid-demos", retries: 1 },
@@ -289,6 +330,6 @@ export const clientSourcesHourly = inngest.createFunction(
 //     }),
 // );
 
-export const inngestFunctions = [runAgentTurn, nudgeIfSilent, crmDigest, ownerAlert, clientSourceSync, clientSourcesHourly
+export const inngestFunctions = [runAgentTurn, nudgeIfSilent, crmDigest, ownerAlert, clientSourceSync, clientSourcesHourly, documentInvites, documentInvitesHourly
     // , purgeRapidDemos
 ];

@@ -323,9 +323,22 @@ export async function runSourceSyncInline(tenantId: string, sourceId: string, mo
     const page = await syncSourcePage(tenantId, sourceId, cursor, updatedSince);
     counts = addCounts(counts, page.counts);
     cursor = page.nextCursor;
-    if (!cursor) return finishSourceSync(tenantId, sourceId, counts, mode, true);
+    if (!cursor) return inviteAfterInlineSync(tenantId, await finishSourceSync(tenantId, sourceId, counts, mode, true));
   }
-  return finishSourceSync(tenantId, sourceId, counts, mode, false);
+  return inviteAfterInlineSync(tenantId, await finishSourceSync(tenantId, sourceId, counts, mode, false));
+}
+
+/** Local dev without Inngest: run the documents invite pass the queued sync would trigger. */
+async function inviteAfterInlineSync(tenantId: string, stats: SyncStats): Promise<SyncStats> {
+  if (stats.created > 0) {
+    try {
+      const { runInvitesForTenant } = await import("@/lib/documents/invite/run");
+      await runInvitesForTenant(tenantId, new Date());
+    } catch (err) {
+      console.warn(JSON.stringify({ msg: "client_sources.inline_invite_failed", tenantId, error: String(err) }));
+    }
+  }
+  return stats;
 }
 
 export type TestResult =

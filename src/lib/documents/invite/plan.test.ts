@@ -7,6 +7,7 @@ import {
   invitedAfter,
   isStopReply,
   planInviteStep,
+  whatsappExternalIdVariants,
 } from "./plan";
 
 /** Israel is UTC+2 in winter (Nov), UTC+3 in summer (Jun). */
@@ -98,5 +99,16 @@ describe("invitedAfter", () => {
     expect(invitedAfter(at("2026-11-13T08:00:01Z"), cutoff)).toBe(true);
     expect(invitedAfter(at("2026-11-13T07:59:59Z"), cutoff)).toBe(false);
     expect(invitedAfter(at("2026-11-13T09:00:00Z"), null)).toBe(false);
+  });
+});
+
+describe("whatsappExternalIdVariants", () => {
+  it("covers the + and bare digit forms of a phone", () => {
+    expect(whatsappExternalIdVariants("+972501234567")).toEqual(["+972501234567", "972501234567"]);
+    expect(whatsappExternalIdVariants("972501234567")).toEqual(["972501234567", "+972501234567"]);
+  });
+  it("leaves non-phone ids alone", () => {
+    expect(whatsappExternalIdVariants("seed-docs-972521234567")).toEqual(["seed-docs-972521234567"]);
+    expect(whatsappExternalIdVariants("")).toEqual([]);
   });
 });
