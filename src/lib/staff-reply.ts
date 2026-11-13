@@ -1,4 +1,5 @@
 import { ensureChannelAccessToken, loadTurnContext } from "@/lib/conversations";
+import { replyStaysHere } from "@/lib/demo-phone";
 import { prisma } from "@/lib/db";
 
 /**
@@ -45,5 +46,6 @@ export async function sendStaffReply(opts: {
       typeof ctx.lead.fields.zernioConversationId === "string"
         ? ctx.lead.fields.zernioConversationId
         : undefined,
+    replyHereOnly: replyStaysHere(ctx.lead.fields, ctx.lead.externalUserId),
   });
 }

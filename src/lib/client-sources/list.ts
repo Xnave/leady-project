@@ -66,7 +66,6 @@ export async function listClients(tenantId: string, f: ClientListFilters) {
         name: true,
         phone: true,
         phoneStatus: true,
-        fields: true,
         dealDate: true,
         dealDateSource: true,
         dealDateConfidence: true,

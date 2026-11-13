@@ -131,9 +131,6 @@ export async function saveClientSource(
   }
 
   const existing = await prisma.clientSource.findUnique({ where: { tenantId_kind: { tenantId, kind: input.kind } } });
-  const shared = await hasSharedCredentials(tenantId, input.kind);
-  // A shared key wins, so do not keep a second copy that would silently go stale.
-  if (shared) credentialsEnc = "";
   if (!existing && credentialsEnc === undefined) return { error: "credentials_required" };
 
   const data = {
@@ -143,9 +140,11 @@ export async function saveClientSource(
   };
   const row = existing
     ? await prisma.clientSource.update({ where: { id: existing.id }, data })
-    : await prisma.clientSource.create({ data: { tenantId, kind: input.kind, credentialsEnc: credentialsEnc!, ...data } });
+    : await prisma.clientSource.create({
+        data: { tenantId, kind: input.kind, credentialsEnc: credentialsEnc!, syncSince: new Date(), ...data },
+      });
   const count = await prisma.contact.count({ where: { tenantId, sourceId: row.id } });
-  return { source: publicSource(row, count, shared) };
+  return { source: publicSource(row, count, false) };
 }
 
 type LoadedSource = {
@@ -160,9 +159,8 @@ async function loadForSync(tenantId: string, sourceId: string): Promise<LoadedSo
   if (!row) throw new Error("source_not_found");
   const connector = getConnector(row.kind);
   if (!connector) throw new Error(`unknown_kind:${row.kind}`);
-  const shared = connector.sharedCredentials ? await connector.sharedCredentials(tenantId) : null;
-  if (!shared && !row.credentialsEnc) throw new Error("credentials_required");
-  const credentials = shared ?? (JSON.parse(decryptSecret(row.credentialsEnc)) as unknown);
+  if (!row.credentialsEnc) throw new Error("credentials_required");
+  const credentials = JSON.parse(decryptSecret(row.credentialsEnc)) as unknown;
   const config = connector.parseConfig(row.config);
   return { row, connector, credentials, config };
 }
@@ -208,7 +206,8 @@ export function prismaSyncStore(tenantId: string, sourceId: string): SyncStore {
             phone: r.phone,
             phoneStatus: r.phoneStatus,
             name: r.name,
-            fields: r.fields as Prisma.InputJsonValue,
+            raw: r.raw as Prisma.InputJsonValue,
+            mapped: r.mapped as Prisma.InputJsonValue,
             dealDate: r.dealDate.date,
             dealDateSource: r.dealDate.source,
             dealDateConfidence: r.dealDate.confidence,
@@ -248,9 +247,16 @@ export async function beginSourceSync(
   sourceId: string,
   mode: SyncMode,
 ): Promise<{ updatedSince: string | null }> {
-  const row = await prisma.clientSource.findFirst({ where: { id: sourceId, tenantId }, select: { lastSyncAt: true, status: true } });
+  const row = await prisma.clientSource.findFirst({
+    where: { id: sourceId, tenantId },
+    select: { lastSyncAt: true, status: true, syncSince: true },
+  });
   if (!row) throw new Error("source_not_found");
-  await prisma.clientSource.update({ where: { id: sourceId }, data: { status: "syncing", lastError: "" } });
+  const syncSince = row.syncSince ?? new Date();
+  await prisma.clientSource.update({
+    where: { id: sourceId },
+    data: { status: "syncing", lastError: "", ...(row.syncSince ? {} : { syncSince }) },
+  });
   const since = mode === "incremental" && row.lastSyncAt && row.status !== "error" ? row.lastSyncAt : null;
   return { updatedSince: since?.toISOString() ?? null };
 }
@@ -272,6 +278,7 @@ export async function syncSourcePage(
       store: prismaSyncStore(tenantId, sourceId),
       cursor,
       updatedSince: updatedSince ? new Date(updatedSince) : null,
+      syncSince: loaded.row.syncSince,
       now: new Date(),
     });
     return { counts: page.counts, nextCursor: page.nextCursor };
@@ -341,6 +348,7 @@ export async function testClientSource(tenantId: string, sourceId: string): Prom
       config: loaded.config,
       store: prismaSyncStore(tenantId, sourceId),
       updatedSince: null,
+      syncSince: loaded.row.syncSince,
       now: new Date(),
       dryRun: true,
       maxPages: 1,

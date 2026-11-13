@@ -40,6 +40,31 @@ describe("personaGreeting (bare first hello, no LLM)", () => {
     );
   });
 
+  it("fills {{name}} from the lead, and {{full_name}} is that same name", () => {
+    const named = ctx({ intro: "היי {{name}}, אני בקי מהצוות." });
+    named.lead = { id: "l", externalUserId: "u", fields: { name: "נווה עיני" } };
+    expect(personaGreeting(named, "he")).toBe("היי נווה עיני, אני בקי מהצוות.");
+  });
+
+  it("fills {{full_name}} from the matched client", () => {
+    const named = ctx({ intro: "היי {{full_name}}, אני בקי מהצוות." });
+    named.capabilityState = { documents: { introFields: { full_name: "דנה כהן" } } };
+    expect(personaGreeting(named, "he")).toBe("היי דנה כהן, אני בקי מהצוות.");
+  });
+
+  it("drops an empty name instead of leaving the token", () => {
+    const named = ctx({ intro: "היי {{full_name}}, אני בקי מהצוות." });
+    expect(personaGreeting(named, "he")).toBe("היי, אני בקי מהצוות.");
+  });
+
+  it("uses the unrecognized opening instead of the business intro", () => {
+    const unknown = ctx({ intro: "היי {{full_name}}, אני בקי מהצוות." });
+    unknown.capabilityState = { documents: { unrecognized: true, unrecognizedIntro: "" } };
+    expect(personaGreeting(unknown, "he")).toBe(
+      "היי! אני עדי, העוזרת הדיגיטלית של מטבחי דמו. אפשר לשאול אותי כאן?",
+    );
+  });
+
   it("ignores a Hebrew intro for an English-speaking customer", () => {
     expect(personaGreeting(ctx({ intro: TAXTICA, agentName: "Becky", name: "Taxtica" }), "en")).toBe(
       "Hi! I'm Becky, Taxtica's AI assistant. How can I help?",

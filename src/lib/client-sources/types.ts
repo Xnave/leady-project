@@ -18,6 +18,8 @@ export type ClientFieldDef = {
   agentVisible: boolean;
   /** Shown as a column in the Clients tab. */
   listColumn?: boolean;
+  /** A phone. Document matching checks the primary column plus these mapped keys. */
+  phoneKey?: boolean;
   /** Computed by the connector from raw fields, not read from the CRM. */
   derived?: boolean;
 };
@@ -34,8 +36,10 @@ export type ClientRecord = {
   externalId: string;
   phone: string;
   name: string;
-  /** Only catalog fields. Connectors drop everything else (ids, income, birthdays). */
+  /** Catalog columns, checklist facts, and phone keys. */
   fields: Record<string, unknown>;
+  /** The CRM row. The sync stores it only when the source's storeRaw setting is on. */
+  raw?: Record<string, unknown>;
   updatedAt: Date | null;
 };
 
@@ -43,8 +47,10 @@ export type ClientPage = { clients: ClientRecord[]; nextCursor: string | null };
 
 export type FetchClientsOptions = {
   cursor: string | null;
-  /** Incremental sync: only clients changed since then. Null = everything. */
+  /** Incremental sync: only clients changed since then. Null = a full sync. */
   updatedSince: Date | null;
+  /** Contacts from this moment. Null means the connector's own default. */
+  syncSince?: Date | null;
 };
 
 export type DealDateConfidence = "high" | "medium_high" | "medium" | "low";
@@ -70,6 +76,10 @@ export type BaseSourceConfig = {
     dealYearsAgo?: { min?: number; max?: number };
     fields: { field: string; in: string[] }[];
   };
+  /** Store the CRM row on the contact. Off stores an empty raw payload. */
+  storeRaw: boolean;
+  /** Leave a contact that already exists as it was first stored. */
+  freezeAfterFirstSync: boolean;
 };
 
 export type ClientConnector<Credentials = unknown, Session = unknown, Config extends BaseSourceConfig = BaseSourceConfig> = {

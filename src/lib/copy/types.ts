@@ -74,6 +74,10 @@ export type ChatCopy = {
   request: RequestChatCopy;
   documents: {
     askId: string;
+    /** One line when the sender's phone was not imported. Later turns omit it. */
+    unrecognized: string;
+    /** First message when that phone is not in the client table. */
+    unrecognizedIntro: string;
     notFound: string;
     connectionDown: string;
     notConfigured: string;
@@ -98,6 +102,7 @@ export type ChatCopy = {
     askSplitWho: (first: string, second: string) => string;
     askIdBiometric: (name: string) => string;
     askIdBack: string;
+    askIdAppendix: string;
     askFirstHome: string;
     askLoans: string;
     askMoreLoans: string;
@@ -109,6 +114,7 @@ export type ChatCopy = {
     revised: (kind: string, detail?: string) => string;
     retracted: string;
     notIdBack: string;
+    notIdAppendix: string;
     idBackTryAgain: string;
     confirmChange: (kind: string, detail?: string) => string;
     confirmTurn: (changes: string[]) => string;
@@ -128,6 +134,7 @@ export type ChatCopy = {
     /** Kept for older dossiers that were already handed off. */
     escalated: string;
     uploadFailed: string;
+    overSize: (limit: string) => string;
     reasons: Record<string, string>;
   };
 };

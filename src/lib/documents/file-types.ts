@@ -70,6 +70,55 @@ export function smartUploadName(opts: {
   return `${filePart(opts.borrowerName)}_${filePart(opts.docLabel)}_${opts.date}_${version}.pdf`;
 }
 
+/** WhatsApp accepts a JPEG or PNG up to 5 MB. */
+export const WHATSAPP_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/** Zernio's direct upload returns 413 once the request body is about 4.5 MB. */
+export const ZERNIO_UPLOAD_BYTES = Math.round(4.5 * 1024 * 1024);
+export const ZERNIO_UPLOAD_LABEL = "4.5MB";
+
+/** The limit to tell the customer, when this file is a WhatsApp image. */
+export function whatsAppImageLimit(mime: string): string | null {
+  const normalized = mime.toLowerCase();
+  if (normalized === "image/jpeg" || normalized === "image/jpg" || normalized === "image/png") return "5MB";
+  return null;
+}
+
+/** True when a JPEG or PNG is past the size WhatsApp will carry. */
+export function exceedsWhatsAppImage(mime: string, size: number): boolean {
+  return whatsAppImageLimit(mime) != null && size > WHATSAPP_IMAGE_BYTES;
+}
+
+/** Milliseconds when an S3 presigned URL stops working. Null when the link is not that shape. */
+export function presignedExpiry(url: string): number | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const stamp = parsed.searchParams.get("X-Amz-Date");
+  const expires = Number(parsed.searchParams.get("X-Amz-Expires"));
+  const match = stamp ? /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(stamp) : null;
+  if (!match || !Number.isFinite(expires) || expires <= 0) return null;
+  const start = Date.UTC(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    Number(match[4]),
+    Number(match[5]),
+    Number(match[6]),
+  );
+  return start + expires * 1000;
+}
+
+/** True when the link is already dead or will be within the next minute. */
+export function presignedUrlStale(url: string, now = new Date(), skewMs = 60_000): boolean {
+  const expiry = presignedExpiry(url);
+  if (expiry == null) return false;
+  return now.getTime() + skewMs >= expiry;
+}
+
 /** Upload day in Asia/Jerusalem, as yyyy-mm-dd. */
 export function uploadDay(now: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", {

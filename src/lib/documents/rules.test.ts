@@ -4,7 +4,7 @@ import { documentAskText, reopenUploadedSlot } from "./dossier";
 import { applyCustomerAnswers, applyExtractedBiometric, asksHowToGet, borrowersOf, declinesExistingLoans, employmentFromStatusReport, factsFromClient, missingTheDocument, nextQuestion, openQuestions, retractsLastFile } from "./facts";
 import { checklistSlots, collectionYears, MORTGAGE_RULES, nextCollectionStageId } from "./mortgage-rules";
 import { mapSmartProfile } from "./smart-npv";
-import { parseRules, RulesError } from "./rules";
+import { parseRules, RulesError, type Profile } from "./rules";
 import { commitSlot, dossierDone, freshDossier, judgeFile, runChecks } from "./validate";
 
 const ACCOUNT = { uuid: "acct-1" };
@@ -209,13 +209,48 @@ describe("mortgage checklist", () => {
     expect(checklistSlots(stop, MORTGAGE_RULES).filter((slot) => slot.docType === "loan_balances")).toHaveLength(1);
   });
 
-  it("flags both-employment and does not open payslips or the accountant letter", () => {
-    const profile = client({ status_report_1: "5" });
-    const slots = checklistSlots(profile, MORTGAGE_RULES);
-    expect(profile.advisorFlag).toEqual(expect.stringContaining("שכיר ועצמאי"));
-    expect(slots.map((slot) => slot.docType)).not.toContain("payslip");
-    expect(slots.map((slot) => slot.docType)).not.toContain("accountant_letter");
-    expect(slots.map((slot) => slot.docType)).not.toContain("bank_statement");
+  it("opens the self-employed list for code 5", () => {
+    const answered = (code: string): Profile => ({
+      ...ready({ status_report_1: code, liabilities: [] }),
+      loans: "none" as const,
+      hasLoans: false,
+      loanMore: "no",
+    });
+    const code0 = answered("0");
+    const code5 = answered("5");
+    expect(employmentFromStatusReport("5")).toEqual({ employment: "both", label: "שכיר ועצמאי" });
+    expect(borrowersOf(code5).find((borrower) => borrower.slot === "1")?.employment).toBe("both");
+    expect(code5.advisorFlag).toBe("");
+    expect(openQuestions(code5)).toEqual([]);
+    expect(checklistSlots(code5, MORTGAGE_RULES).map((slot) => slot.docType)).toEqual(
+      checklistSlots(code0, MORTGAGE_RULES).map((slot) => slot.docType),
+    );
+    expect(checklistSlots(code5, MORTGAGE_RULES).map((slot) => slot.docType)).toEqual(
+      expect.arrayContaining(["tax_assessment", "accountant_letter", "bank_statement"]),
+    );
+    expect(checklistSlots(code5, MORTGAGE_RULES).map((slot) => slot.docType)).not.toContain("payslip");
+  });
+
+  it("opens one household statement for a couple and one per account for a single borrower", () => {
+    const couple = {
+      ...client({
+        banks_accounts: [{ uuid: "a" }, { uuid: "b" }],
+        id_2: "209876543",
+        firstname_2: "Noam",
+        lastname_2: "Levi",
+        status_report_2: "1",
+      }),
+      firstHome: "true" as const,
+    };
+    const shared = checklistSlots(couple, MORTGAGE_RULES).filter((slot) => slot.docType === "bank_statement");
+    expect(shared).toHaveLength(1);
+    expect(shared[0]?.id).toBe("bank_statement#household#0");
+
+    const single = checklistSlots(
+      ready({ banks_accounts: [{ uuid: "a" }, { uuid: "b" }] }),
+      MORTGAGE_RULES,
+    ).filter((slot) => slot.docType === "bank_statement");
+    expect(single).toHaveLength(2);
   });
 
   it("opens one statement when the file lists no accounts", () => {
@@ -372,12 +407,13 @@ describe("mortgage checklist", () => {
     expect(borrowersOf(applyCustomerAnswers(selfEmployed, "בעצם אני שכיר").profile).find((borrower) => borrower.slot === "1")?.employmentSource).toBe("status_report");
     const both = applyCustomerAnswers(ready({ status_report_1: "" }), "אני שכיר וגם עצמאי").profile;
     expect(borrowersOf(both).find((borrower) => borrower.slot === "1")?.employment).toBe("both");
-    expect(both.advisorFlag).toEqual(expect.stringContaining("שכיר ועצמאי"));
-    const closed = checklistSlots(both, MORTGAGE_RULES).map((slot) => slot.docType);
-    expect(closed).toContain("id_card");
-    expect(closed).not.toContain("payslip");
-    expect(closed).not.toContain("tax_assessment");
-    expect(closed).not.toContain("bank_statement");
+    expect(both.advisorFlag).toBe("");
+    const types = checklistSlots(both, MORTGAGE_RULES).map((slot) => slot.docType);
+    expect(types).toContain("id_card");
+    expect(types).toContain("tax_assessment");
+    expect(types).toContain("accountant_letter");
+    expect(types).toContain("bank_statement");
+    expect(types).not.toContain("payslip");
   });
 
   it("treats where-to-get as help and a named wrong file as a retraction", () => {

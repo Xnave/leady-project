@@ -262,7 +262,7 @@ function turnPrompt(input: { message: string; snapshot: FactSnapshot; lastAgentM
   return [
     "Read one customer message during a mortgage document checklist.",
     "Return every intent in the message. Return an empty list when nothing should change.",
-    "Empty list for: a question (אם יש לי הלוואות זה משנה?, אפשר לשלוח רישיון במקום?), filler (בעצם) with no new fact, and זה לא נטען or זה לא ברור.",
+    "Empty list for: a question (אם יש לי הלוואות זה משנה?, שלח/י לי בבקשה רישיון במקום?), filler (בעצם) with no new fact, and זה לא נטען or זה לא ברור.",
     "fact values: loans known|none; employment salaried|self_employed|controlling_shareholder|both|other; second_borrower yes|no; first_home true|false; couple_split yes|no; split_who 1|2; salary_deposit yes|no; more_loans yes|no.",
     "split_who is which borrower is self-employed after a yes to one salaried and one self-employed. 1 is the first person in that question, 2 is the second. The other borrower is salaried.",
     "אני שכיר וגם עצמאי is employment both. הלוואה נוספת is more_loans, not loans known.",

@@ -7,6 +7,7 @@ import { defaultFlow, defaultHitlPolicy, defaultLeadSchema } from "@/lib/flow/va
 import type { AgentSnapshot, TurnContext } from "@/lib/flow/types";
 import type { FlowDefinition, HitlPolicy, LeadFields, LeadSchema } from "@/lib/flow/types";
 import { looksLikePhoneNumber } from "@/lib/flow/booking-collect";
+import { phoneFromDemoSender } from "@/lib/demo-phone";
 import { hasRelevantRequest } from "@/lib/requests";
 import { normalizePersona } from "@/lib/persona/validate";
 import {
@@ -406,9 +407,11 @@ export async function loadTurnContext(
 
   const fromId = conversation.lead.externalUserId?.trim() ?? "";
   const isWhatsApp = conversation.channel.provider === "whatsapp";
+  const impersonated = phoneFromDemoSender(fromId);
   const leadPhone =
-    (typeof fields.phone === "string" && fields.phone.trim()) ||
+    impersonated ||
     (isWhatsApp && looksLikePhoneNumber(fromId) ? fromId : "") ||
+    (typeof fields.phone === "string" && fields.phone.trim()) ||
     undefined;
 
   const capabilityState: Record<string, unknown> = {};

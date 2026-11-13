@@ -36,7 +36,9 @@ import {
 import { applyCustomerAnswers, applyExtractedBiometric, borrowerFileWho, borrowersOf, declinesExistingLoans, factsFromClient, factsOpen, firstHomeOf, loansOf, missingTheDocument, nextQuestion, openQuestions, retractsLastFile, secondBorrowerOf, sharedBorrowerEmployment, splitWhoOf, type OpenQuestion } from "./facts";
 import { docLabel, type BlankFormDef, type Profile, type RulesDocument, type Slot } from "./rules";
 import { checklistSlots, nextCollectionStageId, releasedStageId } from "./mortgage-rules";
-import { isImageFile, isUploadableFile, smartUploadName, uploadDay } from "./file-types";
+import { exceedsWhatsAppImage, isImageFile, isUploadableFile, smartUploadName, uploadDay, ZERNIO_UPLOAD_BYTES, ZERNIO_UPLOAD_LABEL } from "./file-types";
+import { phoneKey, smartNpvApiKey, storedClientByPhone } from "./client-sync";
+import { senderPhone } from "@/lib/demo-phone";
 import { filesToPdf, photoDone } from "./images";
 import { slotNeedsUpload, SMART_NPV_HOST, SmartNpvAuthError, smartClientFor, type SmartClient } from "./smart-npv";
 import {
@@ -68,6 +70,7 @@ export type StoredAttachment = {
   mime: string;
   filename: string;
   bytesEnc?: string;
+  size?: number;
 };
 
 export type DocumentsTurnState = {
@@ -81,6 +84,14 @@ export type DocumentsTurnState = {
   asks: OpenQuestion[];
   /** A file arrived on this turn, so ingest runs even before the intro. */
   pendingFile: boolean;
+  /** The sender's phone is not in the hourly client table. */
+  unrecognized?: boolean;
+  /** The first message uses the unrecognized intro. Later turns do not. */
+  sayUnrecognized?: boolean;
+  /** Values for `{{name}}` and the other intro tokens. */
+  introFields?: Record<string, string>;
+  /** Owner opening used instead of the business intro when the phone is unknown. */
+  unrecognizedIntro?: string;
 };
 
 /** The turn already carries the Zernio ids. `connection` is set by loadTurnContext. */
@@ -131,6 +142,7 @@ function attachmentsOf(metadata: unknown): StoredAttachment[] {
     mime: typeof item.mime === "string" ? item.mime : "application/octet-stream",
     filename: typeof item.filename === "string" && item.filename.trim() ? item.filename.trim() : "file",
     bytesEnc: typeof item.bytesEnc === "string" ? item.bytesEnc : undefined,
+    ...(typeof item.size === "number" && item.size > 0 ? { size: item.size } : {}),
   }));
 }
 
@@ -152,10 +164,31 @@ async function readConfig(tenantId: string): Promise<DocumentConfig | null> {
   }
 }
 
-async function downloadUrl(url: string): Promise<Buffer> {
+class OversizedFile extends Error {
+  constructor(readonly limit: string) {
+    super("too_large");
+    this.name = "OversizedFile";
+  }
+}
+
+/** The limit to tell the customer when this file cannot come through WhatsApp. */
+function announcedLimit(attachment: StoredAttachment): string | null {
+  if (typeof attachment.size === "number" && exceedsWhatsAppImage(attachment.mime, attachment.size)) return "5MB";
+  if (!attachment.url && typeof attachment.size === "number" && attachment.size > ZERNIO_UPLOAD_BYTES) {
+    return ZERNIO_UPLOAD_LABEL;
+  }
+  return null;
+}
+
+async function downloadUrl(url: string, mime: string): Promise<Buffer> {
   const res = await fetch(url);
+  if (res.status === 413) throw new OversizedFile(ZERNIO_UPLOAD_LABEL);
   if (!res.ok) throw new Error(`attachment ${res.status}`);
+  const declared = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declared) && exceedsWhatsAppImage(mime, declared)) throw new OversizedFile("5MB");
+  if (Number.isFinite(declared) && declared > MAX_BYTES) throw new Error("too_large");
   const bytes = Buffer.from(await res.arrayBuffer());
+  if (exceedsWhatsAppImage(mime, bytes.length)) throw new OversizedFile("5MB");
   if (bytes.length > MAX_BYTES) throw new Error("too_large");
   return bytes;
 }
@@ -313,9 +346,13 @@ export async function loadDocumentsTurnState(args: {
       missing: [],
       asks: [],
       pendingFile: false,
+      unrecognized: false,
+      sayUnrecognized: false,
+      introFields: {},
+      unrecognizedIntro: "",
     };
   }
-  const [dossier, inbound, stored, lastAgent] = await Promise.all([
+  const [dossier, inbound, stored, lastAgent, lead] = await Promise.all([
     prisma.dossier.findFirst({
       where: { tenantId: args.tenantId, leadId: args.leadId },
       orderBy: { createdAt: "desc" },
@@ -328,6 +365,10 @@ export async function loadDocumentsTurnState(args: {
       where: { tenantId: args.tenantId, conversationId: args.conversationId, role: { in: ["agent", "human"] } },
       orderBy: { createdAt: "desc" },
       select: { text: true },
+    }),
+    prisma.lead.findFirst({
+      where: { id: args.leadId, tenantId: args.tenantId },
+      select: { externalUserId: true, fields: true },
     }),
   ]);
   const state = dossier ? stateOf(dossier) : null;
@@ -343,7 +384,7 @@ export async function loadDocumentsTurnState(args: {
   const closingPhotos = Boolean(state?.profile.imageBatchSlot && photoDone(inbound.newestText));
   const escalatePending = Boolean(state && escalateOfferPending(state.profile));
   const coolPending = Boolean(state && coolActive(state.profile));
-  const runIngest =
+  let runIngest =
     !state ||
     state.status === "needs_id" ||
     inbound.files.length > 0 ||
@@ -353,6 +394,30 @@ export async function loadDocumentsTurnState(args: {
     (escalatePending && Boolean(inbound.newestText.trim())) ||
     (coolPending && inbound.files.length > 0) ||
     (state.status === "gathering" && Boolean(inbound.newestText.trim()));
+  const fields = isRecord(lead?.fields) ? lead.fields : {};
+  const phone = senderPhone(
+    lead?.externalUserId ?? "",
+    typeof fields.phone === "string" ? fields.phone : "",
+  );
+  let unrecognized = false;
+  let sayUnrecognized = false;
+  let introFields = state ? introFieldsFromProfile(state.profile, phone) : {};
+  if (!isTestLead(config, phone) && (!state || state.status === "needs_id")) {
+    const known = await storedClientByPhone(args.tenantId, phone);
+    if (!known) {
+      runIngest = false;
+      unrecognized = true;
+      sayUnrecognized = fields.documentsUnrecognized !== true;
+      if (sayUnrecognized && lead) {
+        await prisma.lead.update({
+          where: { id: args.leadId },
+          data: { fields: { ...fields, documentsUnrecognized: true } as Prisma.InputJsonValue },
+        });
+      }
+    } else {
+      introFields = introFieldsFromProfile(known.profile, phone);
+    }
+  }
   return {
     configured: true,
     runIngest,
@@ -362,7 +427,29 @@ export async function loadDocumentsTurnState(args: {
     missing: state ? missingLabels(state, config.rules, "en") : [],
     asks: state ? openQuestions(state.profile) : [],
     pendingFile: inbound.files.length > 0,
+    unrecognized,
+    sayUnrecognized,
+    introFields,
+    unrecognizedIntro: config.unrecognizedIntro,
   };
+}
+
+function introFieldsFromProfile(profile: Profile, phone: string): Record<string, string> {
+  const people = borrowersOf(profile);
+  const key = phoneKey(phone);
+  const match = (key ? people.find((person) => phoneKey(person.phone) === key) : undefined) ?? people[0];
+  const full = (match?.fullName || (typeof profile.fullName === "string" ? profile.fullName : "")).trim();
+  const out: Record<string, string> = {};
+  if (full) {
+    out.name = full;
+    out.full_name = full;
+    out.fullName = full;
+  }
+  const personPhone = (match?.phone || (typeof profile.phone === "string" ? profile.phone : "")).trim();
+  if (personPhone) out.phone = personPhone;
+  const nationalId = (match?.nationalId || (typeof profile.nationalId === "string" ? profile.nationalId : "")).trim();
+  if (nationalId) out.national_id = nationalId;
+  return out;
 }
 
 function reasonText(chat: ReturnType<typeof copyFor>["chat"], reason: string): string {
@@ -435,6 +522,45 @@ function startRejectCool(
   };
 }
 
+function seenText(value: unknown): string {
+  return String(value ?? "").trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Name the detail that failed. The number or name is the one read on the
+ * file the customer sent. The value stored on the client stays unsaid.
+ */
+function profileMismatchText(field: string | undefined, fields: Record<string, unknown>, lang: "en" | "he"): string {
+  const name = seenText(fields.fullName) || [seenText(fields.firstName), seenText(fields.lastName)].filter(Boolean).join(" ");
+  const id = seenText(fields.nationalId).replace(/\D/g, "");
+  if (field === "nationalId") {
+    if (lang === "he") {
+      const who = name ? `זיהיתי תעודה על שם ${name}. ` : "";
+      const number = id
+        ? `מספר תעודת הזהות שזיהיתי הוא ${id}, והוא לא תואם למספר שבתיק.`
+        : "מספר תעודת הזהות שזיהיתי במסמך לא תואם למספר שבתיק.";
+      return `${who}${number} בבקשה בדוק שזו התעודה של הלווה הנכון`;
+    }
+    const who = name ? `I read a card for ${name}. ` : "";
+    const number = id
+      ? `The ID number I read is ${id}, and it doesn't match the number on file.`
+      : "The ID number I read doesn't match the number on file.";
+    return `${who}${number} Please check that this is the right person's card`;
+  }
+  if (field === "fullName") {
+    if (lang === "he") {
+      return name
+        ? `השם שזיהיתי במסמך הוא ${name}, והוא לא תואם לשם שבתיק`
+        : "השם שזיהיתי במסמך לא תואם לשם שבתיק";
+    }
+    return name
+      ? `The name I read is ${name}, and it doesn't match the name on file`
+      : "The name I read doesn't match the name on file";
+  }
+  if (lang === "he") return "פרט שזיהיתי במסמך לא תואם לפרט שבתיק. אפשר לבדוק שצורף המסמך של הלווה הנכון";
+  return "A detail I read doesn't match the same detail on file. Please check that this is the right person's document";
+}
+
 function readableList(values: string[], lang: "en" | "he"): string {
   if (values.length < 2) return values[0] ?? "";
   const last = values.at(-1) ?? "";
@@ -469,7 +595,7 @@ export function customerRejection(opts: {
     : monthList(priorCalendarMonths(now), opts.lang, now);
   const request = opts.nextAsk
     ?? (opts.lang === "he"
-      ? `אפשר לשלוח את תלושי השכר של ${need}`
+      ? `שלח/י לי בבקשה את תלושי השכר של ${need}`
       : `Could you send the payslips for ${need}?`);
   if (opts.reason === "unrecognized") {
     if (payslip) {
@@ -479,13 +605,14 @@ export function customerRejection(opts: {
     }
     if (opts.docType === "id_card" || opts.docType === "id_card_back") {
       return opts.lang === "he"
-        ? "לא זיהיתי את הקובץ. אפשר לשלוח צילום ברור של הצד הקדמי, כך שהשם והמספר נראים?"
+        ? "לא זיהיתי את הקובץ. שלח/י לי בבקשה צילום ברור של הצד הקדמי, כך שהשם והמספר נראים?"
         : "I couldn't tell what this file is. Could you send a clear photo of the front, with the name and number visible?";
     }
     return opts.lang === "he"
       ? "לא זיהיתי את הקובץ כמסמך שביקשתי."
       : "I couldn't tell what this file is.";
   }
+  if (opts.reason === "matches_profile") return profileMismatchText(opts.field, opts.fields, opts.lang);
   if (!payslip) return undefined;
   const found = monthsIn(opts.fields.periodEnd ?? opts.fields.payMonths);
   const recent = recentPayslipMonths(found.join(","), 3, now);
@@ -625,10 +752,9 @@ type IngestLines = {
 };
 
 function phoneOf(ctx: TurnContext): string {
-  return (
-    ctx.channel?.customerPhone ||
-    (typeof ctx.lead.fields.phone === "string" ? ctx.lead.fields.phone : "") ||
-    ctx.lead.externalUserId
+  return senderPhone(
+    ctx.channel?.customerPhone || ctx.lead.externalUserId,
+    typeof ctx.lead.fields.phone === "string" ? ctx.lead.fields.phone : "",
   );
 }
 
@@ -699,7 +825,7 @@ function mergeSlots(previous: SlotState[], next: Slot[]): SlotState[] {
   return merged;
 }
 
-function refreshDossier(state: DossierState, rules: RulesDocument, text: string, bare = false): DossierState {
+export function refreshDossier(state: DossierState, rules: RulesDocument, text: string, bare = false): DossierState {
   const applied = applyCustomerAnswers(state.profile, text, new Date(), { bare });
   const profile = applied.profile;
   const next = checklistSlots(profile, rules);
@@ -718,7 +844,18 @@ function refreshDossier(state: DossierState, rules: RulesDocument, text: string,
   const waitingForLoan = loansFilled && withLoans.loanMore === "pending";
   const done = dossierDone(slots) && !waitingForLoan;
   const loansSame = withLoans.loanMore === state.profile.loanMore;
-  if (same && loansSame) return { ...state, profile: withLoans };
+  // The extra-loan answer can already be on the profile before this refresh.
+  // Slot shape is then unchanged, and the old status would stay "gathering"
+  // with nothing left to ask, so the customer would get no reply.
+  if (same && loansSame) {
+    return {
+      ...state,
+      profile: withLoans,
+      slots,
+      status: done ? "complete" : "gathering",
+      activeStage: activeStageOf(slots),
+    };
+  }
   return {
     ...state,
     profile: withLoans,
@@ -763,6 +900,9 @@ export function documentAskText(
   if (question.kind === "id_biometric") return chat.documents.askIdBiometric(question.name || who);
   if (question.kind === "id_back") {
     return who ? chat.documents.forBorrower(chat.documents.askIdBack, who) : chat.documents.askIdBack;
+  }
+  if (question.kind === "id_appendix") {
+    return who ? chat.documents.forBorrower(chat.documents.askIdAppendix, who) : chat.documents.askIdAppendix;
   }
   const fallback =
     "slot" in question && question.slot === "2"
@@ -930,6 +1070,15 @@ async function notifyAdvisor(ctx: TurnContext, state: DossierState): Promise<Dos
 function offeredForms(profile: Profile): string[] {
   const raw = profile.formsOffered;
   return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
+}
+
+/** The blank form for the document this turn is asking for. Earlier slots do not send it. */
+export function blankFormDue(state: DossierState, rules: RulesDocument): string {
+  if (nextQuestion(state.profile)) return "";
+  const slot = state.slots.find((item) => isOutstanding(item, state.slots));
+  if (!slot || !rules.documents[slot.docType]?.blankForm) return "";
+  if (offeredForms(state.profile).includes(slot.docType)) return "";
+  return slot.docType;
 }
 
 function rememberOfferedForm(state: DossierState, docType: string): DossierState {
@@ -1119,6 +1268,9 @@ function offlineSmartClient(): SmartClient {
       return {
         clientId: "test",
         profile: factsFromClient({}),
+        createdOn: "",
+        phone1: "",
+        phone2: "",
       };
     },
     async listClients() {
@@ -1147,7 +1299,7 @@ function uploadNameFor(state: DossierState, rules: RulesDocument, slotId: string
   return name;
 }
 
-/** Find the Smart NPV client, or leave the dossier on needs_id. */
+/** Find the stored client, or leave a test lead on needs_id. Live phones never call clients/get. */
 async function matchClient(opts: IngestLines & {
   config: DocumentConfig;
   client: SmartClient;
@@ -1160,6 +1312,12 @@ async function matchClient(opts: IngestLines & {
 }): Promise<{ row: DossierRow | null; done?: { ok: boolean; reply: string } }> {
   let { row } = opts;
   if (row && row.status !== "needs_id") return { row };
+  const testing = isTestLead(opts.config, phoneOf(opts.ctx));
+  if (!testing) {
+    const stored = await storedClientByPhone(opts.ctx.tenantId, phoneOf(opts.ctx));
+    if (!stored) return { row, done: { ok: true, reply: "" } };
+    return openMatchedDossier(opts, row, { clientId: stored.smartClientId, profile: stored.profile });
+  }
   let found: Awaited<ReturnType<SmartClient["findClient"]>>;
   try {
     found =
@@ -1191,6 +1349,14 @@ async function matchClient(opts: IngestLines & {
     await safeRefreshLeadState(opts.ctx.tenantId, opts.ctx.lead.id);
     return { row, done: { ok: true, reply } };
   }
+  return openMatchedDossier(opts, row, found);
+}
+
+async function openMatchedDossier(
+  opts: IngestLines & { config: DocumentConfig; answerText: string; bare: boolean },
+  row: DossierRow | null,
+  found: { clientId: string; profile: Profile },
+): Promise<{ row: DossierRow | null; done?: { ok: boolean; reply: string } }> {
   const answered = applyCustomerAnswers(found.profile, opts.answerText, new Date(), { bare: opts.bare });
   const opened = freshDossier({
     smartClientId: found.clientId,
@@ -1205,12 +1371,12 @@ async function matchClient(opts: IngestLines & {
     activeStage: opened.activeStage,
     conversationId: opts.ctx.conversation.id,
   };
-  row = row
+  const next = row
     ? await prisma.dossier.update({ where: { id: row.id }, data })
     : await prisma.dossier.create({
         data: { tenantId: opts.ctx.tenantId, leadId: opts.ctx.lead.id, ...data },
       });
-  return { row };
+  return { row: next };
 }
 
 async function rejectEmptyStored(tenantId: string, dossierId: string): Promise<void> {
@@ -1306,21 +1472,40 @@ async function collectJobs(opts: IngestLines & { row: DossierRow; files: Inbound
       });
       continue;
     }
+    const limit = announcedLimit(attachment);
+    if (limit) {
+      opts.lines.push(opts.chat.documents.overSize(limit));
+      await markRejected({
+        tenantId: opts.ctx.tenantId,
+        leadId: opts.ctx.lead.id,
+        dossierId: opts.row.id,
+        messageId: file.messageId,
+        filename: attachment.filename,
+        mime: attachment.mime,
+        reason: "too_large",
+      });
+      continue;
+    }
     let bytes: Buffer | null = null;
     try {
       bytes = attachment.bytesEnc
         ? decryptBytes(attachment.bytesEnc)
         : attachment.url
-          ? await downloadUrl(attachment.url)
+          ? await downloadUrl(attachment.url, attachment.mime)
           : null;
     } catch (err) {
-      const reason = err instanceof Error && err.message === "too_large" ? "too_large" : "unreadable";
+      const oversized = err instanceof OversizedFile;
+      const reason = oversized || (err instanceof Error && err.message === "too_large") ? "too_large" : "unreadable";
       warnDocuments("documents.download_failed", {
         filename: attachment.filename,
         mime: attachment.mime,
         error: err instanceof Error ? err.message : String(err),
       });
-      opts.lines.push(opts.chat.documents.rejected(attachment.filename, reasonText(opts.chat, reason)));
+      opts.lines.push(
+        err instanceof OversizedFile
+          ? opts.chat.documents.overSize(err.limit)
+          : opts.chat.documents.rejected(attachment.filename, reasonText(opts.chat, reason)),
+      );
       await markRejected({
         tenantId: opts.ctx.tenantId,
         leadId: opts.ctx.lead.id,
@@ -1346,6 +1531,8 @@ async function judgeFileJob(opts: IngestLines & {
   row: DossierRow;
   state: DossierState;
   job: IngestJob;
+  /** Ask the reader about this type first. The open list still decides where the file lands. */
+  focus?: string;
 }): Promise<{
   state: DossierState;
   cooled: boolean;
@@ -1381,7 +1568,7 @@ async function judgeFileJob(opts: IngestLines & {
     mime: opts.job.mime,
     filename: opts.job.filename,
     open,
-    focus: missing[0]?.docType,
+    focus: opts.focus ?? missing[0]?.docType,
   });
   let working = opts.state;
   const assumed = assumePendingForm(working, extracted.docType ?? "");
@@ -1605,11 +1792,14 @@ function receiptName(
 ): string {
   const slot = state.slots.find((item) => item.id === slotId);
   const base = docLabel(rules, docType, lang);
+  const withAppendix = docType === "id_card" && state.profile.appendixSeen === slot?.borrower
+    ? `${base}, ${docLabel(rules, "id_appendix", lang)}`
+    : base;
   const titled = covered?.length
-    ? `${base} ${monthList(covered, lang)}`
+    ? `${withAppendix} ${monthList(covered, lang)}`
     : slot?.year
-      ? `${base} ${slot.year}`
-      : base;
+      ? `${withAppendix} ${slot.year}`
+      : withAppendix;
   const who = borrowerFileWho(state.profile, slot?.borrower, lang);
   return who ? copyFor(lang).chat.documents.ownedBy(titled, who) : titled;
 }
@@ -1855,6 +2045,26 @@ function noteAppendix(
   return { ...state, profile: { ...state.profile, appendixSeen: who } };
 }
 
+/**
+ * The card photos are still in hand, and the ספח is not in them yet.
+ * The other side of a biometric card comes first.
+ */
+export function idBatchNeedsAppendix(state: DossierState): boolean {
+  const slotId = typeof state.profile.imageBatchSlot === "string" ? state.profile.imageBatchSlot : "";
+  const slot = state.slots.find((item) => item.id === slotId);
+  const who = slot?.borrower;
+  if (!slot || slot.docType !== "id_card" || (who !== "1" && who !== "2")) return false;
+  if (state.profile.idBackPending === who) return false;
+  if (state.profile.appendixSeen === who) return false;
+  return state.slots.some((item) =>
+    item.docType === "id_appendix" && item.borrower === who && item.status !== "uploaded",
+  );
+}
+
+function appendixPendingOf(profile: Profile): "1" | "2" | "" {
+  return profile.appendixPending === "1" || profile.appendixPending === "2" ? profile.appendixPending : "";
+}
+
 /** The ספח in the ID photo shares the file that uploaded the card. */
 function commitSeenAppendix(state: DossierState, frontSlotId: string): DossierState {
   const front = state.slots.find((slot) => slot.id === frontSlotId);
@@ -1918,9 +2128,9 @@ export function retractionSlot(slots: SlotState[], text: string): SlotState | un
 export function releaseHeldSlot(state: DossierState, rules: RulesDocument, slotId: string): DossierState {
   const slot = state.slots.find((item) => item.id === slotId);
   if (!slot || slot.status === "uploaded") {
-    return { ...state, profile: { ...state.profile, imageBatchSlot: "", idBackPending: "" } };
+    return { ...state, profile: { ...state.profile, imageBatchSlot: "", idBackPending: "", appendixPending: "" } };
   }
-  let profile: Profile = { ...state.profile, imageBatchSlot: "", idBackPending: "" };
+  let profile: Profile = { ...state.profile, imageBatchSlot: "", idBackPending: "", appendixPending: "" };
   const who = slot.borrower === "1" || slot.borrower === "2" ? slot.borrower : "";
   if (who) {
     const borrowers = borrowersOf(profile).map((borrower) =>
@@ -2032,7 +2242,10 @@ async function closeImageBatch(opts: IngestLines & {
   });
   if (!uploaded.accepted) return opts.state;
   let next: DossierState = { ...uploaded.state, profile: { ...uploaded.state.profile, imageBatchSlot: "" } };
-  if (slot?.docType === "id_card") next = commitSeenAppendix(next, slotId);
+  if (slot?.docType === "id_card") {
+    next = commitIdBack(next, slotId);
+    next = commitSeenAppendix(next, slotId);
+  }
   await prisma.$transaction(
     pages.map((page) =>
       prisma.leadDocument.update({
@@ -2053,10 +2266,14 @@ export async function runDocumentsIngest(
   const chat = copyFor(lang, { gender: ctx.agent.persona?.gender }).chat;
   if (!config) return { ok: false, reply: customerReply(ctx, chat.documents.notConfigured) };
 
-  const testing = isTestLead(config, phoneOf(ctx));
-  const client = deps?.client ?? (testing
+  const apiKey = deps?.client
+    ? ""
+    : (await smartNpvApiKey(ctx.tenantId)) || (config.apiKeyEnc ? documentApiKey(config) : "");
+  const withKey = deps?.client ? config : { ...config, apiKeyEnc: apiKey ? "present" : "" };
+  const testing = isTestLead(withKey, phoneOf(ctx));
+  const client = deps?.client ?? (testing || !apiKey
     ? offlineSmartClient()
-    : smartClientFor({ baseUrl: config.baseUrl, apiKey: documentApiKey(config) }));
+    : smartClientFor({ baseUrl: config.baseUrl, apiKey }));
   const extract = deps?.extract ?? extractDocument;
   const lines: string[] = [];
   const inbound = await loadIngestWindow({
@@ -2096,10 +2313,12 @@ export async function runDocumentsIngest(
   row = matched.row;
   if (!row) return { ok: false, reply: customerReply(ctx, chat.documents.notConfigured) };
 
-  const backPending = stateOf(row).profile.idBackPending === "1" || stateOf(row).profile.idBackPending === "2";
-  const closingPhotos = Boolean(stateOf(row).profile.imageBatchSlot && photoDone(inbound.newestText) && !backPending);
+  const priorDossier = stateOf(row);
+  const backPending = priorDossier.profile.idBackPending === "1" || priorDossier.profile.idBackPending === "2";
+  const finishingPhotos = Boolean(priorDossier.profile.imageBatchSlot && photoDone(inbound.newestText) && !backPending);
+  const closingPhotos = finishingPhotos && !idBatchNeedsAppendix(priorDossier);
   const maxTries = config.maxRejectTries ?? DEFAULT_MAX_REJECT_TRIES;
-  const answerText = closingPhotos ? "" : inbound.newestText;
+  const answerText = finishingPhotos ? "" : inbound.newestText;
   const prior = stateOf(row);
   const documentOpen = prior.slots.some((slot) => isOutstanding(slot, prior.slots));
   let turnIntents: CustomerIntent[] = [];
@@ -2185,9 +2404,18 @@ export async function runDocumentsIngest(
     await safeRefreshLeadState(ctx.tenantId, ctx.lead.id);
     return { ok: true, reply: customerReply(ctx, lines.filter(Boolean).join("\n")) };
   }
-  if (closingPhotos) {
+  let batchAccepted = false;
+  if (finishingPhotos && !closingPhotos) {
+    const slotId = typeof priorDossier.profile.imageBatchSlot === "string" ? priorDossier.profile.imageBatchSlot : "";
+    const who = priorDossier.slots.find((slot) => slot.id === slotId)?.borrower;
+    if (who === "1" || who === "2") {
+      state = { ...state, profile: { ...state.profile, imageBatchSlot: slotId, appendixPending: who } };
+    }
+  } else if (closingPhotos) {
+    const slotId = typeof state.profile.imageBatchSlot === "string" ? state.profile.imageBatchSlot : "";
     state = await closeImageBatch({ ctx, chat, lines, config, client, lang, row, state });
     state = refreshDossier(state, config.rules, "");
+    batchAccepted = state.slots.some((slot) => slot.id === slotId && slot.status === "uploaded");
   }
   state = await notifyAdvisor(ctx, state);
 
@@ -2329,18 +2557,61 @@ export async function runDocumentsIngest(
       await holdImage({ ctx, chat, lines, row, job, slotId: batchSlot, docType: "id_card" });
       const count = await heldForSlot(ctx.tenantId, row.id, batchSlot);
       if (count >= 2) {
-        state = await closeImageBatch({ ctx, chat, lines, config, client, lang, row, state });
-        const front = state.slots.find((slot) => slot.id === batchSlot);
-        if (front?.status === "uploaded") {
-          state = commitIdBack(state, batchSlot);
-          state = {
-            ...state,
-            profile: { ...state.profile, idBackPending: "", imageBatchSlot: "" },
-          };
-          acceptedAny = true;
-          state = refreshDossier(state, config.rules, "");
+        const who = state.slots.find((slot) => slot.id === batchSlot)?.borrower;
+        const waiting = who === "1" || who === "2"
+          ? idBatchNeedsAppendix({ ...state, profile: { ...state.profile, idBackPending: "" } })
+          : false;
+        if (waiting && (who === "1" || who === "2")) {
+          state = { ...state, profile: { ...state.profile, idBackPending: "", appendixPending: who } };
+        } else {
+          state = await closeImageBatch({ ctx, chat, lines, config, client, lang, row, state });
+          const front = state.slots.find((slot) => slot.id === batchSlot);
+          if (front?.status === "uploaded") {
+            state = commitIdBack(state, batchSlot);
+            state = {
+              ...state,
+              profile: { ...state.profile, idBackPending: "", imageBatchSlot: "" },
+            };
+            acceptedAny = true;
+            state = refreshDossier(state, config.rules, "");
+          }
         }
       }
+      continue;
+    }
+    if (appendixPendingOf(state.profile) && batchSlot) {
+      const judged = await judgeFileJob({
+        ctx, chat, lines, config, extract, lang, row, state, job, focus: "id_appendix",
+      });
+      state = judged.state;
+      if (judged.cooled) break;
+      const appendixFile = Boolean(judged.accepted && (
+        judged.accepted.docType === "id_appendix"
+        || (judged.accepted.docType === "id_card" && judged.accepted.appendix === "yes")
+      ));
+      if (!appendixFile) {
+        if (judged.accepted) {
+          lines.push(chat.documents.notIdAppendix);
+          await recordFileOutcome({
+            ctx,
+            row,
+            job,
+            status: "rejected",
+            docType: judged.accepted.docType,
+            validation: { reason: "not_id_appendix" },
+          });
+        }
+        continue;
+      }
+      state = noteAppendix(state, batchSlot, "yes");
+      await holdImage({ ctx, chat, lines, row, job, slotId: batchSlot, docType: "id_card" });
+      state = await closeImageBatch({ ctx, chat, lines, config, client, lang, row, state });
+      state = {
+        ...state,
+        profile: { ...state.profile, appendixPending: "", imageBatchSlot: "" },
+      };
+      state = refreshDossier(state, config.rules, "");
+      if (state.slots.some((slot) => slot.id === batchSlot && slot.status === "uploaded")) acceptedAny = true;
       continue;
     }
     if (isImageFile(job.mime, job.filename)) {
@@ -2433,34 +2704,25 @@ export async function runDocumentsIngest(
     state = refreshDossier(state, config.rules, "");
   }
 
-  const seenForms = new Set<string>();
-  for (const slot of state.slots) {
-    const form = config.rules.documents[slot.docType]?.blankForm;
-    if (!form || seenForms.has(slot.docType) || !isOutstanding(slot, state.slots)) continue;
-    if (offeredForms(state.profile).includes(slot.docType)) continue;
-    seenForms.add(slot.docType);
-    const label = docLabel(config.rules, slot.docType, lang);
+  const dueForm = blankFormDue(state, config.rules);
+  const form = dueForm ? config.rules.documents[dueForm]?.blankForm : undefined;
+  if (dueForm && form) {
+    const label = docLabel(config.rules, dueForm, lang);
     const caption = chat.documents.blankForm(label);
     try {
-      const sent = await sendBlankForm(ctx, chat, slot.docType, form, label);
-      if (sent === "already") {
-        state = rememberOfferedForm(state, slot.docType);
-        continue;
-      }
-      if (sent === "sent" || sent === "skipped") {
-        state = rememberOfferedForm(state, slot.docType);
+      const sent = await sendBlankForm(ctx, chat, dueForm, form, label);
+      if (sent === "already" || sent === "sent" || sent === "skipped") {
+        state = rememberOfferedForm(state, dueForm);
       }
       if (sent === "skipped") {
-        lines.push(`${caption}\n${blankFormHref(ctx.tenantId, slot.docType, form.file)}`);
+        lines.push(`${caption}\n${blankFormHref(ctx.tenantId, dueForm, form.file)}`);
       }
-      break;
     } catch (err) {
       warnDocuments("documents.form_failed", {
         conversationId: ctx.conversation.id,
         error: err instanceof Error ? err.message : String(err),
       });
       lines.push(caption);
-      break;
     }
   }
 
@@ -2515,7 +2777,7 @@ export async function runDocumentsIngest(
     lines.push(chat.documents.complete);
     state = await openChecklistReview(ctx, state);
   }
-  else if (state.status === "gathering" && !reopened && !helpOnly && (acceptedAny || lines.length === 0 || applied.changed || declinesExistingLoans(refreshText))) {
+  else if (state.status === "gathering" && !reopened && !helpOnly && (acceptedAny || batchAccepted || lines.length === 0 || applied.changed || declinesExistingLoans(refreshText))) {
     lines.push(...gatheringLines(state, config.rules, lang, chat));
   }
 

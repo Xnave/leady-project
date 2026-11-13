@@ -110,6 +110,8 @@ export const chat: ChatCopy = {
   },
   documents: {
       askId: "To find your file, please send your 9-digit ID number.",
+      unrecognized: "This number isn't in the office system yet. I can still answer questions.",
+      unrecognizedIntro: "You can ask me here?",
       notFound: "I couldn't find a file with that number. Please check it and send it again.",
       connectionDown: "I can't reach the office system right now. A teammate will follow up.",
       notConfigured: "Document collection hasn't been set up yet. A teammate will follow up shortly.",
@@ -148,6 +150,7 @@ export const chat: ChatCopy = {
       askIdBiometric: (name) =>
         name ? `Is ${name}'s ID card biometric?` : "Is the ID card biometric?",
       askIdBack: "Please also send the other side of the ID card.",
+      askIdAppendix: "Please send the ID appendix.",
       askFirstHome: "Is this for the purchase of your first home?",
       askLoans: "Do you currently have any loans?",
       askMoreLoans: "Do you have another loan?",
@@ -208,6 +211,7 @@ export const chat: ChatCopy = {
       },
       retracted: "I've removed the last file. It wasn't the right document.",
       notIdBack: "I couldn't see the back of the ID card in this photo. Could you turn the card over and photograph the other side?",
+      notIdAppendix: "I couldn't see the ID appendix in this photo. Please send a photo of the appendix.",
       idBackTryAgain: "I couldn't read the details in this photo. Could you take it again, in good light, with the whole card in the frame?",
       confirmChange: (kind, detail) => {
         const employment: Record<string, string> = {
@@ -254,10 +258,11 @@ export const chat: ChatCopy = {
       escalateDeclined: "No problem. You can try again after the wait, or send a different file.",
       escalated: "A consultant will review this and get back to you.",
       uploadFailed: "I've received the file, but it hasn't reached the office system yet. I'll try again with your next message.",
+      overSize: (limit) => `This file is over ${limit}. Please send a smaller file.`,
       reasons: {
         field_present: "a required detail is missing",
         id_number: "I couldn't read the ID number. Please send a clearer photo of the card, with the name and number visible",
-        matches_profile: "its details don't match the file we have",
+        matches_profile: "a detail I read doesn't match the same detail on file",
         date_within_months: "the date on it is too old",
         prior_calendar_months: "it doesn't cover the three previous months",
         min_items: "some required items are missing",

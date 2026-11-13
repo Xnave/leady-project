@@ -1922,6 +1922,64 @@ td .muted { font-size: var(--fs-xs); }
   .demo-drop-overlay { transition: none; }
 }
 
+.demo-impersonate-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: max(var(--space-4), env(safe-area-inset-top, 0px))
+    max(var(--space-4), env(safe-area-inset-right, 0px))
+    max(var(--space-4), env(safe-area-inset-bottom, 0px))
+    max(var(--space-4), env(safe-area-inset-left, 0px));
+}
+.demo-impersonate-modal:focus { outline: none; }
+.demo-impersonate-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: var(--scrim);
+  cursor: pointer;
+}
+.demo-impersonate-card {
+  position: relative;
+  z-index: 1;
+  width: min(24rem, 100%);
+  max-height: min(86vh, 40rem);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+.demo-impersonate-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.demo-impersonate-card header h2 {
+  margin: 0;
+  font-size: var(--fs-md);
+}
+.demo-impersonate-recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.demo-impersonate-recent .btn-secondary {
+  width: 100%;
+  justify-content: flex-start;
+}
+
 .composer {
   display: flex;
   gap: var(--space-2);

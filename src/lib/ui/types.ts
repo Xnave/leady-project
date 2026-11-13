@@ -179,6 +179,11 @@ export type UiCopy = {
     noLeadSelected: string;
     contactInfo: string;
     banner: string;
+    impersonate: string;
+    impersonatePhone: string;
+    impersonateHint: string;
+    impersonateRecent: string;
+    impersonateInvalid: string;
   };
   home: {
     quickSetup: string;
@@ -330,6 +335,7 @@ export type UiCopy = {
     flowLabel: string;
     languageLabel: string;
     sendFailed: string;
+    fileTooLarge: string;
     today: string;
     yesterday: string;
   };
@@ -349,6 +355,7 @@ export type UiCopy = {
     fieldPhone: string;
     fieldIntro: string;
     fieldIntroPlaceholder: string;
+    fieldIntroHint: string;
     fieldAddress: string;
     fieldAddressPlaceholder: string;
     fieldHours: string;
@@ -633,6 +640,8 @@ export type UiCopy = {
       keepCredentials: string;
       /** The Smart NPV key is already saved in Documents settings and is reused. */
       sharedCredentials: string;
+      storeRaw: string;
+      freezeAfterFirstSync: string;
       config: string;
       configHint: string;
       save: string;
@@ -693,7 +702,20 @@ export type UiCopy = {
     enabled: string;
     baseUrl: string;
     apiKey: string;
+    /** The Smart NPV key is entered on the client source, not here. */
+    keyOnSources: string;
     apiKeyHint: string;
+    unrecognizedIntro: string;
+    unrecognizedIntroHint: string;
+    syncNow: string;
+    syncing: string;
+    syncHint: string;
+    syncNeedKey: string;
+    syncStarted: string;
+    syncDone: string;
+    syncDoneFailed: string;
+    syncFailed: string;
+    syncAuthFailed: string;
     testOnlyWarning: string;
     testPhones: string;
     testPhonesHint: string;
@@ -808,10 +830,8 @@ export type UiCopy = {
       removeField: string;
       openDocument: string;
     };
-    testPhone: string;
     test: string;
     testOk: string;
-    testMissing: string;
     saved: string;
     failed: string;
     missing: string;

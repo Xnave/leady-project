@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { factsFromClient } from "@/lib/documents/facts";
 import { fetchSmartClientList, SmartNpvAuthError } from "@/lib/documents/smart-npv";
 import { baseConfigSchema, dealDateStepSchema } from "./config";
 import { deriveDealDate, parseClientDate, type DealDateStep } from "./dates";
+import { normalizeClientPhone } from "./phone";
 import {
   ConnectorAuthError,
   type BaseSourceConfig,
@@ -13,14 +15,13 @@ import {
 /**
  * Smart NPV (any tenant on it). HTTP lives in `src/lib/documents/smart-npv.ts`,
  * the one module that talks to Smart NPV and only to its official host.
- * Auth is one static api_key per account, so `authenticate` only checks it is
- * there; a bad key surfaces on the first `clients/list`.
+ * Auth is one static api_key per account, stored on the client source.
+ * `authenticate` only checks the key is there; a bad key surfaces on the first `clients/list`.
  *
- * The key is read from the documents capability when the tenant has one there
- * (`sharedCredentials`), so a tenant keeps one Smart NPV key in one place.
- *
- * Every `clients/list` row is the full client payload (100+ fields); we keep
- * only the catalog below and never store id numbers, birthdays, income or amounts.
+ * Every `clients/list` row is the full client. The mapped payload keeps the
+ * catalog, the checklist, and the phone keys. The raw row is stored only when
+ * the source's storeRaw setting is on. A stored contact is not rewritten:
+ * freezeAfterFirstSync defaults on.
  */
 
 /** Default ladder from the client-campaigns design. Tenants override it in config. */
@@ -41,6 +42,7 @@ const configSchema = baseConfigSchema.extend({
   /** Pause between pages, to stay polite to the CRM. */
   pageDelayMs: z.number().int().min(0).max(5000).default(300),
   dealDate: z.array(dealDateStepSchema).min(1).default(SMARTNPV_DEFAULT_DEAL_DATE),
+  freezeAfterFirstSync: z.boolean().default(true),
 });
 export type SmartNpvConfig = z.infer<typeof configSchema> & BaseSourceConfig;
 
@@ -60,6 +62,8 @@ export const SMARTNPV_FIELDS: ClientFieldDef[] = [
   { key: "last_documentation", label: L("מסמך אחרון", "Last document"), type: "date", agentVisible: false },
   { key: "created", label: L("נפתח", "Opened"), type: "date", agentVisible: false },
   { key: "modified", label: L("עודכן", "Modified"), type: "date", agentVisible: false },
+  { key: "phone_1", label: L("טלפון", "Phone"), type: "text", agentVisible: false, phoneKey: true },
+  { key: "phone_2", label: L("טלפון נוסף", "Other phone"), type: "text", agentVisible: false, phoneKey: true },
   { key: "deal_year", label: L("שנת עסקה", "Deal year"), type: "number", agentVisible: true, derived: true },
 ];
 
@@ -70,8 +74,42 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : String(value).trim();
 }
 
-function ddmmyyyy(d: Date): string {
-  return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
+const PHONE_KEYS = new Set(SMARTNPV_FIELDS.filter((field) => field.phoneKey).map((field) => field.key));
+
+/** Asia/Jerusalem calendar day, as YYYYMMDD. The list filter has no time. */
+function jerusalemStamp(date: Date): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const part = (type: string) => Number(parts.find((item) => item.type === type)?.value);
+  return part("year") * 10000 + part("month") * 100 + part("day");
+}
+
+function ddmmyyyy(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("day")}/${part("month")}/${part("year")}`;
+}
+
+/** The later of the sync bound and the one-day incremental lookback, as a calendar day. */
+function listFrom(syncSince: Date | null, updatedSince: Date | null): Date {
+  const floor = syncSince ?? new Date(Date.UTC(2000, 0, 1));
+  if (!updatedSince) return floor;
+  const lookback = new Date(updatedSince.getTime() - 24 * 3600 * 1000);
+  return jerusalemStamp(lookback) > jerusalemStamp(floor) ? lookback : floor;
+}
+
+function storedPhone(raw: string): string {
+  const phone = normalizeClientPhone(raw, "972");
+  return phone.status === "ok" ? phone.phone : "";
 }
 
 /** Map one `clients/list` row. Returns null when the row has no uuid. */
@@ -81,13 +119,19 @@ export function mapSmartNpvRow(row: Record<string, unknown>): ClientRecord | nul
   const fields: Record<string, unknown> = {};
   for (const key of RAW_KEYS) {
     const value = row[key];
+    if (PHONE_KEYS.has(key)) {
+      const phone = storedPhone(text(value));
+      if (phone) fields[key] = phone;
+      continue;
+    }
     if (value == null) continue;
     const t = text(value);
     if (t) fields[key] = t;
   }
+  fields.checklist = factsFromClient(row);
   const name = `${text(row.firstname_1)} ${text(row.lastname_1)}`.trim();
   const updatedAt = parseClientDate(row.modified) ?? parseClientDate(row.created);
-  return { externalId, phone: text(row.phone_1), name, fields, updatedAt };
+  return { externalId, phone: text(row.phone_1), name, fields, raw: row, updatedAt };
 }
 
 export function createSmartNpvConnector(opts: { fetchImpl?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {}): ClientConnector<
@@ -105,27 +149,18 @@ export function createSmartNpvConnector(opts: { fetchImpl?: typeof fetch; sleep?
     sessionTtlSeconds: null,
     fieldCatalog: SMARTNPV_FIELDS,
 
-    async sharedCredentials(tenantId) {
-      // Dynamic: keeps the connector importable in unit tests without a DB.
-      const { loadInstanceConfig } = await import("@/lib/capability-instances");
-      const { decryptSecret } = await import("@/lib/crypto");
-      const docs = await loadInstanceConfig({ tenantId, capabilityId: "documents" });
-      const enc = typeof docs.apiKeyEnc === "string" ? docs.apiKeyEnc : "";
-      return enc ? { apiKey: decryptSecret(enc) } : null;
-    },
-
     async authenticate(credentials) {
       const parsed = credentialsSchema.safeParse(credentials);
       if (!parsed.success) throw new ConnectorAuthError("missing_api_key");
       return { apiKey: parsed.data.apiKey, fetchImpl: opts.fetchImpl ?? fetch };
     },
 
-    async fetchClients(session, config, { cursor, updatedSince }) {
+    async fetchClients(session, config, { cursor, updatedSince, syncSince }) {
       const offset = cursor ? Number(cursor) : 0;
       if (!Number.isFinite(offset) || offset < 0) throw new Error("bad_cursor");
       if (offset > 0 && config.pageDelayMs > 0) await sleep(config.pageDelayMs);
-      // The API filters by day; step back one so an edit late on the last sync day is not missed.
-      const from = updatedSince ? new Date(updatedSince.getTime() - 24 * 3600 * 1000) : new Date(Date.UTC(2000, 0, 1));
+      // The API filters by day. Incremental runs step back one day, and never before syncSince.
+      const from = listFrom(syncSince ?? null, updatedSince);
       let page;
       try {
         page = await fetchSmartClientList({

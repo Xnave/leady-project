@@ -20,7 +20,10 @@ export type ContactUpsert = {
   phone: string;
   phoneStatus: "ok" | "missing" | "invalid";
   name: string;
-  fields: Record<string, unknown>;
+  /** Catalog columns, checklist facts, and phone keys. */
+  mapped: Record<string, unknown>;
+  /** The CRM row, or {} when storeRaw is off. */
+  raw: Record<string, unknown>;
   dealDate: DealDate;
   sourceUpdatedAt: Date | null;
   /**
@@ -120,19 +123,20 @@ export function prepareContacts(
     if (phone.status === "missing") counts.noPhone += 1;
     if (phone.status === "invalid") counts.invalidPhone += 1;
     const derived = connector.derive(record, config, now);
-    const fields = { ...record.fields, ...derived.fields };
+    const mapped = { ...record.fields, ...derived.fields };
     const row: ContactUpsert = {
       externalId: record.externalId,
       phone: phone.phone,
       phoneStatus: phone.status,
       name: record.name.slice(0, 200),
-      fields,
+      mapped,
+      raw: config.storeRaw && record.raw ? record.raw : {},
       dealDate: derived.dealDate,
       sourceUpdatedAt: record.updatedAt,
       leadId: null,
       skipped: isSkipped(record, config),
     };
-    (!row.skipped && isKept(fields, derived.dealDate, config, now) ? rows : onlyIfStored).push(row);
+    (!row.skipped && isKept(mapped, derived.dealDate, config, now) ? rows : onlyIfStored).push(row);
   }
   return { rows, onlyIfStored, counts };
 }
@@ -175,6 +179,8 @@ export type SyncPageInput = {
   store: SyncStore;
   cursor: string | null;
   updatedSince: Date | null;
+  /** Lower bound for this source. The connector decides how much of it to use. */
+  syncSince?: Date | null;
   now: Date;
   sessions?: SessionCache;
   /** Fetch and count, write nothing. */
@@ -188,7 +194,11 @@ export async function syncPage(input: SyncPageInput): Promise<SyncPageResult> {
   const sessions = input.sessions ?? sharedSessionCache;
   const fetchOnce = async () => {
     const session = await sessions.get(input.key, input.connector, input.credentials, input.config);
-    return input.connector.fetchClients(session, input.config, { cursor: input.cursor, updatedSince: input.updatedSince });
+    return input.connector.fetchClients(session, input.config, {
+      cursor: input.cursor,
+      updatedSince: input.updatedSince,
+      syncSince: input.syncSince ?? null,
+    });
   };
   let page;
   try {
@@ -225,6 +235,13 @@ export async function syncPage(input: SyncPageInput): Promise<SyncPageResult> {
     }
   }
 
+  if (!input.dryRun && input.config.freezeAfterFirstSync && rows.length) {
+    const known = await input.store.existingExternalIds(rows.map((row) => row.externalId));
+    const fresh = rows.filter((row) => !known.has(row.externalId));
+    counts.skipped += rows.length - fresh.length;
+    rows.length = 0;
+    rows.push(...fresh);
+  }
   counts.synced = rows.length;
   if (!input.dryRun && rows.length) {
     const written = await input.store.upsertContacts(rows);

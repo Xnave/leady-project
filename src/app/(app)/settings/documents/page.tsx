@@ -30,8 +30,8 @@ export default async function DocumentsSettingsPage() {
       <DocumentsSettingsForm
         ui={ui}
         enabled={enabled}
-        hasKey={pub.hasKey}
         testPhones={pub.testPhones.join("\n")}
+        unrecognizedIntro={pub.unrecognizedIntro}
         maxRejectTries={pub.maxRejectTries}
         rejectCooldownMinutes={pub.rejectCooldownMinutes}
         rules={rules}

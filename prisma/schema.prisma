@@ -586,6 +586,8 @@ model ClientSource {
   credentialsEnc String
   /** Per-tenant connector settings: derived-field order, filters, default country code. */
   config         Json      @default("{}")
+  /** Sync contacts from this moment. Set once on connect. */
+  syncSince      DateTime?
   /** idle | syncing | ok | error */
   status         String    @default("idle")
   lastError      String    @default("")
@@ -618,7 +620,10 @@ model Contact {
   /** ok | missing | invalid */
   phoneStatus        String       @default("missing")
   name               String       @default("")
-  fields             Json         @default("{}")
+  /** The CRM row. Empty when the source's storeRaw setting is off. */
+  raw                Json         @default("{}")
+  /** Catalog columns, checklist facts, and phone keys. Every reader uses this. */
+  mapped             Json         @default("{}")
   dealDate           DateTime?
   /** Source field the deal date came from, "" when none matched. */
   dealDateSource     String       @default("")

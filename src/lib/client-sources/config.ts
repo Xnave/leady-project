@@ -9,7 +9,7 @@ export const skipRuleSchema = z.object({
 /**
  * Which clients are relevant enough to store. Every part that is set must match.
  * A field rule with an empty `in` list is ignored (it does not filter anything).
- * Clients already stored are never removed by these rules; they keep syncing.
+ * Clients already stored are never removed by these rules. freezeAfterFirstSync leaves them as first stored.
  */
 export const keepRuleSchema = z.object({
   /** Deal date between `min` and `max` years ago (inclusive). A client with no deal date fails it. */
@@ -23,6 +23,8 @@ export const baseConfigSchema = z.object({
   defaultCountryCode: z.string().regex(/^\d{1,4}$/).default("972"),
   skip: z.array(skipRuleSchema).default([]),
   keep: keepRuleSchema.default({}),
+  storeRaw: z.boolean().default(true),
+  freezeAfterFirstSync: z.boolean().default(false),
 });
 
 export const dealDateStepSchema: z.ZodType<DealDateStep, z.ZodTypeDef, unknown> = z.object({

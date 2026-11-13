@@ -2,6 +2,7 @@
 
 import { useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { IntroFieldChips } from "@/components/IntroFieldChips";
 import { RadioCard } from "@/components/RadioCard";
 import { PresetGallery } from "@/components/persona/PresetGallery";
 import { SegmentedControl } from "@/components/persona/SegmentedControl";
@@ -36,6 +37,7 @@ import { copyFor } from "@/lib/copy";
 import { fillUi, stepLabel, uiCopy, type UiLang } from "@/lib/ui";
 
 const WIZARD_STEPS = ["knowledge", "business", "flow", "done"] as const;
+
 const PRODUCT_CAPABILITIES: CapabilityId[] = ["booking", "reservations", "documents"];
 const READY_CAPABILITIES = new Set<CapabilityId>(["booking", "reservations", "documents"]);
 
@@ -59,9 +61,9 @@ type Props = {
   documentConfig?: {
     baseUrl?: string;
     rules?: unknown;
-    hasKey?: boolean;
     maxRejectTries?: number;
     rejectCooldownMinutes?: number;
+    unrecognizedIntro?: string;
   };
   /** Stored Agent.persona; the wizard edits it in place so re-running setup keeps it. */
   persona?: unknown;
@@ -128,7 +130,9 @@ export function OnboardWizard(props: Props) {
   const bookingEnabled = capabilities.includes("booking");
   const reservationsEnabled = capabilities.includes("reservations");
   const documentsEnabled = capabilities.includes("documents");
-  const [docApiKey, setDocApiKey] = useState("");
+  const [docUnrecognizedIntro, setDocUnrecognizedIntro] = useState(
+    props.documentConfig?.unrecognizedIntro ?? "",
+  );
   const [docMaxRejectTries, setDocMaxRejectTries] = useState(
     String(props.documentConfig?.maxRejectTries ?? 5),
   );
@@ -280,7 +284,7 @@ export function OnboardWizard(props: Props) {
         reservationConfig,
         documentConfig: documentsEnabled
           ? {
-              apiKey: docApiKey,
+              unrecognizedIntro: docUnrecognizedIntro,
               rules: docRules,
               maxRejectTries: docMaxRejectTries,
               rejectCooldownMinutes: docRejectCooldownMinutes,
@@ -290,8 +294,8 @@ export function OnboardWizard(props: Props) {
       }),
     });
     setSaving(false);
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) {
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
       setError(data.error ?? ui.onboard.saveFailed);
       return;
     }
@@ -443,6 +447,8 @@ export function OnboardWizard(props: Props) {
                 placeholder={ui.onboard.fieldIntroPlaceholder}
               />
             </label>
+            <IntroFieldChips onInsert={(token) => appendToken(intro, setIntro, token)} />
+            <p className="muted">{ui.onboard.fieldIntroHint}</p>
             <div className="row">
               <label>
                 {ui.onboard.fieldAddress}
@@ -590,17 +596,19 @@ export function OnboardWizard(props: Props) {
               <fieldset>
                 <legend>{ui.documentsUi.settingsTitle}</legend>
                 <p className="muted rules-hint">{ui.documentsUi.rulesHint}</p>
+                <p className="muted">{ui.documentsUi.keyOnSources}</p>
                 <label>
-                  {ui.documentsUi.apiKey}
-                  <input
-                    type="password"
-                    value={docApiKey}
-                    onChange={(e) => setDocApiKey(e.target.value)}
-                    placeholder={props.documentConfig?.hasKey ? "••••" : ""}
-                    autoComplete="off"
+                  {ui.documentsUi.unrecognizedIntro}
+                  <textarea
+                    rows={3}
+                    value={docUnrecognizedIntro}
+                    onChange={(e) => setDocUnrecognizedIntro(e.target.value)}
                   />
                 </label>
-                <p className="muted">{ui.documentsUi.apiKeyHint}</p>
+                <IntroFieldChips
+                  onInsert={(token) => appendToken(docUnrecognizedIntro, setDocUnrecognizedIntro, token)}
+                />
+                <p className="muted">{ui.documentsUi.unrecognizedIntroHint}</p>
                 <label>
                   {ui.documentsUi.maxRejectTries}
                   <input

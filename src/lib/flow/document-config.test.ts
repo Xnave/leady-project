@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { FlowConfigError } from "./types";
-import { documentApiKey, isTestLead, parseDocumentConfig } from "./document-config";
+import { documentApiKey, documentConfigFromStored, isTestLead, parseDocumentConfig } from "./document-config";
 import { MORTGAGE_RULES } from "@/lib/documents/mortgage-rules";
 import { SMART_NPV_HOST } from "@/lib/documents/smart-npv";
 
@@ -70,6 +70,21 @@ describe("parseDocumentConfig", () => {
     expect(isTestLead(keyed, "0501234567")).toBe(true);
   });
 
+  it("reads a saved config without dropping the encrypted key", () => {
+    process.env.APP_ENCRYPTION_KEY = KEY;
+    const saved = parseDocumentConfig({
+      baseUrl: SMART_NPV_HOST,
+      apiKey: "secret",
+      rules: MORTGAGE_RULES,
+      testPhones: ["0501234567"],
+    });
+    const loaded = documentConfigFromStored(saved);
+    expect(loaded.testOnly).toBe(false);
+    expect(documentApiKey(loaded)).toBe("secret");
+    expect(loaded.testPhones).toEqual(["0501234567"]);
+    expect(documentConfigFromStored({ rules: MORTGAGE_RULES }).testOnly).toBe(true);
+  });
+
   it("keeps a stored key and phone list when the save omits both", () => {
     process.env.APP_ENCRYPTION_KEY = KEY;
     const again = parseDocumentConfig(
@@ -80,6 +95,17 @@ describe("parseDocumentConfig", () => {
     expect(again.apiKeyEnc).toBe("stored-key");
     expect(again.testPhones).toEqual(["0501234567"]);
     expect(again.testOnly).toBe(false);
+  });
+
+  it("keeps a saved unrecognized intro when the save omits it", () => {
+    process.env.APP_ENCRYPTION_KEY = KEY;
+    const again = parseDocumentConfig(
+      { rules: MORTGAGE_RULES },
+      "",
+      [],
+      "היי, אפשר לשאול אותי כאן.",
+    );
+    expect(again.unrecognizedIntro).toBe("היי, אפשר לשאול אותי כאן.");
   });
 
   it("keeps reject try and cool-off settings within range", () => {
