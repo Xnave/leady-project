@@ -50,7 +50,7 @@ export function fillIntro(template: string, vars: Record<string, string>): strin
  * Lead strings, then the matched client fields, which win on the same key.
  * The customer's name is `name`. `full_name` and `fullName` are the same value.
  */
-export function introVars(ctx: Pick<TurnContext, "lead" | "capabilityState">): Record<string, string> {
+export function introVars(ctx: Partial<Pick<TurnContext, "lead" | "capabilityState">>): Record<string, string> {
   const lead = stringFields(ctx.lead?.fields);
   const documents = ctx.capabilityState?.documents;
   const client = stringFields(isRecord(documents) ? documents.introFields : undefined);

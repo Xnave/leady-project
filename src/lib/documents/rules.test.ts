@@ -4,7 +4,7 @@ import { documentAskText, reopenUploadedSlot } from "./dossier";
 import { applyCustomerAnswers, applyExtractedBiometric, asksHowToGet, borrowersOf, declinesExistingLoans, employmentFromStatusReport, factsFromClient, missingTheDocument, nextQuestion, openQuestions, retractsLastFile } from "./facts";
 import { checklistSlots, collectionYears, MORTGAGE_RULES, nextCollectionStageId } from "./mortgage-rules";
 import { mapSmartProfile } from "./smart-npv";
-import { parseRules, RulesError } from "./rules";
+import { parseRules, RulesError, type Profile } from "./rules";
 import { commitSlot, dossierDone, freshDossier, judgeFile, runChecks } from "./validate";
 
 const ACCOUNT = { uuid: "acct-1" };
@@ -210,7 +210,7 @@ describe("mortgage checklist", () => {
   });
 
   it("opens the self-employed list for code 5", () => {
-    const answered = (code: string) => ({
+    const answered = (code: string): Profile => ({
       ...ready({ status_report_1: code, liabilities: [] }),
       loans: "none" as const,
       hasLoans: false,
