@@ -634,6 +634,18 @@ model Contact {
   skipped            Boolean      @default(false)
   leadId             String?
   lead               Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  /** Documents auto-invite: "" | sending_opener | invited | sending_reminder | reminded | started | escalated | stopped | unknown. */
+  inviteStatus         String     @default("")
+  /** Why the invite stopped: client_stop | rejected:<reason> | no_name. */
+  inviteStopReason     String     @default("")
+  /** Set when a send is claimed, before Zernio is called. A stale claim is never resent. */
+  inviteClaimedAt      DateTime?
+  inviteOpenerAt       DateTime?
+  inviteReminderAt     DateTime?
+  inviteEscalatedAt    DateTime?
+  inviteStartedAt      DateTime?
+  /** Zernio conversation the opener opened. */
+  inviteConversationId String     @default("")
   syncedAt           DateTime     @default(now())
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
@@ -641,6 +653,7 @@ model Contact {
   @@unique([tenantId, sourceId, externalId])
   @@index([tenantId, phone])
   @@index([tenantId, dealDate])
+  @@index([tenantId, inviteStatus])
   @@index([leadId])
 }
 
