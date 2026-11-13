@@ -277,6 +277,16 @@ export function blankBorrower(slot: "1" | "2" = "2"): BorrowerFact {
   };
 }
 
+/**
+ * A client stored from the tenant's CRM lists every borrower, so a file with
+ * only borrower 1 has no second borrower to ask about.
+ */
+export function trustSourceBorrowerCount(profile: Profile): Profile {
+  if (secondBorrowerOf(profile) !== "unknown") return profile;
+  if (!borrowersOf(profile).length) return profile;
+  return { ...profile, secondBorrower: "no" };
+}
+
 /** A file with nobody on it still has borrower 1, so the personal questions are asked. */
 export function ensureBorrowers(profile: Profile): Profile {
   if (borrowersOf(profile).length > 0) return profile;
@@ -295,7 +305,7 @@ export function openQuestions(profile: Profile): OpenQuestion[] {
       questions.push({ kind: "employment", name: borrower.fullName, slot: borrower.slot });
     }
   }
-  if (firstHomeOf(current) === "unknown") questions.push({ kind: "first_home" });
+  // First home is not asked: it changes no file until the source's transaction types are mapped.
   if (current.imageBatchSlot) {
     const back = current.idBackPending === "1" || current.idBackPending === "2" ? current.idBackPending : "";
     const appendix = current.appendixPending === "1" || current.appendixPending === "2" ? current.appendixPending : "";

@@ -6,6 +6,7 @@ import { decryptSecret } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { getConnector } from "@/lib/client-sources/registry";
 import { normalizeClientPhone } from "@/lib/client-sources/phone";
+import { trustSourceBorrowerCount } from "./facts";
 import type { Profile } from "./rules";
 import { createdDay, toSmartPhone } from "./smart-npv";
 
@@ -84,7 +85,7 @@ export async function storedClientByPhone(tenantId: string, phone: string): Prom
     smartClientId: row.externalId,
     phone1: typeof mapped.phone_1 === "string" ? mapped.phone_1 : row.phone,
     phone2: typeof mapped.phone_2 === "string" ? mapped.phone_2 : "",
-    profile: asProfile(mapped.checklist),
+    profile: trustSourceBorrowerCount(asProfile(mapped.checklist)),
     createdOn: createdDay(mapped.created),
   };
 }

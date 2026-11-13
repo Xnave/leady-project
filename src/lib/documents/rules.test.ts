@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { copyFor } from "@/lib/copy";
 import { documentAskText, reopenUploadedSlot } from "./dossier";
-import { applyCustomerAnswers, applyExtractedBiometric, asksHowToGet, borrowersOf, declinesExistingLoans, employmentFromStatusReport, factsFromClient, missingTheDocument, nextQuestion, openQuestions, retractsLastFile } from "./facts";
+import { applyCustomerAnswers, applyExtractedBiometric, asksHowToGet, borrowersOf, declinesExistingLoans, employmentFromStatusReport, factsFromClient, missingTheDocument, nextQuestion, openQuestions, retractsLastFile, secondBorrowerOf, trustSourceBorrowerCount } from "./facts";
 import { checklistSlots, collectionYears, MORTGAGE_RULES, nextCollectionStageId } from "./mortgage-rules";
 import { mapSmartProfile } from "./smart-npv";
 import { parseRules, RulesError, type Profile } from "./rules";
@@ -99,7 +99,7 @@ describe("mortgage checklist", () => {
     const pair = applyCustomerAnswers(factsFromClient({}), "כן").profile;
     const both = applyCustomerAnswers(pair, "לא שנינו שכירים").profile;
     expect(borrowersOf(both).map((borrower) => borrower.employment)).toEqual(["salaried", "salaried"]);
-    expect(nextQuestion(both)?.kind).toBe("first_home");
+    expect(nextQuestion(both)?.kind).toBe("loans");
     const slots = checklistSlots({ ...both, firstHome: "true", loans: "none" }, MORTGAGE_RULES);
     expect(slots.filter((slot) => slot.docType === "payslip")).toHaveLength(6);
     expect(slots.map((slot) => slot.docType)).not.toContain("tax_assessment");
@@ -316,11 +316,28 @@ describe("mortgage checklist", () => {
     expect(nextCollectionStageId(rules, "2")).toBe("");
   });
 
+  it("never asks first home", () => {
+    const fresh = factsFromClient({});
+    expect(openQuestions(fresh).map((question) => question.kind)).not.toContain("first_home");
+  });
+
+  it("trusts the borrower count of a stored source client", () => {
+    const single = trustSourceBorrowerCount(factsFromClient({ firstname_1: "דנה", phone_1: "0501234567", id_1: "123456782" }));
+    expect(secondBorrowerOf(single)).toBe("no");
+    const kinds = openQuestions(single).map((question) => question.kind);
+    expect(kinds).not.toContain("second_borrower");
+    expect(kinds).not.toContain("first_home");
+    const pair = trustSourceBorrowerCount(
+      factsFromClient({ firstname_1: "דנה", id_1: "123456782", firstname_2: "רון", id_2: "234567891", phone_2: "0527654321" }),
+    );
+    expect(secondBorrowerOf(pair)).toBe("yes");
+    expect(pair.secondBorrower).toBeUndefined();
+  });
+
   it("treats a bare no as the next question only", () => {
     const profile = { ...client(), secondBorrower: "no" };
-    expect(openQuestions(profile).map((question) => question.kind)).toEqual(["first_home"]);
-    const answered = applyCustomerAnswers(profile, "לא").profile;
-    expect(answered.firstHome).toBe("false");
+    expect(openQuestions(profile).map((question) => question.kind)).toEqual([]);
+    expect(applyCustomerAnswers(profile, "לא").changed).toBe(false);
     const employment = { ...client({ status_report_1: "" }), secondBorrower: "no" };
     expect(nextQuestion(employment)?.kind).toBe("employment");
     expect(applyCustomerAnswers(employment, "לא").changed).toBe(false);
@@ -328,7 +345,7 @@ describe("mortgage checklist", () => {
 
   it("a bare yes answers only the question that would be asked next", () => {
     const profile = client({ banks_accounts: [], liabilities: [] });
-    expect(openQuestions(profile).map((question) => question.kind)).toEqual(["second_borrower", "first_home", "loans"]);
+    expect(openQuestions(profile).map((question) => question.kind)).toEqual(["second_borrower", "loans"]);
     expect(nextQuestion(profile)?.kind).toBe("second_borrower");
     const answered = applyCustomerAnswers(profile, "כן").profile;
     expect(answered.firstHome).toBe("unknown");
@@ -338,9 +355,8 @@ describe("mortgage checklist", () => {
     const employed = applyCustomerAnswers(answered, "הוא עצמאי").profile;
     expect(borrowersOf(employed).find((borrower) => borrower.slot === "2")?.employment).toBe("self_employed");
     expect(borrowersOf(employed).find((borrower) => borrower.slot === "1")?.employment).toBe("salaried");
-    const home = applyCustomerAnswers(employed, "כן").profile;
-    expect(home.firstHome).toBe("true");
-    expect(applyCustomerAnswers(home, "לא").profile.loans).toBe("none");
+    expect(nextQuestion(employed)?.kind).toBe("loans");
+    expect(applyCustomerAnswers(employed, "לא").profile.loans).toBe("none");
   });
 
   it("flags other employment and opens identity only", () => {
