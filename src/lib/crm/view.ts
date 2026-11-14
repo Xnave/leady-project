@@ -71,6 +71,8 @@ export type LeadRowDTO = {
   windowClosed: boolean;
   unread: boolean;
   demo: boolean;
+  /** Matched to the tenant's CRM. Shown as a "client" chip. */
+  client?: boolean;
   intent: string | null;
 };
 
@@ -203,6 +205,8 @@ export type LeadRowInput = {
   summary: string | null;
   interest?: string | null;
   lastLeadText: string | null;
+  /** Matched to the tenant's CRM (synced contact or a Smart NPV file). */
+  isClient?: boolean;
 };
 
 export function buildLeadRowDTO(i: LeadRowInput, ui: UiCopy, now: Date): LeadRowDTO {
@@ -251,6 +255,7 @@ export function buildLeadRowDTO(i: LeadRowInput, ui: UiCopy, now: Date): LeadRow
     windowClosed: win.closed,
     unread: i.adminUnread,
     demo,
+    client: Boolean(i.isClient),
     intent,
   };
 }

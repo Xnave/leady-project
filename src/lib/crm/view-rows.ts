@@ -121,6 +121,9 @@ const rowInclude = {
     take: 1,
     select: { summary: true },
   },
+  // A client is a lead whose document file was matched in Smart NPV. Campaign
+  // contacts (client sources) are a separate list and do not mark a lead.
+  dossiers: { where: { smartClientId: { not: "" } }, select: { id: true }, take: 1 },
 } satisfies Prisma.LeadInclude;
 
 type RowLead = Prisma.LeadGetPayload<{ include: typeof rowInclude }>;
@@ -153,6 +156,7 @@ function rowInput(lead: RowLead, lang: UiLang, labels: Record<string, string>): 
         : null,
     // List line uses summary / request / next-step; skip a nested message join.
     lastLeadText: null,
+    isClient: lead.dossiers.length > 0,
   };
 }
 

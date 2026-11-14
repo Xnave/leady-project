@@ -23,6 +23,7 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:clients": "tsx scripts/seed-clients-demo.ts",
     "db:diff:staging": "bash scripts/db-staging.sh diff",
     "db:diff:check:staging": "bash scripts/db-staging.sh check",
     "db:verify:staging": "bash scripts/db-staging.sh verify",

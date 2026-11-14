@@ -13,7 +13,7 @@ Client campaigns PR 2 (ClickUp `z8rp3ff7x5`). A tenant's **own CRM** is synced i
 | Prisma store, encryption, public view | `src/lib/client-sources/store.ts` |
 | Inngest | `client-source-sync` (event `client-sources/sync.requested`, one step per page, one run per source) and `client-sources-hourly` (hourly incremental) in `src/inngest/functions.ts` |
 | Admin screen | `/admin/client-sources/[tenantId]` (link on each tenant row in `/admin`) |
-| Clients tab | `/clients`, owner/admin, shown only when the tenant has a source |
+| Clients tab | Not here: `/clients` is the documents screen and lists document files only ([documents.md](documents.md#clients-screen)). Contacts are a campaign audience. |
 
 ## Adding a CRM
 
@@ -58,7 +58,7 @@ Sessions are cached per source while a process is warm, keyed on a hash of the c
 
 ## Sync modes
 
-- **full** (admin or Clients tab "sync now"): clients from `syncSince`. It does not move that timestamp. With no `syncSince`, Smart NPV falls back to 1 January 2000.
+- **full** (admin "sync now"): clients from `syncSince`. It does not move that timestamp. With no `syncSince`, Smart NPV falls back to 1 January 2000.
 - **incremental** (hourly cron): clients modified since the last successful sync, minus one day, and not before `syncSince`.
 - **test** (admin): first page only, writes nothing, returns counts and field names.
 

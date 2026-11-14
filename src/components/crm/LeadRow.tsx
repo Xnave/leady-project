@@ -126,6 +126,7 @@ export const LeadRow = memo(function LeadRow({ row: r, kb, checked, leaving, ui,
           <span className="crm-name">
             <bdi className="crm-name-t">{r.name}</bdi>
             {r.demo ? <span className="badge badge-demo">{ui.common.demo}</span> : null}
+            {r.client && !r.demo ? <span className="badge badge-client">{ui.clientsUi.clientChip}</span> : null}
           </span>
           <span className="crm-handle">
             <span className="ltr-isolate">{r.handle}</span>

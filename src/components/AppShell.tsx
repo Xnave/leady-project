@@ -7,7 +7,7 @@ import { isClerkConfigured } from "@/lib/clerk";
 import { getUiLang, getUiTheme } from "@/lib/cookies";
 import { prisma } from "@/lib/db";
 import { getNavCounts } from "@/lib/nav-counts";
-import { hasClientSources } from "@/lib/client-sources/store";
+import { hasClientsScreen } from "@/lib/documents/clients-nav";
 import { canManageTeamNav } from "@/lib/team";
 import { getTenantShell, requireTenantId } from "@/lib/tenant";
 import { canManageTenant } from "@/lib/tenant-role";
@@ -36,7 +36,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
       getTenantShell(tenantId),
       canManageTeamNav(tenantId),
       canManageTenant(),
-      hasClientSources(tenantId),
+      hasClientsScreen(tenantId),
       campaignsEnabled(tenantId),
     ]);
     counts = nav;
