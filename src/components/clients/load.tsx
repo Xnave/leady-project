@@ -33,7 +33,7 @@ export async function renderClients(searchParams: Params, key: string | null) {
   ]);
   // Land on the first tab with work in it when the URL names none.
   if (!tab && !key && list.counts.needs === 0) {
-    const fallback = list.counts.collecting ? "collecting" : list.counts.done ? "done" : "all";
+    const fallback = list.counts.collecting ? "collecting" : list.counts.invited ? "invited" : list.counts.done ? "done" : "all";
     redirect(`/clients?tab=${fallback}${query.showTest ? "&test=1" : ""}`);
   }
   return (

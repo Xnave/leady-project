@@ -1,9 +1,9 @@
 /**
- * Clients screen (documents). One row per lead with a document file (Dossier);
- * the file drives the status. Campaign contacts synced from the CRM are a
- * separate list and do not appear here. When the documents client list from
- * Smart NPV lands (PR #42), its clients with no file come back as a
- * "not started" tab. Demo-simulator and test-phone people are hidden unless asked for.
+ * Clients screen (documents). One row per lead with a document file (Dossier),
+ * plus each CRM client the auto-invite messaged (ContactInvite) who has no file
+ * yet. The file drives the status; before it exists, the invite does. Campaign
+ * contacts synced from the CRM are a separate list and do not appear here.
+ * Demo-simulator and test-phone people are hidden unless asked for.
  */
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -19,10 +19,10 @@ import {
 import { docLabel, stageLabel, type RulesDocument } from "./rules";
 import { nextCollectionStageId, releasedStageId } from "./mortgage-rules";
 import { isOutstanding, type DossierState, type SlotState } from "./validate";
-import { DOCUMENT_TASK_REASONS } from "./review-task";
+import { CLIENT_TASK_REASONS, CHECKLIST_REVIEW_REASON, INVITE_TASK_REASONS } from "./review-task";
 import { getConnector } from "@/lib/client-sources/registry";
 
-export const CLIENT_TABS = ["needs", "collecting", "done", "all"] as const;
+export const CLIENT_TABS = ["needs", "invited", "collecting", "done", "all"] as const;
 export type ClientTab = (typeof CLIENT_TABS)[number];
 export const CLIENTS_CASE_PAGE = 50;
 /** A file waiting on the lead longer than this shows as stuck. */
@@ -32,8 +32,59 @@ export function isClientTab(value: unknown): value is ClientTab {
   return typeof value === "string" && (CLIENT_TABS as readonly string[]).includes(value);
 }
 
-/** needs_you: an open documents task. waiting_id: no Smart NPV match yet. */
-export type CaseState = "needs_you" | "waiting_id" | "collecting" | "complete" | "not_started";
+/**
+ * needs_you: an open documents or invite task. waiting_id: no Smart NPV match yet.
+ * invited / stopped: messaged by the auto-invite, no file yet (stopped: asked to stop, or the send was rejected).
+ */
+export type CaseState = "needs_you" | "waiting_id" | "collecting" | "complete" | "invited" | "stopped" | "not_started";
+export type TaskKind = "review" | "advisor" | "invite_no_start" | "invite_send_unknown";
+
+/** The auto-invite as the advisor sees it. `sending` covers a claimed send still in flight. */
+export type InviteView = {
+  status: "sending" | "invited" | "reminded" | "started" | "escalated" | "unknown" | "stopped";
+  /** client_stop, or rejected (the send was refused); "" otherwise. */
+  stop: "" | "client_stop" | "rejected";
+  openerAt: string | null;
+  reminderAt: string | null;
+  startedAt: string | null;
+};
+
+function taskKindOf(reason: string): TaskKind {
+  if (reason === CHECKLIST_REVIEW_REASON) return "review";
+  if ((INVITE_TASK_REASONS as readonly string[]).includes(reason)) return reason as TaskKind;
+  return "advisor";
+}
+
+type InviteRow = {
+  status: string;
+  stopReason: string;
+  openerAt: Date | null;
+  reminderAt: Date | null;
+  startedAt: Date | null;
+  createdAt: Date;
+};
+
+const INVITE_SELECT = { status: true, stopReason: true, openerAt: true, reminderAt: true, startedAt: true, createdAt: true } as const;
+
+function inviteView(row: InviteRow): InviteView {
+  const status: InviteView["status"] =
+    row.status === "sending_opener" || row.status === "sending_reminder"
+      ? "sending"
+      : (["invited", "reminded", "started", "escalated", "unknown", "stopped"] as const).find((s) => s === row.status) ?? "invited";
+  return {
+    status,
+    stop: status !== "stopped" ? "" : row.stopReason === "client_stop" ? "client_stop" : "rejected",
+    openerAt: row.openerAt?.toISOString() ?? null,
+    reminderAt: row.reminderAt?.toISOString() ?? null,
+    startedAt: row.startedAt?.toISOString() ?? null,
+  };
+}
+
+/** Before a file exists the invite decides the state; an open task always wins. */
+function inviteState(invite: InviteView, hasTask: boolean): CaseState {
+  if (hasTask) return "needs_you";
+  return invite.status === "stopped" ? "stopped" : "invited";
+}
 export type Segment = "ok" | "missing" | "issue";
 
 export type ClientRowDTO = {
@@ -44,7 +95,8 @@ export type ClientRowDTO = {
   phone: string;
   test: boolean;
   state: CaseState;
-  taskKind: "review" | "advisor" | null;
+  taskKind: TaskKind | null;
+  invite: InviteView | null;
   waveLabel: string;
   waveIndex: number;
   waveCount: number;
@@ -121,6 +173,7 @@ function caseRow(opts: {
   lead: LeadLite;
   contact: ContactLite | undefined;
   task: { reason: string } | undefined;
+  invite: InviteView | null;
   rules: RulesDocument | null;
   config: DocumentConfig | null;
   lang: "en" | "he";
@@ -152,7 +205,8 @@ function caseRow(opts: {
     phone: formatPhoneDisplay(contact?.phone || leadPhone(lead)),
     test: isTestPerson(lead, opts.config),
     state: caseState,
-    taskKind: task ? (task.reason === "document_checklist_complete" ? "review" : "advisor") : null,
+    taskKind: task ? taskKindOf(task.reason) : null,
+    invite: opts.invite,
     waveLabel: all[waveIndex]?.labels[lang] ?? "",
     waveIndex,
     waveCount: all.length,
@@ -165,8 +219,43 @@ function caseRow(opts: {
   };
 }
 
+/** An invited client with no file yet: who was messaged, and where the invite stands. */
+function inviteOnlyRow(opts: {
+  lead: LeadLite;
+  contact: ContactLite;
+  invite: InviteView;
+  inviteAt: Date;
+  task: { reason: string } | undefined;
+  config: DocumentConfig | null;
+}): ClientRowDTO {
+  const { lead, contact, invite, task } = opts;
+  const lastActivity = [lead.lastLeadMessageAt, lead.lastOutboundAt]
+    .filter((d): d is Date => d != null)
+    .sort((a, b) => b.getTime() - a.getTime())[0] ?? opts.inviteAt;
+  return {
+    key: lead.id,
+    leadId: lead.id,
+    name: contact.name || leadDisplayName(lead) || formatPhoneDisplay(leadPhone(lead)),
+    phone: formatPhoneDisplay(contact.phone || leadPhone(lead)),
+    test: isTestPerson(lead, opts.config),
+    state: inviteState(invite, Boolean(task)),
+    taskKind: task ? taskKindOf(task.reason) : null,
+    invite,
+    waveLabel: "",
+    waveIndex: 0,
+    waveCount: 0,
+    segments: [],
+    done: 0,
+    total: 0,
+    nextWaveReady: false,
+    lastActivity: lastActivity.toISOString(),
+    stuckDays: 0,
+  };
+}
+
 function tabOf(row: ClientRowDTO): Exclude<ClientTab, "all"> {
   if (row.state === "needs_you") return "needs";
+  if (row.state === "invited" || row.state === "stopped") return "invited";
   if (row.state === "complete") return "done";
   return "collecting";
 }
@@ -218,8 +307,19 @@ export async function listClientCases(opts: {
 }): Promise<{ rows: ClientRowDTO[]; counts: ClientCounts; total: number; hiddenTest: number; testOnly: boolean }> {
   const { tenantId, lang } = opts;
   const now = new Date();
-  const [config, cases] = await Promise.all([loadDocumentConfig(tenantId), loadCases(tenantId)]);
-  const leadIds = cases.map((row) => row.leadId);
+  const [config, cases, invites] = await Promise.all([
+    loadDocumentConfig(tenantId),
+    loadCases(tenantId),
+    // Only invites that reached a send have a lead; one stopped before sending was never messaged.
+    prisma.contactInvite.findMany({
+      where: { tenantId, contact: { leadId: { not: null } } },
+      select: { ...INVITE_SELECT, contact: { select: { id: true, name: true, phone: true, leadId: true } } },
+    }),
+  ]);
+  const inviteByLead = new Map(invites.map((row) => [row.contact.leadId ?? "", row]));
+  const withFile = new Set(cases.map((row) => row.leadId));
+  const invitedOnly = invites.filter((row) => row.contact.leadId && !withFile.has(row.contact.leadId));
+  const leadIds = [...withFile, ...invitedOnly.map((row) => row.contact.leadId!)];
   const [leads, contacts, tasks] = await Promise.all([
     prisma.lead.findMany({ where: { tenantId, id: { in: leadIds } }, select: LEAD_SELECT }),
     prisma.contact.findMany({
@@ -227,7 +327,7 @@ export async function listClientCases(opts: {
       select: { id: true, name: true, phone: true, leadId: true },
     }),
     prisma.hitlTask.findMany({
-      where: { tenantId, status: "open", leadId: { in: leadIds }, reason: { in: [...DOCUMENT_TASK_REASONS] } },
+      where: { tenantId, status: "open", leadId: { in: leadIds }, reason: { in: [...CLIENT_TASK_REASONS] } },
       orderBy: { createdAt: "desc" },
       select: { leadId: true, reason: true },
     }),
@@ -240,25 +340,39 @@ export async function listClientCases(opts: {
   let caseRows = cases.flatMap((dossier) => {
     const lead = leadById.get(dossier.leadId);
     if (!lead) return [];
+    const invite = inviteByLead.get(lead.id);
     return [caseRow({
       dossier,
       lead,
       contact: contactByLead.get(lead.id),
       task: taskByLead.get(lead.id),
+      invite: invite ? inviteView(invite) : null,
       rules: config?.rules ?? null,
       config,
       lang,
       now,
     })];
   });
+  for (const row of invitedOnly) {
+    const lead = leadById.get(row.contact.leadId!);
+    if (!lead) continue;
+    caseRows.push(inviteOnlyRow({
+      lead,
+      contact: row.contact,
+      invite: inviteView(row),
+      inviteAt: row.openerAt ?? row.createdAt,
+      task: taskByLead.get(lead.id),
+      config,
+    }));
+  }
   const hiddenTest = opts.showTest ? 0 : caseRows.filter((row) => row.test).length;
   if (!opts.showTest) caseRows = caseRows.filter((row) => !row.test);
   caseRows = caseRows.filter((row) => matchesQuery(row, opts.q));
 
-  const counts: ClientCounts = { needs: 0, collecting: 0, done: 0, all: caseRows.length };
+  const counts: ClientCounts = { needs: 0, invited: 0, collecting: 0, done: 0, all: caseRows.length };
   for (const row of caseRows) counts[tabOf(row)] += 1;
 
-  const order: Record<CaseState, number> = { needs_you: 0, waiting_id: 1, collecting: 1, complete: 2, not_started: 3 };
+  const order: Record<CaseState, number> = { needs_you: 0, waiting_id: 1, collecting: 1, invited: 2, complete: 3, stopped: 4, not_started: 4 };
   caseRows.sort((a, b) =>
     order[a.state] - order[b.state] ||
     // Inside collecting, the longest wait first: those are the ones to chase.
@@ -320,7 +434,8 @@ export type ClientCaseDTO = {
     fields: { key: string; label: string; value: string }[];
   } | null;
   state: CaseState;
-  task: { id: string; kind: "review" | "advisor"; summary: string; since: string } | null;
+  task: { id: string; kind: TaskKind; summary: string; since: string } | null;
+  invite: InviteView | null;
   waves: CaseWave[];
   nextWave: { id: string; label: string } | null;
   catalog: { docType: string; label: string; topic: string; open: boolean }[];
@@ -402,13 +517,29 @@ export async function loadClientCase(opts: {
   });
 
   const contactView = contact ? crmDetails(contact, lang) : null;
-  const [config, dossier, conversations] = await Promise.all([
+  const [config, dossier, conversations, inviteRow, task] = await Promise.all([
     loadDocumentConfig(tenantId),
     lead
       ? prisma.dossier.findFirst({ where: { tenantId, leadId: lead.id }, orderBy: { createdAt: "desc" } })
       : null,
     lead ? prisma.conversation.count({ where: { tenantId, leadId: lead.id } }) : 0,
+    prisma.contactInvite.findFirst({ where: { tenantId, contact: { leadId: lead.id } }, select: INVITE_SELECT }),
+    prisma.hitlTask.findFirst({
+      where: { tenantId, leadId: lead.id, status: "open", reason: { in: [...CLIENT_TASK_REASONS] } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, reason: true, payload: true, createdAt: true },
+    }),
   ]);
+  const invite = inviteRow ? inviteView(inviteRow) : null;
+  const payload = (task?.payload ?? {}) as { summary?: unknown };
+  const taskView = task
+    ? {
+        id: task.id,
+        kind: taskKindOf(task.reason),
+        summary: typeof payload.summary === "string" ? payload.summary : "",
+        since: task.createdAt.toISOString(),
+      }
+    : null;
   const base = {
     key: opts.key,
     leadId: lead?.id ?? null,
@@ -419,14 +550,16 @@ export async function loadClientCase(opts: {
     contact: contactView,
     lastLeadMessageAt: lead?.lastLeadMessageAt?.toISOString() ?? null,
     hasConversation: conversations > 0,
+    invite,
   };
-  if (!dossier || !lead) {
-    return { ...base, state: "not_started", task: null, waves: [], nextWave: null, catalog: [], log: [], stuckDays: 0 };
+  if (!dossier) {
+    const state: CaseState = invite ? inviteState(invite, Boolean(taskView)) : taskView ? "needs_you" : "not_started";
+    return { ...base, state, task: taskView, waves: [], nextWave: null, catalog: [], log: [], stuckDays: 0 };
   }
 
   const rules = config?.rules ?? null;
   const state = dossierStateOf(dossier);
-  const [files, log, task] = await Promise.all([
+  const [files, log] = await Promise.all([
     prisma.leadDocument.findMany({
       where: { tenantId, dossierId: dossier.id, status: "uploaded" },
       orderBy: { createdAt: "desc" },
@@ -437,11 +570,6 @@ export async function loadClientCase(opts: {
       orderBy: { createdAt: "desc" },
       take: 40,
       select: { id: true, docType: true, filename: true, status: true, validation: true, createdAt: true, mime: true, bytesEnc: false, downloadUrl: true, remoteId: true },
-    }),
-    prisma.hitlTask.findFirst({
-      where: { tenantId, leadId: lead.id, status: "open", reason: { in: [...DOCUMENT_TASK_REASONS] } },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, reason: true, payload: true, createdAt: true },
     }),
   ]);
 
@@ -501,18 +629,10 @@ export async function loadClientCase(opts: {
         })
     : [];
 
-  const payload = (task?.payload ?? {}) as { summary?: unknown };
   return {
     ...base,
     state: caseState,
-    task: task
-      ? {
-          id: task.id,
-          kind: task.reason === "document_checklist_complete" ? "review" : "advisor",
-          summary: typeof payload.summary === "string" ? payload.summary : "",
-          since: task.createdAt.toISOString(),
-        }
-      : null,
+    task: taskView,
     waves: state.status === "needs_id" ? [] : caseWaves,
     nextWave,
     catalog,

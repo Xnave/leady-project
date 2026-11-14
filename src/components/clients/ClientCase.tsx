@@ -372,7 +372,8 @@ export function ClientCase({ data, ui, lang, now, backHref }: {
   const allRows = data.waves.flatMap((wave) => wave.topics.flatMap((topic) => topic.rows));
   const gallery = allRows.flatMap((row) => row.files.map((file) => ({ ...file, label: row.label, rowId: row.id })));
   const pickedIds = Object.keys(notes);
-  const canAct = Boolean(data.leadId) && data.state !== "not_started" && data.state !== "waiting_id";
+  // Document actions need a file: none before the client starts.
+  const canAct = Boolean(data.leadId) && data.waves.length > 0;
 
   function done(ok: boolean, text: string) {
     setFlash(ok ? { text, tone: "ok" } : { text: d.failed, tone: "err" });
@@ -472,6 +473,56 @@ export function ClientCase({ data, ui, lang, now, backHref }: {
             {d.replySend}
           </button>
           {canChat ? <button type="button" className="btn-ghost" onClick={openChat}>{d.openChatInstead}</button> : null}
+        </div>
+      </div>
+    );
+  } else if (data.task?.kind === "invite_no_start" || data.task?.kind === "invite_send_unknown") {
+    banner = (
+      <div className="cl-callout needs">
+        <div className="cl-callout-text">
+          <h2>{data.task.kind === "invite_no_start" ? d.inviteNoStartTitle : d.inviteUnknownTitle}</h2>
+          {data.task.summary ? <p>{data.task.summary}</p> : null}
+        </div>
+        <div className="cl-callout-actions">
+          <button
+            type="button"
+            className="btn"
+            disabled={busy !== null}
+            aria-busy={busy === "handled"}
+            onClick={() => void run("handled", `/api/leads/${data.leadId}/documents/invite-handled`, undefined, d.inviteHandledDone)}
+          >
+            {d.inviteHandled}
+          </button>
+          {canChat ? <button type="button" className="btn-ghost" onClick={openChat}>{t.openChat}</button> : null}
+        </div>
+      </div>
+    );
+  } else if (data.state === "stopped" && data.invite) {
+    const byClient = data.invite.stop === "client_stop";
+    banner = (
+      <div className="cl-callout warn">
+        <div className="cl-callout-text">
+          <h2>{byClient ? d.stoppedClientTitle : d.stoppedRejectedTitle}</h2>
+          <p>{byClient ? d.stoppedClientBody : d.stoppedRejectedBody}</p>
+        </div>
+      </div>
+    );
+  } else if (data.state === "invited" && (data.invite?.status === "escalated" || data.invite?.status === "unknown")) {
+    banner = (
+      <div className="cl-callout info">
+        <div className="cl-callout-text">
+          <h2>{data.invite.status === "escalated" ? d.inviteNoStartTitle : d.inviteUnknownTitle}</h2>
+          <p>{d.inviteHandledBody}</p>
+        </div>
+      </div>
+    );
+  } else if (data.state === "invited" && data.invite) {
+    const started = data.invite.status === "started";
+    banner = (
+      <div className="cl-callout info">
+        <div className="cl-callout-text">
+          <h2>{started ? d.startedTitle : d.invitedTitle}</h2>
+          <p>{started ? d.startedBody : data.invite.status === "reminded" ? d.remindedBody : d.invitedBody}</p>
         </div>
       </div>
     );
@@ -588,6 +639,26 @@ export function ClientCase({ data, ui, lang, now, backHref }: {
         ) : null}
       </header>
 
+      {data.invite && (data.invite.openerAt || data.invite.startedAt) ? (
+        <p className="cl-invite-line">
+          <Icon name="msg" small />
+          <span>{d.inviteTimeline}</span>
+          {[
+            data.invite.openerAt ? { at: data.invite.openerAt, label: d.inviteSentAt } : null,
+            data.invite.reminderAt ? { at: data.invite.reminderAt, label: d.inviteReminderAt } : null,
+            data.invite.startedAt ? { at: data.invite.startedAt, label: d.inviteStartedAt } : null,
+          ]
+            .filter((step): step is { at: string; label: string } => step !== null)
+            .map((step) => (
+              <span key={step.label} className="cl-invite-step">
+                {step.label.split("{date}")[0]}
+                <time dateTime={step.at} title={absTime(step.at, lang)}>{relTime(step.at, lang, nowDate)}</time>
+                {step.label.split("{date}")[1] ?? ""}
+              </span>
+            ))}
+        </p>
+      ) : null}
+
       {flash ? (
         <p className={`cl-flash ${flash.tone}`} role={flash.tone === "err" ? "alert" : "status"}>{flash.text}</p>
       ) : null}
@@ -687,7 +758,7 @@ export function ClientCase({ data, ui, lang, now, backHref }: {
         </section>
       ) : null}
 
-      {data.contact ? (
+      {data.contact && (data.contact.dealDate || data.contact.fields.length) ? (
         <section className="cl-crm" aria-labelledby="cl-crm-title">
           <h3 id="cl-crm-title">
             <span>{d.crm}</span>

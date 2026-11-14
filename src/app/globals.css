@@ -5587,6 +5587,10 @@ button.rules-chip:hover { border-color: var(--accent-bright); background: var(--
   scroll-snap-type: x proximity;
 }
 .cl-tabs::-webkit-scrollbar { display: none; }
+/* Wide screens: the list column is narrow, so five tabs wrap instead of hiding behind a scroll. */
+@media (min-width: 900px) {
+  .cl-tabs { flex-wrap: wrap; overflow-x: visible; row-gap: var(--space-2); }
+}
 .cl-tab {
   flex: none;
   scroll-snap-align: start;
@@ -5813,6 +5817,17 @@ button.rules-chip:hover { border-color: var(--accent-bright); background: var(--
   color: var(--text-soft);
 }
 .cl-chat { flex: none; }
+.cl-invite-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-soft);
+}
+.cl-invite-line > span:first-of-type { font-weight: 600; color: var(--text); }
+.cl-invite-step::before { content: "·"; margin-inline-end: var(--space-3); color: var(--text-soft); }
 
 .cl-flash {
   margin: 0;

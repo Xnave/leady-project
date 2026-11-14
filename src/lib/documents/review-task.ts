@@ -7,6 +7,10 @@ import { isChatLanguage, resolveReplyLanguage } from "@/lib/flow/locale";
 /** Needs-you reasons the documents capability opens. */
 export const DOCUMENT_TASK_REASONS = ["document_checklist_complete", "document_review"] as const;
 export const CHECKLIST_REVIEW_REASON = "document_checklist_complete";
+/** Needs-you reasons the auto-invite opens (`invite/run.ts`): no start after opener + reminder, or an unknown send. */
+export const INVITE_TASK_REASONS = ["invite_no_start", "invite_send_unknown"] as const;
+/** Every reason the Clients screen treats as "needs you". */
+export const CLIENT_TASK_REASONS = [...DOCUMENT_TASK_REASONS, ...INVITE_TASK_REASONS] as const;
 
 /** Lead-facing language for an advisor action, from the tenant policy and the lead's last message. */
 export async function leadReplyLang(tenantId: string, leadId: string): Promise<"en" | "he"> {
@@ -63,6 +67,46 @@ export async function closeChecklistReview(opts: {
       },
     }),
   ]);
+  await safeRefreshLeadState(opts.tenantId, opts.leadId);
+  return true;
+}
+
+/**
+ * Close the open auto-invite tasks (no start / unknown send) on a lead: the
+ * advisor has contacted the client. Sends nothing and resends nothing.
+ */
+export async function closeInviteTasks(opts: { tenantId: string; leadId: string; actorUserId: string }): Promise<boolean> {
+  const tasks = await prisma.hitlTask.findMany({
+    where: { tenantId: opts.tenantId, leadId: opts.leadId, reason: { in: [...INVITE_TASK_REASONS] }, status: "open" },
+  });
+  if (!tasks.length) return false;
+  const now = new Date();
+  await prisma.$transaction(
+    tasks.flatMap((task) => [
+      prisma.hitlTask.update({
+        where: { id: task.id },
+        data: {
+          status: "done",
+          resolution: { handled: true } as Prisma.InputJsonValue,
+          completedBy: opts.actorUserId,
+          completedAt: now,
+        },
+      }),
+      prisma.adminDecisionLog.create({
+        data: {
+          tenantId: opts.tenantId,
+          leadId: task.leadId,
+          conversationId: task.conversationId,
+          category: "hitl",
+          action: "approve",
+          actorUserId: opts.actorUserId,
+          actorLabel: resolveActorLabel(opts.actorUserId),
+          summary: "",
+          details: { hitlTaskId: task.id, reason: task.reason, type: task.type, invite: "handled" } as Prisma.InputJsonValue,
+        },
+      }),
+    ]),
+  );
   await safeRefreshLeadState(opts.tenantId, opts.leadId);
   return true;
 }

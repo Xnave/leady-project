@@ -7,8 +7,10 @@
  * state: review needed, collecting with a rejected file, advisor needed,
  * waiting for ID, complete, stage 2 open, quiet for 6 days. Two of them also get
  * a CRM contact (same Smart NPV uuid) so the file shows CRM details.
+ * Plus 4 CRM clients the auto-invite messaged who have no file yet: invited,
+ * reminded, didn't start (a needs-you task), and asked to stop.
  *
- * Re-running resets those 7 clients to the starting state. It refuses to run
+ * Re-running resets those clients to the starting state. It refuses to run
  * against anything but a local database.
  */
 import { Prisma } from "@prisma/client";
@@ -18,6 +20,7 @@ import { MORTGAGE_RULES, checklistSlots } from "@/lib/documents/mortgage-rules";
 import { mapSmartProfile } from "@/lib/documents/smart-npv";
 import { freshDossier, dossierDone, activeStageOf, type SlotState } from "@/lib/documents/validate";
 import type { RulesDocument } from "@/lib/documents/rules";
+import { INVITE_TEMPLATES, fillInviteBody, inviteTemplateParams } from "@/lib/documents/invite/templates";
 
 const RULES: RulesDocument = {
   ...MORTGAGE_RULES,
@@ -97,6 +100,23 @@ const SPECS: Spec[] = [
   { name: "אביטל דהן", phone: "972529907316", uploaded: "all", ageDays: 3 },
   { name: "גיל פרץ", phone: "972544420078", uploaded: "all", stage2: true, ageDays: 0.8 },
   { name: "שירן מזרחי", phone: "972502261954", uploaded: 1, ageDays: 6.3 },
+];
+
+/** Auto-invited CRM clients with no file yet. Days are how long ago each step happened. */
+type InviteSpec = {
+  name: string;
+  phone: string;
+  status: "invited" | "reminded" | "escalated" | "stopped";
+  openerDays: number;
+  reminderDays?: number;
+  stopReply?: string;
+};
+
+const INVITES: InviteSpec[] = [
+  { name: "מאיה לוין", phone: "972526610042", status: "invited", openerDays: 0.9 },
+  { name: "דן אברהם", phone: "972548830015", status: "reminded", openerDays: 3.1, reminderDays: 1.1 },
+  { name: "תמר גולן", phone: "972507745590", status: "escalated", openerDays: 5.2, reminderDays: 3.1 },
+  { name: "עמית רז", phone: "972533381277", status: "stopped", openerDays: 2.2, stopReply: "הסר" },
 ];
 
 function assertLocalDatabase() {
@@ -265,6 +285,74 @@ function assertLocalDatabase() {
       },
     });
   }
-  console.log(`Seeded ${SPECS.length} clients on tenant ${tenantId}. Open /clients.`);
+  for (const spec of INVITES) {
+    const ago = (days: number) => new Date(Date.now() - days * 86_400_000);
+    const openerAt = ago(spec.openerDays);
+    const reminderAt = spec.reminderDays != null ? ago(spec.reminderDays) : null;
+    const lead = await prisma.lead.create({
+      data: {
+        tenantId,
+        channelId: conv0.channelId,
+        externalUserId: `seed-docs-${spec.phone}`,
+        displayName: spec.name,
+        lastOutboundAt: reminderAt ?? openerAt,
+        lastLeadMessageAt: spec.stopReply ? ago(spec.openerDays - 0.1) : null,
+        adminUnread: false,
+        fields: { phone: spec.phone, name: spec.name },
+        createdAt: openerAt,
+      },
+    });
+    const conversation = await prisma.conversation.create({
+      data: {
+        tenantId,
+        leadId: lead.id,
+        channelId: conv0.channelId,
+        agentId: conv0.agentId,
+        flowState: conv0.flowState,
+        status: "open",
+        flowVersion: conv0.flowVersion,
+        lifecycleReason: "documents_invite",
+        createdAt: openerAt,
+      },
+    });
+    const params = inviteTemplateParams(spec.name.split(" ")[0], "ליאור - לייבל משכנתאות");
+    const messages: Prisma.MessageCreateManyInput[] = [
+      { tenantId, conversationId: conversation.id, role: "agent", text: fillInviteBody(INVITE_TEMPLATES.opener, params), providerMessageId: `seed-${lead.id}-opener`, createdAt: openerAt },
+    ];
+    if (reminderAt) messages.push({ tenantId, conversationId: conversation.id, role: "agent", text: fillInviteBody(INVITE_TEMPLATES.reminder, params), providerMessageId: `seed-${lead.id}-reminder`, createdAt: reminderAt });
+    if (spec.stopReply) messages.push({ tenantId, conversationId: conversation.id, role: "lead", text: spec.stopReply, providerMessageId: `seed-${lead.id}-stop`, createdAt: ago(spec.openerDays - 0.1) });
+    await prisma.message.createMany({ data: messages });
+    const contact = await prisma.contact.create({
+      data: { tenantId, sourceId: source.id, externalId: `seed-invite-${spec.phone}`, name: spec.name, phone: spec.phone, phoneStatus: "ok", leadId: lead.id, createdAt: openerAt },
+    });
+    await prisma.contactInvite.create({
+      data: {
+        tenantId,
+        contactId: contact.id,
+        status: spec.status,
+        stopReason: spec.stopReply ? "client_stop" : "",
+        openerAt,
+        reminderAt,
+        escalatedAt: spec.status === "escalated" ? ago(1) : null,
+        createdAt: openerAt,
+      },
+    });
+    if (spec.status === "escalated") {
+      await prisma.hitlTask.create({
+        data: {
+          tenantId,
+          conversationId: conversation.id,
+          leadId: lead.id,
+          type: "more_info",
+          reason: "invite_no_start",
+          payload: { kind: "documents_invite", contactId: contact.id, summary: "קיבל הזמנה ותזכורת לשלוח מסמכים ועוד לא התחיל. כדאי ליצור קשר." },
+          status: "open",
+          createdAt: ago(1),
+        },
+      });
+    }
+    console.log(spec.name, spec.status);
+  }
+  console.log(`Seeded ${SPECS.length + INVITES.length} clients on tenant ${tenantId}. Open /clients.`);
   await prisma.$disconnect();
 })();

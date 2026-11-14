@@ -40,7 +40,20 @@ function Progress({ segments, label }: { segments: Segment[]; label: string }) {
 function StateChip({ row, ui }: { row: ClientRowDTO; ui: UiCopy }) {
   const t = ui.clientsUi;
   if (row.state === "needs_you") {
-    return <span className="cl-chip needs">{row.taskKind === "advisor" ? t.taskAdvisor : t.taskReview}</span>;
+    const label =
+      row.taskKind === "advisor" ? t.taskAdvisor
+        : row.taskKind === "invite_no_start" ? t.taskInviteNoStart
+          : row.taskKind === "invite_send_unknown" ? t.taskInviteUnknown
+            : t.taskReview;
+    return <span className="cl-chip needs">{label}</span>;
+  }
+  if ((row.state === "invited" || row.state === "stopped") && row.invite) {
+    const invite = row.invite;
+    const label =
+      invite.status === "stopped"
+        ? invite.stop === "client_stop" ? t.invite.stoppedClient : t.invite.stoppedRejected
+        : t.invite[invite.status];
+    return <span className={`cl-chip ${row.state === "stopped" ? "warn" : "idle"}`}>{label}</span>;
   }
   if (row.state === "complete") {
     return row.nextWaveReady

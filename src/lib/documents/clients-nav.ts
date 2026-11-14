@@ -1,10 +1,10 @@
 import { prisma } from "@/lib/db";
-import { DOCUMENT_TASK_REASONS } from "./review-task";
+import { CLIENT_TASK_REASONS } from "./review-task";
 
-/** Clients with an open documents task, for the nav badge. Demo people count, like the leads badge. */
+/** Clients with an open documents or invite task, for the nav badge. Demo people count, like the leads badge. */
 export async function countClientsNeedingYou(tenantId: string): Promise<number> {
   const rows = await prisma.hitlTask.findMany({
-    where: { tenantId, status: "open", reason: { in: [...DOCUMENT_TASK_REASONS] } },
+    where: { tenantId, status: "open", reason: { in: [...CLIENT_TASK_REASONS] } },
     distinct: ["leadId"],
     select: { leadId: true },
   });
