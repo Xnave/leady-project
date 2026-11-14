@@ -24,6 +24,7 @@ import {
 } from "@/lib/flow/document-config";
 import type { FlowDefinition, TalkStage } from "@/lib/flow/types";
 import { listWhatsAppTemplates, sendWhatsAppTemplate } from "@/lib/zernio";
+import { INVITE_TASK_REASONS } from "../review-task";
 import {
   INVITE_CLAIM_STALE_MS,
   INVITE_OPEN_STATUSES,
@@ -229,7 +230,7 @@ async function ensureInviteThread(
   return { leadId: lead.id, conversationId: convo.id };
 }
 
-type TaskReason = "invite_no_start" | "invite_send_unknown";
+type TaskReason = (typeof INVITE_TASK_REASONS)[number];
 
 const TASK_SUMMARY: Record<TaskReason, string> = {
   invite_no_start: "קיבל הזמנה ותזכורת לשלוח מסמכים ועוד לא התחיל. כדאי ליצור קשר.",

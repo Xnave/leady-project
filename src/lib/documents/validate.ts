@@ -135,6 +135,8 @@ export type SlotState = {
   collectionStage?: string;
   months?: string[];
   coveredMonths?: string[];
+  /** Added by an advisor by hand, not by the rules. Kept when the checklist is recomputed. */
+  requested?: boolean;
   status: "missing" | "uploaded";
   failCount: number;
   lastReason: string;

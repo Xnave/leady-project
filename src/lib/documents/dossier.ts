@@ -120,6 +120,7 @@ function asSlots(value: unknown): SlotState[] {
     ...(typeof slot.year === "number" ? { year: slot.year } : {}),
     ...(typeof slot.altGroup === "string" && slot.altGroup ? { altGroup: slot.altGroup } : {}),
     ...(typeof slot.collectionStage === "string" && slot.collectionStage ? { collectionStage: slot.collectionStage } : {}),
+    ...(slot.requested === true ? { requested: true } : {}),
     ...(stringList(slot.months) ? { months: stringList(slot.months) } : {}),
     ...(stringList(slot.coveredMonths) ? { coveredMonths: stringList(slot.coveredMonths) } : {}),
   }));
@@ -801,8 +802,8 @@ function freshSlot(slot: Slot): SlotState {
   return { ...slot, status: "missing", failCount: 0, lastReason: "", remoteId: "", filename: "" };
 }
 
-/** Keep uploaded rows, drop missing rows the facts no longer ask for, add the new ones. */
-function mergeSlots(previous: SlotState[], next: Slot[]): SlotState[] {
+/** Keep uploaded and advisor-requested rows, drop missing rows the facts no longer ask for, add the new ones. */
+export function mergeSlots(previous: SlotState[], next: Slot[]): SlotState[] {
   const nextIds = new Set(next.map((slot) => slot.id));
   const previousById = new Map(previous.map((slot) => [slot.id, slot]));
   const merged = next.map((slot) => {
@@ -820,7 +821,9 @@ function mergeSlots(previous: SlotState[], next: Slot[]): SlotState[] {
     };
   });
   for (const slot of previous) {
-    if (slot.status === "uploaded" && !nextIds.has(slot.id)) merged.push(slot);
+    if (nextIds.has(slot.id)) continue;
+    // An advisor's hand-added request stays open until the file arrives.
+    if (slot.status === "uploaded" || slot.requested) merged.push(slot);
   }
   return merged;
 }
@@ -2800,6 +2803,39 @@ export async function runDocumentsIngest(
 }
 
 /**
+ * One agent message to the lead on their latest thread, reopening it when closed.
+ * False when the lead never had a conversation.
+ */
+async function sendDocumentsMessage(opts: {
+  tenantId: string;
+  leadId: string;
+  text: string;
+  reason: string;
+  key: string;
+}): Promise<boolean> {
+  const { tenantId, leadId } = opts;
+  const open = await prisma.conversation.findFirst({
+    where: { tenantId, leadId, status: { not: "closed" } },
+    orderBy: { updatedAt: "desc" },
+  });
+  const latest = open ?? await prisma.conversation.findFirst({
+    where: { tenantId, leadId },
+    orderBy: { updatedAt: "desc" },
+  });
+  if (!latest) {
+    console.warn(JSON.stringify({ msg: "documents.message_no_conversation", tenantId, leadId, reason: opts.reason }));
+    return false;
+  }
+  if (latest.status === "closed") {
+    await reopenConversation({ tenantId, conversationId: latest.id, reason: opts.reason });
+  }
+  const { sendAndSave } = await import("@/lib/flow/run-turn");
+  const ctx = await loadTurnContext(tenantId, latest.id, { triggerMessageId: opts.key });
+  await sendAndSave(ctx, opts.text, { idempotencyKey: opts.key });
+  return true;
+}
+
+/**
  * The advisor releases the next collection stage. No document types are invented.
  * The lead gets one agent message that the next documents are starting.
  */
@@ -2819,25 +2855,14 @@ export async function releaseNextDocumentStage(
   const current = releasedStageId(state.profile);
   const nextId = nextCollectionStageId(config.rules, current);
   if (!nextId) return { ok: false, error: "no_next_stage" };
-  const open = await prisma.conversation.findFirst({
-    where: { tenantId, leadId, status: { not: "closed" } },
-    orderBy: { updatedAt: "desc" },
+  const sent = await sendDocumentsMessage({
+    tenantId,
+    leadId,
+    text: copyFor(lang).chat.documents.nextStage,
+    reason: "documents_next_stage",
+    key: `documents-next-stage-${leadId}-${nextId}`,
   });
-  const latest = open ?? await prisma.conversation.findFirst({
-    where: { tenantId, leadId },
-    orderBy: { updatedAt: "desc" },
-  });
-  if (!latest) {
-    console.warn(JSON.stringify({ msg: "documents.next_stage_no_conversation", tenantId, leadId }));
-    return { ok: false, error: "no_open_conversation" };
-  }
-  if (latest.status === "closed") {
-    await reopenConversation({ tenantId, conversationId: latest.id, reason: "documents_next_stage" });
-  }
-  const text = copyFor(lang).chat.documents.nextStage;
-  const { sendAndSave } = await import("@/lib/flow/run-turn");
-  const ctx = await loadTurnContext(tenantId, latest.id, { triggerMessageId: `documents-next-stage-${nextId}` });
-  await sendAndSave(ctx, text, { idempotencyKey: `documents-next-stage-${leadId}-${nextId}` });
+  if (!sent) return { ok: false, error: "no_open_conversation" };
   const profile = { ...state.profile, releasedStageId: nextId };
   const slots = mergeSlots(state.slots, checklistSlots(profile, config.rules));
   const done = dossierDone(slots);
@@ -3108,37 +3133,166 @@ export async function loadDocumentChecklist(tenantId: string, leadId: string, la
   const state = stateOf(dossier);
   const current = releasedStageId(state.profile);
   const nextStageId = rules ? nextCollectionStageId(rules, current) : "";
-  const files = await prisma.leadDocument.findMany({
-    where: { tenantId, dossierId: dossier.id, status: "uploaded" },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, filename: true, remoteId: true, downloadUrl: true, mime: true },
-  });
+  const [files, review] = await Promise.all([
+    prisma.leadDocument.findMany({
+      where: { tenantId, dossierId: dossier.id, status: "uploaded" },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, filename: true, remoteId: true, downloadUrl: true, mime: true },
+    }),
+    prisma.hitlTask.findFirst({
+      where: { tenantId, leadId, reason: "document_checklist_complete", status: "open" },
+      select: { id: true },
+    }),
+  ]);
   return {
     status: state.status,
     activeStage: state.activeStage,
     releasedStageId: current,
-    nextStageId: state.status === "complete" ? nextStageId : "",
-    slots: groupChecklistRows(state.slots.map((slot) => {
-      const linked = checklistFile(slot, files);
-      const href = linked && (linked.downloadUrl || linked.remoteId.startsWith("local:"))
-        ? `/api/leads/${leadId}/documents/${linked.id}`
-        : "";
-      return {
-        id: slot.id,
-        docType: slot.docType,
-        borrower: slot.borrower || "1",
-        who: borrowerFileWho(state.profile, slot.borrower, lang),
-        label: rules ? slotDisplayLabel(rules, slot, lang) : slot.docType,
-        stage: slot.stage,
-        status: slot.status,
-        lastReason: slot.lastReason,
-        filename: slot.filename,
-        remoteId: slot.remoteId,
-        href,
-        mime: linked?.mime || "application/pdf",
-        coveredMonths: slot.coveredMonths ?? [],
-        sourceFilename: linked?.filename || slot.filename,
-      };
-    }), lang),
+    // The next wave opens only after the finished one was reviewed.
+    nextStageId: state.status === "complete" && !review ? nextStageId : "",
+    slots: groupChecklistRows(checklistPieces({ leadId, state, rules, files, lang }), lang),
   };
+}
+
+export type ChecklistStoredFile = {
+  id: string;
+  filename: string;
+  remoteId: string;
+  downloadUrl: string | null;
+  mime: string;
+};
+
+/** One display piece per slot, with the CRM link to its stored file. */
+export function checklistPieces(opts: {
+  leadId: string;
+  state: Pick<DossierState, "profile" | "slots">;
+  rules: RulesDocument | null;
+  files: ChecklistStoredFile[];
+  lang: "en" | "he";
+}): ChecklistPiece[] {
+  const { leadId, state, rules, files, lang } = opts;
+  return state.slots.map((slot) => {
+    const linked = checklistFile(slot, files);
+    const href = linked && (linked.downloadUrl || linked.remoteId.startsWith("local:"))
+      ? `/api/leads/${leadId}/documents/${linked.id}`
+      : "";
+    return {
+      id: slot.id,
+      docType: slot.docType,
+      borrower: slot.borrower || "1",
+      who: borrowerFileWho(state.profile, slot.borrower, lang),
+      label: rules ? slotDisplayLabel(rules, slot, lang) : slot.docType,
+      stage: slot.stage,
+      status: slot.status,
+      lastReason: slot.lastReason,
+      filename: slot.filename,
+      remoteId: slot.remoteId,
+      href,
+      mime: linked?.mime || "application/pdf",
+      coveredMonths: slot.coveredMonths ?? [],
+      sourceFilename: linked?.filename || slot.filename,
+    };
+  });
+}
+
+/** The tenant's parsed documents config, or null when documents are not set up. */
+export async function loadDocumentConfig(tenantId: string): Promise<DocumentConfig | null> {
+  return readConfig(tenantId);
+}
+
+/** The stored row as checklist state. */
+export function dossierStateOf(row: {
+  status: string;
+  smartClientId: string;
+  profile: unknown;
+  slots: unknown;
+  activeStage: string;
+}): DossierState {
+  return stateOf(row);
+}
+
+/** Slots an advisor adds by hand for catalog types. Ids never collide with rule slots. */
+export function requestedSlots(
+  state: DossierState,
+  rules: RulesDocument,
+  docTypes: string[],
+): SlotState[] {
+  const released = releasedStageId(state.profile);
+  const used = new Set(state.slots.map((slot) => slot.id));
+  const added: SlotState[] = [];
+  for (const docType of [...new Set(docTypes)]) {
+    if (!rules.documents[docType]) continue;
+    let n = 0;
+    while (used.has(`${docType}#req#${n}`)) n += 1;
+    const id = `${docType}#req#${n}`;
+    used.add(id);
+    const stage = rules.requirements.find((item) => item.docType === docType)?.stage
+      ?? rules.stages.at(-1)?.id
+      ?? "";
+    added.push({
+      id,
+      docType,
+      stage,
+      index: n,
+      collectionStage: released,
+      requested: true,
+      status: "missing",
+      failCount: 0,
+      lastReason: "",
+      remoteId: "",
+      filename: "",
+    });
+  }
+  return added;
+}
+
+/**
+ * The advisor asks for specific catalog documents. The slots open on the
+ * current wave, the review can open again once they arrive, and the lead gets
+ * one agent message naming them.
+ */
+export async function requestDocuments(opts: {
+  tenantId: string;
+  leadId: string;
+  docTypes: string[];
+  note: string;
+  lang: "en" | "he";
+}): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  const [config, dossier] = await Promise.all([
+    readConfig(opts.tenantId),
+    prisma.dossier.findFirst({
+      where: { tenantId: opts.tenantId, leadId: opts.leadId },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+  if (!dossier || !config) return { ok: false, error: "not_found" };
+  const state = stateOf(dossier);
+  if (state.status === "needs_id") return { ok: false, error: "not_matched" };
+  const added = requestedSlots(state, config.rules, opts.docTypes);
+  if (!added.length) return { ok: false, error: "empty" };
+  const slots = [...state.slots, ...added];
+  const labels = added.map((slot) => {
+    const label = slotDisplayLabel(config.rules, slot, opts.lang);
+    return label;
+  });
+  const text = copyFor(opts.lang).chat.documents.requestFiles(labels, opts.note.trim());
+  const sent = await sendDocumentsMessage({
+    tenantId: opts.tenantId,
+    leadId: opts.leadId,
+    text,
+    reason: "documents_request",
+    key: `documents-request-${opts.leadId}-${added.map((slot) => slot.id).join(",")}`,
+  });
+  if (!sent) return { ok: false, error: "no_open_conversation" };
+  await prisma.dossier.update({
+    where: { id: dossier.id },
+    data: {
+      profile: { ...state.profile, checklistReviewOpened: false } as Prisma.InputJsonValue,
+      slots: slots as unknown as Prisma.InputJsonValue,
+      status: "gathering",
+      activeStage: activeStageOf(slots),
+    },
+  });
+  await safeRefreshLeadState(opts.tenantId, opts.leadId);
+  return { ok: true, text };
 }

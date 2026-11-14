@@ -174,6 +174,11 @@ function PanelHead({ id, title, count, href, ui }: { id: string; title: string; 
   );
 }
 
+/** A lead with a document file opens on the Clients screen, where its documents and chat are. */
+function leadHref(data: HomeData, leadId: string): string {
+  return data.clientFileIds.includes(leadId) ? `/clients/${leadId}` : `/leads/${leadId}`;
+}
+
 function NeedsPanel({ data, ui, lang, now }: { data: HomeData; ui: UiCopy; lang: UiLang; now: Date }) {
   const { counts, needs } = data;
   const reasons = NEEDS_REASONS.filter((r) => counts.byReason[r] > 0);
@@ -211,7 +216,7 @@ function NeedsPanel({ data, ui, lang, now }: { data: HomeData; ui: UiCopy; lang:
         <ul className="home-list">
           {needs.map((r) => (
             <li key={r.id}>
-              <Link href={`/leads/${r.id}`} className="home-row">
+              <Link href={leadHref(data, r.id)} className="home-row">
                 <span className="crm-av" aria-hidden="true">
                   {initials(r.name)}
                   <span className={`crm-av-ch ${avatarDotClass(r)}`} />
@@ -266,7 +271,7 @@ function UpcomingPanel({ data, ui, lang, tz, title }: { data: HomeData; ui: UiCo
               : fmt(u.startAt, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
             return (
               <li key={u.id}>
-                <Link href={`/leads/${u.leadId}`} className="home-row">
+                <Link href={leadHref(data, u.leadId)} className="home-row">
                   <span className="home-date-tile" aria-hidden="true">
                     <span className="home-date-dow">{fmt(u.startAt, { weekday: "short" })}</span>
                     <span className="home-date-day">{fmt(u.startAt, { day: "numeric" })}</span>
@@ -394,7 +399,7 @@ function RecentPanel({ data, ui, lang, now }: { data: HomeData; ui: UiCopy; lang
         <ul className="home-list">
           {data.recent.map((c) => (
             <li key={c.id}>
-              <Link href={`/leads/${c.id}`} className={`home-row${c.unread ? " unread" : ""}`}>
+              <Link href={leadHref(data, c.id)} className={`home-row${c.unread ? " unread" : ""}`}>
                 <span className="crm-av" aria-hidden="true">
                   {initials(c.name)}
                   <span className={`crm-av-ch ${c.channel === "whatsapp" ? "wa" : "ig"}`} />

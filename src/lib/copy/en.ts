@@ -252,6 +252,10 @@ export const chat: ChatCopy = {
       complete: "Thank you for sending the documents. They've been passed on for review, and we'll update you when that's done.",
       returnFiles: (items) =>
         `After the review, we need an update for these documents:\n${items.map((item) => `• ${item.label}: ${item.note}`).join("\n")}\nYou can send the updated documents here. Each new file replaces its previous version.`,
+      requestFiles: (labels, note) =>
+        labels.length === 1
+          ? `To move your file forward, we also need: ${labels[0]}.${note ? `\n${note}` : ""}\nYou can send it here.`
+          : `To move your file forward, we also need these documents:\n${labels.map((label) => `• ${label}`).join("\n")}${note ? `\n${note}` : ""}\nYou can send them here.`,
       askEscalate: "Would you like me to pass this to a consultant, or try again in a bit?",
       cooldownWait: (minutes) => `You can try again in about ${minutes} minutes.`,
       escalateAccepted: "I'll pass this to a consultant. They'll get back to you soon.",

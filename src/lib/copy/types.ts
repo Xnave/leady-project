@@ -127,6 +127,8 @@ export type ChatCopy = {
     complete: string;
     /** What the customer receives when an advisor sends files back. */
     returnFiles: (items: { label: string; note: string }[]) => string;
+    /** An advisor asked for specific catalog documents. `note` is the advisor's optional line. */
+    requestFiles: (labels: string[], note: string) => string;
     askEscalate: string;
     cooldownWait: (minutes: number) => string;
     escalateAccepted: string;
