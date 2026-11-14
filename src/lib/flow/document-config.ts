@@ -84,6 +84,7 @@ export function parseDocumentConfig(
   existingUnrecognizedIntro = "",
   /** The stored config. Invite settings the body leaves out are kept; the stamps only ever come from here. */
   existing: Record<string, unknown> = {},
+  now: Date = new Date(),
 ): DocumentConfig {
   const errors: string[] = [];
   const body = isRecord(raw) ? raw : {};
@@ -145,29 +146,34 @@ export function parseDocumentConfig(
     unrecognizedIntro,
     rules,
     autoInvite,
-    autoInviteOnAt: isoOrEmpty(existing.autoInviteOnAt),
     clientDisplayName,
-    testModeEndedAt: isoOrEmpty(existing.testModeEndedAt),
+    ...inviteStamps(existing, autoInvite, testPhones, now),
+  };
+}
+
+/**
+ * The moments that bound the invite backlog, set on every save (whatever the
+ * route): the switch going on, and the test phone list being emptied. Stamps
+ * only ever come from the stored config, never from the request body.
+ */
+function inviteStamps(
+  existing: Record<string, unknown>,
+  autoInvite: boolean,
+  testPhones: string[],
+  now: Date,
+): { autoInviteOnAt: string; testModeEndedAt: string } {
+  const storedOn = isoOrEmpty(existing.autoInviteOnAt);
+  const wasOn = existing.autoInvite === true;
+  const wasTesting = Array.isArray(existing.testPhones) && existing.testPhones.length > 0;
+  return {
+    autoInviteOnAt: autoInvite ? (wasOn && storedOn ? storedOn : now.toISOString()) : "",
+    testModeEndedAt: wasTesting && testPhones.length === 0 ? now.toISOString() : isoOrEmpty(existing.testModeEndedAt),
   };
 }
 
 /** Invites go only to the test phones while the owner lists any. */
 export function inviteTestMode(config: Pick<DocumentConfig, "testPhones">): boolean {
   return config.testPhones.length > 0;
-}
-
-/**
- * Stamp the moments that bound the invite backlog: the switch going on, and
- * the test phone list being emptied. `prev` is the stored config before this save.
- */
-export function applyInviteSettings(prev: DocumentConfig | null, next: DocumentConfig, now: Date): DocumentConfig {
-  const wasOn = prev?.autoInvite === true;
-  const wasTesting = prev ? inviteTestMode(prev) : false;
-  return {
-    ...next,
-    autoInviteOnAt: next.autoInvite ? (wasOn && next.autoInviteOnAt ? next.autoInviteOnAt : now.toISOString()) : "",
-    testModeEndedAt: wasTesting && !inviteTestMode(next) ? now.toISOString() : next.testModeEndedAt,
-  };
 }
 
 /** Contacts stored after this moment may be invited. Null when the switch is off. */

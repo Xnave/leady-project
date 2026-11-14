@@ -4,7 +4,6 @@ import {
   INVITE_REMINDER_AFTER_MS,
   inSendWindow,
   inviteFirstName,
-  invitedAfter,
   isStopReply,
   planInviteStep,
   whatsappExternalIdVariants,
@@ -40,32 +39,27 @@ describe("inSendWindow (Asia/Jerusalem)", () => {
 describe("planInviteStep", () => {
   const now = at("2026-11-15T10:00:00Z");
   const ago = (ms: number) => new Date(now.getTime() - ms);
-  const row = (o: Partial<Parameters<typeof planInviteStep>[0]>) => ({
-    inviteStatus: "",
-    inviteClaimedAt: null,
-    inviteOpenerAt: null,
-    inviteReminderAt: null,
-    ...o,
-  });
-  it("opens a fresh contact", () => {
-    expect(planInviteStep(row({}), now)).toBe("opener");
+  type Row = { status: string; claimedAt: Date | null; openerAt: Date | null; reminderAt: Date | null };
+  const row = (o: Partial<Row>): Row => ({ status: "", claimedAt: null, openerAt: null, reminderAt: null, ...o });
+  it("opens a contact with no invite row", () => {
+    expect(planInviteStep(null, now)).toBe("opener");
   });
   it("reminds 48h after the opener, not before", () => {
-    expect(planInviteStep(row({ inviteStatus: "invited", inviteOpenerAt: ago(INVITE_REMINDER_AFTER_MS) }), now)).toBe("reminder");
-    expect(planInviteStep(row({ inviteStatus: "invited", inviteOpenerAt: ago(47 * 3600_000) }), now)).toBeNull();
+    expect(planInviteStep(row({ status: "invited", openerAt: ago(INVITE_REMINDER_AFTER_MS) }), now)).toBe("reminder");
+    expect(planInviteStep(row({ status: "invited", openerAt: ago(47 * 3600_000) }), now)).toBeNull();
   });
   it("escalates 48h after the reminder", () => {
-    expect(planInviteStep(row({ inviteStatus: "reminded", inviteReminderAt: ago(INVITE_REMINDER_AFTER_MS) }), now)).toBe("escalate");
-    expect(planInviteStep(row({ inviteStatus: "reminded", inviteReminderAt: ago(3600_000) }), now)).toBeNull();
+    expect(planInviteStep(row({ status: "reminded", reminderAt: ago(INVITE_REMINDER_AFTER_MS) }), now)).toBe("escalate");
+    expect(planInviteStep(row({ status: "reminded", reminderAt: ago(3600_000) }), now)).toBeNull();
   });
   it("turns a stale claim into unknown and never resends it", () => {
-    expect(planInviteStep(row({ inviteStatus: "sending_opener", inviteClaimedAt: ago(INVITE_CLAIM_STALE_MS) }), now)).toBe("unknown");
-    expect(planInviteStep(row({ inviteStatus: "sending_reminder", inviteClaimedAt: ago(INVITE_CLAIM_STALE_MS) }), now)).toBe("unknown");
-    expect(planInviteStep(row({ inviteStatus: "sending_opener", inviteClaimedAt: ago(60_000) }), now)).toBeNull();
+    expect(planInviteStep(row({ status: "sending_opener", claimedAt: ago(INVITE_CLAIM_STALE_MS) }), now)).toBe("unknown");
+    expect(planInviteStep(row({ status: "sending_reminder", claimedAt: ago(INVITE_CLAIM_STALE_MS) }), now)).toBe("unknown");
+    expect(planInviteStep(row({ status: "sending_opener", claimedAt: ago(60_000) }), now)).toBeNull();
   });
   it("does nothing once started, stopped, escalated or unknown", () => {
-    for (const inviteStatus of ["started", "stopped", "escalated", "unknown"]) {
-      expect(planInviteStep(row({ inviteStatus, inviteOpenerAt: ago(10 * INVITE_REMINDER_AFTER_MS) }), now)).toBeNull();
+    for (const status of ["started", "stopped", "escalated", "unknown"]) {
+      expect(planInviteStep(row({ status, openerAt: ago(10 * INVITE_REMINDER_AFTER_MS) }), now)).toBeNull();
     }
   });
 });
@@ -93,14 +87,6 @@ describe("inviteFirstName", () => {
   });
 });
 
-describe("invitedAfter", () => {
-  it("needs a cutoff and a contact stored after it", () => {
-    const cutoff = at("2026-11-13T08:00:00Z");
-    expect(invitedAfter(at("2026-11-13T08:00:01Z"), cutoff)).toBe(true);
-    expect(invitedAfter(at("2026-11-13T07:59:59Z"), cutoff)).toBe(false);
-    expect(invitedAfter(at("2026-11-13T09:00:00Z"), null)).toBe(false);
-  });
-});
 
 describe("whatsappExternalIdVariants", () => {
   it("covers the + and bare digit forms of a phone", () => {

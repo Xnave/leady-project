@@ -11,6 +11,7 @@
 import { Prisma } from "@prisma/client";
 import { tenantWhatsAppAccount } from "@/lib/campaigns/store";
 import { loadInstanceConfig } from "@/lib/capability-instances";
+import { normalizeClientPhone } from "@/lib/client-sources/phone";
 import { insertAgentMessage } from "@/lib/conversations";
 import { safeRefreshLeadState } from "@/lib/crm/refresh";
 import { prisma } from "@/lib/db";
@@ -29,6 +30,7 @@ import {
   INVITE_REMINDER_AFTER_MS,
   INVITE_SEND_CAP,
   inSendWindow,
+  planInviteStep,
   inviteFirstName,
   isStopReply,
   whatsappExternalIdVariants,
@@ -73,7 +75,6 @@ const CONTACT_SELECT = {
   name: true,
   mapped: true,
   createdAt: true,
-  inviteStatus: true,
   leadId: true,
 } as const;
 
@@ -123,6 +124,8 @@ export async function approvedInviteTemplates(accountId: string): Promise<Set<In
   return approved;
 }
 
+const TEMPLATE_READ_TIMEOUT_MS = 4000;
+
 export type InviteTemplateState = "approved" | "pending" | "rejected" | "missing" | "no_whatsapp" | "error";
 
 /** For the settings screen: each template's review state on the tenant's own number. */
@@ -130,7 +133,11 @@ export async function inviteTemplateStates(tenantId: string): Promise<Record<Inv
   const account = await tenantWhatsAppAccount(tenantId);
   if (!account) return { opener: "no_whatsapp", reminder: "no_whatsapp" };
   try {
-    const live = await listWhatsAppTemplates(account.accountId);
+    // The settings page waits on this; a slow Meta read must not hang it.
+    const live = await Promise.race([
+      listWhatsAppTemplates(account.accountId),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), TEMPLATE_READ_TIMEOUT_MS)),
+    ]);
     const state = (kind: InviteKind): InviteTemplateState => {
       const t = INVITE_TEMPLATES[kind];
       const s = live.find((x) => x.name === t.name && x.language === t.language)?.status?.toUpperCase() ?? "";
@@ -147,7 +154,10 @@ export async function inviteTemplateStates(tenantId: string): Promise<Record<Inv
 
 /** True when either borrower's phone ever sent this tenant a message, on any channel. */
 export async function alreadyInConversation(tenantId: string, phones: string[]): Promise<boolean> {
-  const ids = phones.filter(Boolean).flatMap((p) => whatsappExternalIdVariants(p.replace(/\D/g, "")));
+  const ids = phones
+    .map((p) => normalizeClientPhone(p, "972"))
+    .filter((p) => p.status === "ok")
+    .flatMap((p) => whatsappExternalIdVariants(p.phone));
   if (!ids.length) return false;
   const found = await prisma.message.findFirst({
     where: { tenantId, role: "lead", conversation: { lead: { externalUserId: { in: ids } } } },
@@ -242,82 +252,144 @@ async function openInviteTask(ctx: InviteContext, contact: InviteContact, reason
   await safeRefreshLeadState(ctx.tenantId, leadId);
 }
 
+const INVITE_SELECT = {
+  id: true,
+  status: true,
+  claimedAt: true,
+  openerAt: true,
+  reminderAt: true,
+  contact: { select: CONTACT_SELECT },
+} as const;
+
+/** Move an invite row from one status to another. False when another run got there first. */
+async function moveInvite(
+  tenantId: string,
+  inviteId: string,
+  from: string,
+  data: Prisma.ContactInviteUpdateManyMutationInput,
+): Promise<boolean> {
+  const won = await prisma.contactInvite.updateMany({ where: { id: inviteId, tenantId, status: from }, data });
+  return won.count === 1;
+}
+
 /** Claimed sends whose result never landed: never resent, handed to the advisor. */
 async function settleStaleClaims(ctx: InviteContext, now: Date): Promise<number> {
-  const stale = await prisma.contact.findMany({
+  const rows = await prisma.contactInvite.findMany({
     where: {
       tenantId: ctx.tenantId,
-      inviteStatus: { in: ["sending_opener", "sending_reminder"] },
-      inviteClaimedAt: { lte: new Date(now.getTime() - INVITE_CLAIM_STALE_MS) },
+      status: { in: ["sending_opener", "sending_reminder"] },
+      claimedAt: { lte: new Date(now.getTime() - INVITE_CLAIM_STALE_MS) },
     },
-    select: CONTACT_SELECT,
+    select: INVITE_SELECT,
   });
   let n = 0;
-  for (const c of stale) {
-    const won = await prisma.contact.updateMany({
-      where: { id: c.id, tenantId: ctx.tenantId, inviteStatus: c.inviteStatus },
-      data: { inviteStatus: "unknown", inviteStopReason: "stale_claim" },
-    });
-    if (won.count !== 1) continue;
-    await openInviteTask(ctx, c, "invite_send_unknown");
-    log("unknown", { tenantId: ctx.tenantId, contactId: c.id, reason: "stale_claim" });
+  for (const row of rows) {
+    if (planInviteStep(row, now) !== "unknown") continue;
+    if (!(await moveInvite(ctx.tenantId, row.id, row.status, { status: "unknown", stopReason: "stale_claim" }))) continue;
+    await openInviteTask(ctx, row.contact, "invite_send_unknown");
+    log("unknown", { tenantId: ctx.tenantId, contactId: row.contact.id, reason: "stale_claim" });
     n++;
   }
   return n;
 }
 
 async function escalateSilent(ctx: InviteContext, now: Date): Promise<number> {
-  const due = await prisma.contact.findMany({
+  const rows = await prisma.contactInvite.findMany({
     where: {
       tenantId: ctx.tenantId,
-      inviteStatus: "reminded",
-      inviteReminderAt: { lte: new Date(now.getTime() - INVITE_REMINDER_AFTER_MS) },
+      status: "reminded",
+      reminderAt: { lte: new Date(now.getTime() - INVITE_REMINDER_AFTER_MS) },
     },
-    select: CONTACT_SELECT,
+    select: INVITE_SELECT,
   });
   let n = 0;
-  for (const c of due) {
-    const won = await prisma.contact.updateMany({
-      where: { id: c.id, tenantId: ctx.tenantId, inviteStatus: "reminded" },
-      data: { inviteStatus: "escalated", inviteEscalatedAt: now },
-    });
-    if (won.count !== 1) continue;
-    await openInviteTask(ctx, c, "invite_no_start");
-    log("escalated", { tenantId: ctx.tenantId, contactId: c.id });
+  for (const row of rows) {
+    if (planInviteStep(row, now) !== "escalate") continue;
+    if (!(await moveInvite(ctx.tenantId, row.id, "reminded", { status: "escalated", escalatedAt: now }))) continue;
+    await openInviteTask(ctx, row.contact, "invite_no_start");
+    log("escalated", { tenantId: ctx.tenantId, contactId: row.contact.id });
     n++;
   }
   return n;
 }
 
-async function stopContact(ctx: InviteContext, c: InviteContact, prior: string, reason: string): Promise<void> {
-  await prisma.contact.updateMany({
-    where: { id: c.id, tenantId: ctx.tenantId, inviteStatus: prior },
-    data: { inviteStatus: "stopped", inviteStopReason: reason, inviteClaimedAt: null },
-  });
+/** Claim a send. The opener claim creates the row, so the unique contactId is the "once" guarantee. */
+async function claimSend(
+  ctx: InviteContext,
+  c: InviteContact,
+  kind: InviteKind,
+  inviteId: string | null,
+  now: Date,
+): Promise<string | null> {
+  if (kind === "reminder") {
+    if (!inviteId) return null;
+    return (await moveInvite(ctx.tenantId, inviteId, "invited", { status: "sending_reminder", claimedAt: now })) ? inviteId : null;
+  }
+  try {
+    const row = await prisma.contactInvite.create({
+      data: { tenantId: ctx.tenantId, contactId: c.id, status: "sending_opener", claimedAt: now },
+      select: { id: true },
+    });
+    return row.id;
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") return null;
+    throw err;
+  }
+}
+
+/** Record a contact we will not message, so it is not picked again every hour. */
+async function stopBeforeSend(ctx: InviteContext, c: InviteContact, inviteId: string | null, reason: string): Promise<void> {
+  if (inviteId) {
+    await moveInvite(ctx.tenantId, inviteId, "invited", { status: "stopped", stopReason: reason });
+  } else {
+    await prisma.contactInvite
+      .create({ data: { tenantId: ctx.tenantId, contactId: c.id, status: "stopped", stopReason: reason } })
+      .catch((err) => {
+        if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) throw err;
+      });
+  }
   log("stopped", { tenantId: ctx.tenantId, contactId: c.id, reason });
 }
 
-type SendOutcome = "sent" | "stopped" | "unknown" | "raced";
+type SendOutcome = "sent" | "stopped" | "unknown" | "raced" | "blocked";
 
-/** One template to one contact, at most once per stage. */
-async function sendInvite(ctx: InviteContext, c: InviteContact, kind: InviteKind, now: Date): Promise<SendOutcome> {
-  const prior = kind === "opener" ? "" : "invited";
+/** Another contact with this phone already has an invite (two CRM rows for one client). */
+async function phoneAlreadyInvited(tenantId: string, c: InviteContact): Promise<boolean> {
+  const found = await prisma.contactInvite.findFirst({
+    where: { tenantId, contactId: { not: c.id }, contact: { phone: c.phone } },
+    select: { id: true },
+  });
+  return Boolean(found);
+}
+
+/** One template to one contact, at most once per stage. `inviteId` is the existing row for a reminder. */
+async function sendInvite(
+  ctx: InviteContext,
+  c: InviteContact,
+  kind: InviteKind,
+  inviteId: string | null,
+  now: Date,
+): Promise<SendOutcome> {
   const firstName = inviteFirstName(c);
   if (!firstName) {
-    await stopContact(ctx, c, prior, "no_name");
+    await stopBeforeSend(ctx, c, inviteId, "no_name");
     return "stopped";
   }
-  if (await alreadyInConversation(ctx.tenantId, [c.phone, secondPhone(c.mapped)])) {
-    await stopContact(ctx, c, prior, "in_conversation");
+  if (kind === "opener" && (await phoneAlreadyInvited(ctx.tenantId, c))) {
+    await stopBeforeSend(ctx, c, inviteId, "duplicate_phone");
     return "stopped";
   }
-  // Thread first: a failure here leaves the row unclaimed and nothing sent.
+  // A test phone is the advisor's own and has chatted with the bot before; that must not block the test.
+  const testPhone = inviteTestMode(ctx.config) && isTestLead({ apiKeyEnc: "x", testPhones: ctx.config.testPhones }, c.phone);
+  if (!testPhone && (await alreadyInConversation(ctx.tenantId, [c.phone, secondPhone(c.mapped)]))) {
+    await stopBeforeSend(ctx, c, inviteId, "in_conversation");
+    return "stopped";
+  }
+  // Thread first: a failure here leaves nothing claimed and nothing sent.
   const thread = await ensureInviteThread(ctx, c);
-  const claimed = await prisma.contact.updateMany({
-    where: { id: c.id, tenantId: ctx.tenantId, inviteStatus: prior },
-    data: { inviteStatus: kind === "opener" ? "sending_opener" : "sending_reminder", inviteClaimedAt: now },
-  });
-  if (claimed.count !== 1) return "raced";
+  const claimed = await claimSend(ctx, c, kind, inviteId, now);
+  if (!claimed) return "raced";
+  const sending = kind === "opener" ? "sending_opener" : "sending_reminder";
 
   const template = INVITE_TEMPLATES[kind];
   const params = inviteTemplateParams(firstName, ctx.config.clientDisplayName);
@@ -331,14 +403,19 @@ async function sendInvite(ctx: InviteContext, c: InviteContact, kind: InviteKind
     });
   } catch (err) {
     const failure = classifySendError(err);
+    if (failure.kind === "blocked") {
+      // Nothing went out: release the claim so the next run tries again.
+      if (kind === "opener") await prisma.contactInvite.deleteMany({ where: { id: claimed, tenantId: ctx.tenantId, status: sending } });
+      else await moveInvite(ctx.tenantId, claimed, sending, { status: "invited", claimedAt: null });
+      log("blocked", { tenantId: ctx.tenantId, contactId: c.id, kind, reason: failure.reason });
+      return "blocked";
+    }
     if (failure.kind === "rejected") {
-      await stopContact(ctx, c, kind === "opener" ? "sending_opener" : "sending_reminder", `rejected:${failure.reason}`);
+      await moveInvite(ctx.tenantId, claimed, sending, { status: "stopped", stopReason: `rejected:${failure.reason}`, claimedAt: null });
+      log("stopped", { tenantId: ctx.tenantId, contactId: c.id, kind, reason: failure.reason });
       return "stopped";
     }
-    await prisma.contact.updateMany({
-      where: { id: c.id, tenantId: ctx.tenantId },
-      data: { inviteStatus: "unknown", inviteStopReason: failure.reason },
-    });
+    await moveInvite(ctx.tenantId, claimed, sending, { status: "unknown", stopReason: failure.reason });
     await openInviteTask(ctx, c, "invite_send_unknown").catch((e) =>
       log("task_failed", { tenantId: ctx.tenantId, contactId: c.id, error: String(e) }),
     );
@@ -348,14 +425,11 @@ async function sendInvite(ctx: InviteContext, c: InviteContact, kind: InviteKind
 
   // Sent and paid for. Never throw from here: a retry must not send it again.
   try {
-    await prisma.contact.updateMany({
-      where: { id: c.id, tenantId: ctx.tenantId },
-      data: {
-        inviteStatus: kind === "opener" ? "invited" : "reminded",
-        ...(kind === "opener" ? { inviteOpenerAt: now } : { inviteReminderAt: now }),
-        inviteClaimedAt: null,
-        ...(opened.conversationId ? { inviteConversationId: opened.conversationId } : {}),
-      },
+    await moveInvite(ctx.tenantId, claimed, sending, {
+      status: kind === "opener" ? "invited" : "reminded",
+      ...(kind === "opener" ? { openerAt: now } : { reminderAt: now }),
+      claimedAt: null,
+      ...(opened.conversationId ? { zernioConversationId: opened.conversationId } : {}),
     });
     await insertAgentMessage(ctx.tenantId, thread.conversationId, fillInviteBody(template, params), {
       providerMessageId: `invite-${kind}-${c.id}`,
@@ -377,8 +451,14 @@ async function sendInvite(ctx: InviteContext, c: InviteContact, kind: InviteKind
   return "sent";
 }
 
-/** One pass for one tenant. Safe to run any time: every step is guarded by the row's status. */
+/** One pass for one tenant. Safe to run any time: every step is guarded by the row's status. Always logs one line. */
 export async function runInvitesForTenant(tenantId: string, now: Date): Promise<InviteRunResult> {
+  const result = await runInvites(tenantId, now);
+  log("run", { tenantId, ...result });
+  return result;
+}
+
+async function runInvites(tenantId: string, now: Date): Promise<InviteRunResult> {
   const result: InviteRunResult = { sent: 0, reminded: 0, escalated: 0, unknown: 0, stopped: 0 };
   const ctx = await loadInviteContext(tenantId);
   if ("skipped" in ctx) return { ...result, skipped: ctx.skipped };
@@ -395,44 +475,62 @@ export async function runInvitesForTenant(tenantId: string, now: Date): Promise<
     return { ...result, skipped: "templates_unavailable" };
   }
 
-  const base = { tenantId, phoneStatus: "ok", skipped: false, source: { kind: "smartnpv" } };
+  const eligible = { phoneStatus: "ok", skipped: false, source: { kind: "smartnpv" } };
   const reminders = approved.has("reminder")
+    ? await prisma.contactInvite.findMany({
+        where: {
+          tenantId,
+          status: "invited",
+          openerAt: { lte: new Date(now.getTime() - INVITE_REMINDER_AFTER_MS) },
+          contact: eligible,
+        },
+        orderBy: { openerAt: "asc" },
+        take: INVITE_SEND_CAP,
+        select: INVITE_SELECT,
+      })
+    : [];
+  const testPhones = inviteTestMode(ctx.config)
+    ? ctx.config.testPhones.map((p) => normalizeClientPhone(p, "972")).filter((p) => p.status === "ok").map((p) => p.phone)
+    : null;
+  const openers = approved.has("opener")
     ? await prisma.contact.findMany({
-        where: { ...base, inviteStatus: "invited", inviteOpenerAt: { lte: new Date(now.getTime() - INVITE_REMINDER_AFTER_MS) } },
-        orderBy: { inviteOpenerAt: "asc" },
+        where: {
+          tenantId,
+          ...eligible,
+          invite: { is: null },
+          createdAt: { gt: ctx.cutoff },
+          ...(testPhones ? { phone: { in: testPhones } } : {}),
+        },
+        orderBy: { createdAt: "asc" },
         take: INVITE_SEND_CAP,
         select: CONTACT_SELECT,
       })
     : [];
-  const openers = approved.has("opener")
-    ? (
-        await prisma.contact.findMany({
-          where: { ...base, inviteStatus: "", createdAt: { gt: ctx.cutoff } },
-          orderBy: { createdAt: "asc" },
-          take: inviteTestMode(ctx.config) ? 200 : INVITE_SEND_CAP,
-          select: CONTACT_SELECT,
-        })
-      ).filter((c) => !inviteTestMode(ctx.config) || isTestLead({ apiKeyEnc: "x", testPhones: ctx.config.testPhones }, c.phone))
-    : [];
 
+  const queue: Array<{ kind: InviteKind; contact: InviteContact; inviteId: string | null }> = [
+    ...reminders.filter((r) => planInviteStep(r, now) === "reminder").map((r) => ({ kind: "reminder" as const, contact: r.contact, inviteId: r.id })),
+    ...openers.map((c) => ({ kind: "opener" as const, contact: c, inviteId: null })),
+  ];
   let budget = INVITE_SEND_CAP;
-  for (const [kind, list] of [["reminder", reminders], ["opener", openers]] as const) {
-    for (const c of list) {
-      if (budget <= 0) break;
-      const outcome = await sendInvite(ctx, c, kind, now);
-      if (outcome === "sent") {
-        budget--;
-        if (kind === "opener") result.sent++;
-        else result.reminded++;
-      } else if (outcome === "unknown") {
-        budget--;
-        result.unknown++;
-      } else if (outcome === "stopped") {
-        result.stopped++;
-      }
+  const phonesThisRun = new Set<string>();
+  for (const item of queue) {
+    if (budget <= 0) break;
+    // Two CRM rows for one client: one message per phone per run.
+    if (phonesThisRun.has(item.contact.phone)) continue;
+    phonesThisRun.add(item.contact.phone);
+    const outcome = await sendInvite(ctx, item.contact, item.kind, item.inviteId, now);
+    if (outcome === "blocked") return { ...result, skipped: "provider_blocked" };
+    if (outcome === "sent") {
+      budget--;
+      if (item.kind === "opener") result.sent++;
+      else result.reminded++;
+    } else if (outcome === "unknown") {
+      budget--;
+      result.unknown++;
+    } else if (outcome === "stopped") {
+      result.stopped++;
     }
   }
-  log("run", { tenantId, ...result });
   return result;
 }
 
@@ -449,43 +547,34 @@ export async function recordInviteReply(
 ): Promise<"stopped" | "started" | "none"> {
   const digits = from.replace(/\D/g, "");
   if (digits.length < 8) return "none";
-  const contact = await prisma.contact.findFirst({
-    where: { tenantId, phone: digits, inviteStatus: { in: INVITE_OPEN_STATUSES } },
-    orderBy: { updatedAt: "desc" },
-    select: { id: true },
+  // Every open invite for this phone: two CRM rows for one client move together.
+  const open = { tenantId, status: { in: INVITE_OPEN_STATUSES }, contact: { phone: digits } };
+  const stop = isStopReply(text);
+  const moved = await prisma.contactInvite.updateMany({
+    where: open,
+    data: stop ? { status: "stopped", stopReason: "client_stop" } : { status: "started", startedAt: now },
   });
-  if (!contact) return "none";
-  if (isStopReply(text)) {
-    await prisma.contact.updateMany({
-      where: { id: contact.id, tenantId },
-      data: { inviteStatus: "stopped", inviteStopReason: "client_stop" },
-    });
-    log("stopped", { tenantId, contactId: contact.id, reason: "client_stop" });
-    return "stopped";
-  }
-  await prisma.contact.updateMany({
-    where: { id: contact.id, tenantId },
-    data: { inviteStatus: "started", inviteStartedAt: now },
-  });
-  log("started", { tenantId, contactId: contact.id });
-  return "started";
+  if (moved.count === 0) return "none";
+  log(stop ? "stopped" : "started", { tenantId, invites: moved.count, ...(stop ? { reason: "client_stop" } : {}) });
+  return stop ? "stopped" : "started";
 }
 
 export type InviteStats = { invited: number; started: number; waiting: number; handedOff: number; stopped: number };
 
 /** Counts for the settings screen. `invited` = every contact that got an opener. */
 export async function inviteStats(tenantId: string): Promise<InviteStats> {
-  const groups = await prisma.contact.groupBy({
-    by: ["inviteStatus"],
-    where: { tenantId, inviteStatus: { not: "" } },
-    _count: { _all: true },
-  });
-  const n = (s: string) => groups.find((g) => g.inviteStatus === s)?._count._all ?? 0;
-  const invitedNow = n("invited") + n("reminded") + n("sending_opener") + n("sending_reminder");
-  const handedOff = n("escalated") + n("unknown");
-  const started = n("started");
-  const sentAtLeastOnce = await prisma.contact.count({ where: { tenantId, inviteOpenerAt: { not: null } } });
-  return { invited: sentAtLeastOnce, started, waiting: invitedNow, handedOff, stopped: n("stopped") };
+  const [groups, invited] = await Promise.all([
+    prisma.contactInvite.groupBy({ by: ["status"], where: { tenantId }, _count: { _all: true } }),
+    prisma.contactInvite.count({ where: { tenantId, openerAt: { not: null } } }),
+  ]);
+  const n = (s: string) => groups.find((g) => g.status === s)?._count._all ?? 0;
+  return {
+    invited,
+    started: n("started"),
+    waiting: n("invited") + n("reminded") + n("sending_opener") + n("sending_reminder"),
+    handedOff: n("escalated") + n("unknown"),
+    stopped: n("stopped"),
+  };
 }
 
 /** Tenants whose switch is on, for the hourly pass. */

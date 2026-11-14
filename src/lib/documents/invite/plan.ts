@@ -12,7 +12,6 @@ export const INVITE_CLAIM_STALE_MS = 10 * 60_000;
 export const INVITE_SEND_CAP = 20;
 
 export type InviteStatus =
-  | ""
   | "sending_opener"
   | "invited"
   | "sending_reminder"
@@ -64,27 +63,27 @@ export function inSendWindow(now: Date): boolean {
   return hour >= hours[0] && hour < hours[1];
 }
 
+/** The contact's invite row; null when it was never invited. */
 type PlanRow = {
-  inviteStatus: string;
-  inviteClaimedAt: Date | null;
-  inviteOpenerAt: Date | null;
-  inviteReminderAt: Date | null;
-};
+  status: string;
+  claimedAt: Date | null;
+  openerAt: Date | null;
+  reminderAt: Date | null;
+} | null;
 
 const since = (t: Date | null, now: Date) => (t ? now.getTime() - t.getTime() : -Infinity);
 
 /** The step this contact is due for now. Send hours are the caller's check. */
 export function planInviteStep(row: PlanRow, now: Date): InviteStep {
-  switch (row.inviteStatus) {
-    case "":
-      return "opener";
+  if (!row) return "opener";
+  switch (row.status) {
     case "invited":
-      return since(row.inviteOpenerAt, now) >= INVITE_REMINDER_AFTER_MS ? "reminder" : null;
+      return since(row.openerAt, now) >= INVITE_REMINDER_AFTER_MS ? "reminder" : null;
     case "reminded":
-      return since(row.inviteReminderAt, now) >= INVITE_REMINDER_AFTER_MS ? "escalate" : null;
+      return since(row.reminderAt, now) >= INVITE_REMINDER_AFTER_MS ? "escalate" : null;
     case "sending_opener":
     case "sending_reminder":
-      return since(row.inviteClaimedAt, now) >= INVITE_CLAIM_STALE_MS ? "unknown" : null;
+      return since(row.claimedAt, now) >= INVITE_CLAIM_STALE_MS ? "unknown" : null;
     default:
       return null;
   }
@@ -111,10 +110,6 @@ export function inviteFirstName(contact: { name: string; mapped: unknown }): str
   return firstToken(first.fullName) || firstToken(contact.name);
 }
 
-/** Only contacts stored after the switch went on (no backlog). No cutoff, no invite. */
-export function invitedAfter(contactCreatedAt: Date, cutoff: Date | null): boolean {
-  return Boolean(cutoff) && contactCreatedAt.getTime() > cutoff!.getTime();
-}
 
 
 export { whatsappExternalIdVariants } from "@/lib/whatsapp-ids";

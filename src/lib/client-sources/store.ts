@@ -328,7 +328,14 @@ export async function runSourceSyncInline(tenantId: string, sourceId: string, mo
   return inviteAfterInlineSync(tenantId, await finishSourceSync(tenantId, sourceId, counts, mode, false));
 }
 
-/** Local dev without Inngest: run the documents invite pass the queued sync would trigger. */
+/**
+ * Same trigger as production, without Inngest. In production every finished
+ * sync that created contacts sends `documents/invites.requested`
+ * (`clientSourceSync`), and `documents-invites-hourly` runs the pass again each
+ * hour for reminders, advisor tasks and clients synced outside send hours.
+ * This function only exists for the local fallback, where the sync runs in the
+ * request (`requestSourceSync`), so a "sync now" in dev invites the same way.
+ */
 async function inviteAfterInlineSync(tenantId: string, stats: SyncStats): Promise<SyncStats> {
   if (stats.created > 0) {
     try {

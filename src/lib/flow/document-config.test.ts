@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { FlowConfigError } from "./types";
-import { applyInviteSettings, documentApiKey, documentConfigFromStored, inviteCutoff, inviteTestMode, isTestLead, parseDocumentConfig } from "./document-config";
+import { documentApiKey, documentConfigFromStored, inviteCutoff, inviteTestMode, isTestLead, parseDocumentConfig, type DocumentConfig } from "./document-config";
 import { MORTGAGE_RULES } from "@/lib/documents/mortgage-rules";
 import { SMART_NPV_HOST } from "@/lib/documents/smart-npv";
 
@@ -122,57 +122,53 @@ describe("parseDocumentConfig", () => {
 });
 
 describe("auto-invite settings", () => {
-  const base = () => parseDocumentConfig({});
   const t0 = new Date("2026-11-13T08:00:00Z");
   const t1 = new Date("2026-11-14T08:00:00Z");
   const t2 = new Date("2026-11-15T08:00:00Z");
+  /** Save `body` over the stored config `prev`, as every settings route does. */
+  const save = (body: Record<string, unknown>, prev: DocumentConfig | null, now: Date) =>
+    parseDocumentConfig(body, "", prev?.testPhones ?? [], "", (prev ?? {}) as Record<string, unknown>, now);
 
   it("is off with no name by default", () => {
-    const c = base();
+    const c = parseDocumentConfig({});
     expect(c.autoInvite).toBe(false);
     expect(c.clientDisplayName).toBe("");
     expect(inviteCutoff(c)).toBeNull();
   });
 
   it("stamps the moment the switch goes on and keeps the first stamp", () => {
-    const on = applyInviteSettings(base(), parseDocumentConfig({ autoInvite: true }), t0);
+    const on = save({ autoInvite: true }, null, t0);
     expect(on.autoInviteOnAt).toBe(t0.toISOString());
-    const again = applyInviteSettings(on, parseDocumentConfig({ autoInvite: true }, "", [], "", on), t1);
+    const again = save({ autoInvite: true }, on, t1);
     expect(again.autoInviteOnAt).toBe(t0.toISOString());
     expect(inviteCutoff(again)?.toISOString()).toBe(t0.toISOString());
   });
 
   it("restamps after off then on, so contacts stored while off are not invited", () => {
-    const on = applyInviteSettings(base(), parseDocumentConfig({ autoInvite: true }), t0);
-    const off = applyInviteSettings(on, parseDocumentConfig({ autoInvite: false }, "", [], "", on), t1);
+    const on = save({ autoInvite: true }, null, t0);
+    const off = save({ autoInvite: false }, on, t1);
     expect(inviteCutoff(off)).toBeNull();
-    const back = applyInviteSettings(off, parseDocumentConfig({ autoInvite: true }, "", [], "", off), t2);
-    expect(back.autoInviteOnAt).toBe(t2.toISOString());
+    expect(save({ autoInvite: true }, off, t2).autoInviteOnAt).toBe(t2.toISOString());
   });
 
   it("stamps the end of test mode and uses it as the cutoff outside test mode", () => {
-    const testing = applyInviteSettings(base(), parseDocumentConfig({ autoInvite: true, testPhones: "0501234567" }), t0);
+    const testing = save({ autoInvite: true, testPhones: "0501234567" }, null, t0);
     expect(inviteTestMode(testing)).toBe(true);
     expect(inviteCutoff(testing)?.toISOString()).toBe(t0.toISOString());
-    const live = applyInviteSettings(
-      testing,
-      parseDocumentConfig({ autoInvite: true, testPhones: "" }, "", testing.testPhones, "", testing),
-      t1,
-    );
+    const live = save({ testPhones: "" }, testing, t1);
     expect(inviteTestMode(live)).toBe(false);
     expect(live.testModeEndedAt).toBe(t1.toISOString());
     expect(inviteCutoff(live)?.toISOString()).toBe(t1.toISOString());
   });
 
-  it("keeps stored stamps and name when another screen saves without them", () => {
-    const on = applyInviteSettings(base(), parseDocumentConfig({ autoInvite: true, clientDisplayName: "  ליאור - לייבל משכנתאות " }), t0);
+  it("keeps stored stamps and name when a save leaves them out, and ignores forged stamps", () => {
+    const on = save({ autoInvite: true, clientDisplayName: "  ליאור - לייבל משכנתאות " }, null, t0);
     expect(on.clientDisplayName).toBe("ליאור - לייבל משכנתאות");
-    const resaved = parseDocumentConfig({}, "", [], "", on);
+    const resaved = save({}, on, t1);
     expect(resaved.autoInvite).toBe(true);
     expect(resaved.autoInviteOnAt).toBe(t0.toISOString());
     expect(resaved.clientDisplayName).toBe("ליאור - לייבל משכנתאות");
-    const forged = parseDocumentConfig({ autoInviteOnAt: "2020-01-01T00:00:00.000Z" }, "", [], "", on);
-    expect(forged.autoInviteOnAt).toBe(t0.toISOString());
+    expect(save({ autoInviteOnAt: "2020-01-01T00:00:00.000Z" }, on, t1).autoInviteOnAt).toBe(t0.toISOString());
     expect(documentConfigFromStored(on).autoInviteOnAt).toBe(t0.toISOString());
   });
 });

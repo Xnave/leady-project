@@ -1,13 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadInstanceConfig, upsertCapabilityInstance } from "@/lib/capability-instances";
 import { syncTalkCapability } from "@/lib/documents/enable";
-import {
-  applyInviteSettings,
-  documentConfigFromStored,
-  parseDocumentConfig,
-  publicDocumentConfig,
-  type DocumentConfig,
-} from "@/lib/flow/document-config";
+import { parseDocumentConfig, publicDocumentConfig } from "@/lib/flow/document-config";
 import { FlowConfigError } from "@/lib/flow/types";
 import { prisma } from "@/lib/db";
 import { tenantRoleOr403 } from "@/lib/tenant-role";
@@ -59,13 +53,6 @@ export async function POST(req: Request) {
     const message = err instanceof FlowConfigError ? err.errors.join("\n") : "Invalid documents config";
     return NextResponse.json({ error: message }, { status: 400 });
   }
-  let previous: DocumentConfig | null = null;
-  try {
-    previous = Object.keys(existing).length ? documentConfigFromStored(existing) : null;
-  } catch {
-    previous = null;
-  }
-  config = applyInviteSettings(previous, config, new Date());
   const enabled = body?.enabled !== false;
   await upsertCapabilityInstance({
     tenantId,
