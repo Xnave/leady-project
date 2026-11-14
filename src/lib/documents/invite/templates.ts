@@ -1,6 +1,6 @@
 /**
  * The two WhatsApp templates that invite a new client to send their mortgage
- * documents. UTILITY, Hebrew, one quick-reply button. They are created on each
+ * documents. UTILITY, Hebrew, two quick-reply buttons (start / stop). They are created on each
  * tenant's own WhatsApp account (the client hears from the advisor's number),
  * by `scripts/invite-templates.ts`. This file is the source of truth for the
  * text Meta reviews; changing a body means a new `_vN` name.
@@ -17,12 +17,16 @@ export type InviteTemplate = {
   category: "UTILITY";
   /** {{1}} client first name, {{2}} the name shown to clients. Never starts or ends with a variable. */
   body: string;
-  button: string;
+  /** Quick replies, in order: start, then stop. A tap arrives as an inbound message. */
+  buttons: [string, string];
   /** One example per variable, for Meta's reviewers. */
   example: string[];
 };
 
-const BUTTON = "בואו נתחיל";
+const START_BUTTON = "בואו נתחיל";
+/** Tapping it stops the invite (`isStopReply` matches it). No opt-out footer: this is a utility template. */
+export const INVITE_STOP_BUTTON = "הסר";
+const BUTTONS: [string, string] = [START_BUTTON, INVITE_STOP_BUTTON];
 const EXAMPLE = ["דנה", "ליאור - לייבל משכנתאות"];
 
 export const INVITE_TEMPLATES: Record<InviteKind, InviteTemplate> = {
@@ -38,7 +42,7 @@ export const INVITE_TEMPLATES: Record<InviteKind, InviteTemplate> = {
       "בווטסאפ את המסמכים הדרושים.",
       "זה לוקח כמה דקות.",
     ].join("\n"),
-    button: BUTTON,
+    buttons: BUTTONS,
     example: EXAMPLE,
   },
   reminder: {
@@ -53,7 +57,7 @@ export const INVITE_TEMPLATES: Record<InviteKind, InviteTemplate> = {
       "בקצב שלכם.",
       "צוות {{2}} כאן בשבילכם 💙",
     ].join("\n"),
-    button: BUTTON,
+    buttons: BUTTONS,
     example: EXAMPLE,
   },
 };
@@ -76,7 +80,7 @@ export function inviteTemplateCreateBody(t: InviteTemplate, accountId: string) {
     language: t.language,
     components: [
       { type: "BODY", text: t.body, example: { body_text: [t.example] } },
-      { type: "BUTTONS", buttons: [{ type: "QUICK_REPLY", text: t.button }] },
+      { type: "BUTTONS", buttons: t.buttons.map((text) => ({ type: "QUICK_REPLY", text })) },
     ] as Array<{ type: string; text?: string; example?: unknown; buttons?: unknown[] }>,
   };
 }
