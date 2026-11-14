@@ -5,6 +5,7 @@ import { IntroFieldChips } from "@/components/IntroFieldChips";
 import { RulesEditor } from "@/components/documents/RulesEditor";
 import { loadRulesDocument, rulesIssueList } from "@/lib/documents/rules-form";
 import type { RulesDocument } from "@/lib/documents/rules";
+import type { InviteStats, InviteTemplateState } from "@/lib/documents/invite/run";
 import type { UiCopy } from "@/lib/ui";
 
 type Props = {
@@ -15,6 +16,10 @@ type Props = {
   maxRejectTries: number;
   rejectCooldownMinutes: number;
   rules: string;
+  autoInvite: boolean;
+  clientDisplayName: string;
+  inviteStats: InviteStats;
+  inviteTemplates: Record<"opener" | "reminder", InviteTemplateState>;
 };
 
 export function DocumentsSettingsForm(props: Props) {
@@ -26,6 +31,10 @@ export function DocumentsSettingsForm(props: Props) {
   const [unrecognizedIntro, setUnrecognizedIntro] = useState(props.unrecognizedIntro);
   const [maxRejectTries, setMaxRejectTries] = useState(String(props.maxRejectTries));
   const [rejectCooldownMinutes, setRejectCooldownMinutes] = useState(String(props.rejectCooldownMinutes));
+  const [autoInvite, setAutoInvite] = useState(props.autoInvite);
+  const [clientDisplayName, setClientDisplayName] = useState(props.clientDisplayName);
+  const invite = copy.invite;
+  const notApproved = (["opener", "reminder"] as const).some((k) => props.inviteTemplates[k] !== "approved");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +55,8 @@ export function DocumentsSettingsForm(props: Props) {
           unrecognizedIntro,
           maxRejectTries,
           rejectCooldownMinutes,
+          autoInvite,
+          clientDisplayName,
         }),
       });
       const data = (await res.json()) as { error?: string };
@@ -100,6 +111,40 @@ export function DocumentsSettingsForm(props: Props) {
         />
       </label>
       <p className="muted">{copy.rejectCooldownMinutesHint}</p>
+      <fieldset className="stack">
+        <legend>{invite.title}</legend>
+        <p className="muted">{invite.blurb}</p>
+        <label className="chip-toggle">
+          <input type="checkbox" checked={autoInvite} onChange={(e) => setAutoInvite(e.target.checked)} />
+          {invite.toggle}
+        </label>
+        <p className="muted">{invite.toggleHint}</p>
+        <label>
+          {invite.displayName}
+          <input
+            type="text"
+            maxLength={60}
+            value={clientDisplayName}
+            onChange={(e) => setClientDisplayName(e.target.value)}
+          />
+        </label>
+        <p className="muted">{invite.displayNameHint}</p>
+        {autoInvite && !clientDisplayName.trim() ? <p className="error">{invite.noNameWarning}</p> : null}
+        <p>
+          <b>{invite.templates}</b>
+          {": "}
+          {invite.opener} · {invite.status[props.inviteTemplates.opener]}
+          {" · "}
+          {invite.reminder} · {invite.status[props.inviteTemplates.reminder]}
+        </p>
+        {autoInvite && notApproved ? <p className="muted">{invite.notApprovedWarning}</p> : null}
+        {testPhones.trim() ? <p className="muted">{invite.testModeNote}</p> : null}
+        <p className="muted">
+          {(["invited", "started", "waiting", "handedOff", "stopped"] as const)
+            .map((k) => `${invite.stats[k]}: ${props.inviteStats[k]}`)
+            .join(" · ")}
+        </p>
+      </fieldset>
       <p className="muted rules-hint">{copy.rulesHint}</p>
       <RulesEditor value={rules} onChange={setRules} copy={copy.editor} />
       <div className="wizard-footer">

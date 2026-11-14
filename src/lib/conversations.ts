@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { whatsappExternalIdVariants } from "@/lib/whatsapp-ids";
 import { prisma } from "@/lib/db";
 import { decryptSecret } from "@/lib/crypto";
 import { resolveActorLabel } from "@/lib/admin-decisions";
@@ -124,18 +125,32 @@ export async function persistInboundIfNew(opts: {
 
   const displayName = opts.displayName?.trim() || opts.from;
 
+  // A Lead opened before the client wrote (documents invite) may hold the phone in the other form ("+972…" / "972…").
+  let externalUserId = opts.from;
+  if (channel.provider === "whatsapp") {
+    const variants = whatsappExternalIdVariants(opts.from);
+    if (variants.length > 1) {
+      const known = await prisma.lead.findMany({
+        where: { tenantId: opts.tenantId, channelId: opts.channelId, externalUserId: { in: variants } },
+        orderBy: { updatedAt: "desc" },
+        select: { externalUserId: true },
+      });
+      if (known.length && !known.some((l) => l.externalUserId === opts.from)) externalUserId = known[0].externalUserId;
+    }
+  }
+
   const lead = await prisma.lead.upsert({
     where: {
       tenantId_channelId_externalUserId: {
         tenantId: opts.tenantId,
         channelId: opts.channelId,
-        externalUserId: opts.from,
+        externalUserId,
       },
     },
     create: {
       tenantId: opts.tenantId,
       channelId: opts.channelId,
-      externalUserId: opts.from,
+      externalUserId,
       displayName,
       fields: extraFields as Prisma.InputJsonValue,
       adminUnread: true,

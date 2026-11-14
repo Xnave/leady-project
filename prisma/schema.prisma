@@ -57,6 +57,7 @@ model Tenant {
   leadDocuments        LeadDocument[]
   campaignSettings     TenantCampaignSettings?
   whatsAppTemplates    WhatsAppTemplate[]
+  contactInvites       ContactInvite[]
 }
 
 /**
@@ -634,6 +635,7 @@ model Contact {
   skipped            Boolean      @default(false)
   leadId             String?
   lead               Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  invite             ContactInvite?
   syncedAt           DateTime     @default(now())
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
@@ -642,6 +644,35 @@ model Contact {
   @@index([tenantId, phone])
   @@index([tenantId, dealDate])
   @@index([leadId])
+}
+
+/**
+ * Documents auto-invite for one synced contact: our outreach, kept apart from
+ * the CRM mirror on `Contact`. The row is created when the opener send is
+ * claimed, so "at most one opener" is the unique contactId.
+ */
+model ContactInvite {
+  id                   String    @id @default(cuid())
+  tenantId             String
+  tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactId            String    @unique
+  contact              Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  /** sending_opener | invited | sending_reminder | reminded | started | escalated | stopped | unknown */
+  status               String
+  /** Why it stopped: client_stop | rejected:<reason> | no_name | in_conversation | stale_claim | <send error>. */
+  stopReason           String    @default("")
+  /** Set when a send is claimed, before Zernio is called. A stale claim is never resent. */
+  claimedAt            DateTime?
+  openerAt             DateTime?
+  reminderAt           DateTime?
+  escalatedAt          DateTime?
+  startedAt            DateTime?
+  /** Zernio conversation the opener opened. */
+  zernioConversationId String    @default("")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([tenantId, status])
 }
 
 /// Client campaigns add-on (business-initiated WhatsApp templates to the tenant's own
