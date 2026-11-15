@@ -76,6 +76,8 @@ Reminder:
 
 Template names must be versioned (`…_v1`): an approved template's text cannot be edited in place, a change means a new name.
 
+**Update (2026-11-15): v2 is generic.** `documents_invite_opener_v2` / `documents_invite_reminder_v2` drop "משכנתא" ("כדי להתקדם בתהליך…", "את המסמכים הדרושים…") and the Meta example name is now `ליאור כהן`. Same templates for every tenant, so a test tenant can submit them on a WhatsApp number of an unrelated business. The current text lives in `src/lib/documents/invite/templates.ts`. A number that already has `_v1` needs `submit` again.
+
 ## How it fits the existing system
 
 What already exists and should be reused, not rebuilt:
