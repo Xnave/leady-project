@@ -4,6 +4,10 @@
  * tenant's own WhatsApp account (the client hears from the advisor's number),
  * by `scripts/invite-templates.ts`. This file is the source of truth for the
  * text Meta reviews; changing a body means a new `_vN` name.
+ *
+ * The text names no business domain (v2 dropped "משכנתא"): the same templates
+ * serve every tenant, including test tenants on a WhatsApp number that belongs
+ * to an unrelated business. The client already knows which process this is.
  */
 import { sanitizeTemplateParam } from "@/lib/crm/digest";
 
@@ -27,18 +31,18 @@ const START_BUTTON = "בואו נתחיל";
 /** Tapping it stops the invite (`isStopReply` matches it). No opt-out footer: this is a utility template. */
 export const INVITE_STOP_BUTTON = "הסר";
 const BUTTONS: [string, string] = [START_BUTTON, INVITE_STOP_BUTTON];
-const EXAMPLE = ["דנה", "ליאור - לייבל משכנתאות"];
+const EXAMPLE = ["דנה", "ליאור כהן"];
 
 export const INVITE_TEMPLATES: Record<InviteKind, InviteTemplate> = {
   opener: {
     kind: "opener",
-    name: "documents_invite_opener_v1",
+    name: "documents_invite_opener_v2",
     language: "he",
     category: "UTILITY",
     body: [
       "שלום {{1}} 👋",
       "כאן העוזר הדיגיטלי של {{2}}.",
-      "כדי להתקדם עם המשכנתא נאסוף כאן",
+      "כדי להתקדם בתהליך נאסוף כאן",
       "בווטסאפ את המסמכים הדרושים.",
       "זה לוקח כמה דקות.",
     ].join("\n"),
@@ -47,13 +51,13 @@ export const INVITE_TEMPLATES: Record<InviteKind, InviteTemplate> = {
   },
   reminder: {
     kind: "reminder",
-    name: "documents_invite_reminder_v1",
+    name: "documents_invite_reminder_v2",
     language: "he",
     category: "UTILITY",
     body: [
       "היי {{1}}, מה שלומך? 😊",
       "רק מזכירים שאפשר לשלוח כאן",
-      "את המסמכים למשכנתא במקום אחד,",
+      "את המסמכים הדרושים במקום אחד,",
       "בקצב שלכם.",
       "צוות {{2}} כאן בשבילכם 💙",
     ].join("\n"),

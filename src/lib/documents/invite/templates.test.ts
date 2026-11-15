@@ -12,6 +12,12 @@ describe("invite templates", () => {
       expect(t.language).toBe("he");
     }
   });
+  it("names no business domain, so any tenant's number can carry them", () => {
+    for (const t of Object.values(INVITE_TEMPLATES)) {
+      const text = [t.body, ...t.example].join(" ");
+      expect(text).not.toMatch(/משכנת/);
+    }
+  });
   it("fills the opener with the client and advisor name", () => {
     const text = fillInviteBody(INVITE_TEMPLATES.opener, inviteTemplateParams("דנה", "ליאור - לייבל משכנתאות"));
     expect(text.startsWith("שלום דנה 👋")).toBe(true);
