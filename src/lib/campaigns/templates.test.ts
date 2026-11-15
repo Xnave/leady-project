@@ -104,21 +104,21 @@ describe("templateCreateBody", () => {
     const body = templateCreateBody({ accountId: "acc1", name: "zc_x", draft: d, composed: composeTemplate(d, biz) });
     expect(body).toMatchObject({ accountId: "acc1", name: "zc_x", category: "MARKETING", language: "he" });
     expect(body.components[0]).toEqual({
-      type: "BODY",
+      type: "body",
       text: `${AD_PREFIX} | ${d.body}`,
       example: { body_text: [["דנה"]] },
     });
-    expect(body.components[1]).toEqual({ type: "FOOTER", text: "ליאור משכנתאות · 050-1234567" });
+    expect(body.components[1]).toEqual({ type: "footer", text: "ליאור משכנתאות · 050-1234567" });
     expect(body.components[2]).toEqual({
-      type: "BUTTONS",
-      buttons: LOCKED_BUTTONS.he.map((text) => ({ type: "QUICK_REPLY", text })),
+      type: "buttons",
+      buttons: LOCKED_BUTTONS.he.map((text) => ({ type: "quick_reply", text })),
     });
   });
 
   it("omits the example when the body has no variables", () => {
     const d = draft({ body: "נשמח לבדוק אם מחזור יכול לחסוך לך.", examples: [] });
     const body = templateCreateBody({ accountId: "a", name: "n", draft: d, composed: composeTemplate(d, biz) });
-    expect(body.components[0]).toEqual({ type: "BODY", text: `${AD_PREFIX} | נשמח לבדוק אם מחזור יכול לחסוך לך.` });
+    expect(body.components[0]).toEqual({ type: "body", text: `${AD_PREFIX} | נשמח לבדוק אם מחזור יכול לחסוך לך.` });
   });
 });
 

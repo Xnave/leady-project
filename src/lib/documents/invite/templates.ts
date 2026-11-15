@@ -83,8 +83,8 @@ export function inviteTemplateCreateBody(t: InviteTemplate, accountId: string) {
     category: t.category,
     language: t.language,
     components: [
-      { type: "BODY", text: t.body, example: { body_text: [t.example] } },
-      { type: "BUTTONS", buttons: t.buttons.map((text) => ({ type: "QUICK_REPLY", text })) },
+      { type: "body", text: t.body, example: { body_text: [t.example] } },
+      { type: "buttons", buttons: t.buttons.map((text) => ({ type: "quick_reply", text })) },
     ] as Array<{ type: string; text?: string; example?: unknown; buttons?: unknown[] }>,
   };
 }

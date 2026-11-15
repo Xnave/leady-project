@@ -28,15 +28,15 @@ describe("invite templates", () => {
     for (const t of Object.values(INVITE_TEMPLATES)) {
       const body = inviteTemplateCreateBody(t, "acc-1");
       expect(body.accountId).toBe("acc-1");
-      const buttons = body.components.find((c) => c.type === "BUTTONS");
+      const buttons = body.components.find((c) => c.type === "buttons");
       expect(buttons).toEqual({
-        type: "BUTTONS",
+        type: "buttons",
         buttons: [
-          { type: "QUICK_REPLY", text: "בואו נתחיל" },
-          { type: "QUICK_REPLY", text: "הסר" },
+          { type: "quick_reply", text: "בואו נתחיל" },
+          { type: "quick_reply", text: "הסר" },
         ],
       });
-      expect(body.components.some((c) => c.type === "FOOTER")).toBe(false);
+      expect(body.components.some((c) => c.type === "footer")).toBe(false);
     }
   });
   it("treats a tap on the stop button as a stop reply", () => {
