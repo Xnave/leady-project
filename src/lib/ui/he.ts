@@ -1229,6 +1229,7 @@ export const he: UiCopy = {
         addon_off: "הקמפיינים כבויים לעסק הזה",
         no_whatsapp: "מספר הוואטסאפ של התבנית לא מחובר",
         no_declaration: "חסרה הצהרת בעל העסק",
+        audience_too_large: "הקהל גדול מ-20,000. צריך לצמצם ולאשר מחדש.",
       },
       waitReasons: {
         quiet_hours: "ממתין לשעות השליחה (א'-ה' 9:00-20:00, שישי עד 14:00, לא בשבת)",
@@ -1302,7 +1303,7 @@ export const he: UiCopy = {
       detail: {
         metrics: "התקדמות",
         recent: "נמענים",
-        noSends: "רשימת הנמענים נבנית כשהשליחה מתחילה.",
+        noSends: "רשימת הנמענים נקבעת באישור.",
         declaredBy: "הצהרה",
         batchOf: "מנות של {n}",
         goal: "מטרה",
@@ -1321,6 +1322,7 @@ export const he: UiCopy = {
         no_recipients: "אף אחד בקהל הזה לא יכול לקבל את ההודעה כרגע.",
         bad_transition: "הפעולה לא זמינה כרגע.",
         bad_audience: "הגדרות הקהל לא תקינות.",
+        audience_too_large: "הקהל גדול מדי. קמפיין יכול לכלול עד 20,000 אנשים.",
         failed: "משהו השתבש.",
       },
     },

@@ -730,7 +730,7 @@ model Campaign {
   batchSize     Int?
   /// Sent count when the current batch started.
   batchStartAt  Int               @default(0)
-  /// Set when the audience was turned into CampaignSend rows (first run).
+  /// Set when confirm turns the audience into CampaignSend rows. The worker fills it in only if confirm did not.
   materializedAt DateTime?
   /// Last time the worker stopped early and why (quiet_hours, daily_ceiling), for the screen.
   waitReason    String            @default("")

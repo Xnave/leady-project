@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { inngest } from "@/inngest/client";
 import { actOnCampaign } from "@/lib/campaigns/manage";
 import { campaignAccessOr403, errorStatus } from "@/lib/campaigns/route-gate";
 
@@ -11,5 +12,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!action) return NextResponse.json({ error: "bad_transition" }, { status: 400 });
   const res = await actOnCampaign(access.tenantId, id, action);
   if ("error" in res) return NextResponse.json(res, { status: errorStatus(res.error) });
+  if (action === "resume" && (!res.scheduledAt || new Date(res.scheduledAt).getTime() <= Date.now())) {
+    await inngest
+      .send({ name: "campaigns/run.requested", data: { tenantId: access.tenantId, campaignId: id } })
+      .catch((err) => console.warn(JSON.stringify({ msg: "campaigns.kick_failed", campaignId: id, error: String(err) })));
+  }
   return NextResponse.json(res);
 }

@@ -894,7 +894,7 @@ export type UiCopy = {
       back: string;
       cols: { name: string; template: string; status: string; when: string; sent: string; skipped: string; failed: string };
       statuses: Record<"draft" | "scheduled" | "sending" | "paused" | "done" | "canceled", string>;
-      pauseReasons: Record<"owner" | "batch_done" | "template_not_approved" | "addon_off" | "no_whatsapp" | "no_declaration", string>;
+      pauseReasons: Record<"owner" | "batch_done" | "template_not_approved" | "addon_off" | "no_whatsapp" | "no_declaration" | "audience_too_large", string>;
       waitReasons: Record<"quiet_hours" | "daily_ceiling", string>;
       skipReasons: Record<
         | "no_phone"
@@ -991,6 +991,7 @@ export type UiCopy = {
         | "no_recipients"
         | "bad_transition"
         | "bad_audience"
+        | "audience_too_large"
         | "failed",
         string
       >;

@@ -1229,6 +1229,7 @@ export const en: UiCopy = {
         addon_off: "Campaigns are off for this business",
         no_whatsapp: "The WhatsApp number this template belongs to is not connected",
         no_declaration: "Missing owner declaration",
+        audience_too_large: "The audience is larger than 20,000. Narrow it and confirm again.",
       },
       waitReasons: {
         quiet_hours: "Waiting for sending hours (weekdays 9:00-20:00, Friday until 14:00, not on Saturday)",
@@ -1302,7 +1303,7 @@ export const en: UiCopy = {
       detail: {
         metrics: "Progress",
         recent: "Recipients",
-        noSends: "Recipients are prepared when sending starts.",
+        noSends: "Recipients are fixed when you confirm.",
         declaredBy: "Declaration",
         batchOf: "Batches of {n}",
         goal: "Goal",
@@ -1321,6 +1322,7 @@ export const en: UiCopy = {
         no_recipients: "Nobody in this audience can get the message right now.",
         bad_transition: "That action is not available now.",
         bad_audience: "The audience settings are invalid.",
+        audience_too_large: "This audience is too large. A campaign can include up to 20,000 people.",
         failed: "Something went wrong.",
       },
     },

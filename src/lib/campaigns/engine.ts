@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getConnector } from "@/lib/client-sources/registry";
 import { isProductionRuntime } from "@/lib/dev-auth-bypass";
@@ -60,7 +61,7 @@ function digits(v: string): string {
 }
 
 /** Audience → one recipient per phone. Recipients with no usable phone are kept (keyed by id) so they are counted. */
-export async function resolveAudience(tenantId: string, audience: Audience, now: Date): Promise<Recipient[]> {
+export async function resolveAudience(tenantId: string, audience: Audience, now: Date): Promise<Recipient[] | "audience_too_large"> {
   const out: Recipient[] = [];
   if (audience.kind === "clients") {
     const range = dealDateRange(audience, now);
@@ -79,8 +80,10 @@ export async function resolveAudience(tenantId: string, audience: Audience, now:
       select: { id: true, phone: true, phoneStatus: true, name: true, leadId: true, fields: true, source: { select: { kind: true } } },
       // Dated records first, so the one-per-phone merge keeps the client with a deal date.
       orderBy: { dealDate: { sort: "desc", nulls: "last" } },
-      take: AUDIENCE_CAP,
+      take: AUDIENCE_CAP + 1,
     });
+    // A full page means at least one more client matched. Refuse rather than drop the tail.
+    if (contacts.length > AUDIENCE_CAP) return "audience_too_large";
     for (const c of contacts) {
       const field = getConnector(c.source.kind)?.archivedField;
       const fields = (c.fields ?? {}) as Record<string, unknown>;
@@ -150,7 +153,7 @@ export async function recipientStates(
           where: {
             tenantId,
             phone: { in: phones },
-            status: { in: ["sent", "sending"] },
+            status: "sent",
             sentAt: { gte: new Date(now.getTime() - FREQUENCY_CAP_DAYS * DAY_MS) },
             ...(campaignId ? { NOT: { campaignId } } : {}),
           },
@@ -247,10 +250,11 @@ async function businessName(tenantId: string): Promise<string> {
 }
 
 /** Who would get it right now, and why the rest would not. Nothing is written. */
-export async function previewCampaign(campaign: CampaignForRun, now = new Date()): Promise<Preview | { error: "bad_audience" }> {
+export async function previewCampaign(campaign: CampaignForRun, now = new Date()): Promise<Preview | { error: "bad_audience" | "audience_too_large" }> {
   const audience = parseAudience(campaign.audience);
   if (!audience) return { error: "bad_audience" };
   const recipients = await resolveAudience(campaign.tenantId, audience, now);
+  if (recipients === "audience_too_large") return { error: "audience_too_large" };
   const states = await recipientStates(campaign.tenantId, campaign.id, recipients, now);
   const specs = parseParamSpecs(campaign.params);
   const biz = await businessName(campaign.tenantId);
@@ -274,15 +278,28 @@ export type PrepareResult =
   | { go: true; budget: number }
   | { go: false; reason: "not_due" | "not_runnable" | "quiet_hours" | "daily_ceiling" | "paused" | "done" | "gone" };
 
-async function pause(tenantId: string, campaignId: string, reason: string) {
-  await prisma.campaign.updateMany({ where: { id: campaignId, tenantId }, data: { status: "paused", pauseReason: reason } });
-  console.log(JSON.stringify({ msg: "campaigns.paused", tenantId, campaignId, reason }));
+const RUNNABLE = ["scheduled", "sending"] as const;
+
+/** Status change only while the campaign is still scheduled or sending. A pause or cancel that landed first is left alone. */
+async function markRunnable(tenantId: string, campaignId: string, data: Prisma.CampaignUpdateManyMutationInput): Promise<boolean> {
+  const res = await prisma.campaign.updateMany({ where: { id: campaignId, tenantId, status: { in: [...RUNNABLE] } }, data });
+  return res.count > 0;
+}
+
+async function pause(tenantId: string, campaignId: string, reason: string): Promise<boolean> {
+  const changed = await markRunnable(tenantId, campaignId, { status: "paused", pauseReason: reason });
+  if (changed) console.log(JSON.stringify({ msg: "campaigns.paused", tenantId, campaignId, reason }));
+  return changed;
 }
 
 async function sentTodayCount(tenantId: string, now: Date, tz: string): Promise<number> {
   return prisma.campaignSend.count({
-    where: { tenantId, status: { in: ["sent", "sending"] }, sentAt: { gte: startOfZonedDay(now, tz) } },
+    where: { tenantId, status: "sent", sentAt: { gte: startOfZonedDay(now, tz) } },
   });
+}
+
+async function sentCount(campaignId: string): Promise<number> {
+  return prisma.campaignSend.count({ where: { campaignId, status: "sent" } });
 }
 
 /** Re-read the template's status from Meta. A template that is no longer approved pauses the campaign. */
@@ -313,35 +330,39 @@ export async function prepareCampaignRun(tenantId: string, campaignId: string, n
 
   const settings = settingsFromRow(await prisma.tenantCampaignSettings.findUnique({ where: { tenantId } }));
   if (!settings.enabled || !termsAccepted(settings)) {
-    await pause(tenantId, campaignId, "addon_off");
-    return { go: false, reason: "paused" };
+    return (await pause(tenantId, campaignId, "addon_off")) ? { go: false, reason: "paused" } : { go: false, reason: "not_runnable" };
   }
   if (!campaign.declaration) {
     // Never reachable through the API (confirm writes both together); refuse anyway.
-    await pause(tenantId, campaignId, "no_declaration");
-    return { go: false, reason: "paused" };
+    return (await pause(tenantId, campaignId, "no_declaration")) ? { go: false, reason: "paused" } : { go: false, reason: "not_runnable" };
   }
   const account = await tenantWhatsAppAccount(tenantId);
   if (!account || account.accountId !== campaign.template.accountId) {
-    await pause(tenantId, campaignId, "no_whatsapp");
-    return { go: false, reason: "paused" };
+    return (await pause(tenantId, campaignId, "no_whatsapp")) ? { go: false, reason: "paused" } : { go: false, reason: "not_runnable" };
   }
   const tz = campaign.tenant.timezone || "Asia/Jerusalem";
   if (!inSendWindow(now, tz)) {
-    await prisma.campaign.update({ where: { id: campaignId }, data: { waitReason: "quiet_hours" } });
+    if (!(await markRunnable(tenantId, campaignId, { waitReason: "quiet_hours" }))) return { go: false, reason: "not_runnable" };
     return { go: false, reason: "quiet_hours" };
   }
   if (!(await templateStillApproved(campaign.template))) {
-    await pause(tenantId, campaignId, "template_not_approved");
-    return { go: false, reason: "paused" };
+    return (await pause(tenantId, campaignId, "template_not_approved")) ? { go: false, reason: "paused" } : { go: false, reason: "not_runnable" };
   }
 
-  if (!campaign.materializedAt) await materialize(campaign, now);
+  if (!campaign.materializedAt) {
+    const overflow = await materialize(campaign, now);
+    if (overflow === "audience_too_large") {
+      return (await pause(tenantId, campaignId, "audience_too_large")) ? { go: false, reason: "paused" } : { go: false, reason: "not_runnable" };
+    }
+  }
+  const live = await prisma.campaign.findFirst({ where: { id: campaignId, tenantId }, select: { status: true } });
+  if (live?.status === "canceled") {
+    await prisma.campaignSend.updateMany({ where: { campaignId, tenantId, status: "queued" }, data: { status: "skipped", skipReason: "canceled" } });
+    return { go: false, reason: "not_runnable" };
+  }
+  if (live?.status !== "scheduled" && live?.status !== "sending") return { go: false, reason: "not_runnable" };
 
-  const [sentToday, sentTotal] = await Promise.all([
-    sentTodayCount(tenantId, now, tz),
-    prisma.campaignSend.count({ where: { campaignId, status: { in: ["sent", "sending"] } } }),
-  ]);
+  const [sentToday, sentTotal] = await Promise.all([sentTodayCount(tenantId, now, tz), sentCount(campaignId)]);
   const { budget, limitedBy } = sendBudget({
     dailyCeiling: settings.dailySendCeiling,
     sentToday,
@@ -350,30 +371,37 @@ export async function prepareCampaignRun(tenantId: string, campaignId: string, n
   });
   const queued = await prisma.campaignSend.count({ where: { campaignId, status: "queued" } });
   if (queued === 0) {
-    await prisma.campaign.update({ where: { id: campaignId }, data: { status: "done", waitReason: "" } });
-    return { go: false, reason: "done" };
+    return (await markRunnable(tenantId, campaignId, { status: "done", waitReason: "" })) ? { go: false, reason: "done" } : { go: false, reason: "not_runnable" };
   }
   if (limitedBy === "batch") {
-    await pause(tenantId, campaignId, "batch_done");
-    return { go: false, reason: "paused" };
+    return (await pause(tenantId, campaignId, "batch_done")) ? { go: false, reason: "paused" } : { go: false, reason: "not_runnable" };
   }
   if (budget === 0) {
-    await prisma.campaign.update({ where: { id: campaignId }, data: { waitReason: "daily_ceiling", status: "sending" } });
+    if (!(await markRunnable(tenantId, campaignId, { waitReason: "daily_ceiling", status: "sending" }))) return { go: false, reason: "not_runnable" };
     return { go: false, reason: "daily_ceiling" };
   }
-  await prisma.campaign.update({ where: { id: campaignId }, data: { status: "sending", waitReason: "" } });
+  if (!(await markRunnable(tenantId, campaignId, { status: "sending", waitReason: "" }))) return { go: false, reason: "not_runnable" };
   return { go: true, budget };
 }
 
-/** Turn the audience into CampaignSend rows: queued, or skipped with a reason. Safe to repeat. */
-async function materialize(campaign: CampaignForRun & { tenant: { name: string } }, now: Date) {
-  const audience = parseAudience(campaign.audience);
-  const recipients = audience ? await resolveAudience(campaign.tenantId, audience, now) : [];
-  const states = await recipientStates(campaign.tenantId, campaign.id, recipients, now);
-  const specs = parseParamSpecs(campaign.params);
-  const rows = recipients.map((r, i) => {
-    const params = resolveParams(specs, { name: r.name, businessName: campaign.tenant.name });
-    const reason = skipReasonFor(states[i], now) ?? (params ? null : "missing_param");
+type SendWriter = Prisma.TransactionClient | typeof prisma;
+
+function structuralSkip(r: Recipient, params: string[] | null): SkipReason | null {
+  if (r.phoneStatus === "missing" || (!r.phone && r.phoneStatus === "ok")) return "no_phone";
+  if (r.phoneStatus === "invalid") return "invalid_phone";
+  if (!params) return "missing_param";
+  return null;
+}
+
+function toSendRows(
+  campaign: { id: string; tenantId: string },
+  recipients: Recipient[],
+  reasonFor: (r: Recipient, i: number) => SkipReason | null,
+  paramsFor: (r: Recipient) => string[] | null,
+) {
+  return recipients.map((r, i) => {
+    const params = paramsFor(r);
+    const reason = reasonFor(r, i);
     return {
       tenantId: campaign.tenantId,
       campaignId: campaign.id,
@@ -387,10 +415,71 @@ async function materialize(campaign: CampaignForRun & { tenant: { name: string }
       params: params ?? [],
     };
   });
+}
+
+async function insertSendRows(db: SendWriter, rows: ReturnType<typeof toSendRows>) {
   for (let i = 0; i < rows.length; i += 1000) {
-    await prisma.campaignSend.createMany({ data: rows.slice(i, i + 1000), skipDuplicates: true });
+    await db.campaignSend.createMany({ data: rows.slice(i, i + 1000), skipDuplicates: true });
   }
-  await prisma.campaign.update({ where: { id: campaign.id }, data: { materializedAt: now } });
+}
+
+/**
+ * Freeze who can receive this campaign. Structural skips (no phone, invalid phone,
+ * empty template value) are skipped rows. Everyone else is queued; time-varying
+ * rules are applied when the chunk sends. Nothing here is committed until the caller commits.
+ */
+export async function freezeAudience(
+  tx: Prisma.TransactionClient,
+  campaign: CampaignForRun & { tenant: { name: string } },
+  now: Date,
+): Promise<"audience_too_large" | "bad_audience" | null> {
+  const audience = parseAudience(campaign.audience);
+  if (!audience) return "bad_audience";
+  const recipients = await resolveAudience(campaign.tenantId, audience, now);
+  if (recipients === "audience_too_large") return "audience_too_large";
+  const specs = parseParamSpecs(campaign.params);
+  const rows = toSendRows(
+    campaign,
+    recipients,
+    (r) => structuralSkip(r, resolveParams(specs, { name: r.name, businessName: campaign.tenant.name })),
+    (r) => resolveParams(specs, { name: r.name, businessName: campaign.tenant.name }),
+  );
+  await insertSendRows(tx, rows);
+  return null;
+}
+
+/** Fallback for a campaign confirmed before rows were frozen. Applies every skip rule. Safe to repeat. */
+async function materialize(campaign: CampaignForRun & { tenant: { name: string } }, now: Date): Promise<"audience_too_large" | null> {
+  const audience = parseAudience(campaign.audience);
+  const resolved = audience ? await resolveAudience(campaign.tenantId, audience, now) : [];
+  if (resolved === "audience_too_large") return "audience_too_large";
+  const states = await recipientStates(campaign.tenantId, campaign.id, resolved, now);
+  const specs = parseParamSpecs(campaign.params);
+  const rows = toSendRows(
+    campaign,
+    resolved,
+    (r, i) => skipReasonFor(states[i], now) ?? (resolveParams(specs, { name: r.name, businessName: campaign.tenant.name }) ? null : "missing_param"),
+    (r) => resolveParams(specs, { name: r.name, businessName: campaign.tenant.name }),
+  );
+  await insertSendRows(prisma, rows);
+  await markRunnable(campaign.tenantId, campaign.id, { materializedAt: now });
+  return null;
+}
+
+async function archivedByContact(tenantId: string, contactIds: string[]): Promise<Map<string, boolean>> {
+  const ids = [...new Set(contactIds)];
+  if (!ids.length) return new Map();
+  const contacts = await prisma.contact.findMany({
+    where: { tenantId, id: { in: ids } },
+    select: { id: true, fields: true, source: { select: { kind: true } } },
+  });
+  const out = new Map<string, boolean>();
+  for (const c of contacts) {
+    const field = getConnector(c.source.kind)?.archivedField;
+    const fields = (c.fields ?? {}) as Record<string, unknown>;
+    out.set(c.id, field ? isArchivedValue(fields[field]) : false);
+  }
+  return out;
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -416,15 +505,28 @@ export async function sendCampaignChunk(tenantId: string, campaignId: string, li
     orderBy: { createdAt: "asc" },
     take: limit,
   });
+  const archived = await archivedByContact(
+    tenantId,
+    rows.flatMap((r) => (r.contactId ? [r.contactId] : [])),
+  );
   const states = await recipientStates(
     tenantId,
     campaignId,
-    rows.map((r) => ({ phone: r.phone, phoneStatus: "ok", name: r.name, contactId: r.contactId, leadId: r.leadId, archived: false })),
+    rows.map((r) => ({
+      phone: r.phone.startsWith("none:") ? "" : r.phone,
+      phoneStatus: r.phone.startsWith("none:") ? "missing" : "ok",
+      name: r.name,
+      contactId: r.contactId,
+      leadId: r.leadId,
+      archived: r.contactId ? (archived.get(r.contactId) ?? false) : false,
+    })),
     now,
   );
   const dryRun = !zernioConfigured() && !isProductionRuntime();
 
   for (let i = 0; i < rows.length; i++) {
+    const live = await prisma.campaign.findFirst({ where: { id: campaignId, tenantId }, select: { status: true } });
+    if (live?.status !== "sending") break;
     const row = rows[i];
     const reason = skipReasonFor(states[i], now);
     if (reason) {
@@ -434,7 +536,7 @@ export async function sendCampaignChunk(tenantId: string, campaignId: string, li
     }
     const claimed = await prisma.campaignSend.updateMany({
       where: { id: row.id, status: "queued" },
-      data: { status: "sending", sentAt: new Date() },
+      data: { status: "sending" },
     });
     if (claimed.count === 0) continue;
     result.attempted += 1;
@@ -450,7 +552,7 @@ export async function sendCampaignChunk(tenantId: string, campaignId: string, li
           });
       await prisma.campaignSend.update({
         where: { id: row.id },
-        data: { status: "sent", providerConversationId: res.conversationId, error: dryRun ? "dry_run" : "" },
+        data: { status: "sent", sentAt: new Date(), providerConversationId: res.conversationId, error: dryRun ? "dry_run" : "" },
       });
       result.sent += 1;
     } catch (err) {
@@ -470,15 +572,17 @@ export async function finishCampaignRun(tenantId: string, campaignId: string): P
   if (!campaign || campaign.status !== "sending") return campaign?.status ?? "gone";
   const [queued, sentTotal] = await Promise.all([
     prisma.campaignSend.count({ where: { campaignId, status: "queued" } }),
-    prisma.campaignSend.count({ where: { campaignId, status: { in: ["sent", "sending"] } } }),
+    sentCount(campaignId),
   ]);
   if (queued === 0) {
-    await prisma.campaign.update({ where: { id: campaignId }, data: { status: "done", waitReason: "" } });
+    if (!(await markRunnable(tenantId, campaignId, { status: "done", waitReason: "" }))) {
+      const current = await prisma.campaign.findFirst({ where: { id: campaignId, tenantId }, select: { status: true } });
+      return current?.status ?? "gone";
+    }
     return "done";
   }
   if (campaign.batchSize != null && sentTotal - campaign.batchStartAt >= campaign.batchSize) {
-    await pause(tenantId, campaignId, "batch_done");
-    return "paused";
+    return (await pause(tenantId, campaignId, "batch_done")) ? "paused" : (campaign.status ?? "gone");
   }
   return "sending";
 }

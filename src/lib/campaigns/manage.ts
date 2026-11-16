@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { uiCopy, type UiLang } from "@/lib/ui";
-import { parseAudience, parseParamSpecs, previewCampaign, type Preview } from "./engine";
+import { freezeAudience, parseAudience, parseParamSpecs, previewCampaign, type Preview } from "./engine";
 import {
   audienceSchema,
   DECLARATION_VERSION,
@@ -46,6 +46,7 @@ export type CampaignError =
   | "not_draft"
   | "declaration_required"
   | "no_recipients"
+  | "audience_too_large"
   | "bad_transition";
 
 async function gate(tenantId: string): Promise<CampaignError | null> {
@@ -107,7 +108,8 @@ export async function updateCampaign(tenantId: string, id: string, raw: unknown)
   if (!parsed.success) return { error: "invalid", detail: parsed.error.issues.map((i) => i.path.join(".")).join(", ") };
   const bad = await checkTemplate(tenantId, parsed.data);
   if (bad) return { error: bad };
-  await prisma.campaign.update({ where: { id }, data: data(parsed.data) });
+  const res = await prisma.campaign.updateMany({ where: { id, tenantId, status: "draft" }, data: data(parsed.data) });
+  if (res.count === 0) return { error: "not_draft" };
   return { ok: true };
 }
 
@@ -136,43 +138,53 @@ export async function confirmCampaign(
   if (denied) return { error: denied };
   if (body.declarationAccepted !== true || body.declarationVersion !== DECLARATION_VERSION) return { error: "declaration_required" };
   const lang: UiLang = body.language === "en" ? "en" : "he";
-  const campaign = await prisma.campaign.findFirst({ where: { id, tenantId }, include: { template: true } });
+  const campaign = await prisma.campaign.findFirst({ where: { id, tenantId }, include: { template: true, tenant: { select: { name: true } } } });
   if (!campaign) return { error: "not_found" };
   if (campaign.status !== "draft") return { error: "not_draft" };
   if (!isSendable(campaign.template.status)) return { error: "template_not_approved" };
   if (!parseAudience(campaign.audience)) return { error: "invalid" };
   if (parseParamSpecs(campaign.params).length !== expectedParamCount(campaign.template.body)) return { error: "params_mismatch" };
   const preview = await previewCampaign(campaign, now);
-  if ("error" in preview) return { error: "invalid" };
+  if ("error" in preview) return { error: preview.error === "audience_too_large" ? "audience_too_large" : "invalid" };
   if (preview.eligible === 0) return { error: "no_recipients" };
 
   const scheduledAt = campaign.scheduledAt && campaign.scheduledAt > now ? campaign.scheduledAt : now;
-  const confirmed = await prisma.$transaction(async (tx) => {
-    const updated = await tx.campaign.updateMany({
-      where: { id, tenantId, status: "draft" },
-      data: { status: "scheduled", scheduledAt, confirmedAt: now, confirmedBy: actor.actorLabel },
-    });
-    if (updated.count === 0) return false;
-    await tx.ownerDeclaration.create({
-      data: {
-        tenantId,
-        campaignId: id,
-        actorUserId: actor.actorUserId,
-        actorLabel: actor.actorLabel,
-        textVersion: DECLARATION_VERSION,
-        text: declarationText(lang),
-        language: lang,
-        recipientCount: preview.eligible,
-      },
-    });
-    return true;
-  });
-  if (!confirmed) return { error: "not_draft" };
+  const confirmed = await prisma.$transaction(
+    async (tx) => {
+      const frozen = await freezeAudience(tx, campaign, now);
+      if (frozen === "audience_too_large") return "audience_too_large" as const;
+      if (frozen) return "invalid" as const;
+      const updated = await tx.campaign.updateMany({
+        where: { id, tenantId, status: "draft" },
+        data: { status: "scheduled", scheduledAt, confirmedAt: now, confirmedBy: actor.actorLabel, materializedAt: now },
+      });
+      if (updated.count === 0) return "not_draft" as const;
+      await tx.ownerDeclaration.create({
+        data: {
+          tenantId,
+          campaignId: id,
+          actorUserId: actor.actorUserId,
+          actorLabel: actor.actorLabel,
+          textVersion: DECLARATION_VERSION,
+          text: declarationText(lang),
+          language: lang,
+          recipientCount: preview.eligible,
+        },
+      });
+      return null;
+    },
+    { timeout: 20_000 },
+  );
+  if (confirmed) return { error: confirmed };
   console.log(JSON.stringify({ msg: "campaigns.confirmed", tenantId, campaignId: id, actor: actor.actorLabel, recipients: preview.eligible }));
   return { ok: true, scheduledAt: scheduledAt.toISOString(), recipients: preview.eligible };
 }
 
-export async function actOnCampaign(tenantId: string, id: string, action: CampaignAction): Promise<{ status: string } | { error: CampaignError }> {
+export async function actOnCampaign(
+  tenantId: string,
+  id: string,
+  action: CampaignAction,
+): Promise<{ status: string; scheduledAt: string | null } | { error: CampaignError }> {
   const campaign = await prisma.campaign.findFirst({ where: { id, tenantId } });
   if (!campaign) return { error: "not_found" };
   const next = nextStatus(campaign.status, action);
@@ -186,14 +198,14 @@ export async function actOnCampaign(tenantId: string, id: string, action: Campai
   if (action === "resume") {
     extra.pauseReason = "";
     // A new batch starts from what was already sent.
-    extra.batchStartAt = await prisma.campaignSend.count({ where: { campaignId: id, status: { in: ["sent", "sending"] } } });
+    extra.batchStartAt = await prisma.campaignSend.count({ where: { campaignId: id, status: "sent" } });
   }
   const res = await prisma.campaign.updateMany({ where: { id, tenantId, status: campaign.status }, data: { status: next, ...extra } });
   if (res.count === 0) return { error: "bad_transition" };
   if (action === "cancel") {
-    await prisma.campaignSend.updateMany({ where: { campaignId: id, status: "queued" }, data: { status: "skipped", skipReason: "canceled" } });
+    await prisma.campaignSend.updateMany({ where: { campaignId: id, tenantId, status: "queued" }, data: { status: "skipped", skipReason: "canceled" } });
   }
-  return { status: next };
+  return { status: next, scheduledAt: campaign.scheduledAt?.toISOString() ?? null };
 }
 
 export type CampaignMetrics = { queued: number; sending: number; sent: number; failed: number; skipped: number };

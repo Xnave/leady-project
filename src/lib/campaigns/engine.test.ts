@@ -82,18 +82,21 @@ vi.mock("@/lib/db", () => ({
   prisma: new Proxy({}, { get: (_t, prop: string) => table(prop) }),
 }));
 
+const approvedTemplate = [{ id: "t", name: "promo_1", language: "he", status: "APPROVED", category: "MARKETING" }];
 const sendWhatsAppTemplate = vi.fn(async (_o: unknown) => ({ conversationId: "conv-1" }));
+const listWhatsAppTemplates = vi.fn(async () => approvedTemplate);
 vi.mock("@/lib/zernio", () => ({
   zernioConfigured: () => true,
   sendWhatsAppTemplate: (o: unknown) => sendWhatsAppTemplate(o),
-  listWhatsAppTemplates: async () => [{ id: "t", name: "promo_1", language: "he", status: "APPROVED", category: "MARKETING" }],
+  listWhatsAppTemplates: () => listWhatsAppTemplates(),
 }));
 vi.mock("./store", () => ({
   tenantWhatsAppAccount: async () => ({ accountId: "acc-1", phone: "972500000000" }),
 }));
 vi.mock("@/lib/dev-auth-bypass", () => ({ isProductionRuntime: () => true }));
 
-const { prepareCampaignRun, sendCampaignChunk } = await import("./engine");
+const { prepareCampaignRun, sendCampaignChunk, freezeAudience } = await import("./engine");
+const { prisma } = await import("@/lib/db");
 
 // Thursday 11:00 in Israel: inside sending hours.
 const NOW = new Date("2026-11-05T09:00:00Z");
@@ -142,6 +145,8 @@ function seed(opts: { declaration?: boolean; phones?: string[] } = {}) {
 
 beforeEach(() => {
   sendWhatsAppTemplate.mockClear();
+  listWhatsAppTemplates.mockReset();
+  listWhatsAppTemplates.mockImplementation(async () => approvedTemplate);
   seed();
 });
 
@@ -183,7 +188,40 @@ describe("sendCampaignChunk", () => {
     sendWhatsAppTemplate.mockRejectedValueOnce(new Error("Zernio 400: bad number"));
     const res = await sendCampaignChunk("t1", "c1", 10, NOW);
     expect(res).toMatchObject({ sent: 2, failed: 1 });
-    expect(db.campaignSend[0]).toMatchObject({ status: "failed", error: "Zernio 400: bad number" });
+    expect(db.campaignSend[0]).toMatchObject({ status: "failed", error: "Zernio 400: bad number", sentAt: null });
+  });
+
+  it("stops claiming once the campaign is no longer sending", async () => {
+    sendWhatsAppTemplate.mockImplementationOnce(async () => {
+      db.campaign[0].status = "paused";
+      return { conversationId: "conv-1" };
+    });
+    const res = await sendCampaignChunk("t1", "c1", 10, NOW);
+    expect(res.sent).toBe(1);
+    expect(db.campaignSend.filter((s) => s.status === "queued")).toHaveLength(2);
+    expect(sendWhatsAppTemplate).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips a client archived after the row was queued", async () => {
+    db.campaignSend[0].contactId = "contact-archived";
+    db.contact = [{ id: "contact-archived", tenantId: "t1", fields: { archive: "1" }, source: { kind: "smartnpv" } }];
+    const res = await sendCampaignChunk("t1", "c1", 10, NOW);
+    expect(res).toMatchObject({ sent: 2, skipped: 1 });
+    expect(db.campaignSend[0]).toMatchObject({ status: "skipped", skipReason: "archived_client" });
+  });
+
+  it("a crashed claim does not count as a send for the 7-day cap", async () => {
+    db.campaignSend.push({
+      id: "stuck",
+      tenantId: "t1",
+      campaignId: "c0",
+      phone: "972501111111",
+      status: "sending",
+      sentAt: new Date(NOW.getTime() - 60_000),
+    });
+    const res = await sendCampaignChunk("t1", "c1", 10, NOW);
+    expect(res.sent).toBe(3);
+    expect(db.campaignSend.find((s) => s.id === "s0")?.status).toBe("sent");
   });
 
   it("sends nothing outside sending hours or for another tenant", async () => {
@@ -231,5 +269,61 @@ describe("prepareCampaignRun", () => {
 
   it("goes with a budget when everything checks out", async () => {
     expect(await prepareCampaignRun("t1", "c1", NOW)).toEqual({ go: true, budget: 200 });
+  });
+
+  it("does not move a canceled campaign back to sending", async () => {
+    listWhatsAppTemplates.mockImplementationOnce(async () => {
+      db.campaign[0].status = "canceled";
+      return approvedTemplate;
+    });
+    expect(await prepareCampaignRun("t1", "c1", NOW)).toEqual({ go: false, reason: "not_runnable" });
+    expect(db.campaign[0].status).toBe("canceled");
+  });
+});
+
+describe("freezeAudience", () => {
+  const campaign = {
+    id: "c1",
+    tenantId: "t1",
+    audience: { kind: "clients" as const, dealYearsAgoMin: null, dealYearsAgoMax: null, confidence: [], includeNoDealDate: false },
+    params: [],
+    template: { category: "MARKETING" },
+    tenant: { name: "Biz" },
+  };
+
+  function contact(i: number, patch: Record<string, unknown> = {}) {
+    return {
+      id: `contact-${i}`,
+      tenantId: "t1",
+      phone: `9725${String(i).padStart(8, "0")}`,
+      phoneStatus: "ok",
+      name: `N${i}`,
+      leadId: null,
+      fields: {},
+      skipped: false,
+      dealDate: NOW,
+      source: { kind: "smartnpv" },
+      ...patch,
+    };
+  }
+
+  it("writes structural skips only and leaves time-varying skips queued", async () => {
+    db.campaignSend = [];
+    db.contact = [
+      contact(1, { phone: "", phoneStatus: "missing", name: "No Phone" }),
+      contact(2, { id: "kept", phone: "972501111111", fields: { archive: "1" }, name: "Dana" }),
+    ];
+    expect(await freezeAudience(prisma as never, campaign, NOW)).toBeNull();
+    expect(db.campaignSend).toEqual([
+      expect.objectContaining({ phone: "972501111111", status: "queued", skipReason: "", contactId: "kept" }),
+      expect.objectContaining({ phone: "none:contact-1", status: "skipped", skipReason: "no_phone" }),
+    ]);
+  });
+
+  it("refuses an audience over the cap and writes nothing", async () => {
+    db.campaignSend = [];
+    db.contact = Array.from({ length: 20_001 }, (_, i) => contact(i));
+    expect(await freezeAudience(prisma as never, campaign, NOW)).toBe("audience_too_large");
+    expect(db.campaignSend).toHaveLength(0);
   });
 });
