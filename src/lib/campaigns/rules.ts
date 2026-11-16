@@ -268,30 +268,41 @@ export function resolveParams(specs: ParamSpec[], who: { name: string; businessN
 
 export const CONFIDENCES = ["high", "medium_high", "medium", "low"] as const;
 
-export const audienceSchema = z.discriminatedUnion("kind", [
+const audienceObject = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("clients"),
-    /** Deal at least this many years ago (e.g. 4.5). */
-    dealYearsAgoMin: z.number().min(0).max(60).nullable().default(null),
-    /** Deal at most this many years ago (e.g. 10). */
-    dealYearsAgoMax: z.number().min(0).max(60).nullable().default(null),
-    /** Allowed deal-date confidence levels; empty = any. */
+    /** Client for at least this many years (e.g. 4.5). */
+    startedYearsAgoMin: z.number().min(0).max(60).nullable().default(null),
+    /** Client for at most this many years (e.g. 10). */
+    startedYearsAgoMax: z.number().min(0).max(60).nullable().default(null),
+    /** Allowed start-date confidence levels; empty = any. */
     confidence: z.array(z.enum(CONFIDENCES)).default([]),
-    /** Also include clients with no deal date (only when no year range is set). */
-    includeNoDealDate: z.boolean().default(false),
+    /** Also include clients with no start date (only when no year range is set). */
+    includeNoStartedAt: z.boolean().default(false),
   }),
   z.object({
     kind: z.literal("leads"),
     leadIds: z.array(z.string().min(1)).min(1).max(2000),
   }),
 ]);
-export type Audience = z.infer<typeof audienceSchema>;
 
-export function dealDateRange(a: Extract<Audience, { kind: "clients" }>, now: Date): { gte?: Date; lte?: Date } {
+/** Saved drafts still use the dealYearsAgo names. */
+export const audienceSchema = z.preprocess((raw) => {
+  if (!raw || typeof raw !== "object") return raw;
+  const o = { ...(raw as Record<string, unknown>) };
+  if (o.kind !== "clients") return o;
+  if (o.startedYearsAgoMin == null && "dealYearsAgoMin" in o) o.startedYearsAgoMin = o.dealYearsAgoMin;
+  if (o.startedYearsAgoMax == null && "dealYearsAgoMax" in o) o.startedYearsAgoMax = o.dealYearsAgoMax;
+  if (o.includeNoStartedAt == null && "includeNoDealDate" in o) o.includeNoStartedAt = o.includeNoDealDate;
+  return o;
+}, audienceObject);
+export type Audience = z.infer<typeof audienceObject>;
+
+export function startedAtRange(a: Extract<Audience, { kind: "clients" }>, now: Date): { gte?: Date; lte?: Date } {
   const yearMs = 365.25 * 24 * 3600 * 1000;
   const range: { gte?: Date; lte?: Date } = {};
-  if (a.dealYearsAgoMin != null) range.lte = new Date(now.getTime() - a.dealYearsAgoMin * yearMs);
-  if (a.dealYearsAgoMax != null) range.gte = new Date(now.getTime() - a.dealYearsAgoMax * yearMs);
+  if (a.startedYearsAgoMin != null) range.lte = new Date(now.getTime() - a.startedYearsAgoMin * yearMs);
+  if (a.startedYearsAgoMax != null) range.gte = new Date(now.getTime() - a.startedYearsAgoMax * yearMs);
   return range;
 }
 

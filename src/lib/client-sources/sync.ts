@@ -6,7 +6,7 @@ import {
   type AnyClientConnector,
   type BaseSourceConfig,
   type ClientRecord,
-  type DealDate,
+  type StartedAt,
 } from "./types";
 
 /**
@@ -21,7 +21,7 @@ export type ContactUpsert = {
   phoneStatus: "ok" | "missing" | "invalid";
   name: string;
   fields: Record<string, unknown>;
-  dealDate: DealDate;
+  startedAt: StartedAt;
   sourceUpdatedAt: Date | null;
   /**
    * Lead with the same phone, if any. Kept by a later sync while the phone is
@@ -81,15 +81,15 @@ function yearsBetween(from: Date, to: Date): number {
 }
 
 /** True when the client passes every keep rule that is set. No rules = everyone is kept. */
-export function isKept(fields: Record<string, unknown>, dealDate: DealDate, config: BaseSourceConfig, now: Date): boolean {
+export function isKept(fields: Record<string, unknown>, startedAt: StartedAt, config: BaseSourceConfig, now: Date): boolean {
   const keep = config.keep ?? { fields: [] };
   for (const rule of keep.fields) {
     if (rule.in.length && !rule.in.includes(fieldText(fields[rule.field]))) return false;
   }
-  const window = keep.dealYearsAgo;
+  const window = keep.startedYearsAgo;
   if (window && (window.min != null || window.max != null)) {
-    if (!dealDate.date) return false;
-    const years = yearsBetween(dealDate.date, now);
+    if (!startedAt.date) return false;
+    const years = yearsBetween(startedAt.date, now);
     if (window.min != null && years < window.min) return false;
     if (window.max != null && years > window.max) return false;
   }
@@ -127,12 +127,12 @@ export function prepareContacts(
       phoneStatus: phone.status,
       name: record.name.slice(0, 200),
       fields,
-      dealDate: derived.dealDate,
+      startedAt: derived.startedAt,
       sourceUpdatedAt: record.updatedAt,
       leadId: null,
       skipped: isSkipped(record, config),
     };
-    (!row.skipped && isKept(fields, derived.dealDate, config, now) ? rows : onlyIfStored).push(row);
+    (!row.skipped && isKept(fields, derived.startedAt, config, now) ? rows : onlyIfStored).push(row);
   }
   return { rows, onlyIfStored, counts };
 }

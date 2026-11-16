@@ -99,7 +99,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
             {audience?.kind === "leads"
               ? fillUi(run.form.leadsPicked, { n: audience.leadIds.length })
               : audience?.kind === "clients"
-                ? `${run.form.audienceClients}${audience.dealYearsAgoMin != null || audience.dealYearsAgoMax != null ? ` · ${audience.dealYearsAgoMin ?? 0}-${audience.dealYearsAgoMax ?? "∞"}` : ""}`
+                ? `${run.form.audienceClients}${audience.startedYearsAgoMin != null || audience.startedYearsAgoMax != null ? ` · ${audience.startedYearsAgoMin ?? 0}-${audience.startedYearsAgoMax ?? "∞"}` : ""}`
                 : "-"}
           </dd>
           {c.declaration ? (

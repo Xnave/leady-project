@@ -212,8 +212,8 @@ export async function actOnCampaign(
   if (action === "pause") extra.pauseReason = "owner";
   if (action === "resume") {
     extra.pauseReason = "";
-    // A new batch starts from what was already sent.
-    extra.batchStartAt = await prisma.campaignSend.count({ where: { campaignId: id, status: "sent" } });
+    // The next run samples the sent count. Sampling here would miss a row the previous run already claimed.
+    extra.resetBatch = true;
   }
   const res = await prisma.campaign.updateMany({ where: { id, tenantId, status: campaign.status }, data: { status: next, ...extra } });
   if (res.count === 0) return { error: "bad_transition" };

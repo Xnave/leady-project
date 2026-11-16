@@ -135,10 +135,10 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                       <span className="badge badge-warn">{c.phoneStatus === "missing" ? copy.phoneMissing : copy.phoneInvalid}</span>
                     )}
                   </td>
-                  <td>{c.dealDate ? monthYear(c.dealDate) : "-"}</td>
+                  <td>{c.startedAt ? monthYear(c.startedAt) : "-"}</td>
                   <td className="muted">
-                    {c.dealDateSource
-                      ? `${sourceLabel(c.source.kind, c.dealDateSource)} · ${ui.clientSources.confidence[c.dealDateConfidence as keyof typeof ui.clientSources.confidence] ?? c.dealDateConfidence}`
+                    {c.startedAtSource
+                      ? `${sourceLabel(c.source.kind, c.startedAtSource)} · ${ui.clientSources.confidence[c.startedAtConfidence as keyof typeof ui.clientSources.confidence] ?? c.startedAtConfidence}`
                       : "-"}
                   </td>
                 </tr>

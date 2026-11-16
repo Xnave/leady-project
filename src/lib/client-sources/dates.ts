@@ -1,4 +1,4 @@
-import type { DealDate, DealDateConfidence } from "./types";
+import type { StartedAt, StartedAtConfidence } from "./types";
 
 const DMY = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?$/;
 const YMD = /^(\d{4})-(\d{2})-(\d{2})(?:[ T].*)?$/;
@@ -28,11 +28,11 @@ export function addMonths(date: Date, months: number): Date {
   return out;
 }
 
-/** One rung of the deal-date ladder: the first rung with a usable date wins. */
-export type DealDateStep = {
+/** One rung of the start-date ladder: the first rung with a usable date wins. */
+export type StartedAtStep = {
   field: string;
   offsetMonths: number;
-  confidence: DealDateConfidence;
+  confidence: StartedAtConfidence;
   /** Only use this rung when `fields[whenField]` is one of `whenIn`. An empty list never matches. */
   whenField?: string;
   whenIn?: string[];
@@ -43,7 +43,7 @@ function asText(value: unknown): string {
   return String(value).trim();
 }
 
-export function deriveDealDate(fields: Record<string, unknown>, steps: DealDateStep[]): DealDate {
+export function deriveStartedAt(fields: Record<string, unknown>, steps: StartedAtStep[]): StartedAt {
   for (const step of steps) {
     if (step.whenField) {
       const allowed = step.whenIn ?? [];

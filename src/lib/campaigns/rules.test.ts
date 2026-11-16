@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   allowList,
   audienceSchema,
-  dealDateRange,
+  startedAtRange,
   estimateCostUsd,
   CHUNK_SIZE,
   averageRowMs,
@@ -172,7 +172,8 @@ describe("audience", () => {
   it("turns years ago into a deal-date range", () => {
     const a = audienceSchema.parse({ kind: "clients", dealYearsAgoMin: 4.5, dealYearsAgoMax: 10 });
     if (a.kind !== "clients") throw new Error("kind");
-    const r = dealDateRange(a, new Date("2026-11-05T00:00:00Z"));
+    expect(a).toMatchObject({ startedYearsAgoMin: 4.5, startedYearsAgoMax: 10 });
+    const r = startedAtRange(a, new Date("2026-11-05T00:00:00Z"));
     expect(r.lte?.toISOString().slice(0, 7)).toBe("2022-05");
     expect(r.gte?.toISOString().slice(0, 7)).toBe("2016-11");
   });

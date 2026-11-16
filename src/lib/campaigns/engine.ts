@@ -8,7 +8,7 @@ import { listWhatsAppTemplates, sendWhatsAppTemplate, zernioConfigured } from "@
 import {
   allowList,
   audienceSchema,
-  dealDateRange,
+  startedAtRange,
   estimateCostUsd,
   campaignSendWindow,
   DUE_CAMPAIGNS_PER_TICK,
@@ -79,26 +79,50 @@ function leadRecipientPhone(lead: { externalUserId: string; fields: unknown; cha
   return { phone: "", phoneStatus: normalized.status === "invalid" ? "invalid" : "missing" };
 }
 
+/** Phones and people already stored on this campaign. They do not count toward the cap. */
+async function alreadyOnCampaign(tenantId: string, campaignId?: string): Promise<{ contactIds: string[]; leadIds: string[]; phones: string[] }> {
+  if (!campaignId) return { contactIds: [], leadIds: [], phones: [] };
+  const rows = await prisma.campaignSend.findMany({
+    where: { tenantId, campaignId },
+    select: { contactId: true, leadId: true, phone: true },
+  });
+  return {
+    contactIds: rows.flatMap((r) => (r.contactId ? [r.contactId] : [])),
+    leadIds: rows.flatMap((r) => (r.leadId ? [r.leadId] : [])),
+    phones: rows.map((r) => r.phone).filter((p) => p && !p.startsWith("none:")),
+  };
+}
+
 /** Audience → one recipient per phone. Recipients with no usable phone are kept (keyed by id) so they are counted. */
-export async function resolveAudience(tenantId: string, audience: Audience, now: Date): Promise<Recipient[] | "audience_too_large"> {
+export async function resolveAudience(
+  tenantId: string,
+  audience: Audience,
+  now: Date,
+  campaignId?: string,
+): Promise<Recipient[] | "audience_too_large"> {
+  const taken = await alreadyOnCampaign(tenantId, campaignId);
   const out: Recipient[] = [];
   if (audience.kind === "clients") {
-    const range = dealDateRange(audience, now);
+    const range = startedAtRange(audience, now);
     const hasRange = range.gte != null || range.lte != null;
     const dated = {
-      dealDate: { not: null, ...(range.gte ? { gte: range.gte } : {}), ...(range.lte ? { lte: range.lte } : {}) },
-      ...(audience.confidence.length ? { dealDateConfidence: { in: audience.confidence } } : {}),
+      startedAt: { not: null, ...(range.gte ? { gte: range.gte } : {}), ...(range.lte ? { lte: range.lte } : {}) },
+      ...(audience.confidence.length ? { startedAtConfidence: { in: audience.confidence } } : {}),
     };
+    const exclude = [
+      ...(taken.contactIds.length ? [{ id: { notIn: taken.contactIds } }] : []),
+      ...(taken.phones.length ? [{ phone: { notIn: taken.phones } }] : []),
+    ];
     // A stored client that now matches a skip rule (e.g. archived) is never an audience member.
     const where =
-      audience.includeNoDealDate && !hasRange
-        ? { tenantId, skipped: false, OR: [dated, { dealDate: null }] }
-        : { tenantId, skipped: false, ...dated };
+      audience.includeNoStartedAt && !hasRange
+        ? { tenantId, skipped: false, OR: [dated, { startedAt: null }], ...(exclude.length ? { AND: exclude } : {}) }
+        : { tenantId, skipped: false, ...dated, ...(exclude.length ? { AND: exclude } : {}) };
     const contacts = await prisma.contact.findMany({
       where,
       select: { id: true, phone: true, phoneStatus: true, name: true, leadId: true, fields: true, source: { select: { kind: true } } },
       // Dated records first, so the one-per-phone merge keeps the client with a deal date.
-      orderBy: { dealDate: { sort: "desc", nulls: "last" } },
+      orderBy: { startedAt: { sort: "desc", nulls: "last" } },
       take: AUDIENCE_CAP + 1,
     });
     // A full page means at least one more client matched. Refuse rather than drop the tail.
@@ -116,8 +140,9 @@ export async function resolveAudience(tenantId: string, audience: Audience, now:
       });
     }
   } else {
+    const leadIds = audience.leadIds.filter((id) => !taken.leadIds.includes(id));
     const leads = await prisma.lead.findMany({
-      where: { tenantId, id: { in: audience.leadIds } },
+      where: { tenantId, id: { in: leadIds } },
       select: { id: true, externalUserId: true, displayName: true, fields: true, channel: { select: { provider: true } } },
     });
     for (const l of leads) {
@@ -272,7 +297,7 @@ async function businessName(tenantId: string): Promise<string> {
 export async function previewCampaign(campaign: CampaignForRun, now = new Date()): Promise<Preview | { error: "bad_audience" | "audience_too_large" }> {
   const audience = parseAudience(campaign.audience);
   if (!audience) return { error: "bad_audience" };
-  const recipients = await resolveAudience(campaign.tenantId, audience, now);
+  const recipients = await resolveAudience(campaign.tenantId, audience, now, campaign.id);
   if (recipients === "audience_too_large") return { error: "audience_too_large" };
   const states = await recipientStates(campaign.tenantId, campaign.id, recipients, now);
   const specs = parseParamSpecs(campaign.params);
@@ -392,11 +417,16 @@ export async function prepareCampaignRun(tenantId: string, campaignId: string, n
   if (live?.status !== "scheduled" && live?.status !== "sending") return { go: false, reason: "not_runnable" };
 
   const [sentToday, sentTotal] = await Promise.all([sentTodayCount(tenantId, now, tz), sentCount(campaignId)]);
+  let batchStartAt = campaign.batchStartAt;
+  if (campaign.resetBatch) {
+    batchStartAt = sentTotal;
+    if (!(await markRunnable(tenantId, campaignId, { batchStartAt, resetBatch: false }))) return { go: false, reason: "not_runnable" };
+  }
   const { budget, limitedBy } = sendBudget({
     dailyCeiling: settings.dailySendCeiling,
     sentToday,
     batchSize: campaign.batchSize,
-    sentInBatch: sentTotal - campaign.batchStartAt,
+    sentInBatch: sentTotal - batchStartAt,
     maxSendsPerRun: settings.maxSendsPerRun,
   });
   const queued = await prisma.campaignSend.count({ where: { campaignId, status: "queued" } });
@@ -465,7 +495,7 @@ export async function freezeAudience(
 ): Promise<"audience_too_large" | "bad_audience" | null> {
   const audience = parseAudience(campaign.audience);
   if (!audience) return "bad_audience";
-  const recipients = await resolveAudience(campaign.tenantId, audience, now);
+  const recipients = await resolveAudience(campaign.tenantId, audience, now, campaign.id);
   if (recipients === "audience_too_large") return "audience_too_large";
   const specs = parseParamSpecs(campaign.params);
   const rows = toSendRows(
@@ -481,7 +511,7 @@ export async function freezeAudience(
 /** Fallback for a campaign confirmed before rows were frozen. Applies every skip rule. Safe to repeat. */
 async function materialize(campaign: CampaignForRun & { tenant: { name: string } }, now: Date): Promise<"audience_too_large" | null> {
   const audience = parseAudience(campaign.audience);
-  const resolved = audience ? await resolveAudience(campaign.tenantId, audience, now) : [];
+  const resolved = audience ? await resolveAudience(campaign.tenantId, audience, now, campaign.id) : [];
   if (resolved === "audience_too_large") return "audience_too_large";
   const states = await recipientStates(campaign.tenantId, campaign.id, resolved, now);
   const specs = parseParamSpecs(campaign.params);

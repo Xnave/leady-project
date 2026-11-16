@@ -624,11 +624,12 @@ model Contact {
   phoneStatus        String       @default("missing")
   name               String       @default("")
   fields             Json         @default("{}")
-  dealDate           DateTime?
-  /** Source field the deal date came from, "" when none matched. */
-  dealDateSource     String       @default("")
+  /// When this person became a client. One date, the first connector field that parses.
+  startedAt           DateTime?
+  /** Source field the start date came from, "" when none matched. */
+  startedAtSource     String       @default("")
   /** high | medium_high | medium | low | "" */
-  dealDateConfidence String       @default("")
+  startedAtConfidence String       @default("")
   sourceUpdatedAt    DateTime?
   /** Stored client that now matches a skip rule (e.g. archived): still synced, left out of audiences. */
   skipped            Boolean      @default(false)
@@ -640,7 +641,7 @@ model Contact {
 
   @@unique([tenantId, sourceId, externalId])
   @@index([tenantId, phone])
-  @@index([tenantId, dealDate])
+  @@index([tenantId, startedAt])
   campaignSends      CampaignSend[]
 
   @@index([leadId])
@@ -732,8 +733,10 @@ model Campaign {
   params        Json              @default("[]")
   /// Sends per batch; the campaign pauses after each batch until the owner resumes. Null = no batches.
   batchSize     Int?
-  /// Sent count when the current batch started.
+  /// Sent count when the current batch started. Sampled on the next run when resetBatch is set.
   batchStartAt  Int               @default(0)
+  /// Resume asks the next run to sample batchStartAt after the previous run has finished.
+  resetBatch    Boolean           @default(false)
   /// Set when confirm turns the audience into CampaignSend rows. The worker fills it in only if confirm did not.
   materializedAt DateTime?
   /// Null uses the Israeli default. Otherwise `{ days: [{ weekday, startMinute, endMinute }] }`; a missing weekday is closed.

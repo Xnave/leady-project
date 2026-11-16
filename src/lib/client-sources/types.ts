@@ -47,13 +47,14 @@ export type FetchClientsOptions = {
   updatedSince: Date | null;
 };
 
-export type DealDateConfidence = "high" | "medium_high" | "medium" | "low";
+export type StartedAtConfidence = "high" | "medium_high" | "medium" | "low";
 
-export type DealDate = {
+/** The date we measure how long someone has been a client. One per contact, not a deal history. */
+export type StartedAt = {
   date: Date | null;
   /** Field the date came from, "" when nothing matched. */
   source: string;
-  confidence: DealDateConfidence | "";
+  confidence: StartedAtConfidence | "";
 };
 
 /** Settings every connector shares; each connector adds its own on top. */
@@ -67,7 +68,7 @@ export type BaseSourceConfig = {
    * New clients that fail it are not stored; stored ones are never removed.
    */
   keep: {
-    dealYearsAgo?: { min?: number; max?: number };
+    startedYearsAgo?: { min?: number; max?: number };
     fields: { field: string; in: string[] }[];
   };
 };
@@ -93,7 +94,7 @@ export type ClientConnector<Credentials = unknown, Session = unknown, Config ext
   /** Field that marks an archived client file; campaigns skip those. */
   archivedField?: string;
   /** Derived values computed from a client's raw fields. */
-  derive(record: ClientRecord, config: Config, now: Date): { dealDate: DealDate; fields: Record<string, unknown> };
+  derive(record: ClientRecord, config: Config, now: Date): { startedAt: StartedAt; fields: Record<string, unknown> };
   /** Seconds a session stays valid; null = until the CRM says otherwise. */
   sessionTtlSeconds: number | null;
 };

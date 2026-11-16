@@ -33,7 +33,7 @@ Client campaigns PR 3 (ClickUp `z8rp3ff7x6`). It builds on PR 1 (templates, add-
 
   The pause between two sends is the tenant's `sendGapMs` (default 250, allowed 0-5000). The campaign stores how long the last run took, how long the send itself took (including those pauses), and the average work per recipient (excluding the pauses).
 
-  When the batch is used up, the campaign pauses (`batch_done`) until the owner resumes it. Resume starts a new batch from the current sent count and kicks a run when the campaign is due.
+  When the batch is used up, the campaign pauses (`batch_done`) until the owner resumes it. Resume marks the campaign to start a new batch. The next run samples the sent count, after the previous run has finished, and kicks when the campaign is due.
 - **Template:** its status is re-read from Meta before each run. If it is no longer approved, the campaign pauses.
 - **Allow-list:** always on outside production. In production it applies only while `CAMPAIGN_ALLOWLIST_ONLY=1`.
 - **Local dev:** when Zernio is not configured, outside production, sends are recorded as `sent` with `error: "dry_run"`.

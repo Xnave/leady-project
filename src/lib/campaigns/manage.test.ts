@@ -9,6 +9,7 @@ const campaignRow = {
   status: "draft",
   scheduledAt: null as Date | null,
   materializedAt: null as Date | null,
+  batchStartAt: 0,
   audience: { kind: "leads", leadIds: ["l1"] },
   params: [{ source: "first_name", value: "", fallback: "שלום" }],
   template: { status: "APPROVED", body: "היי {{1}}", category: "MARKETING" },
@@ -48,6 +49,7 @@ vi.mock("@/lib/db", () => {
       sends.push(...a.data);
       return { count: a.data.length };
     },
+    count: async () => 9,
   };
   const whatsAppTemplate = {
     findFirst: async ({ where }: { where: { id: string; tenantId: string } }) =>
@@ -78,13 +80,14 @@ vi.mock("./engine", () => ({
   },
 }));
 
-const { confirmCampaign, updateCampaign } = await import("./manage");
+const { actOnCampaign, confirmCampaign, updateCampaign } = await import("./manage");
 const actor = { actorUserId: "owner@x", actorLabel: "owner@x" };
 
 beforeEach(() => {
   campaignRow.status = "draft";
   campaignRow.name = "Refinance";
   campaignRow.materializedAt = null;
+  campaignRow.batchStartAt = 0;
   declarations.length = 0;
   updates.length = 0;
   sends.length = 0;
@@ -159,5 +162,16 @@ describe("confirmCampaign", () => {
     expect(res).toEqual({ error: "not_draft" });
     expect(campaignRow.name).toBe("Refinance");
     expect(campaignRow.status).toBe("scheduled");
+  });
+});
+
+describe("actOnCampaign", () => {
+  it("asks the next run to sample the batch and does not sample it now", async () => {
+    campaignRow.status = "paused";
+    campaignRow.batchStartAt = 4;
+    expect(await actOnCampaign("t1", "c1", "resume")).toMatchObject({ status: "scheduled" });
+    expect(updates.at(-1)).toMatchObject({ resetBatch: true, status: "scheduled" });
+    expect(updates.at(-1)).not.toHaveProperty("batchStartAt");
+    expect(campaignRow.batchStartAt).toBe(4);
   });
 });

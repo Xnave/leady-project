@@ -27,6 +27,7 @@ function match(row: Row, where: Row | undefined): boolean {
     if (cond && typeof cond === "object" && !(cond instanceof Date)) {
       const c = cond as Row;
       if ("in" in c && !(c.in as unknown[]).includes(v)) return false;
+      if ("notIn" in c && (c.notIn as unknown[]).includes(v)) return false;
       if ("not" in c && c.not === null && v == null) return false;
       if ("gte" in c && !(v instanceof Date && v >= (c.gte as Date))) return false;
       if ("lte" in c && !(v instanceof Date && v <= (c.lte as Date))) return false;
@@ -272,6 +273,15 @@ describe("prepareCampaignRun", () => {
     expect(await prepareCampaignRun("t1", "c1", NOW)).toEqual({ go: true, budget: 200 });
   });
 
+  it("samples the batch cursor when resume asked, and leaves a fresh cursor alone", async () => {
+    db.campaign[0].resetBatch = true;
+    db.campaign[0].batchStartAt = 0;
+    db.campaign[0].batchSize = 10;
+    db.campaignSend[0].status = "sent";
+    expect(await prepareCampaignRun("t1", "c1", NOW)).toEqual({ go: true, budget: 10 });
+    expect(db.campaign[0]).toMatchObject({ batchStartAt: 1, resetBatch: false });
+  });
+
   it("requeues a send stuck in sending and leaves a fresh one", async () => {
     db.campaignSend[0].status = "sending";
     db.campaignSend[0].updatedAt = new Date(NOW.getTime() - 16 * 60 * 1000);
@@ -306,13 +316,25 @@ describe("resolveAudience leads", () => {
     expect(rows.find((r) => r.leadId === "ig")).toMatchObject({ phone: "972501234567", phoneStatus: "ok" });
     expect(rows.find((r) => r.leadId === "none")).toMatchObject({ phone: "", phoneStatus: "missing" });
   });
+
+  it("leaves out a lead already on the campaign", async () => {
+    db.lead = [
+      { id: "wa", tenantId: "t1", externalUserId: "972509999999", displayName: "Wa", fields: {}, channel: { provider: "whatsapp" } },
+      { id: "ig", tenantId: "t1", externalUserId: "ig-user", displayName: "Dana", fields: { phone: "0501234567" }, channel: { provider: "instagram" } },
+    ];
+    db.campaignSend = [{ id: "old", tenantId: "t1", campaignId: "c1", leadId: "ig", contactId: null, phone: "972501234567", status: "sent" }];
+    const rows = await resolveAudience("t1", { kind: "leads", leadIds: ["wa", "ig"] }, NOW, "c1");
+    expect(rows).not.toBe("audience_too_large");
+    if (rows === "audience_too_large") return;
+    expect(rows.map((r) => r.leadId)).toEqual(["wa"]);
+  });
 });
 
 describe("freezeAudience", () => {
   const campaign = {
     id: "c1",
     tenantId: "t1",
-    audience: { kind: "clients" as const, dealYearsAgoMin: null, dealYearsAgoMax: null, confidence: [], includeNoDealDate: false },
+    audience: { kind: "clients" as const, startedYearsAgoMin: null, startedYearsAgoMax: null, confidence: [], includeNoStartedAt: false },
     params: [],
     template: { category: "MARKETING" },
     tenant: { name: "Biz" },
@@ -328,7 +350,7 @@ describe("freezeAudience", () => {
       leadId: null,
       fields: {},
       skipped: false,
-      dealDate: NOW,
+      startedAt: NOW,
       source: { kind: "smartnpv" },
       ...patch,
     };
@@ -345,6 +367,35 @@ describe("freezeAudience", () => {
       expect.objectContaining({ phone: "972501111111", status: "queued", skipReason: "", contactId: "kept" }),
       expect.objectContaining({ phone: "none:contact-1", status: "skipped", skipReason: "no_phone" }),
     ]);
+  });
+
+  it("does not count clients already on the campaign toward the audience", async () => {
+    db.campaignSend = [];
+    db.contact = [contact(1), contact(2), contact(3)];
+    db.campaignSend = [
+      { id: "old-1", tenantId: "t1", campaignId: "c1", contactId: "contact-1", phone: "972500000001", status: "sent" },
+      { id: "old-2", tenantId: "t1", campaignId: "c1", contactId: "contact-2", phone: "972500000002", status: "queued" },
+    ];
+    const rows = await resolveAudience(
+      "t1",
+      { kind: "clients", startedYearsAgoMin: null, startedYearsAgoMax: null, confidence: [], includeNoStartedAt: false },
+      NOW,
+      "c1",
+    );
+    expect(rows).not.toBe("audience_too_large");
+    if (rows === "audience_too_large") return;
+    expect(rows.map((r) => r.contactId)).toEqual(["contact-3"]);
+  });
+
+  it("does not queue a second row when a sent recipient is frozen again", async () => {
+    db.campaignSend = [];
+    db.contact = [contact(2, { id: "kept", phone: "972501111111", name: "Dana" })];
+    expect(await freezeAudience(prisma as never, campaign, NOW)).toBeNull();
+    const row = db.campaignSend.find((s) => s.phone === "972501111111");
+    expect(row?.status).toBe("queued");
+    row!.status = "sent";
+    expect(await freezeAudience(prisma as never, campaign, NOW)).toBeNull();
+    expect(db.campaignSend.filter((s) => s.phone === "972501111111")).toEqual([expect.objectContaining({ status: "sent" })]);
   });
 
   it("refuses an audience over the cap and writes nothing", async () => {

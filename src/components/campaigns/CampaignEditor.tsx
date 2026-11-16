@@ -94,10 +94,10 @@ export function CampaignEditor({
   const [name, setName] = useState(initial?.name ?? "");
   const [templateId, setTemplateId] = useState(initial?.templateId ?? data.templates[0]?.id ?? "");
   const [audienceKind, setAudienceKind] = useState<"clients" | "leads">(initialLeads.length ? "leads" : "clients");
-  const [yearsMin, setYearsMin] = useState(initialClients?.dealYearsAgoMin?.toString() ?? "");
-  const [yearsMax, setYearsMax] = useState(initialClients?.dealYearsAgoMax?.toString() ?? "");
+  const [yearsMin, setYearsMin] = useState(initialClients?.startedYearsAgoMin?.toString() ?? "");
+  const [yearsMax, setYearsMax] = useState(initialClients?.startedYearsAgoMax?.toString() ?? "");
   const [confidence, setConfidence] = useState<Confidence[]>(initialClients?.confidence ?? []);
-  const [includeNoDate, setIncludeNoDate] = useState(initialClients?.includeNoDealDate ?? false);
+  const [includeNoDate, setIncludeNoDate] = useState(initialClients?.includeNoStartedAt ?? false);
   const [params, setParams] = useState<ParamSpec[]>(initial?.params ?? []);
   const [goal, setGoal] = useState<"handoff" | "book">(initial?.goal ?? "handoff");
   const [brief, setBrief] = useState(initial?.brief ?? "");
@@ -144,7 +144,7 @@ export function CampaignEditor({
     const audience: Audience =
       audienceKind === "leads"
         ? { kind: "leads", leadIds: initialLeads }
-        : { kind: "clients", dealYearsAgoMin: numOrNull(yearsMin), dealYearsAgoMax: numOrNull(yearsMax), confidence, includeNoDealDate: includeNoDate };
+        : { kind: "clients", startedYearsAgoMin: numOrNull(yearsMin), startedYearsAgoMax: numOrNull(yearsMax), confidence, includeNoStartedAt: includeNoDate };
     return {
       name,
       templateId,

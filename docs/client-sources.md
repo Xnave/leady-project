@@ -32,11 +32,11 @@ A connector can declare `sharedCredentials(tenantId)`: credentials the tenant al
   "defaultCountryCode": "972",
   "skip": [{ "field": "archive", "in": ["1"] }],
   "keep": {
-    "dealYearsAgo": { "min": 3, "max": 7 },
+    "startedYearsAgo": { "min": 3, "max": 7 },
     "fields": [{ "field": "status_id", "in": ["<relevant status ids>"] }]
   },
   "pageSize": 100,
-  "dealDate": [
+  "startedAt": [
     { "field": "last_date_execution", "offsetMonths": 0, "confidence": "high" },
     { "field": "archive_time", "offsetMonths": 0, "confidence": "medium_high", "whenField": "status_id", "whenIn": ["<completed status ids>"] },
     { "field": "client_contract_date", "offsetMonths": 3, "confidence": "medium" },
@@ -46,7 +46,7 @@ A connector can declare `sharedCredentials(tenantId)`: credentials the tenant al
 }
 ```
 
-`keep` limits the sync to clients relevant for campaigns. Every part that is set must match: the deal date is `min` to `max` years ago (a client with no deal date fails), and each field rule's value is in its list (an empty list is ignored). Both are off by default. A **new** client that fails is not stored and is counted as `outOfScope`. A client **already stored** is never removed when it stops matching: it keeps syncing, so its history (campaign sends, opt-outs) stays attached. The status ids are tenant-specific; read them from the admin "test" result (`status_id`, `status_title`).
+`keep` limits the sync to clients relevant for campaigns. Every part that is set must match: the start date is `min` to `max` years ago (a client with no start date fails), and each field rule's value is in its list (an empty list is ignored). Both are off by default. A **new** client that fails is not stored and is counted as `outOfScope`. A client **already stored** is never removed when it stops matching: it keeps syncing, so its history (campaign sends, opt-outs) stays attached. The status ids are tenant-specific; read them from the admin "test" result (`status_id`, `status_title`). A saved config may still say `dealYearsAgo`; it is read as `startedYearsAgo`.
 
 `skip` works the same way for stored clients: a **new** client matching a skip rule is not stored (counted as skipped), and a client **already stored** keeps updating with `skipped = true`, so audiences leave it out while its history stays. It flips back when the rule stops matching.
 
@@ -54,7 +54,7 @@ A contact's `leadId` (the "also a lead" link, matched by phone) is kept while th
 
 Sessions are cached per source while a process is warm, keyed on a hash of the credentials, so a newly saved key is used on the next test or sync. A rejected key (`ConnectorAuthError` during a fetch) drops the session and retries once, like an expired session.
 
-`dealDate` is a ladder: the first rung with a usable date wins, and the contact keeps the source field and confidence. A rung with `whenField` and an empty `whenIn` never matches, so the `archive_time` rung is off until the tenant's "completed" status ids are known (PR 0 still-open item 2).
+`startedAt` is a ladder: the first rung with a usable date wins, and the contact keeps the source field and confidence. A saved config may still say `dealDate`. A rung with `whenField` and an empty `whenIn` never matches, so the `archive_time` rung is off until the tenant's "completed" status ids are known (PR 0 still-open item 2).
 
 ## Sync modes
 
