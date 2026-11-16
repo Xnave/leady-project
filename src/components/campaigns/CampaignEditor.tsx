@@ -39,9 +39,35 @@ function numOrNull(v: string): number | null {
   return v.trim() === "" || !Number.isFinite(n) ? null : n;
 }
 
-function hourOr(v: string, fallback: number): number {
-  const n = Number(v);
-  return Number.isInteger(n) ? n : fallback;
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+
+type DayDraft = { weekday: number; open: boolean; start: string; end: string };
+
+function minutesToTime(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function timeToMinutes(value: string): number | null {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (h > 24 || m > 59 || (h === 24 && m !== 0)) return null;
+  return h * 60 + m;
+}
+
+function daysFromWindow(window: SendWindow): DayDraft[] {
+  return WEEKDAYS.map((_, weekday) => {
+    const day = window.days.find((d) => d.weekday === weekday);
+    return {
+      weekday,
+      open: Boolean(day),
+      start: minutesToTime(day?.startMinute ?? 9 * 60),
+      end: minutesToTime(day?.endMinute ?? (weekday === 5 ? 14 * 60 : 20 * 60)),
+    };
+  });
 }
 
 export function CampaignEditor({
@@ -76,11 +102,7 @@ export function CampaignEditor({
   const [goal, setGoal] = useState<"handoff" | "book">(initial?.goal ?? "handoff");
   const [brief, setBrief] = useState(initial?.brief ?? "");
   const [batch, setBatch] = useState(initial?.batchSize?.toString() ?? "");
-  const window0 = initial?.sendWindow ?? DEFAULT_SEND_WINDOW;
-  const [startHour, setStartHour] = useState(String(window0.startHour));
-  const [endHour, setEndHour] = useState(String(window0.endHour));
-  const [fridayEnd, setFridayEnd] = useState(String(window0.fridayEndHour));
-  const [saturdayClosed, setSaturdayClosed] = useState(window0.saturdayClosed);
+  const [days, setDays] = useState<DayDraft[]>(() => daysFromWindow(initial?.sendWindow ?? DEFAULT_SEND_WINDOW));
   const [schedule, setSchedule] = useState(toLocalInput(initial?.scheduledAt ?? null));
   const [busy, setBusy] = useState<"" | "save" | "check" | "confirm">("");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -100,6 +122,11 @@ export function CampaignEditor({
     setPreview(null);
     setDeclared(false);
   };
+
+  function setDay(weekday: number, patch: Partial<DayDraft>) {
+    setDays((current) => current.map((d) => (d.weekday === weekday ? { ...d, ...patch } : d)));
+    touch();
+  }
 
   function setSpec(i: number, patch: Partial<ParamSpec>) {
     const next = [...specs];
@@ -128,10 +155,13 @@ export function CampaignEditor({
       batchSize: numOrNull(batch),
       scheduledAt: schedule ? new Date(schedule).toISOString() : null,
       sendWindow: {
-        startHour: hourOr(startHour, DEFAULT_SEND_WINDOW.startHour),
-        endHour: hourOr(endHour, DEFAULT_SEND_WINDOW.endHour),
-        fridayEndHour: hourOr(fridayEnd, DEFAULT_SEND_WINDOW.fridayEndHour),
-        saturdayClosed,
+        days: days.flatMap((d) => {
+          if (!d.open) return [];
+          const startMinute = timeToMinutes(d.start);
+          const endMinute = timeToMinutes(d.end);
+          if (startMinute == null || endMinute == null || startMinute >= endMinute) return [{ weekday: d.weekday, startMinute: -1, endMinute: -1 }];
+          return [{ weekday: d.weekday, startMinute, endMinute }];
+        }),
       },
     };
   }
@@ -338,24 +368,28 @@ export function CampaignEditor({
         </p>
         <fieldset>
           <legend>{f.hours}</legend>
-          <div className="campaign-row">
-            <label>
-              {f.startHour}
-              <input type="number" min={0} max={23} step={1} value={startHour} onChange={(e) => (setStartHour(e.target.value), touch())} />
-            </label>
-            <label>
-              {f.endHour}
-              <input type="number" min={1} max={24} step={1} value={endHour} onChange={(e) => (setEndHour(e.target.value), touch())} />
-            </label>
-            <label>
-              {f.fridayEnd}
-              <input type="number" min={1} max={24} step={1} value={fridayEnd} onChange={(e) => (setFridayEnd(e.target.value), touch())} />
-            </label>
-          </div>
-          <label className="choice">
-            <input type="checkbox" checked={saturdayClosed} onChange={(e) => (setSaturdayClosed(e.target.checked), touch())} />
-            {f.saturdayClosed}
-          </label>
+          {days.map((d) => (
+            <div key={d.weekday} className="campaign-row">
+              <label className="choice">
+                <input type="checkbox" checked={d.open} onChange={(e) => setDay(d.weekday, { open: e.target.checked })} />
+                {f.weekdays[WEEKDAYS[d.weekday]]}
+              </label>
+              {d.open ? (
+                <>
+                  <label>
+                    {f.from}
+                    <input type="time" value={d.start} onChange={(e) => setDay(d.weekday, { start: e.target.value })} />
+                  </label>
+                  <label>
+                    {f.until}
+                    <input type="time" value={d.end} onChange={(e) => setDay(d.weekday, { end: e.target.value })} />
+                  </label>
+                </>
+              ) : (
+                <span className="muted">{f.dayClosed}</span>
+              )}
+            </div>
+          ))}
         </fieldset>
         <p className="muted campaign-hint">{f.hoursHint}</p>
         {message ? <p className={message.ok ? "muted" : "campaign-error"}>{message.text}</p> : null}

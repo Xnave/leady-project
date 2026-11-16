@@ -36,41 +36,62 @@ export const LOST_STAGES = new Set(["lost", "not_relevant"]);
 
 // ─── Quiet hours ────────────────────────────────────────────────────────────
 
-/** Local sending window: weekdays 09:00-20:00, Friday 09:00-14:00, never on Saturday. */
-export const SEND_WINDOW = {
-  startHour: 9,
-  endHour: 20,
-  fridayEndHour: 14,
-} as const;
+/** One open range on one weekday. Minutes are from local midnight. A missing weekday is closed. */
+export type DayWindow = { weekday: number; startMinute: number; endMinute: number };
 
-export type SendWindow = {
-  startHour: number;
-  endHour: number;
-  fridayEndHour: number;
-  saturdayClosed: boolean;
-};
+/** Which weekdays are open, each with its own range. Nothing here is special about Friday or Saturday. */
+export type SendWindow = { days: DayWindow[] };
 
-/** Used when a campaign stores no window of its own. */
+const MINUTES_PER_DAY = 24 * 60;
+
+function dayWindow(weekday: number, startHour: number, endHour: number): DayWindow {
+  return { weekday, startMinute: startHour * 60, endMinute: endHour * 60 };
+}
+
+/** Israeli week, used when a campaign stores no window: Sun–Thu 09:00–20:00, Friday 09:00–14:00, Saturday closed. */
 export const DEFAULT_SEND_WINDOW: SendWindow = {
-  startHour: SEND_WINDOW.startHour,
-  endHour: SEND_WINDOW.endHour,
-  fridayEndHour: SEND_WINDOW.fridayEndHour,
-  saturdayClosed: true,
+  days: [0, 1, 2, 3, 4].map((weekday) => dayWindow(weekday, 9, 20)).concat([dayWindow(5, 9, 14)]),
 };
+
+const dayWindowSchema = z
+  .object({
+    weekday: z.number().int().min(0).max(6),
+    startMinute: z.number().int().min(0).max(MINUTES_PER_DAY - 1),
+    endMinute: z.number().int().min(1).max(MINUTES_PER_DAY),
+  })
+  .refine((d) => d.startMinute < d.endMinute);
 
 export const sendWindowSchema = z
-  .object({
-    startHour: z.number().int().min(0).max(23),
-    endHour: z.number().int().min(1).max(24),
-    fridayEndHour: z.number().int().min(1).max(24),
-    saturdayClosed: z.boolean(),
-  })
-  .refine((w) => w.startHour < w.endHour && w.startHour < w.fridayEndHour);
+  .object({ days: z.array(dayWindowSchema).max(7) })
+  .refine((w) => new Set(w.days.map((d) => d.weekday)).size === w.days.length);
 
 /** Null or an unreadable value keeps the Israeli default. */
 export function campaignSendWindow(raw: unknown): SendWindow {
   const parsed = sendWindowSchema.safeParse(raw);
   return parsed.success ? parsed.data : DEFAULT_SEND_WINDOW;
+}
+
+export type ChunkTiming = { elapsedMs: number; processMs: number; rows: number };
+
+/** Whole run, the send phase (including pauses), work spent on rows, and how many rows that was. */
+export function summarizeRunTiming(runMs: number, chunks: ChunkTiming[]): {
+  lastRunMs: number;
+  lastSendMs: number;
+  lastProcessMs: number;
+  lastRowCount: number;
+} {
+  return {
+    lastRunMs: Math.max(0, Math.round(runMs)),
+    lastSendMs: chunks.reduce((sum, c) => sum + c.elapsedMs, 0),
+    lastProcessMs: chunks.reduce((sum, c) => sum + c.processMs, 0),
+    lastRowCount: chunks.reduce((sum, c) => sum + c.rows, 0),
+  };
+}
+
+/** Average work per recipient, excluding the pause between sends. Null when no row was processed. */
+export function averageRowMs(processMs: number, rows: number): number | null {
+  if (rows <= 0) return null;
+  return Math.round(processMs / rows);
 }
 
 export type ZonedParts = { year: number; month: number; day: number; hour: number; minute: number; weekday: number };
@@ -111,10 +132,10 @@ export function startOfZonedDay(at: Date, tz: string): Date {
 
 export function inSendWindow(at: Date, tz: string, window: SendWindow = DEFAULT_SEND_WINDOW): boolean {
   const p = zonedParts(at, tz);
-  if (window.saturdayClosed && p.weekday === 6) return false;
-  if (p.hour < window.startHour) return false;
-  const end = p.weekday === 5 ? window.fridayEndHour : window.endHour;
-  return p.hour < end;
+  const day = window.days.find((d) => d.weekday === p.weekday);
+  if (!day) return false;
+  const minute = p.hour * 60 + p.minute;
+  return minute >= day.startMinute && minute < day.endMinute;
 }
 
 // ─── Who is skipped ─────────────────────────────────────────────────────────

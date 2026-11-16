@@ -25,13 +25,13 @@ Client campaigns PR 3 (ClickUp `z8rp3ff7x6`). It builds on PR 1 (templates, add-
   - lead marked lost or not relevant
   - archived client (the connector's `archivedField`), checked again at send time
   - a template value would be empty
-- **Sending hours** in the tenant's timezone. The default is Sunday to Thursday 09:00-20:00, Friday 09:00-14:00, never on Saturday. A draft can store its own `startHour`, `endHour`, `fridayEndHour` and `saturdayClosed`. Null uses the default. Outside the window the campaign waits. It is not paused.
+- **Sending hours** in the tenant's timezone. A window is a list of open days, each `{ weekday, startMinute, endMinute }` from local midnight. A weekday that is missing is closed. Null uses the Israeli default: Sunday to Thursday 09:00-20:00, Friday 09:00-14:00, Saturday closed. Outside the window the campaign waits. It is not paused.
 - **Budget:** the smallest of:
   - the tenant's daily ceiling, counting `sent` rows from every campaign today
   - what is left of the batch, counting `sent` rows
   - the tenant's sends per run (default 300, at most 1000)
 
-  The pause between two sends is the tenant's `sendGapMs` (default 250, allowed 0-5000). The campaign stores how long the last run took, including those pauses.
+  The pause between two sends is the tenant's `sendGapMs` (default 250, allowed 0-5000). The campaign stores how long the last run took, how long the send itself took (including those pauses), and the average work per recipient (excluding the pauses).
 
   When the batch is used up, the campaign pauses (`batch_done`) until the owner resumes it. Resume starts a new batch from the current sent count and kicks a run when the campaign is due.
 - **Template:** its status is re-read from Meta before each run. If it is no longer approved, the campaign pauses.

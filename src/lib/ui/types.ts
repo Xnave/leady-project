@@ -943,10 +943,10 @@ export type UiCopy = {
         scheduleHint: string;
         hours: string;
         hoursHint: string;
-        startHour: string;
-        endHour: string;
-        fridayEnd: string;
-        saturdayClosed: string;
+        weekdays: Record<"sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat", string>;
+        dayClosed: string;
+        from: string;
+        until: string;
         saveDraft: string;
         saving: string;
         saved: string;
@@ -986,6 +986,11 @@ export type UiCopy = {
         lastRun: string;
         /** "{sec}" */
         lastRunValue: string;
+        sendTook: string;
+        avgRow: string;
+        /** "{ms}" */
+        avgRowValue: string;
+        avgRowNone: string;
       };
       errors: Record<
         | "not_enabled"
@@ -1025,6 +1030,11 @@ export type UiCopy = {
       lastRunNone: string;
       /** "{sec}" */
       lastRunValue: string;
+      sendTook: string;
+      avgRow: string;
+      /** "{ms}" */
+      avgRowValue: string;
+      avgRowNone: string;
       whatsapp: string;
       noWhatsApp: string;
       terms: string;

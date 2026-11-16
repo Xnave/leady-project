@@ -24,7 +24,7 @@ export default async function AdminCampaignsPage({ params }: { params: Promise<{
     prisma.campaign.findFirst({
       where: { tenantId, lastRunMs: { not: null } },
       orderBy: { updatedAt: "desc" },
-      select: { lastRunMs: true },
+      select: { lastRunMs: true, lastSendMs: true, lastProcessMs: true, lastRowCount: true },
     }),
   ]);
 
@@ -42,7 +42,11 @@ export default async function AdminCampaignsPage({ params }: { params: Promise<{
         lang={lang}
         initial={settings}
         whatsappPhone={account?.phone ?? null}
-        lastRunMs={latest?.lastRunMs ?? null}
+        lastRun={
+          latest?.lastRunMs != null
+            ? { lastRunMs: latest.lastRunMs, lastSendMs: latest.lastSendMs, lastProcessMs: latest.lastProcessMs, lastRowCount: latest.lastRowCount }
+            : null
+        }
       />
     </div>
   );

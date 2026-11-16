@@ -2,15 +2,11 @@
 
 import { useState, type FormEvent } from "react";
 import { absTime } from "@/components/crm/format";
+import { RunTimingFacts, type RunTimingValue } from "@/components/campaigns/RunTiming";
 import type { CampaignSettings } from "@/lib/campaigns/settings";
 import { fillUi, type UiCopy, type UiLang } from "@/lib/ui";
 
 type Copy = UiCopy["campaigns"]["admin"];
-
-function runSeconds(ms: number): string {
-  const sec = ms / 1000;
-  return sec < 10 ? sec.toFixed(1) : String(Math.round(sec));
-}
 
 export function AdminCampaignSettings({
   tenantId,
@@ -18,14 +14,14 @@ export function AdminCampaignSettings({
   lang,
   initial,
   whatsappPhone,
-  lastRunMs,
+  lastRun,
 }: {
   tenantId: string;
   copy: Copy;
   lang: UiLang;
   initial: CampaignSettings;
   whatsappPhone: string | null;
-  lastRunMs: number | null;
+  lastRun: RunTimingValue | null;
 }) {
   const [settings, setSettings] = useState(initial);
   const [enabled, setEnabled] = useState(initial.enabled);
@@ -114,8 +110,7 @@ export function AdminCampaignSettings({
       <p className="muted campaign-hint">{copy.sendGapHint}</p>
 
       <dl className="campaign-admin-facts">
-        <dt>{copy.lastRun}</dt>
-        <dd>{lastRunMs == null ? copy.lastRunNone : fillUi(copy.lastRunValue, { sec: runSeconds(lastRunMs) })}</dd>
+        <RunTimingFacts copy={copy} run={lastRun} />
         <dt>{copy.whatsapp}</dt>
         <dd dir="ltr">{whatsappPhone ?? copy.noWhatsApp}</dd>
         <dt>{copy.terms}</dt>

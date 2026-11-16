@@ -5,7 +5,9 @@ import {
   dealDateRange,
   estimateCostUsd,
   CHUNK_SIZE,
+  averageRowMs,
   inSendWindow,
+  summarizeRunTiming,
   nextStatus,
   resolveParams,
   runStepCeiling,
@@ -34,13 +36,21 @@ describe("inSendWindow", () => {
     expect(inSendWindow(il("2026-11-07T12:00:00"), TZ)).toBe(false);
   });
 
-  it("honors a campaign window and falls back to the Israeli default", () => {
-    const openSaturday = { startHour: 10, endHour: 18, fridayEndHour: 12, saturdayClosed: false };
-    expect(inSendWindow(il("2026-11-07T12:00:00"), TZ, openSaturday)).toBe(true);
-    expect(inSendWindow(il("2026-11-05T09:30:00"), TZ, openSaturday)).toBe(false);
-    expect(inSendWindow(il("2026-11-06T11:30:00"), TZ, openSaturday)).toBe(true);
-    expect(inSendWindow(il("2026-11-06T12:00:00"), TZ, openSaturday)).toBe(false);
+  it("honors each day's range and falls back to the Israeli default", () => {
+    const custom = {
+      days: [
+        { weekday: 4, startMinute: 10 * 60, endMinute: 18 * 60 },
+        { weekday: 5, startMinute: 9 * 60, endMinute: 12 * 60 },
+        { weekday: 6, startMinute: 9 * 60, endMinute: 18 * 60 },
+      ],
+    };
+    expect(inSendWindow(il("2026-11-07T12:00:00"), TZ, custom)).toBe(true);
+    expect(inSendWindow(il("2026-11-05T09:30:00"), TZ, custom)).toBe(false);
+    expect(inSendWindow(il("2026-11-05T10:00:00"), TZ, custom)).toBe(true);
+    expect(inSendWindow(il("2026-11-06T11:30:00"), TZ, custom)).toBe(true);
+    expect(inSendWindow(il("2026-11-06T12:00:00"), TZ, custom)).toBe(false);
     expect(inSendWindow(il("2026-11-05T09:00:00"), TZ)).toBe(true);
+    expect(inSendWindow(il("2026-11-05T19:30:00"), TZ)).toBe(true);
   });
 });
 
@@ -124,6 +134,16 @@ describe("sendBudget", () => {
     expect(runStepCeiling(300)).toBe(Math.ceil(300 / CHUNK_SIZE));
     expect(runStepCeiling(1, CHUNK_SIZE)).toBe(1);
     expect(runStepCeiling(0, CHUNK_SIZE)).toBe(0);
+  });
+
+  it("splits the run, the send, and the average work per recipient", () => {
+    const timing = summarizeRunTiming(2000, [
+      { elapsedMs: 1000, processMs: 400, rows: 2 },
+      { elapsedMs: 500, processMs: 100, rows: 2 },
+    ]);
+    expect(timing).toEqual({ lastRunMs: 2000, lastSendMs: 1500, lastProcessMs: 500, lastRowCount: 4 });
+    expect(averageRowMs(timing.lastProcessMs, timing.lastRowCount)).toBe(125);
+    expect(averageRowMs(0, 0)).toBeNull();
   });
 });
 

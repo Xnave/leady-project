@@ -514,7 +514,19 @@ async function archivedByContact(tenantId: string, contactIds: string[]): Promis
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-export type ChunkResult = { sent: number; skipped: number; failed: number; attempted: number; queuedLeft: number };
+export type ChunkResult = {
+  sent: number;
+  skipped: number;
+  failed: number;
+  attempted: number;
+  queuedLeft: number;
+  /** Wall clock of this chunk, including the pause between sends. */
+  elapsedMs: number;
+  /** Work on each row, excluding that pause. */
+  processMs: number;
+  /** Rows this chunk decided: sent, failed, or skipped. */
+  rows: number;
+};
 
 /**
  * Send up to `limit` queued rows. Each row is re-checked against the skip rules
@@ -522,13 +534,18 @@ export type ChunkResult = { sent: number; skipped: number; failed: number; attem
  * conditional update so a retried step cannot send it twice.
  */
 export async function sendCampaignChunk(tenantId: string, campaignId: string, limit: number, now = new Date()): Promise<ChunkResult> {
-  const result: ChunkResult = { sent: 0, skipped: 0, failed: 0, attempted: 0, queuedLeft: 0 };
+  const chunkStarted = Date.now();
+  const result: ChunkResult = { sent: 0, skipped: 0, failed: 0, attempted: 0, queuedLeft: 0, elapsedMs: 0, processMs: 0, rows: 0 };
+  const finish = (): ChunkResult => {
+    result.elapsedMs = Date.now() - chunkStarted;
+    return result;
+  };
   const campaign = await prisma.campaign.findFirst({
     where: { id: campaignId, tenantId },
     include: { template: true, tenant: { select: { timezone: true } } },
   });
-  if (!campaign || campaign.status !== "sending") return result;
-  if (!inSendWindow(now, campaign.tenant.timezone || "Asia/Jerusalem", campaignSendWindow(campaign.sendWindow))) return result;
+  if (!campaign || campaign.status !== "sending") return finish();
+  if (!inSendWindow(now, campaign.tenant.timezone || "Asia/Jerusalem", campaignSendWindow(campaign.sendWindow))) return finish();
   const settings = settingsFromRow(await prisma.tenantCampaignSettings.findUnique({ where: { tenantId } }));
 
   const rows = await prisma.campaignSend.findMany({
@@ -558,43 +575,49 @@ export async function sendCampaignChunk(tenantId: string, campaignId: string, li
   for (let i = 0; i < rows.length; i++) {
     const live = await prisma.campaign.findFirst({ where: { id: campaignId, tenantId }, select: { status: true } });
     if (live?.status !== "sending") break;
+    const rowStarted = Date.now();
     const row = rows[i];
     const reason = skipReasonFor(states[i], now);
     if (reason) {
       await prisma.campaignSend.updateMany({ where: { id: row.id, status: "queued" }, data: { status: "skipped", skipReason: reason } });
       result.skipped += 1;
-      continue;
-    }
-    const claimed = await prisma.campaignSend.updateMany({
-      where: { id: row.id, status: "queued" },
-      data: { status: "sending" },
-    });
-    if (claimed.count === 0) continue;
-    result.attempted += 1;
-    try {
-      const params = Array.isArray(row.params) ? (row.params as string[]) : [];
-      const res = dryRun
-        ? { conversationId: "dry-run" }
-        : await sendWhatsAppTemplate({
-            accountId: campaign.template.accountId,
-            phone: row.phone,
-            template: { name: campaign.template.name, language: campaign.template.language },
-            params,
-          });
-      await prisma.campaignSend.update({
-        where: { id: row.id },
-        data: { status: "sent", sentAt: new Date(), providerConversationId: res.conversationId, error: dryRun ? "dry_run" : "" },
+      result.rows += 1;
+      result.processMs += Date.now() - rowStarted;
+    } else {
+      const claimed = await prisma.campaignSend.updateMany({
+        where: { id: row.id, status: "queued" },
+        data: { status: "sending" },
       });
-      result.sent += 1;
-    } catch (err) {
-      const message = (err instanceof Error ? err.message : String(err)).slice(0, 500);
-      await prisma.campaignSend.update({ where: { id: row.id }, data: { status: "failed", error: message } });
-      result.failed += 1;
+      if (claimed.count !== 0) {
+        result.attempted += 1;
+        result.rows += 1;
+        try {
+          const params = Array.isArray(row.params) ? (row.params as string[]) : [];
+          const res = dryRun
+            ? { conversationId: "dry-run" }
+            : await sendWhatsAppTemplate({
+                accountId: campaign.template.accountId,
+                phone: row.phone,
+                template: { name: campaign.template.name, language: campaign.template.language },
+                params,
+              });
+          await prisma.campaignSend.update({
+            where: { id: row.id },
+            data: { status: "sent", sentAt: new Date(), providerConversationId: res.conversationId, error: dryRun ? "dry_run" : "" },
+          });
+          result.sent += 1;
+        } catch (err) {
+          const message = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+          await prisma.campaignSend.update({ where: { id: row.id }, data: { status: "failed", error: message } });
+          result.failed += 1;
+        }
+        result.processMs += Date.now() - rowStarted;
+      }
     }
     if (i < rows.length - 1) await sleep(settings.sendGapMs);
   }
   result.queuedLeft = await prisma.campaignSend.count({ where: { campaignId, status: "queued" } });
-  return result;
+  return finish();
 }
 
 /** After a run: done when nothing is queued; paused when the batch is used up. */

@@ -736,10 +736,16 @@ model Campaign {
   batchStartAt  Int               @default(0)
   /// Set when confirm turns the audience into CampaignSend rows. The worker fills it in only if confirm did not.
   materializedAt DateTime?
-  /// Null uses the Israeli default (09:00-20:00, Friday until 14:00, Saturday closed).
+  /// Null uses the Israeli default. Otherwise `{ days: [{ weekday, startMinute, endMinute }] }`; a missing weekday is closed.
   sendWindow     Json?
-  /// Wall-clock milliseconds of the last worker run, including the gaps between sends.
+  /// Wall-clock milliseconds of the last worker run, including prepare, send, and the gaps between sends.
   lastRunMs      Int?
+  /// Wall-clock milliseconds of the send chunks, including the pause between recipients.
+  lastSendMs     Int?
+  /// Work on recipients in those chunks, excluding the pause between them.
+  lastProcessMs  Int?
+  /// Recipients those chunks decided (sent, failed, or skipped).
+  lastRowCount   Int?
   /// Last time the worker stopped early and why (quiet_hours, daily_ceiling), for the screen.
   waitReason    String            @default("")
   scheduledAt   DateTime?
