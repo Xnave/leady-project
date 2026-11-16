@@ -271,6 +271,11 @@ export const CONFIDENCES = ["high", "medium_high", "medium", "low"] as const;
 const audienceObject = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("clients"),
+    /**
+     * Which synced clients. A source id, or "all" for every source this tenant has connected.
+     * Omitted on campaigns saved before sources: every contact, frozen once at confirm.
+     */
+    sourceId: z.string().min(1).nullable().default(null),
     /** Client for at least this many years (e.g. 4.5). */
     startedYearsAgoMin: z.number().min(0).max(60).nullable().default(null),
     /** Client for at most this many years (e.g. 10). */
@@ -297,6 +302,11 @@ export const audienceSchema = z.preprocess((raw) => {
   return o;
 }, audienceObject);
 export type Audience = z.infer<typeof audienceObject>;
+
+/** A clients campaign that should pick up contacts synced after confirm. Old audiences have no source. */
+export function followsSource(audience: Audience): boolean {
+  return audience.kind === "clients" && audience.sourceId != null;
+}
 
 export function startedAtRange(a: Extract<Audience, { kind: "clients" }>, now: Date): { gte?: Date; lte?: Date } {
   const yearMs = 365.25 * 24 * 3600 * 1000;

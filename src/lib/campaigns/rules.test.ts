@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   allowList,
   audienceSchema,
+  followsSource,
   startedAtRange,
   estimateCostUsd,
   CHUNK_SIZE,
@@ -172,7 +173,12 @@ describe("audience", () => {
   it("turns years ago into a deal-date range", () => {
     const a = audienceSchema.parse({ kind: "clients", dealYearsAgoMin: 4.5, dealYearsAgoMax: 10 });
     if (a.kind !== "clients") throw new Error("kind");
-    expect(a).toMatchObject({ startedYearsAgoMin: 4.5, startedYearsAgoMax: 10 });
+    expect(a).toMatchObject({ startedYearsAgoMin: 4.5, startedYearsAgoMax: 10, sourceId: null });
+    expect(followsSource(a)).toBe(false);
+    const following = audienceSchema.parse({ kind: "clients", sourceId: "src-1" });
+    const everySource = audienceSchema.parse({ kind: "clients", sourceId: "all" });
+    expect(followsSource(following)).toBe(true);
+    expect(followsSource(everySource)).toBe(true);
     const r = startedAtRange(a, new Date("2026-11-05T00:00:00Z"));
     expect(r.lte?.toISOString().slice(0, 7)).toBe("2022-05");
     expect(r.gte?.toISOString().slice(0, 7)).toBe("2016-11");

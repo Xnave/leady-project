@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState, type FormEvent } from "react";
-import type { EditorTemplate } from "@/lib/campaigns/page-data";
+import type { EditorSource, EditorTemplate } from "@/lib/campaigns/page-data";
 import type { Audience, ParamSpec, SendWindow } from "@/lib/campaigns/rules";
 import { DECLARATION_VERSION, DEFAULT_SEND_WINDOW, PARAM_SOURCES } from "@/lib/campaigns/rules";
 import { previewText } from "@/lib/campaigns/templates";
@@ -81,7 +81,7 @@ export function CampaignEditor({
   copy: Copy;
   confidenceNames: Record<Confidence, string>;
   lang: UiLang;
-  data: { templates: EditorTemplate[]; hasClientSource: boolean; businessName: string; whatsappPhone: string | null };
+  data: { templates: EditorTemplate[]; sources: EditorSource[]; hasClientSource: boolean; businessName: string; whatsappPhone: string | null };
   pickedLeadIds: string[];
   initial: EditorInitial | null;
 }) {
@@ -94,6 +94,7 @@ export function CampaignEditor({
   const [name, setName] = useState(initial?.name ?? "");
   const [templateId, setTemplateId] = useState(initial?.templateId ?? data.templates[0]?.id ?? "");
   const [audienceKind, setAudienceKind] = useState<"clients" | "leads">(initialLeads.length ? "leads" : "clients");
+  const [sourceId, setSourceId] = useState(initialClients?.sourceId ?? (data.sources.length === 1 ? data.sources[0].id : "all"));
   const [yearsMin, setYearsMin] = useState(initialClients?.startedYearsAgoMin?.toString() ?? "");
   const [yearsMax, setYearsMax] = useState(initialClients?.startedYearsAgoMax?.toString() ?? "");
   const [confidence, setConfidence] = useState<Confidence[]>(initialClients?.confidence ?? []);
@@ -144,7 +145,14 @@ export function CampaignEditor({
     const audience: Audience =
       audienceKind === "leads"
         ? { kind: "leads", leadIds: initialLeads }
-        : { kind: "clients", startedYearsAgoMin: numOrNull(yearsMin), startedYearsAgoMax: numOrNull(yearsMax), confidence, includeNoStartedAt: includeNoDate };
+        : {
+            kind: "clients",
+            sourceId,
+            startedYearsAgoMin: numOrNull(yearsMin),
+            startedYearsAgoMax: numOrNull(yearsMax),
+            confidence,
+            includeNoStartedAt: includeNoDate,
+          };
     return {
       name,
       templateId,
@@ -275,6 +283,18 @@ export function CampaignEditor({
           ) : null}
           {audienceKind === "clients" && data.hasClientSource ? (
             <>
+              <label>
+                {f.source}
+                <select value={sourceId} onChange={(e) => (setSourceId(e.target.value), touch())}>
+                  <option value="all">{f.sourceAll}</option>
+                  {data.sources.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label || s.kind}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="muted campaign-hint">{f.sourceHint}</p>
               <div className="campaign-row">
                 <label>
                   {f.yearsMin}

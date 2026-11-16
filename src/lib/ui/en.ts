@@ -1234,6 +1234,7 @@ export const en: UiCopy = {
       waitReasons: {
         quiet_hours: "Waiting for sending hours (weekdays 9:00-20:00, Friday until 14:00, not on Saturday)",
         daily_ceiling: "Daily limit for this number reached. Continues tomorrow.",
+        waiting_for_clients: "Waiting for new clients from the source. Continues on the next run.",
       },
       skipReasons: {
         no_phone: "No phone",
@@ -1258,6 +1259,9 @@ export const en: UiCopy = {
         audienceLeads: "Selected leads",
         leadsPicked: "{n} leads picked on the leads page",
         noClientSource: "No CRM is connected yet.",
+        source: "Client source",
+        sourceAll: "All connected sources",
+        sourceHint: "Each run adds clients this source syncs after the last one. The campaign stays scheduled until you cancel it.",
         yearsMin: "Client for at least (years)",
         yearsMax: "Client for at most (years)",
         yearsHint: "E.g. 4.5 to 10 for refinance. Leave empty for no limit.",

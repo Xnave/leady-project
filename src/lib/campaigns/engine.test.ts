@@ -145,6 +145,22 @@ function seed(opts: { declaration?: boolean; phones?: string[] } = {}) {
   db.request = [];
 }
 
+function contact(i: number, patch: Record<string, unknown> = {}) {
+  return {
+    id: `contact-${i}`,
+    tenantId: "t1",
+    phone: `9725${String(i).padStart(8, "0")}`,
+    phoneStatus: "ok",
+    name: `N${i}`,
+    leadId: null,
+    fields: {},
+    skipped: false,
+    startedAt: NOW,
+    source: { kind: "smartnpv" },
+    ...patch,
+  };
+}
+
 beforeEach(() => {
   sendWhatsAppTemplate.mockClear();
   listWhatsAppTemplates.mockReset();
@@ -292,6 +308,36 @@ describe("prepareCampaignRun", () => {
     expect(db.campaignSend[1].status).toBe("sending");
   });
 
+  it("marks a frozen campaign done when nothing is queued", async () => {
+    db.campaignSend = [];
+    expect(await prepareCampaignRun("t1", "c1", NOW)).toEqual({ go: false, reason: "done" });
+    expect(db.campaign[0].status).toBe("done");
+  });
+
+  it("adds contacts synced since the last run and leaves someone already sent", async () => {
+    db.campaign[0].audience = { kind: "clients", sourceId: "src-1" };
+    db.campaignSend = [
+      { id: "old", tenantId: "t1", campaignId: "c1", phone: "972500000001", contactId: "contact-1", leadId: null, status: "sent", sentAt: NOW, skipReason: "", params: ["N1"] },
+    ];
+    db.contact = [contact(1, { sourceId: "src-1" }), contact(2, { sourceId: "src-1" }), contact(3, { sourceId: "src-2" })];
+    const materializedAt = db.campaign[0].materializedAt;
+    expect(await prepareCampaignRun("t1", "c1", NOW)).toEqual({ go: true, budget: 199 });
+    expect(db.campaign[0].materializedAt).toBe(materializedAt);
+    expect(db.campaignSend.filter((s) => s.phone === "972500000001")).toEqual([expect.objectContaining({ status: "sent" })]);
+    expect(db.campaignSend.filter((s) => s.contactId === "contact-2")).toEqual([expect.objectContaining({ status: "queued" })]);
+    expect(db.campaignSend.some((s) => s.contactId === "contact-3")).toBe(false);
+    expect(await prepareCampaignRun("t1", "c1", NOW)).toEqual({ go: true, budget: 199 });
+    expect(db.campaignSend.filter((s) => s.contactId === "contact-2")).toHaveLength(1);
+  });
+
+  it("stays scheduled when a following campaign has nobody new to send", async () => {
+    db.campaign[0].audience = { kind: "clients", sourceId: "all" };
+    db.campaignSend = [];
+    db.contact = [];
+    expect(await prepareCampaignRun("t1", "c1", NOW)).toEqual({ go: false, reason: "waiting_for_clients" });
+    expect(db.campaign[0]).toMatchObject({ status: "scheduled", waitReason: "waiting_for_clients" });
+  });
+
   it("does not move a canceled campaign back to sending", async () => {
     listWhatsAppTemplates.mockImplementationOnce(async () => {
       db.campaign[0].status = "canceled";
@@ -340,22 +386,6 @@ describe("freezeAudience", () => {
     tenant: { name: "Biz" },
   };
 
-  function contact(i: number, patch: Record<string, unknown> = {}) {
-    return {
-      id: `contact-${i}`,
-      tenantId: "t1",
-      phone: `9725${String(i).padStart(8, "0")}`,
-      phoneStatus: "ok",
-      name: `N${i}`,
-      leadId: null,
-      fields: {},
-      skipped: false,
-      startedAt: NOW,
-      source: { kind: "smartnpv" },
-      ...patch,
-    };
-  }
-
   it("writes structural skips only and leaves time-varying skips queued", async () => {
     db.campaignSend = [];
     db.contact = [
@@ -378,7 +408,7 @@ describe("freezeAudience", () => {
     ];
     const rows = await resolveAudience(
       "t1",
-      { kind: "clients", startedYearsAgoMin: null, startedYearsAgoMax: null, confidence: [], includeNoStartedAt: false },
+      { kind: "clients", sourceId: null, startedYearsAgoMin: null, startedYearsAgoMax: null, confidence: [], includeNoStartedAt: false },
       NOW,
       "c1",
     );
@@ -403,5 +433,35 @@ describe("freezeAudience", () => {
     db.contact = Array.from({ length: 20_001 }, (_, i) => contact(i));
     expect(await freezeAudience(prisma as never, campaign, NOW)).toBe("audience_too_large");
     expect(db.campaignSend).toHaveLength(0);
+  });
+});
+
+const clientsAudience = {
+  kind: "clients" as const,
+  sourceId: null as string | null,
+  startedYearsAgoMin: null,
+  startedYearsAgoMax: null,
+  confidence: [] as ("high" | "medium_high" | "medium" | "low")[],
+  includeNoStartedAt: false,
+};
+
+describe("resolveAudience clients", () => {
+  it("keeps one source, and every source when the choice is all", async () => {
+    db.contact = [contact(1, { sourceId: "src-1" }), contact(2, { sourceId: "src-2" })];
+    const one = await resolveAudience("t1", { ...clientsAudience, sourceId: "src-1" }, NOW);
+    const all = await resolveAudience("t1", { ...clientsAudience, sourceId: "all" }, NOW);
+    expect(one).not.toBe("audience_too_large");
+    expect(all).not.toBe("audience_too_large");
+    if (one === "audience_too_large" || all === "audience_too_large") return;
+    expect(one.map((r) => r.contactId)).toEqual(["contact-1"]);
+    expect(all.map((r) => r.contactId).sort()).toEqual(["contact-1", "contact-2"]);
+  });
+
+  it("keeps the first page when a refresh asks not to refuse the cap", async () => {
+    db.contact = Array.from({ length: 20_001 }, (_, i) => contact(i, { sourceId: "src-1" }));
+    const rows = await resolveAudience("t1", { ...clientsAudience, sourceId: "src-1" }, NOW, undefined, "take");
+    expect(rows).not.toBe("audience_too_large");
+    if (rows === "audience_too_large") return;
+    expect(rows).toHaveLength(20_000);
   });
 });

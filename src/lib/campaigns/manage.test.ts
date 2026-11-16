@@ -51,6 +51,9 @@ vi.mock("@/lib/db", () => {
     },
     count: async () => 9,
   };
+  const clientSource = {
+    count: async ({ where }: { where: { id: string; tenantId: string } }) => (where.tenantId === "t1" && where.id === "src-1" ? 1 : 0),
+  };
   const whatsAppTemplate = {
     findFirst: async ({ where }: { where: { id: string; tenantId: string } }) =>
       where.id === "tpl" && where.tenantId === "t1" ? { id: "tpl", status: "APPROVED", body: "היי {{1}}" } : null,
@@ -61,6 +64,7 @@ vi.mock("@/lib/db", () => {
       ownerDeclaration,
       campaignSend,
       whatsAppTemplate,
+      clientSource,
       $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({ campaign, ownerDeclaration, campaignSend }),
     },
   };
@@ -162,6 +166,29 @@ describe("confirmCampaign", () => {
     expect(res).toEqual({ error: "not_draft" });
     expect(campaignRow.name).toBe("Refinance");
     expect(campaignRow.status).toBe("scheduled");
+  });
+});
+
+describe("updateCampaign audience", () => {
+  const base = {
+    name: "Changed",
+    templateId: "tpl",
+    params: [{ source: "first_name", value: "", fallback: "שלום" }],
+  };
+  const clients = {
+    kind: "clients" as const,
+    startedYearsAgoMin: null,
+    startedYearsAgoMax: null,
+    confidence: [] as string[],
+    includeNoStartedAt: false,
+  };
+
+  it("keeps a source that belongs to this tenant and refuses another", async () => {
+    expect(await updateCampaign("t1", "c1", { ...base, audience: { ...clients, sourceId: "src-1" } })).toEqual({ ok: true });
+    campaignRow.status = "draft";
+    expect(await updateCampaign("t1", "c1", { ...base, audience: { ...clients, sourceId: "other" } })).toEqual({ error: "invalid" });
+    campaignRow.status = "draft";
+    expect(await updateCampaign("t1", "c1", { ...base, audience: { ...clients, sourceId: "all" } })).toEqual({ ok: true });
   });
 });
 

@@ -1234,6 +1234,7 @@ export const he: UiCopy = {
       waitReasons: {
         quiet_hours: "ממתין לשעות השליחה (א'-ה' 9:00-20:00, שישי עד 14:00, לא בשבת)",
         daily_ceiling: "הגעת למגבלה היומית של המספר. ממשיך מחר.",
+        waiting_for_clients: "ממתין ללקוחות חדשים מהמקור. ממשיך בהרצה הבאה.",
       },
       skipReasons: {
         no_phone: "אין טלפון",
@@ -1258,6 +1259,9 @@ export const he: UiCopy = {
         audienceLeads: "פניות שנבחרו",
         leadsPicked: "{n} פניות נבחרו בעמוד הפניות",
         noClientSource: "עוד לא חובר CRM.",
+        source: "מקור לקוחות",
+        sourceAll: "כל המקורות המחוברים",
+        sourceHint: "כל הרצה מוסיפה לקוחות שהמקור סנכרן מאז הפעם הקודמת. הקמפיין נשאר מתוזמן עד שמבטלים אותו.",
         yearsMin: "לקוח לפחות (שנים)",
         yearsMax: "לקוח לכל היותר (שנים)",
         yearsHint: "למשל 4.5 עד 10 למחזור. ריק = בלי הגבלה.",

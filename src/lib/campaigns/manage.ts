@@ -84,6 +84,16 @@ async function checkTemplate(tenantId: string, input: CampaignInput): Promise<Ca
   return null;
 }
 
+/** A specific source must belong to this tenant. "all" and a frozen audience do not name one. */
+async function checkAudience(tenantId: string, input: CampaignInput): Promise<CampaignError | null> {
+  if (input.audience.kind !== "clients") return null;
+  const sourceId = input.audience.sourceId;
+  if (!sourceId || sourceId === "all") return null;
+  const found = await prisma.clientSource.count({ where: { id: sourceId, tenantId } });
+  if (!found) return "invalid";
+  return null;
+}
+
 function data(input: CampaignInput) {
   return {
     name: input.name,
@@ -109,6 +119,8 @@ export async function createCampaign(
   if (!parsed.success) return { error: "invalid", detail: parsed.error.issues.map((i) => i.path.join(".")).join(", ") };
   const bad = await checkTemplate(tenantId, parsed.data);
   if (bad) return { error: bad };
+  const badAudience = await checkAudience(tenantId, parsed.data);
+  if (badAudience) return { error: badAudience };
   const row = await prisma.campaign.create({ data: { tenantId, createdBy: actor.actorLabel, ...data(parsed.data) } });
   return { id: row.id };
 }
@@ -123,6 +135,8 @@ export async function updateCampaign(tenantId: string, id: string, raw: unknown)
   if (!parsed.success) return { error: "invalid", detail: parsed.error.issues.map((i) => i.path.join(".")).join(", ") };
   const bad = await checkTemplate(tenantId, parsed.data);
   if (bad) return { error: bad };
+  const badAudience = await checkAudience(tenantId, parsed.data);
+  if (badAudience) return { error: badAudience };
   const res = await prisma.campaign.updateMany({ where: { id, tenantId, status: "draft" }, data: data(parsed.data) });
   if (res.count === 0) return { error: "not_draft" };
   return { ok: true };

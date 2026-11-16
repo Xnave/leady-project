@@ -8,6 +8,7 @@ import { listWhatsAppTemplates, sendWhatsAppTemplate, zernioConfigured } from "@
 import {
   allowList,
   audienceSchema,
+  followsSource,
   startedAtRange,
   estimateCostUsd,
   campaignSendWindow,
@@ -99,6 +100,7 @@ export async function resolveAudience(
   audience: Audience,
   now: Date,
   campaignId?: string,
+  overflow: "refuse" | "take" = "refuse",
 ): Promise<Recipient[] | "audience_too_large"> {
   const taken = await alreadyOnCampaign(tenantId, campaignId);
   const out: Recipient[] = [];
@@ -113,20 +115,22 @@ export async function resolveAudience(
       ...(taken.contactIds.length ? [{ id: { notIn: taken.contactIds } }] : []),
       ...(taken.phones.length ? [{ phone: { notIn: taken.phones } }] : []),
     ];
+    const source = audience.sourceId && audience.sourceId !== "all" ? { sourceId: audience.sourceId } : {};
     // A stored client that now matches a skip rule (e.g. archived) is never an audience member.
     const where =
       audience.includeNoStartedAt && !hasRange
-        ? { tenantId, skipped: false, OR: [dated, { startedAt: null }], ...(exclude.length ? { AND: exclude } : {}) }
-        : { tenantId, skipped: false, ...dated, ...(exclude.length ? { AND: exclude } : {}) };
-    const contacts = await prisma.contact.findMany({
+        ? { tenantId, skipped: false, ...source, OR: [dated, { startedAt: null }], ...(exclude.length ? { AND: exclude } : {}) }
+        : { tenantId, skipped: false, ...source, ...dated, ...(exclude.length ? { AND: exclude } : {}) };
+    const found = await prisma.contact.findMany({
       where,
       select: { id: true, phone: true, phoneStatus: true, name: true, leadId: true, fields: true, source: { select: { kind: true } } },
       // Dated records first, so the one-per-phone merge keeps the client with a deal date.
       orderBy: { startedAt: { sort: "desc", nulls: "last" } },
       take: AUDIENCE_CAP + 1,
     });
-    // A full page means at least one more client matched. Refuse rather than drop the tail.
-    if (contacts.length > AUDIENCE_CAP) return "audience_too_large";
+    // A full page means at least one more client matched. Confirm refuses. A later refresh keeps the first page.
+    if (found.length > AUDIENCE_CAP && overflow === "refuse") return "audience_too_large";
+    const contacts = found.slice(0, AUDIENCE_CAP);
     for (const c of contacts) {
       const field = getConnector(c.source.kind)?.archivedField;
       const fields = (c.fields ?? {}) as Record<string, unknown>;
@@ -320,7 +324,7 @@ export async function previewCampaign(campaign: CampaignForRun, now = new Date()
 
 export type PrepareResult =
   | { go: true; budget: number }
-  | { go: false; reason: "not_due" | "not_runnable" | "quiet_hours" | "daily_ceiling" | "paused" | "done" | "gone" };
+  | { go: false; reason: "not_due" | "not_runnable" | "quiet_hours" | "daily_ceiling" | "paused" | "done" | "waiting_for_clients" | "gone" };
 
 const RUNNABLE = ["scheduled", "sending"] as const;
 
@@ -416,6 +420,9 @@ export async function prepareCampaignRun(tenantId: string, campaignId: string, n
   }
   if (live?.status !== "scheduled" && live?.status !== "sending") return { go: false, reason: "not_runnable" };
 
+  const audience = parseAudience(campaign.audience);
+  if (audience && followsSource(audience)) await appendAudience(campaign, now);
+
   const [sentToday, sentTotal] = await Promise.all([sentTodayCount(tenantId, now, tz), sentCount(campaignId)]);
   let batchStartAt = campaign.batchStartAt;
   if (campaign.resetBatch) {
@@ -431,6 +438,10 @@ export async function prepareCampaignRun(tenantId: string, campaignId: string, n
   });
   const queued = await prisma.campaignSend.count({ where: { campaignId, status: "queued" } });
   if (queued === 0) {
+    if (audience && followsSource(audience)) {
+      const waiting = await markRunnable(tenantId, campaignId, { status: "scheduled", waitReason: "waiting_for_clients" });
+      return waiting ? { go: false, reason: "waiting_for_clients" } : { go: false, reason: "not_runnable" };
+    }
     return (await markRunnable(tenantId, campaignId, { status: "done", waitReason: "" })) ? { go: false, reason: "done" } : { go: false, reason: "not_runnable" };
   }
   if (limitedBy === "batch") {
@@ -506,6 +517,26 @@ export async function freezeAudience(
   );
   await insertSendRows(tx, rows);
   return null;
+}
+
+/**
+ * Add people the source has synced since the last run. People already stored on this
+ * campaign are left as they are. At most one cap of new rows per run; the rest wait.
+ * Does not move materializedAt.
+ */
+async function appendAudience(campaign: CampaignForRun & { tenant: { name: string } }, now: Date): Promise<void> {
+  const audience = parseAudience(campaign.audience);
+  if (!audience || !followsSource(audience)) return;
+  const recipients = await resolveAudience(campaign.tenantId, audience, now, campaign.id, "take");
+  if (recipients === "audience_too_large" || recipients.length === 0) return;
+  const specs = parseParamSpecs(campaign.params);
+  const rows = toSendRows(
+    campaign,
+    recipients,
+    (r) => structuralSkip(r, resolveParams(specs, { name: r.name, businessName: campaign.tenant.name })),
+    (r) => resolveParams(specs, { name: r.name, businessName: campaign.tenant.name }),
+  );
+  await insertSendRows(prisma, rows);
 }
 
 /** Fallback for a campaign confirmed before rows were frozen. Applies every skip rule. Safe to repeat. */

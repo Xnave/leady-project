@@ -14,6 +14,7 @@ export async function campaignPageAccess() {
 }
 
 export type EditorTemplate = { id: string; title: string; text: string; category: string; paramCount: number; examples: string[] };
+export type EditorSource = { id: string; label: string; kind: string };
 
 export async function editorData(tenantId: string) {
   const [templates, sources, tenant, account] = await Promise.all([
@@ -22,7 +23,11 @@ export async function editorData(tenantId: string) {
       orderBy: { createdAt: "desc" },
       select: { id: true, title: true, text: true, body: true, category: true, examples: true },
     }),
-    prisma.clientSource.count({ where: { tenantId } }),
+    prisma.clientSource.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, label: true, kind: true },
+    }),
     prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }),
     tenantWhatsAppAccount(tenantId),
   ]);
@@ -37,7 +42,8 @@ export async function editorData(tenantId: string) {
         examples: Array.isArray(t.examples) ? t.examples.filter((e): e is string => typeof e === "string") : [],
       }),
     ),
-    hasClientSource: sources > 0,
+    sources,
+    hasClientSource: sources.length > 0,
     businessName: tenant?.name ?? "",
     whatsappPhone: account ? formatPhoneDisplay(account.phone) || account.phone : null,
   };
