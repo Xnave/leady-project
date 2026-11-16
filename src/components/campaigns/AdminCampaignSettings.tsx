@@ -7,24 +7,33 @@ import { fillUi, type UiCopy, type UiLang } from "@/lib/ui";
 
 type Copy = UiCopy["campaigns"]["admin"];
 
+function runSeconds(ms: number): string {
+  const sec = ms / 1000;
+  return sec < 10 ? sec.toFixed(1) : String(Math.round(sec));
+}
+
 export function AdminCampaignSettings({
   tenantId,
   copy,
   lang,
   initial,
   whatsappPhone,
+  lastRunMs,
 }: {
   tenantId: string;
   copy: Copy;
   lang: UiLang;
   initial: CampaignSettings;
   whatsappPhone: string | null;
+  lastRunMs: number | null;
 }) {
   const [settings, setSettings] = useState(initial);
   const [enabled, setEnabled] = useState(initial.enabled);
   const [adPrefixEnabled, setAdPrefixEnabled] = useState(initial.adPrefixEnabled);
   const [note, setNote] = useState(initial.adPrefixOffNote);
   const [ceiling, setCeiling] = useState(String(initial.dailySendCeiling));
+  const [maxSends, setMaxSends] = useState(String(initial.maxSendsPerRun));
+  const [gap, setGap] = useState(String(initial.sendGapMs));
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -36,7 +45,14 @@ export function AdminCampaignSettings({
       const res = await fetch(`/api/admin/tenants/${encodeURIComponent(tenantId)}/campaigns`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled, adPrefixEnabled, adPrefixOffNote: note, dailySendCeiling: Number(ceiling) }),
+        body: JSON.stringify({
+          enabled,
+          adPrefixEnabled,
+          adPrefixOffNote: note,
+          dailySendCeiling: Number(ceiling),
+          maxSendsPerRun: Number(maxSends),
+          sendGapMs: Number(gap),
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as { settings?: CampaignSettings; error?: string };
       if (!res.ok || !data.settings) {
@@ -85,7 +101,21 @@ export function AdminCampaignSettings({
       </label>
       <p className="muted campaign-hint">{copy.ceilingHint}</p>
 
+      <label>
+        {copy.maxSends}
+        <input type="number" min={1} max={1000} step={1} value={maxSends} onChange={(e) => setMaxSends(e.target.value)} />
+      </label>
+      <p className="muted campaign-hint">{copy.maxSendsHint}</p>
+
+      <label>
+        {copy.sendGap}
+        <input type="number" min={0} max={5000} step={1} value={gap} onChange={(e) => setGap(e.target.value)} />
+      </label>
+      <p className="muted campaign-hint">{copy.sendGapHint}</p>
+
       <dl className="campaign-admin-facts">
+        <dt>{copy.lastRun}</dt>
+        <dd>{lastRunMs == null ? copy.lastRunNone : fillUi(copy.lastRunValue, { sec: runSeconds(lastRunMs) })}</dd>
         <dt>{copy.whatsapp}</dt>
         <dd dir="ltr">{whatsappPhone ?? copy.noWhatsApp}</dd>
         <dt>{copy.terms}</dt>

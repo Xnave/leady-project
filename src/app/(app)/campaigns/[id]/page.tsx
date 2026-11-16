@@ -5,6 +5,7 @@ import { CampaignActions } from "@/components/campaigns/CampaignActions";
 import { CampaignEditor, type EditorInitial } from "@/components/campaigns/CampaignEditor";
 import { absTime } from "@/components/crm/format";
 import { parseAudience, parseParamSpecs } from "@/lib/campaigns/engine";
+import { campaignSendWindow } from "@/lib/campaigns/rules";
 import { campaignDetail } from "@/lib/campaigns/manage";
 import { campaignPageAccess, editorData } from "@/lib/campaigns/page-data";
 import { previewText } from "@/lib/campaigns/templates";
@@ -44,6 +45,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
           brief: c.brief,
           batchSize: c.batchSize,
           scheduledAt: c.scheduledAt?.toISOString() ?? null,
+          sendWindow: c.sendWindow == null ? null : campaignSendWindow(c.sendWindow),
         }
       : null;
     return (
@@ -85,6 +87,12 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
         <dl className="campaign-admin-facts">
           <dt>{run.detail.goal}</dt>
           <dd>{run.form.goals[c.goal === "book" ? "book" : "handoff"]}</dd>
+          {c.lastRunMs != null ? (
+            <>
+              <dt>{run.detail.lastRun}</dt>
+              <dd>{fillUi(run.detail.lastRunValue, { sec: c.lastRunMs < 10_000 ? (c.lastRunMs / 1000).toFixed(1) : String(Math.round(c.lastRunMs / 1000)) })}</dd>
+            </>
+          ) : null}
           <dt>{run.detail.audience}</dt>
           <dd>
             {audience?.kind === "leads"

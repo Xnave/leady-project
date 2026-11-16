@@ -660,6 +660,10 @@ model TenantCampaignSettings {
   adPrefixOffAt     DateTime?
   /// Unique recipients per day from the tenant's number. Meta starts new portfolios at 250.
   dailySendCeiling  Int       @default(200)
+  /// Upper bound of sends in one worker run, on top of the daily ceiling and the batch. Hard max 1000.
+  maxSendsPerRun    Int       @default(300)
+  /// Pause between two sends inside a run, in milliseconds. Allowed 0-5000.
+  sendGapMs         Int       @default(250)
   termsVersion      String    @default("")
   termsAcceptedAt   DateTime?
   termsAcceptedBy   String    @default("")
@@ -732,6 +736,10 @@ model Campaign {
   batchStartAt  Int               @default(0)
   /// Set when confirm turns the audience into CampaignSend rows. The worker fills it in only if confirm did not.
   materializedAt DateTime?
+  /// Null uses the Israeli default (09:00-20:00, Friday until 14:00, Saturday closed).
+  sendWindow     Json?
+  /// Wall-clock milliseconds of the last worker run, including the gaps between sends.
+  lastRunMs      Int?
   /// Last time the worker stopped early and why (quiet_hours, daily_ceiling), for the screen.
   waitReason    String            @default("")
   scheduledAt   DateTime?

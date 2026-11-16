@@ -30,6 +30,7 @@ function match(row: Row, where: Row | undefined): boolean {
       if ("not" in c && c.not === null && v == null) return false;
       if ("gte" in c && !(v instanceof Date && v >= (c.gte as Date))) return false;
       if ("lte" in c && !(v instanceof Date && v <= (c.lte as Date))) return false;
+      if ("lt" in c && !(v instanceof Date && v < (c.lt as Date))) return false;
       continue;
     }
     if (v !== cond) return false;
@@ -95,7 +96,7 @@ vi.mock("./store", () => ({
 }));
 vi.mock("@/lib/dev-auth-bypass", () => ({ isProductionRuntime: () => true }));
 
-const { prepareCampaignRun, sendCampaignChunk, freezeAudience } = await import("./engine");
+const { prepareCampaignRun, resolveAudience, sendCampaignChunk, freezeAudience } = await import("./engine");
 const { prisma } = await import("@/lib/db");
 
 // Thursday 11:00 in Israel: inside sending hours.
@@ -271,6 +272,16 @@ describe("prepareCampaignRun", () => {
     expect(await prepareCampaignRun("t1", "c1", NOW)).toEqual({ go: true, budget: 200 });
   });
 
+  it("requeues a send stuck in sending and leaves a fresh one", async () => {
+    db.campaignSend[0].status = "sending";
+    db.campaignSend[0].updatedAt = new Date(NOW.getTime() - 16 * 60 * 1000);
+    db.campaignSend[1].status = "sending";
+    db.campaignSend[1].updatedAt = NOW;
+    expect(await prepareCampaignRun("t1", "c1", NOW)).toEqual({ go: true, budget: 200 });
+    expect(db.campaignSend[0].status).toBe("queued");
+    expect(db.campaignSend[1].status).toBe("sending");
+  });
+
   it("does not move a canceled campaign back to sending", async () => {
     listWhatsAppTemplates.mockImplementationOnce(async () => {
       db.campaign[0].status = "canceled";
@@ -278,6 +289,22 @@ describe("prepareCampaignRun", () => {
     });
     expect(await prepareCampaignRun("t1", "c1", NOW)).toEqual({ go: false, reason: "not_runnable" });
     expect(db.campaign[0].status).toBe("canceled");
+  });
+});
+
+describe("resolveAudience leads", () => {
+  it("uses a phone field when the channel is not WhatsApp, and skips a lead with none", async () => {
+    db.lead = [
+      { id: "wa", tenantId: "t1", externalUserId: "972509999999", displayName: "Wa", fields: { phone: "0501111111" }, channel: { provider: "whatsapp" } },
+      { id: "ig", tenantId: "t1", externalUserId: "ig-user", displayName: "Dana", fields: { phone: "0501234567" }, channel: { provider: "instagram" } },
+      { id: "none", tenantId: "t1", externalUserId: "x", displayName: "No", fields: {}, channel: { provider: "instagram" } },
+    ];
+    const rows = await resolveAudience("t1", { kind: "leads", leadIds: ["wa", "ig", "none"] }, NOW);
+    expect(rows).not.toBe("audience_too_large");
+    if (rows === "audience_too_large") return;
+    expect(rows.find((r) => r.leadId === "wa")).toMatchObject({ phone: "972509999999", phoneStatus: "ok" });
+    expect(rows.find((r) => r.leadId === "ig")).toMatchObject({ phone: "972501234567", phoneStatus: "ok" });
+    expect(rows.find((r) => r.leadId === "none")).toMatchObject({ phone: "", phoneStatus: "missing" });
   });
 });
 

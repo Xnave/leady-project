@@ -941,6 +941,12 @@ export type UiCopy = {
         batchHint: string;
         schedule: string;
         scheduleHint: string;
+        hours: string;
+        hoursHint: string;
+        startHour: string;
+        endHour: string;
+        fridayEnd: string;
+        saturdayClosed: string;
         saveDraft: string;
         saving: string;
         saved: string;
@@ -977,6 +983,9 @@ export type UiCopy = {
         batchOf: string;
         goal: string;
         audience: string;
+        lastRun: string;
+        /** "{sec}" */
+        lastRunValue: string;
       };
       errors: Record<
         | "not_enabled"
@@ -1008,6 +1017,14 @@ export type UiCopy = {
       adPrefixOffBy: string;
       ceiling: string;
       ceilingHint: string;
+      maxSends: string;
+      maxSendsHint: string;
+      sendGap: string;
+      sendGapHint: string;
+      lastRun: string;
+      lastRunNone: string;
+      /** "{sec}" */
+      lastRunValue: string;
       whatsapp: string;
       noWhatsApp: string;
       terms: string;
@@ -1015,7 +1032,7 @@ export type UiCopy = {
       save: string;
       saving: string;
       saved: string;
-      errors: Record<"prefix_note_required" | "ceiling_invalid" | "failed", string>;
+      errors: Record<"prefix_note_required" | "ceiling_invalid" | "pace_invalid" | "failed", string>;
     };
   };
 };

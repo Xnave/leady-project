@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { uiCopy, type UiLang } from "@/lib/ui";
@@ -8,6 +9,7 @@ import {
   GOALS,
   nextStatus,
   paramSchema,
+  sendWindowSchema,
   type CampaignAction,
 } from "./rules";
 import { loadCampaignSettings } from "./store";
@@ -32,8 +34,20 @@ export const campaignInputSchema = z.object({
   batchSize: z.number().int().min(1).max(100_000).nullable().default(null),
   /** ISO time; null = as soon as it is confirmed. */
   scheduledAt: z.string().datetime({ offset: true }).nullable().default(null),
+  /** Null keeps the Israeli default. */
+  sendWindow: sendWindowSchema.nullable().default(null),
 });
 export type CampaignInput = z.infer<typeof campaignInputSchema>;
+
+export const confirmBodySchema = z.object({
+  declarationAccepted: z.literal(true),
+  declarationVersion: z.literal(DECLARATION_VERSION),
+  language: z.enum(["he", "en"]),
+});
+
+export const actionBodySchema = z.object({
+  action: z.enum(["pause", "resume", "cancel"]),
+});
 
 export type CampaignError =
   | "not_enabled"
@@ -80,6 +94,7 @@ function data(input: CampaignInput) {
     brief: input.brief,
     batchSize: input.batchSize,
     scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : null,
+    sendWindow: input.sendWindow ?? Prisma.DbNull,
   };
 }
 

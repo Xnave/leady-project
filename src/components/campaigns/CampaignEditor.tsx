@@ -3,8 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState, type FormEvent } from "react";
 import type { EditorTemplate } from "@/lib/campaigns/page-data";
-import type { Audience, ParamSpec } from "@/lib/campaigns/rules";
-import { DECLARATION_VERSION, PARAM_SOURCES } from "@/lib/campaigns/rules";
+import type { Audience, ParamSpec, SendWindow } from "@/lib/campaigns/rules";
+import { DECLARATION_VERSION, DEFAULT_SEND_WINDOW, PARAM_SOURCES } from "@/lib/campaigns/rules";
 import { previewText } from "@/lib/campaigns/templates";
 import { fillUi, type UiCopy, type UiLang } from "@/lib/ui";
 
@@ -22,6 +22,7 @@ export type EditorInitial = {
   brief: string;
   batchSize: number | null;
   scheduledAt: string | null;
+  sendWindow: SendWindow | null;
 };
 
 type Preview = { total: number; eligible: number; skipped: Record<string, number>; sample: string[]; costUsd: number };
@@ -36,6 +37,11 @@ function toLocalInput(iso: string | null): string {
 function numOrNull(v: string): number | null {
   const n = Number(v);
   return v.trim() === "" || !Number.isFinite(n) ? null : n;
+}
+
+function hourOr(v: string, fallback: number): number {
+  const n = Number(v);
+  return Number.isInteger(n) ? n : fallback;
 }
 
 export function CampaignEditor({
@@ -70,6 +76,11 @@ export function CampaignEditor({
   const [goal, setGoal] = useState<"handoff" | "book">(initial?.goal ?? "handoff");
   const [brief, setBrief] = useState(initial?.brief ?? "");
   const [batch, setBatch] = useState(initial?.batchSize?.toString() ?? "");
+  const window0 = initial?.sendWindow ?? DEFAULT_SEND_WINDOW;
+  const [startHour, setStartHour] = useState(String(window0.startHour));
+  const [endHour, setEndHour] = useState(String(window0.endHour));
+  const [fridayEnd, setFridayEnd] = useState(String(window0.fridayEndHour));
+  const [saturdayClosed, setSaturdayClosed] = useState(window0.saturdayClosed);
   const [schedule, setSchedule] = useState(toLocalInput(initial?.scheduledAt ?? null));
   const [busy, setBusy] = useState<"" | "save" | "check" | "confirm">("");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -116,6 +127,12 @@ export function CampaignEditor({
       brief,
       batchSize: numOrNull(batch),
       scheduledAt: schedule ? new Date(schedule).toISOString() : null,
+      sendWindow: {
+        startHour: hourOr(startHour, DEFAULT_SEND_WINDOW.startHour),
+        endHour: hourOr(endHour, DEFAULT_SEND_WINDOW.endHour),
+        fridayEndHour: hourOr(fridayEnd, DEFAULT_SEND_WINDOW.fridayEndHour),
+        saturdayClosed,
+      },
     };
   }
 
@@ -319,6 +336,28 @@ export function CampaignEditor({
         <p className="muted campaign-hint">
           {f.batchHint} {f.scheduleHint}
         </p>
+        <fieldset>
+          <legend>{f.hours}</legend>
+          <div className="campaign-row">
+            <label>
+              {f.startHour}
+              <input type="number" min={0} max={23} step={1} value={startHour} onChange={(e) => (setStartHour(e.target.value), touch())} />
+            </label>
+            <label>
+              {f.endHour}
+              <input type="number" min={1} max={24} step={1} value={endHour} onChange={(e) => (setEndHour(e.target.value), touch())} />
+            </label>
+            <label>
+              {f.fridayEnd}
+              <input type="number" min={1} max={24} step={1} value={fridayEnd} onChange={(e) => (setFridayEnd(e.target.value), touch())} />
+            </label>
+          </div>
+          <label className="choice">
+            <input type="checkbox" checked={saturdayClosed} onChange={(e) => (setSaturdayClosed(e.target.checked), touch())} />
+            {f.saturdayClosed}
+          </label>
+        </fieldset>
+        <p className="muted campaign-hint">{f.hoursHint}</p>
         {message ? <p className={message.ok ? "muted" : "campaign-error"}>{message.text}</p> : null}
         <div className="field-form-actions">
           <button type="submit" className="btn-secondary" disabled={busy !== ""} aria-busy={busy === "save"}>

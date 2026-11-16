@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { campaignDetail, updateCampaign } from "@/lib/campaigns/manage";
+import { campaignDetail, campaignInputSchema, updateCampaign } from "@/lib/campaigns/manage";
 import { campaignAccessOr403, errorStatus } from "@/lib/campaigns/route-gate";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -15,7 +15,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const access = await campaignAccessOr403();
   if (access instanceof Response) return access;
   const { id } = await params;
-  const res = await updateCampaign(access.tenantId, id, await req.json().catch(() => ({})));
+  const parsed = campaignInputSchema.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) return NextResponse.json({ error: "invalid" }, { status: 400 });
+  const res = await updateCampaign(access.tenantId, id, parsed.data);
   if ("error" in res) return NextResponse.json(res, { status: errorStatus(res.error) });
   return NextResponse.json(res);
 }

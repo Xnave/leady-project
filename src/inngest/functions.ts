@@ -323,13 +323,15 @@ export const campaignRun = inngest.createFunction(
       return prepareCampaignRun(tenantId, campaignId);
     });
     if (!prep.go) return { skipped: prep.reason };
-    const CHUNK = 20;
+    const started = await step.run("started", () => Date.now());
+    const { CHUNK_SIZE, runStepCeiling } = await import("@/lib/campaigns/rules");
+    const steps = runStepCeiling(prep.budget);
     let left = prep.budget;
     let sent = 0;
-    for (let i = 0; left > 0 && i < 100; i++) {
+    for (let i = 0; left > 0 && i < steps; i++) {
       const chunk = await step.run(`chunk-${i}`, async () => {
         const { sendCampaignChunk } = await import("@/lib/campaigns/engine");
-        return sendCampaignChunk(tenantId, campaignId, Math.min(CHUNK, left));
+        return sendCampaignChunk(tenantId, campaignId, Math.min(CHUNK_SIZE, left));
       });
       sent += chunk.sent;
       left -= chunk.attempted + chunk.skipped;
@@ -338,6 +340,13 @@ export const campaignRun = inngest.createFunction(
     const status = await step.run("finish", async () => {
       const { finishCampaignRun } = await import("@/lib/campaigns/engine");
       return finishCampaignRun(tenantId, campaignId);
+    });
+    await step.run("record-duration", async () => {
+      const { prisma } = await import("@/lib/db");
+      await prisma.campaign.updateMany({
+        where: { id: campaignId, tenantId },
+        data: { lastRunMs: Math.max(0, Date.now() - started) },
+      });
     });
     return { sent, status };
   },

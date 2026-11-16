@@ -4,9 +4,11 @@ import {
   audienceSchema,
   dealDateRange,
   estimateCostUsd,
+  CHUNK_SIZE,
   inSendWindow,
   nextStatus,
   resolveParams,
+  runStepCeiling,
   sendBudget,
   skipReasonFor,
   startOfZonedDay,
@@ -30,6 +32,15 @@ describe("inSendWindow", () => {
     expect(inSendWindow(il("2026-11-06T13:59:00"), TZ)).toBe(true);
     expect(inSendWindow(il("2026-11-06T14:00:00"), TZ)).toBe(false);
     expect(inSendWindow(il("2026-11-07T12:00:00"), TZ)).toBe(false);
+  });
+
+  it("honors a campaign window and falls back to the Israeli default", () => {
+    const openSaturday = { startHour: 10, endHour: 18, fridayEndHour: 12, saturdayClosed: false };
+    expect(inSendWindow(il("2026-11-07T12:00:00"), TZ, openSaturday)).toBe(true);
+    expect(inSendWindow(il("2026-11-05T09:30:00"), TZ, openSaturday)).toBe(false);
+    expect(inSendWindow(il("2026-11-06T11:30:00"), TZ, openSaturday)).toBe(true);
+    expect(inSendWindow(il("2026-11-06T12:00:00"), TZ, openSaturday)).toBe(false);
+    expect(inSendWindow(il("2026-11-05T09:00:00"), TZ)).toBe(true);
   });
 });
 
@@ -105,6 +116,14 @@ describe("sendBudget", () => {
     expect(sendBudget({ dailyCeiling: 200, sentToday: 0, batchSize: 25, sentInBatch: 20 })).toEqual({ budget: 5, limitedBy: null });
     expect(sendBudget({ dailyCeiling: 200, sentToday: 200, batchSize: 25, sentInBatch: 0 }).limitedBy).toBe("daily_ceiling");
     expect(sendBudget({ dailyCeiling: 200, sentToday: 0, batchSize: 25, sentInBatch: 25 }).limitedBy).toBe("batch");
+    expect(sendBudget({ dailyCeiling: 200, sentToday: 0, batchSize: null, sentInBatch: 0, maxSendsPerRun: 40 })).toEqual({ budget: 40, limitedBy: null });
+    expect(sendBudget({ dailyCeiling: 1000, sentToday: 0, batchSize: null, sentInBatch: 0, maxSendsPerRun: 40 }).budget).toBe(40);
+  });
+
+  it("sizes the step loop from the budget and the chunk", () => {
+    expect(runStepCeiling(300)).toBe(Math.ceil(300 / CHUNK_SIZE));
+    expect(runStepCeiling(1, CHUNK_SIZE)).toBe(1);
+    expect(runStepCeiling(0, CHUNK_SIZE)).toBe(0);
   });
 });
 

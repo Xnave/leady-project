@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { inngest } from "@/inngest/client";
 import { resolveStaffActor } from "@/lib/admin-decisions";
-import { confirmCampaign } from "@/lib/campaigns/manage";
+import { confirmBodySchema, confirmCampaign } from "@/lib/campaigns/manage";
 import { campaignRunEvent } from "@/lib/campaigns/run-event";
 import { campaignAccessOr403, errorStatus } from "@/lib/campaigns/route-gate";
 
@@ -10,8 +10,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const access = await campaignAccessOr403();
   if (access instanceof Response) return access;
   const { id } = await params;
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-  const res = await confirmCampaign(access.tenantId, id, await resolveStaffActor(), body);
+  const parsed = confirmBodySchema.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) return NextResponse.json({ error: "invalid" }, { status: 400 });
+  const res = await confirmCampaign(access.tenantId, id, await resolveStaffActor(), parsed.data);
   if ("error" in res) return NextResponse.json(res, { status: errorStatus(res.error) });
   if (new Date(res.scheduledAt).getTime() <= Date.now()) {
     await inngest

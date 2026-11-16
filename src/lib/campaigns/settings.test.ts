@@ -18,6 +18,8 @@ describe("parseAdminSettings", () => {
       adPrefixOffBy: "",
       adPrefixOffAt: null,
       dailySendCeiling: 200,
+      maxSendsPerRun: 300,
+      sendGapMs: 250,
     });
   });
 
@@ -47,6 +49,16 @@ describe("parseAdminSettings", () => {
   it("clears the note when the prefix goes back on", () => {
     const off = { ...DEFAULT_CAMPAIGN_SETTINGS, adPrefixEnabled: false, adPrefixOffNote: "Lawyer approved", adPrefixOffBy: "a" };
     expect(parseAdminSettings({ adPrefixEnabled: true }, off, "b", now)).toMatchObject({ adPrefixOffNote: "", adPrefixOffBy: "", adPrefixOffAt: null });
+  });
+
+  it("keeps the pace inside its caps", () => {
+    expect(parseAdminSettings({ maxSendsPerRun: 1000, sendGapMs: 0 }, DEFAULT_CAMPAIGN_SETTINGS, "a", now)).toMatchObject({
+      maxSendsPerRun: 1000,
+      sendGapMs: 0,
+    });
+    for (const bad of [{ maxSendsPerRun: 0 }, { maxSendsPerRun: 1001 }, { sendGapMs: -1 }, { sendGapMs: 5001 }, { maxSendsPerRun: 1.5 }]) {
+      expect(parseAdminSettings(bad, DEFAULT_CAMPAIGN_SETTINGS, "a", now)).toEqual({ error: "pace_invalid" });
+    }
   });
 
   it("validates the daily ceiling", () => {

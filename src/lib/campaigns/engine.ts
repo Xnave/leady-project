@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { normalizeClientPhone } from "@/lib/client-sources/phone";
 import { getConnector } from "@/lib/client-sources/registry";
 import { isProductionRuntime } from "@/lib/dev-auth-bypass";
 import { leadDisplayName } from "@/lib/leads";
@@ -9,14 +10,16 @@ import {
   audienceSchema,
   dealDateRange,
   estimateCostUsd,
+  campaignSendWindow,
+  DUE_CAMPAIGNS_PER_TICK,
   FREQUENCY_CAP_DAYS,
   inSendWindow,
   isArchivedValue,
   OPEN_CONVERSATION_DAYS,
   paramSchema,
   resolveParams,
-  SEND_GAP_MS,
   sendBudget,
+  STUCK_SENDING_MS,
   skipReasonFor,
   startOfZonedDay,
   type Audience,
@@ -31,7 +34,8 @@ import { isSendable, normalizeTemplateStatus } from "./templates";
 /**
  * Campaign audience resolution and the send worker. Every query is scoped by
  * tenantId. Sending is one claimed row at a time (queued → sending → sent), so
- * a retried step never sends the same row twice.
+ * a retried step does not send a row it already marked sent. A row left in
+ * `sending` is claimed again after STUCK_SENDING_MS.
  */
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -58,6 +62,21 @@ export function parseParamSpecs(raw: unknown): ParamSpec[] {
 
 function digits(v: string): string {
   return v.replace(/\D/g, "");
+}
+
+/** WhatsApp id when it is a usable number. Otherwise the lead's phone field, as an Israeli number. */
+function leadRecipientPhone(lead: { externalUserId: string; fields: unknown; channel: { provider: string } }): {
+  phone: string;
+  phoneStatus: Recipient["phoneStatus"];
+} {
+  const fromWhatsApp = lead.channel.provider === "whatsapp" ? digits(lead.externalUserId) : "";
+  if (fromWhatsApp.length >= 10) return { phone: fromWhatsApp, phoneStatus: "ok" };
+  const fields = (lead.fields ?? {}) as Record<string, unknown>;
+  const raw = fields.phone;
+  if (raw == null || (typeof raw === "string" && !raw.trim())) return { phone: "", phoneStatus: "missing" };
+  const normalized = normalizeClientPhone(raw, "972");
+  if (normalized.status === "ok") return { phone: normalized.phone, phoneStatus: "ok" };
+  return { phone: "", phoneStatus: normalized.status === "invalid" ? "invalid" : "missing" };
 }
 
 /** Audience → one recipient per phone. Recipients with no usable phone are kept (keyed by id) so they are counted. */
@@ -102,10 +121,10 @@ export async function resolveAudience(tenantId: string, audience: Audience, now:
       select: { id: true, externalUserId: true, displayName: true, fields: true, channel: { select: { provider: true } } },
     });
     for (const l of leads) {
-      const phone = l.channel.provider === "whatsapp" ? digits(l.externalUserId) : "";
+      const { phone, phoneStatus } = leadRecipientPhone(l);
       out.push({
-        phone: phone.length >= 10 ? phone : "",
-        phoneStatus: phone.length >= 10 ? "ok" : "missing",
+        phone,
+        phoneStatus,
         name: leadDisplayName(l),
         contactId: null,
         leadId: l.id,
@@ -328,6 +347,16 @@ export async function prepareCampaignRun(tenantId: string, campaignId: string, n
   if (campaign.status !== "scheduled" && campaign.status !== "sending") return { go: false, reason: "not_runnable" };
   if (!campaign.scheduledAt || campaign.scheduledAt > now) return { go: false, reason: "not_due" };
 
+  await prisma.campaignSend.updateMany({
+    where: {
+      tenantId,
+      campaignId,
+      status: "sending",
+      updatedAt: { lt: new Date(now.getTime() - STUCK_SENDING_MS) },
+    },
+    data: { status: "queued" },
+  });
+
   const settings = settingsFromRow(await prisma.tenantCampaignSettings.findUnique({ where: { tenantId } }));
   if (!settings.enabled || !termsAccepted(settings)) {
     return (await pause(tenantId, campaignId, "addon_off")) ? { go: false, reason: "paused" } : { go: false, reason: "not_runnable" };
@@ -341,7 +370,7 @@ export async function prepareCampaignRun(tenantId: string, campaignId: string, n
     return (await pause(tenantId, campaignId, "no_whatsapp")) ? { go: false, reason: "paused" } : { go: false, reason: "not_runnable" };
   }
   const tz = campaign.tenant.timezone || "Asia/Jerusalem";
-  if (!inSendWindow(now, tz)) {
+  if (!inSendWindow(now, tz, campaignSendWindow(campaign.sendWindow))) {
     if (!(await markRunnable(tenantId, campaignId, { waitReason: "quiet_hours" }))) return { go: false, reason: "not_runnable" };
     return { go: false, reason: "quiet_hours" };
   }
@@ -368,6 +397,7 @@ export async function prepareCampaignRun(tenantId: string, campaignId: string, n
     sentToday,
     batchSize: campaign.batchSize,
     sentInBatch: sentTotal - campaign.batchStartAt,
+    maxSendsPerRun: settings.maxSendsPerRun,
   });
   const queued = await prisma.campaignSend.count({ where: { campaignId, status: "queued" } });
   if (queued === 0) {
@@ -498,7 +528,8 @@ export async function sendCampaignChunk(tenantId: string, campaignId: string, li
     include: { template: true, tenant: { select: { timezone: true } } },
   });
   if (!campaign || campaign.status !== "sending") return result;
-  if (!inSendWindow(now, campaign.tenant.timezone || "Asia/Jerusalem")) return result;
+  if (!inSendWindow(now, campaign.tenant.timezone || "Asia/Jerusalem", campaignSendWindow(campaign.sendWindow))) return result;
+  const settings = settingsFromRow(await prisma.tenantCampaignSettings.findUnique({ where: { tenantId } }));
 
   const rows = await prisma.campaignSend.findMany({
     where: { campaignId, tenantId, status: "queued" },
@@ -560,7 +591,7 @@ export async function sendCampaignChunk(tenantId: string, campaignId: string, li
       await prisma.campaignSend.update({ where: { id: row.id }, data: { status: "failed", error: message } });
       result.failed += 1;
     }
-    if (i < rows.length - 1) await sleep(SEND_GAP_MS);
+    if (i < rows.length - 1) await sleep(settings.sendGapMs);
   }
   result.queuedLeft = await prisma.campaignSend.count({ where: { campaignId, status: "queued" } });
   return result;
@@ -592,6 +623,6 @@ export async function dueCampaigns(now = new Date()): Promise<{ id: string; tena
   return prisma.campaign.findMany({
     where: { status: { in: ["scheduled", "sending"] }, scheduledAt: { lte: now } },
     select: { id: true, tenantId: true },
-    take: 500,
+    take: DUE_CAMPAIGNS_PER_TICK,
   });
 }

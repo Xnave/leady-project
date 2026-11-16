@@ -12,10 +12,22 @@ export const DECLARATION_VERSION = "2026-11-06";
 export const FREQUENCY_CAP_DAYS = 7;
 /** A lead who wrote or was answered this recently is mid-conversation. */
 export const OPEN_CONVERSATION_DAYS = 3;
-/** Pause between two sends inside a run. */
+/** Default pause between two sends inside a run. A tenant can override it. */
 export const SEND_GAP_MS = 250;
-/** Upper bound per worker run, on top of the daily ceiling and batch size. */
+/** Default upper bound per worker run, on top of the daily ceiling and batch size. A tenant can override it. */
 export const MAX_SENDS_PER_RUN = 300;
+/** How many recipients one durable chunk claims. */
+export const CHUNK_SIZE = 20;
+/** How many due campaigns one tick enqueues. Independent of the send budget. */
+export const DUE_CAMPAIGNS_PER_TICK = 500;
+/** A `sending` row older than this is claimed again. An in-flight chunk is left alone. */
+export const STUCK_SENDING_MS = 15 * 60 * 1000;
+
+/** Steps a run needs so the loop matches whatever budget prepare returned. */
+export function runStepCeiling(budget: number, chunkSize = CHUNK_SIZE): number {
+  if (chunkSize <= 0) return 0;
+  return Math.ceil(budget / chunkSize);
+}
 
 /** Meta price per delivered template, USD. Marketing checked 28.10.2026 for Israel; utility is an estimate. */
 export const PRICE_USD: Record<string, number> = { MARKETING: 0.041, UTILITY: 0.0053 };
@@ -30,6 +42,36 @@ export const SEND_WINDOW = {
   endHour: 20,
   fridayEndHour: 14,
 } as const;
+
+export type SendWindow = {
+  startHour: number;
+  endHour: number;
+  fridayEndHour: number;
+  saturdayClosed: boolean;
+};
+
+/** Used when a campaign stores no window of its own. */
+export const DEFAULT_SEND_WINDOW: SendWindow = {
+  startHour: SEND_WINDOW.startHour,
+  endHour: SEND_WINDOW.endHour,
+  fridayEndHour: SEND_WINDOW.fridayEndHour,
+  saturdayClosed: true,
+};
+
+export const sendWindowSchema = z
+  .object({
+    startHour: z.number().int().min(0).max(23),
+    endHour: z.number().int().min(1).max(24),
+    fridayEndHour: z.number().int().min(1).max(24),
+    saturdayClosed: z.boolean(),
+  })
+  .refine((w) => w.startHour < w.endHour && w.startHour < w.fridayEndHour);
+
+/** Null or an unreadable value keeps the Israeli default. */
+export function campaignSendWindow(raw: unknown): SendWindow {
+  const parsed = sendWindowSchema.safeParse(raw);
+  return parsed.success ? parsed.data : DEFAULT_SEND_WINDOW;
+}
 
 export type ZonedParts = { year: number; month: number; day: number; hour: number; minute: number; weekday: number };
 
@@ -67,11 +109,11 @@ export function startOfZonedDay(at: Date, tz: string): Date {
   return new Date(guess - offsetMs);
 }
 
-export function inSendWindow(at: Date, tz: string): boolean {
+export function inSendWindow(at: Date, tz: string, window: SendWindow = DEFAULT_SEND_WINDOW): boolean {
   const p = zonedParts(at, tz);
-  if (p.weekday === 6) return false;
-  if (p.hour < SEND_WINDOW.startHour) return false;
-  const end = p.weekday === 5 ? SEND_WINDOW.fridayEndHour : SEND_WINDOW.endHour;
+  if (window.saturdayClosed && p.weekday === 6) return false;
+  if (p.hour < window.startHour) return false;
+  const end = p.weekday === 5 ? window.fridayEndHour : window.endHour;
   return p.hour < end;
 }
 
@@ -151,10 +193,13 @@ export function sendBudget(opts: {
   sentToday: number;
   batchSize: number | null;
   sentInBatch: number;
+  /** Tenant cap. Falls back to MAX_SENDS_PER_RUN. */
+  maxSendsPerRun?: number;
 }): { budget: number; limitedBy: "daily_ceiling" | "batch" | "run" | null } {
   const daily = Math.max(0, opts.dailyCeiling - opts.sentToday);
   const batch = opts.batchSize == null ? Infinity : Math.max(0, opts.batchSize - opts.sentInBatch);
-  const budget = Math.min(daily, batch, MAX_SENDS_PER_RUN);
+  const cap = opts.maxSendsPerRun ?? MAX_SENDS_PER_RUN;
+  const budget = Math.min(daily, batch, cap);
   if (budget > 0) return { budget, limitedBy: null };
   return { budget: 0, limitedBy: daily === 0 ? "daily_ceiling" : batch === 0 ? "batch" : "run" };
 }
