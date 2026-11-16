@@ -280,7 +280,8 @@ export const clientSourcesDaily = inngest.createFunction(
 
 /**
  * Every 5 minutes: queue a run for each campaign that is due. The event id is
- * per campaign per 5-minute slot, so overlapping ticks queue one run.
+ * per campaign per 5-minute slot, shared with confirm and resume, so a kick and
+ * a tick in the same window queue one run.
  */
 export const campaignsTick = inngest.createFunction(
   { id: "campaigns-tick", retries: 1 },
@@ -292,14 +293,11 @@ export const campaignsTick = inngest.createFunction(
       return dueCampaigns(new Date(nowIso));
     });
     if (!due.length) return { campaigns: 0 };
-    const slot = Math.floor(new Date(nowIso).getTime() / (5 * 60 * 1000));
+    const now = new Date(nowIso);
+    const { campaignRunEvent } = await import("@/lib/campaigns/run-event");
     await step.sendEvent(
       "run-campaigns",
-      due.map((c) => ({
-        id: `campaign-run-${c.id}-${slot}`,
-        name: "campaigns/run.requested",
-        data: { tenantId: c.tenantId, campaignId: c.id },
-      })),
+      due.map((c) => campaignRunEvent(c.tenantId, c.id, now)),
     );
     return { campaigns: due.length };
   },

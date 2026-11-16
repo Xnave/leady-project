@@ -8,7 +8,7 @@ Client campaigns PR 3 (ClickUp `z8rp3ff7x6`). It builds on PR 1 (templates, add-
 2. **Check** (`POST /api/campaigns/runs/[id]/preview`): who gets it after the skip rules, skip counts by reason, a sample, the estimated Meta cost and the message preview. Nothing is written.
 3. **Confirm** (`POST /api/campaigns/runs/[id]/confirm`): the owner ticks the declaration. In one transaction the campaign stores `OwnerDeclaration` (text as shown, language, `DECLARATION_VERSION`, actor, recipient count), moves to `scheduled`, and writes one `CampaignSend` per recipient. No phone, an invalid phone, or an empty template value is a skipped row. Everyone else is queued. An audience over 20,000 is refused and the campaign stays a draft. Without the declaration, nothing is sent.
 4. **Send:**
-   - `campaigns-tick` (every 5 minutes) queues `campaigns/run.requested` for each campaign that is due. Resume does the same when the campaign is already due.
+   - `campaigns-tick` (every 5 minutes) queues `campaigns/run.requested` for each campaign that is due. Confirm and resume send that same event id for the current 5-minute slot, so a tick in the same window does not start a second run. Anything still queued waits for the next slot.
    - `campaign-run` runs one tenant at a time. It does not rebuild the audience once `materializedAt` is set. A campaign confirmed before rows were frozen still gets them on its first run.
    - Each chunk is a durable step. Inside it, every queued row is checked against the skip rules again. If the campaign is no longer `sending`, the rest stay queued. Otherwise the row is claimed (`queued → sending`), sent through Zernio from the template's account, and marked `sent` (with `sentAt`) or `failed`.
 
