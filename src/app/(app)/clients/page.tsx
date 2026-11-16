@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
-import { ClientsSyncButton } from "@/components/client-sources/ClientsSyncButton";
 import { absTime } from "@/components/crm/format";
 import { getConnector } from "@/lib/client-sources/registry";
 import { CLIENTS_PAGE_SIZE, listClients, parseClientFilters, type ClientListFilters } from "@/lib/client-sources/list";
@@ -59,7 +58,6 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
       <PageHeader
         title={copy.title}
         blurb={copy.blurb}
-        actions={<ClientsSyncButton labels={copy} />}
       />
       <p className="muted clients-meta">
         <span>{fillUi(copy.total, { n: total })}</span>

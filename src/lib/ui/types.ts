@@ -631,8 +631,6 @@ export type UiCopy = {
       labelHint: string;
       credentials: string;
       keepCredentials: string;
-      /** The Smart NPV key is already saved in Documents settings and is reused. */
-      sharedCredentials: string;
       config: string;
       configHint: string;
       save: string;
@@ -692,9 +690,7 @@ export type UiCopy = {
     settingsBlurb: string;
     enabled: string;
     baseUrl: string;
-    apiKey: string;
-    apiKeyHint: string;
-    testOnlyWarning: string;
+    connectorHint: string;
     testPhones: string;
     testPhonesHint: string;
     maxRejectTries: string;
@@ -808,10 +804,6 @@ export type UiCopy = {
       removeField: string;
       openDocument: string;
     };
-    testPhone: string;
-    test: string;
-    testOk: string;
-    testMissing: string;
     saved: string;
     failed: string;
     missing: string;

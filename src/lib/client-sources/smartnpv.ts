@@ -16,9 +16,6 @@ import {
  * Auth is one static api_key per account, so `authenticate` only checks it is
  * there; a bad key surfaces on the first `clients/list`.
  *
- * The key is read from the documents capability when the tenant has one there
- * (`sharedCredentials`), so a tenant keeps one Smart NPV key in one place.
- *
  * Every `clients/list` row is the full client payload (100+ fields); we keep
  * only the catalog below and never store id numbers, birthdays, income or amounts.
  */
@@ -107,15 +104,6 @@ export function createSmartNpvConnector(opts: { fetchImpl?: typeof fetch; sleep?
     sessionTtlSeconds: null,
     fieldCatalog: SMARTNPV_FIELDS,
     archivedField: "archive",
-
-    async sharedCredentials(tenantId) {
-      // Dynamic: keeps the connector importable in unit tests without a DB.
-      const { loadInstanceConfig } = await import("@/lib/capability-instances");
-      const { decryptSecret } = await import("@/lib/crypto");
-      const docs = await loadInstanceConfig({ tenantId, capabilityId: "documents" });
-      const enc = typeof docs.apiKeyEnc === "string" ? docs.apiKeyEnc : "";
-      return enc ? { apiKey: decryptSecret(enc) } : null;
-    },
 
     async authenticate(credentials) {
       const parsed = credentialsSchema.safeParse(credentials);

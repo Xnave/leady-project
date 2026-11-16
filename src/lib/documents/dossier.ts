@@ -7,6 +7,7 @@ import { hasAgentReplied } from "@/lib/flow/intro";
 import { withFirstMessageIntro } from "@/lib/persona/greeting";
 import { safeRefreshLeadState } from "@/lib/crm/refresh";
 import { loadInstanceConfig } from "@/lib/capability-instances";
+import { loadClientSourceCredentials } from "@/lib/client-sources/store";
 import {
   DEFAULT_MAX_REJECT_TRIES,
   DEFAULT_REJECT_COOLDOWN_MINUTES,
@@ -141,11 +142,16 @@ export function nationalIdFromText(text: string): string {
 
 async function readConfig(tenantId: string): Promise<DocumentConfig | null> {
   try {
-    const raw = await loadInstanceConfig({ tenantId, capabilityId: "documents" });
-    if (!raw.baseUrl && !raw.apiKeyEnc && !raw.rules) return null;
+    const [raw, credentials] = await Promise.all([
+      loadInstanceConfig({ tenantId, capabilityId: "documents" }),
+      loadClientSourceCredentials(tenantId, "smartnpv"),
+    ]);
+    if (!raw.baseUrl && !raw.rules) return null;
+    const apiKey = credentials && typeof credentials === "object" && "apiKey" in credentials
+      ? String((credentials as { apiKey?: unknown }).apiKey ?? "")
+      : "";
     return parseDocumentConfig(
-      { ...raw, baseUrl: SMART_NPV_HOST },
-      typeof raw.apiKeyEnc === "string" ? raw.apiKeyEnc : "",
+      { ...raw, baseUrl: SMART_NPV_HOST, apiKey },
     );
   } catch {
     return null;

@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
+import { logError } from "@/lib/logging";
 import { getConnector } from "./registry";
 import {
   addCounts,
@@ -40,24 +41,13 @@ export type PublicClientSource = {
   lastSyncStats: Partial<SyncStats>;
   contactCount: number;
   credentialKeys: string[];
-  /** The key comes from another capability (Documents settings), not from this source. */
-  sharedCredentials: boolean;
+  /** Whether credentials are saved; the secret itself is never returned. */
+  hasCredentials: boolean;
 };
 
 type SourceRow = Prisma.ClientSourceGetPayload<object>;
 
-/** True when the connector finds credentials the tenant saved elsewhere. Never returns them. */
-export async function hasSharedCredentials(tenantId: string, kind: string): Promise<boolean> {
-  const connector = getConnector(kind);
-  if (!connector?.sharedCredentials) return false;
-  try {
-    return Boolean(await connector.sharedCredentials(tenantId));
-  } catch {
-    return false;
-  }
-}
-
-function publicSource(row: SourceRow, contactCount: number, sharedCredentials: boolean): PublicClientSource {
+function publicSource(row: SourceRow, contactCount: number): PublicClientSource {
   const connector = getConnector(row.kind);
   return {
     id: row.id,
@@ -67,12 +57,12 @@ function publicSource(row: SourceRow, contactCount: number, sharedCredentials: b
     label: row.label,
     config: row.config,
     status: row.status,
-    lastError: row.lastError,
+    lastError: safeErrorMessage(new Error(row.lastError), []),
     lastSyncAt: row.lastSyncAt?.toISOString() ?? null,
     lastSyncStats: (row.lastSyncStats ?? {}) as Partial<SyncStats>,
     contactCount,
     credentialKeys: connector?.credentialFields.map((f) => f.key) ?? [],
-    sharedCredentials,
+    hasCredentials: Boolean(row.credentialsEnc),
   };
 }
 
@@ -85,12 +75,28 @@ export async function listClientSources(tenantId: string): Promise<PublicClientS
     _count: { _all: true },
   });
   const bySource = new Map(counts.map((c) => [c.sourceId, c._count._all]));
-  const shared = await Promise.all(rows.map((r) => hasSharedCredentials(tenantId, r.kind)));
-  return rows.map((r, i) => publicSource(r, bySource.get(r.id) ?? 0, shared[i]));
+  return rows.map((r) => publicSource(r, bySource.get(r.id) ?? 0));
 }
 
 export async function hasClientSources(tenantId: string): Promise<boolean> {
   return (await prisma.clientSource.count({ where: { tenantId } })) > 0;
+}
+
+/** Load saved connector credentials for a tenant. Callers must never return these to a client. */
+export async function loadClientSourceCredentials(tenantId: string, kind: string): Promise<unknown | null> {
+  const row = await prisma.clientSource.findFirst({
+    where: { tenantId, kind },
+    select: { credentialsEnc: true },
+  });
+  if (!row?.credentialsEnc) return null;
+  return JSON.parse(decryptSecret(row.credentialsEnc)) as unknown;
+}
+
+/** Check credential presence without decrypting or returning the secret. */
+export async function hasClientSourceCredentials(tenantId: string, kind: string): Promise<boolean> {
+  return (await prisma.clientSource.count({
+    where: { tenantId, kind, credentialsEnc: { not: "" } },
+  })) > 0;
 }
 
 export type SaveSourceInput = {
@@ -131,10 +137,7 @@ export async function saveClientSource(
   }
 
   const existing = await prisma.clientSource.findUnique({ where: { tenantId_kind: { tenantId, kind: input.kind } } });
-  const shared = await hasSharedCredentials(tenantId, input.kind);
-  // A shared key wins, so do not keep a second copy that would silently go stale.
-  if (shared) credentialsEnc = "";
-  if (!existing && credentialsEnc === undefined) return { error: "credentials_required" };
+  if ((!existing || !existing.credentialsEnc) && credentialsEnc === undefined) return { error: "credentials_required" };
 
   const data = {
     label: (input.label ?? existing?.label ?? "").trim().slice(0, 80),
@@ -145,7 +148,7 @@ export async function saveClientSource(
     ? await prisma.clientSource.update({ where: { id: existing.id }, data })
     : await prisma.clientSource.create({ data: { tenantId, kind: input.kind, credentialsEnc: credentialsEnc!, ...data } });
   const count = await prisma.contact.count({ where: { tenantId, sourceId: row.id } });
-  return { source: publicSource(row, count, shared) };
+  return { source: publicSource(row, count) };
 }
 
 type LoadedSource = {
@@ -160,9 +163,8 @@ async function loadForSync(tenantId: string, sourceId: string): Promise<LoadedSo
   if (!row) throw new Error("source_not_found");
   const connector = getConnector(row.kind);
   if (!connector) throw new Error(`unknown_kind:${row.kind}`);
-  const shared = connector.sharedCredentials ? await connector.sharedCredentials(tenantId) : null;
-  if (!shared && !row.credentialsEnc) throw new Error("credentials_required");
-  const credentials = shared ?? (JSON.parse(decryptSecret(row.credentialsEnc)) as unknown);
+  if (!row.credentialsEnc) throw new Error("credentials_required");
+  const credentials = JSON.parse(decryptSecret(row.credentialsEnc)) as unknown;
   const config = connector.parseConfig(row.config);
   return { row, connector, credentials, config };
 }
@@ -202,29 +204,42 @@ export function prismaSyncStore(tenantId: string, sourceId: string): SyncStore {
       const known = new Set(existing.map((e) => e.externalId));
       const phoneBefore = new Map(existing.map((e) => [e.externalId, e.phone]));
       const syncedAt = new Date();
-      await prisma.$transaction(
-        rows.map((r) => {
-          const values = {
-            phone: r.phone,
-            phoneStatus: r.phoneStatus,
-            name: r.name,
-            fields: r.fields as Prisma.InputJsonValue,
-            startedAt: r.startedAt.date,
-            startedAtSource: r.startedAt.source,
-            startedAtConfidence: r.startedAt.confidence,
-            sourceUpdatedAt: r.sourceUpdatedAt,
-            skipped: r.skipped,
-            syncedAt,
-          };
-          // Same phone: keep the link unless this page found one. New phone: the link follows it, even to none.
-          const phoneChanged = phoneBefore.has(r.externalId) && phoneBefore.get(r.externalId) !== r.phone;
-          return prisma.contact.upsert({
-            where: { tenantId_sourceId_externalId: { tenantId, sourceId, externalId: r.externalId } },
-            create: { tenantId, sourceId, externalId: r.externalId, leadId: r.leadId, ...values },
-            update: { ...values, ...(phoneChanged || r.leadId ? { leadId: r.leadId } : {}) },
-          });
-        }),
-      );
+      try {
+        await prisma.$transaction(
+          rows.map((r) => {
+            const values = {
+              phone: r.phone,
+              phoneStatus: r.phoneStatus,
+              name: r.name,
+              fields: r.fields as Prisma.InputJsonValue,
+              startedAt: r.startedAt.date,
+              startedAtSource: r.startedAt.source,
+              startedAtConfidence: r.startedAt.confidence,
+              sourceUpdatedAt: r.sourceUpdatedAt,
+              skipped: r.skipped,
+              syncedAt,
+            };
+            // Same phone: keep the link unless this page found one. New phone: the link follows it, even to none.
+            const phoneChanged = phoneBefore.has(r.externalId) && phoneBefore.get(r.externalId) !== r.phone;
+            return prisma.contact.upsert({
+              where: { tenantId_sourceId_externalId: { tenantId, sourceId, externalId: r.externalId } },
+              create: { tenantId, sourceId, externalId: r.externalId, leadId: r.leadId, ...values },
+              update: { ...values, ...(phoneChanged || r.leadId ? { leadId: r.leadId } : {}) },
+            });
+          }),
+        );
+      } catch (err) {
+        logError("client_sources.contact_upsert_failed", err, {
+          tenantId,
+          sourceId,
+          rowCount: rows.length,
+          existingRowCount: known.size,
+          missingPhoneCount: rows.filter((r) => r.phoneStatus === "missing").length,
+          invalidPhoneCount: rows.filter((r) => r.phoneStatus === "invalid").length,
+          operation: "prisma.contact.upsert batch",
+        });
+        throw err;
+      }
       const created = rows.filter((r) => !known.has(r.externalId)).length;
       return { created, updated: rows.length - created };
     },
@@ -276,8 +291,15 @@ export async function syncSourcePage(
     });
     return { counts: page.counts, nextCursor: page.nextCursor };
   } catch (err) {
-    await failSourceSync(tenantId, sourceId, safeErrorMessage(err, credentialSecrets(loaded.credentials)));
-    throw new Error(safeErrorMessage(err, credentialSecrets(loaded.credentials)));
+    const safeMessage = safeErrorMessage(err, credentialSecrets(loaded.credentials));
+    logError("client_sources.sync_page_failed", err, {
+      tenantId,
+      sourceId,
+      cursor: cursor ?? "first",
+      operation: "sync page",
+    });
+    await failSourceSync(tenantId, sourceId, safeMessage);
+    throw new Error(safeMessage);
   }
 }
 

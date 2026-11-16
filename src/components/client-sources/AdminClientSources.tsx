@@ -11,8 +11,6 @@ export type ConnectorOption = {
   kind: string;
   label: string;
   credentialFields: { key: string; label: string; secret: boolean }[];
-  /** The tenant already saved this CRM's key elsewhere (Documents settings). */
-  sharedCredentials: boolean;
   defaultConfig: string;
 };
 
@@ -211,8 +209,7 @@ export function AdminClientSources({
         <p className="muted">{a.labelHint}</p>
         <fieldset>
           <legend>{a.credentials}</legend>
-          {connector?.sharedCredentials ? <p className="muted">{a.sharedCredentials}</p> : null}
-          {connector?.sharedCredentials ? null : connector?.credentialFields.map((f) => (
+          {connector?.credentialFields.map((f) => (
             <label key={f.key}>
               {f.label}
               <input
@@ -220,12 +217,12 @@ export function AdminClientSources({
                 autoComplete="off"
                 dir="ltr"
                 value={credentials[f.key] ?? ""}
-                required={!existing}
+                required={!existing || !existing.hasCredentials}
                 onChange={(e) => setCredentials((c) => ({ ...c, [f.key]: e.target.value }))}
               />
             </label>
           ))}
-          {existing && !connector?.sharedCredentials ? <p className="muted">{a.keepCredentials}</p> : null}
+          {existing?.hasCredentials ? <p className="muted">{a.keepCredentials}</p> : null}
         </fieldset>
         <label>
           {a.config}

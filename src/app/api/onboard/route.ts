@@ -128,8 +128,8 @@ export async function POST(req: Request) {
         ? existing.testPhones.filter((item): item is string => typeof item === "string")
         : [];
       documentConfig = parseDocumentConfig(
-        body.documentConfig,
-        typeof existing.apiKeyEnc === "string" ? existing.apiKeyEnc : "",
+        { ...(typeof body.documentConfig === "object" && body.documentConfig ? body.documentConfig as object : {}), apiKey: "" },
+        "",
         existingPhones,
       );
     } catch (e) {

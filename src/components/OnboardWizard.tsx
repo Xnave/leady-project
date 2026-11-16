@@ -128,7 +128,6 @@ export function OnboardWizard(props: Props) {
   const bookingEnabled = capabilities.includes("booking");
   const reservationsEnabled = capabilities.includes("reservations");
   const documentsEnabled = capabilities.includes("documents");
-  const [docApiKey, setDocApiKey] = useState("");
   const [docMaxRejectTries, setDocMaxRejectTries] = useState(
     String(props.documentConfig?.maxRejectTries ?? 5),
   );
@@ -280,7 +279,6 @@ export function OnboardWizard(props: Props) {
         reservationConfig,
         documentConfig: documentsEnabled
           ? {
-              apiKey: docApiKey,
               rules: docRules,
               maxRejectTries: docMaxRejectTries,
               rejectCooldownMinutes: docRejectCooldownMinutes,
@@ -590,17 +588,7 @@ export function OnboardWizard(props: Props) {
               <fieldset>
                 <legend>{ui.documentsUi.settingsTitle}</legend>
                 <p className="muted rules-hint">{ui.documentsUi.rulesHint}</p>
-                <label>
-                  {ui.documentsUi.apiKey}
-                  <input
-                    type="password"
-                    value={docApiKey}
-                    onChange={(e) => setDocApiKey(e.target.value)}
-                    placeholder={props.documentConfig?.hasKey ? "••••" : ""}
-                    autoComplete="off"
-                  />
-                </label>
-                <p className="muted">{ui.documentsUi.apiKeyHint}</p>
+                <p className="muted">{ui.documentsUi.connectorHint}</p>
                 <label>
                   {ui.documentsUi.maxRejectTries}
                   <input

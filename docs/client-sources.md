@@ -21,9 +21,9 @@ Write a connector (`kind`, `credentialsSchema`, `credentialFields`, `parseConfig
 
 ## Credentials
 
-Stored AES-256-GCM encrypted (`src/lib/crypto.ts`) on `ClientSource.credentialsEnc`. They are decrypted only inside `store.ts` to call the connector.
+Stored AES-256-GCM encrypted (`src/lib/crypto.ts`) on `ClientSource.credentialsEnc`. They are decrypted only inside `store.ts` to call the connector. API responses carry `credentialKeys` (names) only. Error text is masked with `safeErrorMessage` before it is stored or returned.
 
-A connector can declare `sharedCredentials(tenantId)`: credentials the tenant already saved elsewhere. Smart NPV reads the key from the tenant's documents capability instance (Documents settings). When that key exists it wins, the source keeps `credentialsEnc = ""`, and the admin screen shows a note instead of the key field, so a tenant has one Smart NPV key in one place. Without a documents key, the admin enters it on the source. API responses carry `credentialKeys` (names) only. Error text is masked with `safeErrorMessage` before it is stored or returned.
+The Documents capability uses the tenant's Smart NPV client-source credentials for lookup and upload. Manage the connection and test it only from Admin → Client Sources; Documents settings contain document rules and test-phone behavior, not connector credentials.
 
 ## Smart NPV settings (per tenant, JSON on the admin screen)
 
@@ -58,11 +58,11 @@ Sessions are cached per source while a process is warm, keyed on a hash of the c
 
 ## Sync modes
 
-- **full** (admin or Clients tab "sync now"): every client, created since 2000.
+- **full** (Admin → Client Sources "sync now"): every client, created since 2000.
 - **incremental** (daily cron): clients modified since the last successful sync, minus one day.
 - **test** (admin): first page only, writes nothing, returns counts and field names.
 
-Without Inngest (local dev), "sync now" falls back to syncing inside the request. In production it fails instead.
+Connector setup, connection tests, and manual syncs are managed only from Admin → Client Sources. The Clients tab is read-only. Local manual syncs run inline so failures appear in the `npm run dev` terminal. Production manual syncs are queued through Inngest.
 
 ## Known gaps
 

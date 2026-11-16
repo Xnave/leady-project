@@ -254,6 +254,18 @@ export async function runSync(
 
 /** Error text safe to store and show: secret values are masked, length is capped. */
 export function safeErrorMessage(err: unknown, secrets: string[]): string {
+  const error = err && typeof err === "object" ? err as { name?: unknown; code?: unknown; message?: unknown } : null;
+  const name = typeof error?.name === "string" ? error.name : "";
+  const code = typeof error?.code === "string" ? error.code : "";
+  const raw = typeof error?.message === "string" ? error.message : String(err);
+  if (/Invalid `prisma\.[\w.]+\(\)` invocation:/i.test(raw)) {
+    return "Previous sync failed in the database. Click Sync now to retry and write a fresh diagnostic to the server logs.";
+  }
+  if (name === "PrismaClientValidationError") return "Database rejected the contact sync data (Prisma validation error).";
+  if (name.startsWith("PrismaClient") || code.startsWith("P")) {
+    return code ? `Database operation failed (${code}).` : "Database operation failed.";
+  }
+
   let message = err instanceof ConnectorAuthError ? `auth: ${err.message}` : err instanceof Error ? err.message : String(err);
   for (const secret of secrets) {
     if (secret && secret.length >= 4) message = message.split(secret).join("***");
