@@ -6,4 +6,6 @@ ALTER TABLE "Campaign" ADD COLUMN "followUps" JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE "CampaignSend" ADD COLUMN "startedAt" TIMESTAMP(3),
 ADD COLUMN "reminderClaimedAt" TIMESTAMP(3),
 ADD COLUMN "reminderSentAt" TIMESTAMP(3),
-ADD COLUMN "escalatedAt" TIMESTAMP(3);
+ADD COLUMN "escalatedAt" TIMESTAMP(3),
+-- Set once the opener has been copied onto the lead conversation, after Zernio accepted the send.
+ADD COLUMN "threadRecordedAt" TIMESTAMP(3);;

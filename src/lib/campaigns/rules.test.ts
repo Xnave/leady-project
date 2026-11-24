@@ -222,7 +222,12 @@ describe("follow-ups", () => {
     expect(dueFollowUp({ ...row, reminderSentAt: new Date("2026-11-03T09:00:00Z") }, steps, new Date("2026-11-05T09:00:00Z"))).toBe("escalate");
     expect(dueFollowUp({ ...row, startedAt: new Date() }, steps, new Date("2026-11-05T09:00:00Z"))).toBeNull();
     expect(isStopReply("הסר")).toBe(true);
+    expect(isStopReply("הסרה")).toBe(true);
     expect(isStopReply("Stop!")).toBe(true);
+    expect(isStopReply("unsubscribe")).toBe(true);
+    expect(isStopReply("די")).toBe(false);
+    expect(isStopReply("הפסק")).toBe(false);
+    expect(isStopReply("remove")).toBe(false);
     expect(isStopReply("בבקשה תסירו אותי")).toBe(false);
   });
 

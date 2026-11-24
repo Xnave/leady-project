@@ -797,6 +797,8 @@ model CampaignSend {
   reminderSentAt         DateTime?
   /// Silence after the reminder opened one advisor task, or an unknown send did.
   escalatedAt            DateTime?
+  /// When the opener was stored on the lead's conversation. Null until Zernio has accepted the send and that write succeeds.
+  threadRecordedAt       DateTime?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 

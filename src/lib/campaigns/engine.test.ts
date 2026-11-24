@@ -28,7 +28,10 @@ function match(row: Row, where: Row | undefined): boolean {
       const c = cond as Row;
       if ("in" in c && !(c.in as unknown[]).includes(v)) return false;
       if ("notIn" in c && (c.notIn as unknown[]).includes(v)) return false;
-      if ("not" in c && c.not === null && v == null) return false;
+      if ("not" in c) {
+        if (c.not === null ? v == null : v === c.not) return false;
+        continue;
+      }
       if ("gte" in c && !(v instanceof Date && v >= (c.gte as Date))) return false;
       if ("lte" in c && !(v instanceof Date && v <= (c.lte as Date))) return false;
       if ("lt" in c && !(v instanceof Date && v < (c.lt as Date))) return false;
@@ -92,15 +95,17 @@ vi.mock("@/lib/db", () => ({
 const approvedTemplate = [{ id: "t", name: "promo_1", language: "he", status: "APPROVED", category: "MARKETING" }];
 const sendWhatsAppTemplate = vi.fn(async (_o: unknown) => ({ conversationId: "conv-1" }));
 const listWhatsAppTemplates = vi.fn(async () => approvedTemplate);
+const zernioConfigured = vi.fn(() => true);
+const isProductionRuntime = vi.fn(() => true);
 vi.mock("@/lib/zernio", () => ({
-  zernioConfigured: () => true,
+  zernioConfigured: () => zernioConfigured(),
   sendWhatsAppTemplate: (o: unknown) => sendWhatsAppTemplate(o),
   listWhatsAppTemplates: () => listWhatsAppTemplates(),
 }));
 vi.mock("./store", () => ({
   tenantWhatsAppAccount: async () => ({ accountId: "acc-1", phone: "972500000000" }),
 }));
-vi.mock("@/lib/dev-auth-bypass", () => ({ isProductionRuntime: () => true }));
+vi.mock("@/lib/dev-auth-bypass", () => ({ isProductionRuntime: () => isProductionRuntime() }));
 
 const { prepareCampaignRun, resolveAudience, sendCampaignChunk, freezeAudience } = await import("./engine");
 const { prisma } = await import("@/lib/db");
@@ -172,6 +177,10 @@ function contact(i: number, patch: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   sendWhatsAppTemplate.mockClear();
+  zernioConfigured.mockReset();
+  zernioConfigured.mockReturnValue(true);
+  isProductionRuntime.mockReset();
+  isProductionRuntime.mockReturnValue(true);
   listWhatsAppTemplates.mockReset();
   listWhatsAppTemplates.mockImplementation(async () => approvedTemplate);
   seed();
@@ -261,6 +270,55 @@ describe("sendCampaignChunk", () => {
   it("sends nothing for a paused campaign", async () => {
     db.campaign[0].status = "paused";
     expect((await sendCampaignChunk("t1", "c1", 10, NOW)).attempted).toBe(0);
+  });
+
+  it("writes the opener after Zernio accepts it, and a dry-run writes nothing", async () => {
+    db.channelConnection = [{ id: "ch", tenantId: "t1", provider: "whatsapp", enabled: true, agentId: "agent-1" }];
+    db.campaignSend = [db.campaignSend[0]];
+    await sendCampaignChunk("t1", "c1", 10, NOW);
+    expect(db.message).toHaveLength(1);
+    expect(db.message[0]).toMatchObject({ role: "agent", text: "hi {{1}}", providerMessageId: "campaign-s0" });
+    expect(db.campaignSend[0].threadRecordedAt).toBeInstanceOf(Date);
+
+    db.message = [];
+    for (const lead of db.lead ?? []) lead.conversations = [];
+    db.campaignSend[0].threadRecordedAt = null;
+    db.campaignSend[0].status = "queued";
+    db.campaignSend[0].sentAt = null;
+    zernioConfigured.mockReturnValue(false);
+    isProductionRuntime.mockReturnValue(false);
+    process.env.CAMPAIGN_ALLOWLIST = "972501111111";
+    await sendCampaignChunk("t1", "c1", 10, NOW);
+    delete process.env.CAMPAIGN_ALLOWLIST;
+    expect(sendWhatsAppTemplate).toHaveBeenCalledTimes(1);
+    expect(db.message).toHaveLength(0);
+    expect(db.campaignSend[0].error).toBe("dry_run");
+  });
+
+  it("a later run copies an accepted opener that never reached the conversation", async () => {
+    db.channelConnection = [{ id: "ch", tenantId: "t1", provider: "whatsapp", enabled: true, agentId: "agent-1" }];
+    db.campaignSend = [
+      {
+        id: "s0",
+        tenantId: "t1",
+        campaignId: "c1",
+        phone: "972501111111",
+        name: "N0",
+        status: "sent",
+        sentAt: NOW,
+        startedAt: null,
+        escalatedAt: null,
+        reminderClaimedAt: null,
+        reminderSentAt: null,
+        threadRecordedAt: null,
+        error: "",
+        params: ["N0"],
+      },
+    ];
+    expect(await prepareCampaignRun("t1", "c1", NOW)).toEqual({ go: false, reason: "done" });
+    expect(db.message).toHaveLength(1);
+    expect(db.message[0]).toMatchObject({ providerMessageId: "campaign-s0", text: "hi {{1}}" });
+    expect(db.campaignSend[0].threadRecordedAt).toBeInstanceOf(Date);
   });
 });
 

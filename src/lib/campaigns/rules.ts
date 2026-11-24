@@ -370,8 +370,8 @@ export function dueFollowUp(row: FollowUpClock, steps: FollowUpStep[], now: Date
   return null;
 }
 
-/** Whole message only. A sentence that mentions one of these words is not a stop. */
-const STOP_WORDS = new Set(["הסר", "הסירו", "להסיר", "הסרה", "הפסק", "תפסיקו", "די", "stop", "unsubscribe", "remove"]);
+/** Whole message only, and only an explicit opt-out. Ordinary one-word replies are not a stop. */
+const STOP_WORDS = new Set(["הסר", "הסירו", "להסיר", "הסרה", "stop", "unsubscribe"]);
 
 export function isStopReply(text: string): boolean {
   const word = text.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");

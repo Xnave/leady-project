@@ -384,11 +384,41 @@ type ClockRow = {
   reminderSentAt: Date | null;
 };
 
-async function openSequences(campaignId: string, tenantId: string): Promise<ClockRow[]> {
-  return prisma.campaignSend.findMany({
-    where: { campaignId, tenantId, status: { in: ["sent", "sending"] }, startedAt: null, escalatedAt: null },
-    take: 200,
-  }) as Promise<ClockRow[]>;
+/** How many due reminders, escalations, or unknown tasks one run handles. The next tick continues with the rest. */
+const FOLLOW_UP_BATCH = 200;
+
+function sendStepOf(steps: FollowUpStep[]): FollowUpStep | undefined {
+  return steps.find((step) => step.onSilence === "send" && step.templateId);
+}
+
+function escalateStepOf(steps: FollowUpStep[]): FollowUpStep | undefined {
+  return steps.find((step) => step.onSilence === "escalate");
+}
+
+/** People whose reminder is due now. Someone still inside the delay is not in this query. */
+function dueReminderWhere(campaignId: string, tenantId: string, steps: FollowUpStep[], now: Date): Record<string, unknown> | null {
+  const step = sendStepOf(steps);
+  if (!step) return null;
+  return {
+    campaignId,
+    tenantId,
+    status: "sent",
+    startedAt: null,
+    escalatedAt: null,
+    reminderSentAt: null,
+    reminderClaimedAt: null,
+    sentAt: { lte: new Date(now.getTime() - step.delayMs) },
+  };
+}
+
+/** People whose silence has reached the escalate step. */
+function dueEscalateWhere(campaignId: string, tenantId: string, steps: FollowUpStep[], now: Date): Record<string, unknown> | null {
+  const escalate = escalateStepOf(steps);
+  if (!escalate) return null;
+  const cutoff = new Date(now.getTime() - escalate.delayMs);
+  const base = { campaignId, tenantId, status: "sent", startedAt: null, escalatedAt: null };
+  if (sendStepOf(steps)) return { ...base, reminderSentAt: { lte: cutoff } };
+  return { ...base, reminderSentAt: null, sentAt: { lte: cutoff } };
 }
 
 /** A claim with no result is unknown. One advisor task, and it is not queued again. */
@@ -398,17 +428,14 @@ async function settleUnknownClaims(tenantId: string, campaignId: string, now: Da
     where: { tenantId, campaignId, status: "sending", startedAt: null, updatedAt: { lt: stale } },
     data: { status: "unknown" },
   });
-  const rows = (await openSequences(campaignId, tenantId)) as ClockRow[];
-  for (const row of rows) {
-    if (dueFollowUp(row, [{ templateId: "x", delayMs: 60_000, onSilence: "send" }], now) !== "unknown_claim") continue;
-    await prisma.campaignSend.updateMany({
-      where: { id: row.id, tenantId, reminderSentAt: null, startedAt: null },
-      data: { status: "unknown" },
-    });
-  }
+  await prisma.campaignSend.updateMany({
+    where: { tenantId, campaignId, status: "sent", startedAt: null, reminderSentAt: null, reminderClaimedAt: { lt: stale } },
+    data: { status: "unknown" },
+  });
   const unknown = await prisma.campaignSend.findMany({
     where: { campaignId, tenantId, status: "unknown", escalatedAt: null },
-    take: 50,
+    orderBy: { updatedAt: "asc" },
+    take: FOLLOW_UP_BATCH,
   });
   for (const row of unknown) {
     await openCampaignTask(tenantId, row as ClockRow, "campaign_send_unknown");
@@ -418,11 +445,14 @@ async function settleUnknownClaims(tenantId: string, campaignId: string, now: Da
 
 /** 48 hours after the reminder (or after the opener, when that is the escalate step) with no reply. */
 async function escalateDue(tenantId: string, campaignId: string, rawSteps: unknown, now: Date): Promise<void> {
-  const steps = parseFollowUps(rawSteps);
-  if (!steps.some((s) => s.onSilence === "escalate")) return;
-  const rows = await openSequences(campaignId, tenantId);
+  const where = dueEscalateWhere(campaignId, tenantId, parseFollowUps(rawSteps), now);
+  if (!where) return;
+  const rows = (await prisma.campaignSend.findMany({
+    where,
+    orderBy: { sentAt: "asc" },
+    take: FOLLOW_UP_BATCH,
+  })) as ClockRow[];
   for (const row of rows) {
-    if (dueFollowUp(row, steps, now) !== "escalate") continue;
     const claimed = await prisma.campaignSend.updateMany({
       where: { id: row.id, tenantId, escalatedAt: null, startedAt: null },
       data: { escalatedAt: now },
@@ -433,8 +463,41 @@ async function escalateDue(tenantId: string, campaignId: string, rawSteps: unkno
 }
 
 async function remindersDue(campaignId: string, tenantId: string, steps: FollowUpStep[], now: Date): Promise<boolean> {
-  const rows = await openSequences(campaignId, tenantId);
-  return rows.some((row) => dueFollowUp(row, steps, now) === "reminder");
+  const where = dueReminderWhere(campaignId, tenantId, steps, now);
+  if (!where) return false;
+  const row = await prisma.campaignSend.findFirst({ where, select: { id: true } });
+  return Boolean(row);
+}
+
+async function countDueReminders(campaignId: string, tenantId: string, steps: FollowUpStep[], now: Date): Promise<number> {
+  const where = dueReminderWhere(campaignId, tenantId, steps, now);
+  if (!where) return 0;
+  return prisma.campaignSend.count({ where });
+}
+
+/** A real send whose opener is not on the conversation yet. A dry-run is not one of these. */
+function missingThreadWhere(campaignId: string, tenantId: string): Record<string, unknown> {
+  return {
+    campaignId,
+    tenantId,
+    status: "sent",
+    threadRecordedAt: null,
+    sentAt: { not: null },
+    error: { not: "dry_run" },
+  };
+}
+
+async function threadsMissing(campaignId: string, tenantId: string): Promise<boolean> {
+  const row = await prisma.campaignSend.findFirst({ where: missingThreadWhere(campaignId, tenantId), select: { id: true } });
+  return Boolean(row);
+}
+
+async function unknownNeedsTask(campaignId: string, tenantId: string): Promise<boolean> {
+  const row = await prisma.campaignSend.findFirst({
+    where: { campaignId, tenantId, status: "unknown", escalatedAt: null },
+    select: { id: true },
+  });
+  return Boolean(row);
 }
 
 async function followUpsWaiting(campaignId: string, tenantId: string): Promise<boolean> {
@@ -471,7 +534,10 @@ async function openCampaignTask(tenantId: string, row: ClockRow, reason: keyof t
   });
 }
 
-/** The opener lives in the lead's open conversation, so a later reply does not get a second greeting. */
+/**
+ * The opener lives in the lead's open conversation, so a later reply does not get a second greeting.
+ * The message row is written only when `text` is the template Zernio already accepted.
+ */
 export async function ensureCampaignThread(
   tenantId: string,
   row: { id: string; phone: string; name: string; leadId: string | null },
@@ -530,11 +596,29 @@ export async function ensureCampaignThread(
         data: { tenantId, conversationId: conversation.id, role: "agent", text, providerMessageId },
       });
     }
+    await prisma.campaignSend.updateMany({ where: { id: row.id, tenantId }, data: { threadRecordedAt: new Date() } });
   }
   if (row.leadId !== lead.id) {
     await prisma.campaignSend.updateMany({ where: { id: row.id, tenantId }, data: { leadId: lead.id } });
   }
   return { leadId: lead.id, conversationId: conversation.id };
+}
+
+/** A later run copies the opener onto the conversation when the write failed after Zernio accepted it. */
+async function attachMissingThreads(tenantId: string, campaignId: string, text: string): Promise<void> {
+  if (!text.trim()) return;
+  const rows = (await prisma.campaignSend.findMany({
+    where: missingThreadWhere(campaignId, tenantId),
+    orderBy: { sentAt: "asc" },
+    take: FOLLOW_UP_BATCH,
+  })) as ClockRow[];
+  for (const row of rows) {
+    try {
+      await ensureCampaignThread(tenantId, row, text);
+    } catch (err) {
+      console.error("[campaigns] thread", err instanceof Error ? err.message : err);
+    }
+  }
 }
 
 /** Gatekeeping before any send: add-on, terms, declaration, number, template, time, budget. Materializes the audience once. */
@@ -550,6 +634,7 @@ export async function prepareCampaignRun(tenantId: string, campaignId: string, n
 
   await settleUnknownClaims(tenantId, campaignId, now);
   await escalateDue(tenantId, campaignId, campaign.followUps, now);
+  await attachMissingThreads(tenantId, campaignId, campaign.template.text ?? "");
 
   const settings = settingsFromRow(await prisma.tenantCampaignSettings.findUnique({ where: { tenantId } }));
   if (!settings.enabled || !termsAccepted(settings)) {
@@ -614,6 +699,10 @@ export async function prepareCampaignRun(tenantId: string, campaignId: string, n
   if (queued === 0 && !dueReminders) {
     if (steps.length > 0 && (await followUpsWaiting(campaignId, tenantId))) {
       const waiting = await markRunnable(tenantId, campaignId, { status: "scheduled", waitReason: "waiting_follow_up" });
+      return waiting ? { go: false, reason: "waiting_follow_up" } : { go: false, reason: "not_runnable" };
+    }
+    if (await unknownNeedsTask(campaignId, tenantId) || (await threadsMissing(campaignId, tenantId))) {
+      const waiting = await markRunnable(tenantId, campaignId, { status: "scheduled", waitReason: "" });
       return waiting ? { go: false, reason: "waiting_follow_up" } : { go: false, reason: "not_runnable" };
     }
     if (audience && followsSource(audience)) {
@@ -847,10 +936,12 @@ export async function sendCampaignChunk(tenantId: string, campaignId: string, li
             data: { status: "sent", sentAt: new Date(), providerConversationId: res.conversationId, error: dryRun ? "dry_run" : "" },
           });
           result.sent += 1;
-          try {
-            await ensureCampaignThread(tenantId, row, campaign.template.text ?? "");
-          } catch {
-            // The template already went out. The next run can attach the thread.
+          if (!dryRun) {
+            try {
+              await ensureCampaignThread(tenantId, row, campaign.template.text ?? "");
+            } catch (err) {
+              console.error("[campaigns] thread", err instanceof Error ? err.message : err);
+            }
           }
         } catch (err) {
           const message = (err instanceof Error ? err.message : String(err)).slice(0, 500);
@@ -864,11 +955,7 @@ export async function sendCampaignChunk(tenantId: string, campaignId: string, li
   }
   await sendDueReminders(tenantId, campaign, Math.max(0, limit - result.attempted), now, dryRun, result);
   result.queuedLeft = await prisma.campaignSend.count({ where: { campaignId, status: "queued", startedAt: null } });
-  const steps = parseFollowUps(campaign.followUps);
-  if (steps.length) {
-    const open = await openSequences(campaignId, tenantId);
-    result.followUpsLeft = open.filter((row) => dueFollowUp(row, steps, now) === "reminder").length;
-  }
+  result.followUpsLeft = await countDueReminders(campaignId, tenantId, parseFollowUps(campaign.followUps), now);
   return finish();
 }
 
@@ -882,11 +969,16 @@ async function sendDueReminders(
   result: ChunkResult,
 ): Promise<void> {
   const steps = parseFollowUps(campaign.followUps);
-  const step = steps.find((s) => s.onSilence === "send" && s.templateId);
-  if (!step?.templateId || limit <= 0) return;
+  const step = sendStepOf(steps);
+  const where = dueReminderWhere(campaign.id, tenantId, steps, now);
+  if (!step?.templateId || !where || limit <= 0) return;
   const template = await prisma.whatsAppTemplate.findFirst({ where: { id: step.templateId, tenantId } });
   if (!template || !isSendable(template.status)) return;
-  const rows = await openSequences(campaign.id, tenantId);
+  const rows = (await prisma.campaignSend.findMany({
+    where,
+    orderBy: { sentAt: "asc" },
+    take: limit,
+  })) as ClockRow[];
   let used = 0;
   for (const row of rows) {
     if (used >= limit) break;
@@ -920,7 +1012,6 @@ async function sendDueReminders(
       });
       result.sent += 1;
     } catch (err) {
-      console.log(`Error sending reminders: ${err}`)
       const message = (err instanceof Error ? err.message : String(err)).slice(0, 500);
       await prisma.campaignSend.update({ where: { id: row.id }, data: { status: "unknown", error: message } });
       result.failed += 1;
@@ -937,7 +1028,11 @@ export async function finishCampaignRun(tenantId: string, campaignId: string): P
     sentCount(campaignId),
   ]);
   if (queued === 0) {
-    if (parseFollowUps(campaign.followUps).length > 0 && (await followUpsWaiting(campaignId, tenantId))) {
+    if (
+      (parseFollowUps(campaign.followUps).length > 0 && (await followUpsWaiting(campaignId, tenantId))) ||
+      (await unknownNeedsTask(campaignId, tenantId)) ||
+      (await threadsMissing(campaignId, tenantId))
+    ) {
       if (!(await markRunnable(tenantId, campaignId, { status: "scheduled", waitReason: "waiting_follow_up" }))) {
         const current = await prisma.campaign.findFirst({ where: { id: campaignId, tenantId }, select: { status: true } });
         return current?.status ?? "gone";
