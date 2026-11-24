@@ -20,8 +20,10 @@ export const MAX_SENDS_PER_RUN = 300;
 export const CHUNK_SIZE = 20;
 /** How many due campaigns one tick enqueues. Independent of the send budget. */
 export const DUE_CAMPAIGNS_PER_TICK = 500;
-/** A `sending` row older than this is claimed again. An in-flight chunk is left alone. */
+/** A claim this old never recorded a result. It becomes unknown and is not sent again. */
 export const STUCK_SENDING_MS = 15 * 60 * 1000;
+/** Silence before the next follow-up step. The documents reminder uses this. */
+export const FOLLOW_UP_DELAY_MS = 48 * 60 * 60 * 1000;
 
 /** Steps a run needs so the loop matches whatever budget prepare returned. */
 export function runStepCeiling(budget: number, chunkSize = CHUNK_SIZE): number {
@@ -317,6 +319,64 @@ export function startedAtRange(a: Extract<Audience, { kind: "clients" }>, now: D
 }
 
 // ─── Campaign state ─────────────────────────────────────────────────────────
+
+// ─── Follow-ups ─────────────────────────────────────────────────────────────
+
+/** One step after the opener. `send` delivers its template; `escalate` opens one advisor task and stops. */
+export const followUpStepSchema = z.object({
+  templateId: z.string().min(1).nullable(),
+  delayMs: z.number().int().min(60_000).max(30 * 24 * 60 * 60 * 1000),
+  onSilence: z.enum(["send", "escalate"]),
+});
+export type FollowUpStep = z.infer<typeof followUpStepSchema>;
+
+export function parseFollowUps(raw: unknown): FollowUpStep[] {
+  const parsed = z.array(followUpStepSchema).max(4).safeParse(raw);
+  if (!parsed.success) return [];
+  return parsed.data.filter((step) => (step.onSilence === "send" ? Boolean(step.templateId) : true));
+}
+
+/** Reminder, then one task, for the documents sequence. A campaign with no reminder stays a single send. */
+export function documentsFollowUps(reminderTemplateId: string): FollowUpStep[] {
+  return [
+    { templateId: reminderTemplateId, delayMs: FOLLOW_UP_DELAY_MS, onSilence: "send" },
+    { templateId: null, delayMs: FOLLOW_UP_DELAY_MS, onSilence: "escalate" },
+  ];
+}
+
+export type FollowUpClock = {
+  status: string;
+  sentAt: Date | null;
+  startedAt: Date | null;
+  escalatedAt: Date | null;
+  reminderClaimedAt: Date | null;
+  reminderSentAt: Date | null;
+};
+
+/** What this row should do now. Null means wait, or the sequence is finished. */
+export function dueFollowUp(row: FollowUpClock, steps: FollowUpStep[], now: Date): "reminder" | "escalate" | "unknown_claim" | null {
+  if (row.startedAt || row.escalatedAt || row.status === "unknown") return null;
+  const sendStep = steps.find((s) => s.onSilence === "send" && s.templateId);
+  const escalateStep = steps.find((s) => s.onSilence === "escalate");
+  if (row.reminderClaimedAt && !row.reminderSentAt) {
+    return now.getTime() - row.reminderClaimedAt.getTime() >= STUCK_SENDING_MS ? "unknown_claim" : null;
+  }
+  if (row.status !== "sent" || !row.sentAt) return null;
+  if (sendStep && !row.reminderSentAt) {
+    return now.getTime() - row.sentAt.getTime() >= sendStep.delayMs ? "reminder" : null;
+  }
+  const since = row.reminderSentAt ?? (sendStep ? null : row.sentAt);
+  if (escalateStep && since && now.getTime() - since.getTime() >= escalateStep.delayMs) return "escalate";
+  return null;
+}
+
+/** Whole message only. A sentence that mentions one of these words is not a stop. */
+const STOP_WORDS = new Set(["הסר", "הסירו", "להסיר", "הסרה", "הפסק", "תפסיקו", "די", "stop", "unsubscribe", "remove"]);
+
+export function isStopReply(text: string): boolean {
+  const word = text.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  return word.length > 0 && STOP_WORDS.has(word);
+}
 
 export const CAMPAIGN_STATUSES = ["draft", "scheduled", "sending", "paused", "done", "canceled"] as const;
 export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];

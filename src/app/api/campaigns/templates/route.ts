@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveStaffActor } from "@/lib/admin-decisions";
 import { campaignsEnabled, listTemplates, refreshPendingTemplates, submitTemplate } from "@/lib/campaigns/store";
-import { TEMPLATE_CATEGORIES, TEMPLATE_LANGUAGES, type TemplateCategory, type TemplateLanguage } from "@/lib/campaigns/templates";
+import { TEMPLATE_CATEGORIES, TEMPLATE_LANGUAGES, type TemplateLanguage } from "@/lib/campaigns/templates";
 import { tenantRoleOr403 } from "@/lib/tenant-role";
 
 async function gate() {
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   const access = await gate();
   if (access instanceof Response) return access;
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-  const category = TEMPLATE_CATEGORIES.includes(body.category as TemplateCategory) ? (body.category as TemplateCategory) : null;
+  const category = TEMPLATE_CATEGORIES.find((item) => item === body.category) ?? null;
   const language = TEMPLATE_LANGUAGES.includes(body.language as TemplateLanguage) ? (body.language as TemplateLanguage) : null;
   if (!category || !language) return NextResponse.json({ error: "invalid", issues: [] }, { status: 400 });
   const { actorLabel } = await resolveStaffActor();

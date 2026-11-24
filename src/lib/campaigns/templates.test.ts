@@ -52,6 +52,14 @@ describe("composeTemplate: locked additions", () => {
     expect(TEMPLATE_CATEGORIES).toEqual(["MARKETING"]);
   });
 
+  it("sends a utility template as written, with no prefix and no opt-out button", () => {
+    const c = composeTemplate(draft({ category: "UTILITY" }), biz);
+    expect(c.text.startsWith("היי")).toBe(true);
+    expect(c.text.includes(AD_PREFIX)).toBe(false);
+    expect(c.buttons).toEqual([]);
+    expect(c.footer).toBe("");
+  });
+
   it("every locked button fits Meta's 25 characters", () => {
     for (const buttons of Object.values(LOCKED_BUTTONS)) for (const b of buttons) expect(b.length).toBeLessThanOrEqual(25);
   });

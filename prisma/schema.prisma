@@ -741,6 +741,8 @@ model Campaign {
   materializedAt DateTime?
   /// Null uses the Israeli default. Otherwise `{ days: [{ weekday, startMinute, endMinute }] }`; a missing weekday is closed.
   sendWindow     Json?
+  /// Steps after the opener. [] is one send. Each step is { templateId, delayMs, onSilence: "send" | "escalate" }.
+  followUps      Json              @default("[]")
   /// Wall-clock milliseconds of the last worker run, including prepare, send, and the gaps between sends.
   lastRunMs      Int?
   /// Wall-clock milliseconds of the send chunks, including the pause between recipients.
@@ -780,7 +782,7 @@ model CampaignSend {
   contact                Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
   leadId                 String?
   lead                   Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  /// queued | sending | sent | failed | skipped. "sending" that never finished is left alone, never resent.
+  /// queued | sending | sent | failed | skipped | unknown. A claim that never recorded a result is unknown and is not retried.
   status                 String    @default("queued")
   skipReason             String    @default("")
   error                  String    @default("")
@@ -788,6 +790,13 @@ model CampaignSend {
   params                 Json      @default("[]")
   providerConversationId String    @default("")
   sentAt                 DateTime?
+  /// Set when this phone replies, or sends a stop word. Later steps do not send.
+  startedAt              DateTime?
+  /// The one reminder was claimed. A claim with no reminderSentAt becomes unknown.
+  reminderClaimedAt      DateTime?
+  reminderSentAt         DateTime?
+  /// Silence after the reminder opened one advisor task, or an unknown send did.
+  escalatedAt            DateTime?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 

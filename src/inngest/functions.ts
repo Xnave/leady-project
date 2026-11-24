@@ -337,7 +337,7 @@ export const campaignRun = inngest.createFunction(
       sent += chunk.sent;
       timings.push({ elapsedMs: chunk.elapsedMs, processMs: chunk.processMs, rows: chunk.rows });
       left -= chunk.attempted + chunk.skipped;
-      if (chunk.queuedLeft === 0 || chunk.attempted + chunk.skipped === 0) break;
+      if ((chunk.queuedLeft === 0 && chunk.followUpsLeft === 0) || chunk.attempted + chunk.skipped === 0) break;
     }
     const status = await step.run("finish", async () => {
       const { finishCampaignRun } = await import("@/lib/campaigns/engine");

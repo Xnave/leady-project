@@ -1228,6 +1228,7 @@ export const en: UiCopy = {
         quiet_hours: "Waiting for sending hours (weekdays 9:00-20:00, Friday until 14:00, not on Saturday)",
         daily_ceiling: "Daily limit for this number reached. Continues tomorrow.",
         waiting_for_clients: "Waiting for new clients from the source. Continues on the next run.",
+        waiting_follow_up: "The first message went out. A reminder, then a task, follows if nobody replies.",
       },
       skipReasons: {
         no_phone: "No phone",
@@ -1242,10 +1243,13 @@ export const en: UiCopy = {
         missing_param: "Missing a value for the template",
         canceled: "Campaign canceled",
       },
-      sendStatuses: { queued: "Waiting", sending: "Sending", sent: "Sent", failed: "Failed", skipped: "Skipped" },
+      sendStatuses: { queued: "Waiting", sending: "Sending", sent: "Sent", failed: "Failed", skipped: "Skipped", unknown: "Unconfirmed" },
       form: {
         name: "Campaign name",
         template: "Template",
+        followUp: "If they don't reply",
+        followUpNone: "Nothing else",
+        followUpHint: "One reminder 48 hours later, from this template. 48 hours after that with still no reply, a task opens and nothing else is sent.",
         noApproved: "No approved template yet. Create one in the Templates tab and wait for Meta's approval.",
         audience: "Who gets it",
         audienceClients: "Clients from your CRM",

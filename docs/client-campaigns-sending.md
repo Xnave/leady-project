@@ -14,7 +14,8 @@ Client campaigns PR 3 (ClickUp `z8rp3ff7x6`). It builds on PR 1 (templates, add-
 
 ## Rules (`src/lib/campaigns/rules.ts`)
 
-- **One message per person per campaign:** `CampaignSend` is unique on campaign + phone. A row left in `sending` does not count toward the 7-day cap, the daily ceiling, or the batch. If it is still `sending` after 15 minutes, the next run queues it again. That can send twice when Zernio already accepted the message and the process died before the `sent` write.
+- **One message per person per campaign:** `CampaignSend` is unique on campaign + phone. A row left in `sending` does not count toward the 7-day cap, the daily ceiling, or the batch. If it is still `sending` after 15 minutes, the next run marks it `unknown`, does not send it again, and opens one advisor task.
+- **Follow-up:** a campaign can store steps after the opener. The usual sequence is one reminder 48 hours later, then one advisor task 48 hours after that if there is still no inbound. Any inbound, or a whole-message stop word (`הסר`, `stop`, and the same list), ends the sequence. A stop word also writes `Suppression`. A campaign with no steps is a single send. `campaigns-tick` is the only clock. Utility templates are sent as approved: no "פרסומת" prefix and no forced הסרה button. Marketing templates are unchanged.
 - **Skips:**
   - no or invalid phone (a WhatsApp id is used when it is a usable number; otherwise the lead's phone field, normalized as an Israeli number)
   - suppressed (opted out)

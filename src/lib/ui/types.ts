@@ -887,7 +887,7 @@ export type UiCopy = {
       cols: { name: string; template: string; status: string; when: string; sent: string; skipped: string; failed: string };
       statuses: Record<"draft" | "scheduled" | "sending" | "paused" | "done" | "canceled", string>;
       pauseReasons: Record<"owner" | "batch_done" | "template_not_approved" | "addon_off" | "no_whatsapp" | "no_declaration" | "audience_too_large", string>;
-      waitReasons: Record<"quiet_hours" | "daily_ceiling" | "waiting_for_clients", string>;
+      waitReasons: Record<"quiet_hours" | "daily_ceiling" | "waiting_for_clients" | "waiting_follow_up", string>;
       skipReasons: Record<
         | "no_phone"
         | "invalid_phone"
@@ -902,10 +902,13 @@ export type UiCopy = {
         | "canceled",
         string
       >;
-      sendStatuses: Record<"queued" | "sending" | "sent" | "failed" | "skipped", string>;
+      sendStatuses: Record<"queued" | "sending" | "sent" | "failed" | "skipped" | "unknown", string>;
       form: {
         name: string;
         template: string;
+        followUp: string;
+        followUpHint: string;
+        followUpNone: string;
         noApproved: string;
         audience: string;
         audienceClients: string;

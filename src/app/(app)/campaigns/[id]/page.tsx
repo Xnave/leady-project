@@ -47,6 +47,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
           batchSize: c.batchSize,
           scheduledAt: c.scheduledAt?.toISOString() ?? null,
           sendWindow: c.sendWindow == null ? null : campaignSendWindow(c.sendWindow),
+          followUps: c.followUps,
         }
       : null;
     return (
@@ -116,7 +117,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
       <section className="card campaign-card">
         <h2>{run.detail.metrics}</h2>
         <dl className="campaign-admin-facts">
-          {(["sent", "queued", "sending", "failed", "skipped"] as const).map((k) => (
+          {(["sent", "queued", "sending", "failed", "skipped", "unknown"] as const).map((k) => (
             <span key={k} className="client-source-stat">
               <dt>{run.sendStatuses[k]}</dt>
               <dd>{m[k]}</dd>

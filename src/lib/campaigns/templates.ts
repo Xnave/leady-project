@@ -12,10 +12,12 @@
  */
 
 export type TemplateLanguage = "he" | "en";
-export type TemplateCategory = "MARKETING";
+/** Owners compose MARKETING only. A stored UTILITY template is sent as written: no prefix, no forced opt-out button. */
+export type TemplateCategory = "MARKETING" | "UTILITY";
 
 export const TEMPLATE_LANGUAGES: readonly TemplateLanguage[] = ["he", "en"];
-export const TEMPLATE_CATEGORIES: readonly TemplateCategory[] = ["MARKETING"];
+/** Categories the owner form offers. UTILITY is not one of them. */
+export const TEMPLATE_CATEGORIES: readonly ["MARKETING"] = ["MARKETING"];
 
 export const AD_PREFIX = "פרסומת";
 const AD_SEPARATOR = " | ";
@@ -70,6 +72,10 @@ export function hasAdPrefix(d: Pick<TemplateDraft, "category">, adPrefixEnabled:
   return d.category === "MARKETING" && adPrefixEnabled;
 }
 
+export function isUtilityTemplate(category: string): boolean {
+  return category === "UTILITY";
+}
+
 /** Business name and phone, cut to Meta's 60-character footer. The phone goes first when space runs out. */
 export function footerLine(businessName: string, businessPhone: string): string {
   const name = businessName.trim();
@@ -86,6 +92,7 @@ export function composeTemplate(
   opts: { adPrefixEnabled: boolean; businessName: string; businessPhone: string },
 ): ComposedTemplate {
   const body = d.body.trim();
+  if (isUtilityTemplate(d.category)) return { text: body, footer: "", buttons: [] };
   return {
     text: hasAdPrefix(d, opts.adPrefixEnabled) ? `${AD_PREFIX}${AD_SEPARATOR}${body}` : body,
     footer: footerLine(opts.businessName, opts.businessPhone),

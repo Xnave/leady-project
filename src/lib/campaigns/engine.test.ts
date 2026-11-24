@@ -70,6 +70,11 @@ function table(name: string) {
       hit.forEach((r) => Object.assign(r, a.data));
       return { count: hit.length };
     },
+    create: async (a: { data: Row }) => {
+      const row = { id: `${name}-${rows().length + 1}`, createdAt: new Date(), ...a.data };
+      rows().push(row);
+      return row;
+    },
     createMany: async (a: { data: Row[] }) => {
       for (const d of a.data) {
         if (name === "campaignSend" && rows().some((r) => r.campaignId === d.campaignId && r.phone === d.phone)) continue;
@@ -137,6 +142,10 @@ function seed(opts: { declaration?: boolean; phones?: string[] } = {}) {
     skipReason: "",
     params: [`N${i}`],
     sentAt: null,
+    startedAt: null,
+    escalatedAt: null,
+    reminderClaimedAt: null,
+    reminderSentAt: null,
     createdAt: new Date(NOW.getTime() + i),
   }));
   db.suppression = [];
@@ -298,14 +307,52 @@ describe("prepareCampaignRun", () => {
     expect(db.campaign[0]).toMatchObject({ batchStartAt: 1, resetBatch: false });
   });
 
-  it("requeues a send stuck in sending and leaves a fresh one", async () => {
+  it("marks a send stuck in sending as unknown and leaves a fresh one", async () => {
     db.campaignSend[0].status = "sending";
     db.campaignSend[0].updatedAt = new Date(NOW.getTime() - 16 * 60 * 1000);
     db.campaignSend[1].status = "sending";
     db.campaignSend[1].updatedAt = NOW;
     expect(await prepareCampaignRun("t1", "c1", NOW)).toEqual({ go: true, budget: 200 });
-    expect(db.campaignSend[0].status).toBe("queued");
+    expect(db.campaignSend[0].status).toBe("unknown");
+    expect(db.campaignSend[0].escalatedAt).toBeInstanceOf(Date);
     expect(db.campaignSend[1].status).toBe("sending");
+  });
+
+  it("sends a due reminder and keeps a not-yet-due sequence scheduled", async () => {
+    listWhatsAppTemplates.mockImplementation(async () => [...approvedTemplate, { id: "rem", name: "remind_1", language: "he", status: "APPROVED", category: "UTILITY" }]);
+    db.whatsAppTemplate.push({ id: "rem", tenantId: "t1", accountId: "acc-1", name: "remind_1", language: "he", status: "APPROVED", category: "UTILITY", text: "reminder {{1}}" });
+    db.campaign[0].followUps = [
+      { templateId: "rem", delayMs: 48 * 3600_000, onSilence: "send" },
+      { templateId: null, delayMs: 48 * 3600_000, onSilence: "escalate" },
+    ];
+    db.campaignSend = [
+      {
+        id: "sent-1",
+        tenantId: "t1",
+        campaignId: "c1",
+        phone: "972501111111",
+        name: "Dana",
+        status: "sent",
+        sentAt: new Date(NOW.getTime() - 49 * 3600_000),
+        startedAt: null,
+        escalatedAt: null,
+        reminderClaimedAt: null,
+        reminderSentAt: null,
+        params: ["Dana"],
+      },
+    ];
+    expect(await prepareCampaignRun("t1", "c1", NOW)).toEqual({ go: true, budget: 200 });
+    const res = await sendCampaignChunk("t1", "c1", 10, NOW);
+    expect(res.sent).toBe(1);
+    expect(sendWhatsAppTemplate).toHaveBeenCalledTimes(1);
+    expect(sendWhatsAppTemplate.mock.calls[0][0]).toMatchObject({ template: { name: "remind_1" }, phone: "972501111111" });
+    expect(db.campaignSend[0].reminderSentAt).toBeInstanceOf(Date);
+
+    db.campaignSend[0].reminderSentAt = null;
+    db.campaignSend[0].reminderClaimedAt = null;
+    db.campaignSend[0].sentAt = new Date(NOW.getTime() - 3600_000);
+    expect(await prepareCampaignRun("t1", "c1", NOW)).toEqual({ go: false, reason: "waiting_follow_up" });
+    expect(db.campaign[0].status).toBe("scheduled");
   });
 
   it("marks a frozen campaign done when nothing is queued", async () => {

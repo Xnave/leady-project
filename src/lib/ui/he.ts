@@ -1228,6 +1228,7 @@ export const he: UiCopy = {
         quiet_hours: "ממתין לשעות השליחה (א'-ה' 9:00-20:00, שישי עד 14:00, לא בשבת)",
         daily_ceiling: "הגעת למגבלה היומית של המספר. ממשיך מחר.",
         waiting_for_clients: "ממתין ללקוחות חדשים מהמקור. ממשיך בהרצה הבאה.",
+        waiting_follow_up: "ההודעה הראשונה יצאה. אם אין תשובה נשלחת תזכורת, ואחר כך נפתחת משימה.",
       },
       skipReasons: {
         no_phone: "אין טלפון",
@@ -1242,10 +1243,13 @@ export const he: UiCopy = {
         missing_param: "חסר ערך לתבנית",
         canceled: "הקמפיין בוטל",
       },
-      sendStatuses: { queued: "ממתין", sending: "נשלח", sent: "נשלח", failed: "נכשל", skipped: "דולג" },
+      sendStatuses: { queued: "ממתין", sending: "נשלח", sent: "נשלח", failed: "נכשל", skipped: "דולג", unknown: "לא אושר" },
       form: {
         name: "שם הקמפיין",
         template: "תבנית",
+        followUp: "אם לא עונים",
+        followUpNone: "בלי המשך",
+        followUpHint: "תזכורת אחת אחרי 48 שעות, מהתבנית הזו. 48 שעות אחריה בלי תשובה נפתחת משימה ולא נשלח עוד.",
         noApproved: "עוד אין תבנית מאושרת. יוצרים אחת בלשונית תבניות ומחכים לאישור Meta.",
         audience: "למי זה נשלח",
         audienceClients: "לקוחות מה-CRM",

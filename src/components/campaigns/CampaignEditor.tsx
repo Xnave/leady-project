@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, type FormEvent } from "react";
 import type { EditorSource, EditorTemplate } from "@/lib/campaigns/page-data";
 import type { Audience, ParamSpec, SendWindow } from "@/lib/campaigns/rules";
-import { DECLARATION_VERSION, DEFAULT_SEND_WINDOW, PARAM_SOURCES } from "@/lib/campaigns/rules";
+import { DECLARATION_VERSION, DEFAULT_SEND_WINDOW, documentsFollowUps, PARAM_SOURCES, parseFollowUps } from "@/lib/campaigns/rules";
 import { previewText } from "@/lib/campaigns/templates";
 import { fillUi, type UiCopy, type UiLang } from "@/lib/ui";
 
@@ -23,6 +23,7 @@ export type EditorInitial = {
   batchSize: number | null;
   scheduledAt: string | null;
   sendWindow: SendWindow | null;
+  followUps?: unknown;
 };
 
 type Preview = { total: number; eligible: number; skipped: Record<string, number>; sample: string[]; costUsd: number };
@@ -93,6 +94,9 @@ export function CampaignEditor({
   const [id, setId] = useState(initial?.id ?? "");
   const [name, setName] = useState(initial?.name ?? "");
   const [templateId, setTemplateId] = useState(initial?.templateId ?? data.templates[0]?.id ?? "");
+  const [reminderTemplateId, setReminderTemplateId] = useState(
+    () => parseFollowUps(initial?.followUps).find((step) => step.onSilence === "send")?.templateId ?? "",
+  );
   const [audienceKind, setAudienceKind] = useState<"clients" | "leads">(initialLeads.length ? "leads" : "clients");
   const [sourceId, setSourceId] = useState(initialClients?.sourceId ?? (data.sources.length === 1 ? data.sources[0].id : "all"));
   const [yearsMin, setYearsMin] = useState(initialClients?.startedYearsAgoMin?.toString() ?? "");
@@ -156,6 +160,8 @@ export function CampaignEditor({
     return {
       name,
       templateId,
+      reminderTemplateId: reminderTemplateId || null,
+      followUps: reminderTemplateId ? documentsFollowUps(reminderTemplateId) : [],
       audience,
       params: specs,
       goal,
@@ -266,6 +272,18 @@ export function CampaignEditor({
               </option>
             ))}
           </select>
+        </label>
+        <label>
+          {f.followUp}
+          <select value={reminderTemplateId} onChange={(e) => (setReminderTemplateId(e.target.value), touch())}>
+            <option value="">{f.followUpNone}</option>
+            {data.templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.title}
+              </option>
+            ))}
+          </select>
+          <span className="muted campaign-hint">{f.followUpHint}</span>
         </label>
 
         <fieldset>

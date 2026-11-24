@@ -200,6 +200,40 @@ describe("nextStatus", () => {
   });
 });
 
+describe("follow-ups", () => {
+  const hour = 60 * 60 * 1000;
+  const steps = [
+    { templateId: "rem", delayMs: 48 * hour, onSilence: "send" as const },
+    { templateId: null, delayMs: 48 * hour, onSilence: "escalate" as const },
+  ];
+  const row = {
+    status: "sent",
+    sentAt: new Date("2026-11-01T09:00:00Z"),
+    startedAt: null,
+    escalatedAt: null,
+    reminderClaimedAt: null,
+    reminderSentAt: null,
+  };
+
+  it("waits, then reminds, then escalates, and a reply stops it", async () => {
+    const { dueFollowUp, isStopReply } = await import("./rules");
+    expect(dueFollowUp(row, steps, new Date("2026-11-02T09:00:00Z"))).toBeNull();
+    expect(dueFollowUp(row, steps, new Date("2026-11-03T09:00:00Z"))).toBe("reminder");
+    expect(dueFollowUp({ ...row, reminderSentAt: new Date("2026-11-03T09:00:00Z") }, steps, new Date("2026-11-05T09:00:00Z"))).toBe("escalate");
+    expect(dueFollowUp({ ...row, startedAt: new Date() }, steps, new Date("2026-11-05T09:00:00Z"))).toBeNull();
+    expect(isStopReply("הסר")).toBe(true);
+    expect(isStopReply("Stop!")).toBe(true);
+    expect(isStopReply("בבקשה תסירו אותי")).toBe(false);
+  });
+
+  it("a claim that never recorded a reminder is unknown and not retried", async () => {
+    const { dueFollowUp } = await import("./rules");
+    const claimed = { ...row, reminderClaimedAt: new Date("2026-11-03T09:00:00Z") };
+    expect(dueFollowUp(claimed, steps, new Date("2026-11-03T09:20:00Z"))).toBe("unknown_claim");
+    expect(dueFollowUp({ ...claimed, status: "unknown" }, steps, new Date("2026-11-03T09:20:00Z"))).toBeNull();
+  });
+});
+
 describe("estimateCostUsd", () => {
   it("prices by category", () => {
     expect(estimateCostUsd(1000, "MARKETING")).toBe(41);

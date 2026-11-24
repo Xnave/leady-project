@@ -6,6 +6,8 @@ import { freezeAudience, parseAudience, parseParamSpecs, previewCampaign, type P
 import {
   audienceSchema,
   DECLARATION_VERSION,
+  documentsFollowUps,
+  followUpStepSchema,
   GOALS,
   nextStatus,
   paramSchema,
@@ -36,6 +38,10 @@ export const campaignInputSchema = z.object({
   scheduledAt: z.string().datetime({ offset: true }).nullable().default(null),
   /** Null keeps the Israeli default. */
   sendWindow: sendWindowSchema.nullable().default(null),
+  /** Empty keeps a single send. A reminder template becomes one reminder, then one advisor task. */
+  followUps: z.array(followUpStepSchema).max(4).default([]),
+  /** Shorthand for the documents sequence: reminder template, 48 hours, then a task. */
+  reminderTemplateId: z.string().min(1).nullable().default(null),
 });
 export type CampaignInput = z.infer<typeof campaignInputSchema>;
 
@@ -76,11 +82,23 @@ export function expectedParamCount(body: string): number {
   return vars.length ? Math.max(...vars) : 0;
 }
 
+function stepsOf(input: CampaignInput) {
+  if (input.reminderTemplateId) return documentsFollowUps(input.reminderTemplateId);
+  return input.followUps.filter((step) => step.onSilence === "escalate" || step.templateId);
+}
+
 async function checkTemplate(tenantId: string, input: CampaignInput): Promise<CampaignError | null> {
   const template = await prisma.whatsAppTemplate.findFirst({ where: { id: input.templateId, tenantId } });
   if (!template) return "template_not_found";
   if (!isSendable(template.status)) return "template_not_approved";
   if (input.params.length !== expectedParamCount(template.body)) return "params_mismatch";
+  for (const step of stepsOf(input)) {
+    if (!step.templateId) continue;
+    const follow = await prisma.whatsAppTemplate.findFirst({ where: { id: step.templateId, tenantId } });
+    if (!follow) return "template_not_found";
+    if (!isSendable(follow.status)) return "template_not_approved";
+    if (input.params.length !== expectedParamCount(follow.body)) return "params_mismatch";
+  }
   return null;
 }
 
@@ -105,6 +123,7 @@ function data(input: CampaignInput) {
     batchSize: input.batchSize,
     scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : null,
     sendWindow: input.sendWindow ?? Prisma.DbNull,
+    followUps: stepsOf(input),
   };
 }
 
@@ -237,10 +256,10 @@ export async function actOnCampaign(
   return { status: next, scheduledAt: campaign.scheduledAt?.toISOString() ?? null };
 }
 
-export type CampaignMetrics = { queued: number; sending: number; sent: number; failed: number; skipped: number };
+export type CampaignMetrics = { queued: number; sending: number; sent: number; failed: number; skipped: number; unknown: number };
 
 function emptyMetrics(): CampaignMetrics {
-  return { queued: 0, sending: 0, sent: 0, failed: 0, skipped: 0 };
+  return { queued: 0, sending: 0, sent: 0, failed: 0, skipped: 0, unknown: 0 };
 }
 
 export async function listCampaigns(tenantId: string) {

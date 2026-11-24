@@ -20,6 +20,7 @@ import {
   loadCapabilityInstances,
   loadInstanceConfig,
 } from "@/lib/capability-instances";
+import { safeRecordCampaignReply } from "@/lib/campaigns/reply";
 import { ensureFlowRegistry } from "@/lib/flow/capabilities";
 import { capabilityStateLoaders } from "@/lib/flow/registry";
 import {
@@ -282,6 +283,8 @@ export async function persistInboundIfNew(opts: {
       }),
     ]);
     // CRM refresh is deferred to the turn so enqueue is not blocked.
+    const fromPhone = typeof extraFields.phone === "string" ? extraFields.phone : opts.from;
+    await safeRecordCampaignReply(opts.tenantId, fromPhone, opts.text);
     return { conversationId: conversation.id, messageId: message.id, leadId: lead.id };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
