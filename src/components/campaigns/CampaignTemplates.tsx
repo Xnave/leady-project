@@ -84,6 +84,15 @@ export function CampaignTemplates({
     if (accepted) void load();
   }, [accepted, load]);
 
+  const open = templates?.find((t) => t.id === openId) ?? null;
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open && !dialog.open) dialog.showModal();
+    if (!open && dialog.open) dialog.close();
+  }, [open]);
+
   const draft = { title, category, language, body, examples };
   const composed = useMemo(
     () => composeTemplate({ category, language, body }, { adPrefixEnabled, businessName: business.name, businessPhone: business.phone }),
@@ -187,14 +196,6 @@ export function CampaignTemplates({
 
   const shownIssues = touched ? issues : [];
   const previewBody = previewText(composed.text, examples);
-  const open = templates?.find((t) => t.id === openId) ?? null;
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
 
   function showForm() {
     setCreating(true);
