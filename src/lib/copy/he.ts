@@ -125,7 +125,7 @@ export const chat: ChatCopy = {
         const saved = `${heldMany ? "התלושים" : "התלוש"} של ${held}${whose} כבר אצלנו.`;
         const ask = missingMany
           ? `נצטרך את תלושי ${missing}.`
-          : `נצטרך רק את תלוש ${missing} המלא, כולל כל העמודים.`;
+          : `נצטרך רק את תלוש ${missing}.`;
         return `${saved} ${ask}`;
       },
       ownedBy: (label, who) => `${label} של ${who}`,
