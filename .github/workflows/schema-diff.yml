@@ -1,7 +1,6 @@
-# The production job name must match the required ruleset check on main
-# ("Diff against production"). Staging is advisory only: it always exits 0
-# (with a warning annotation when the schema differs) so a red check does
-# not make the PR look unmergeable.
+# Production job name must match the required ruleset check on main
+# ("Diff against production"). Staging may fail (red) but continue-on-error
+# means it does not fail the workflow or block merge — only production does.
 #
 # Secrets live on GitHub environments: Preview has STAGING_DATABASE_URL,
 # Production has PRODUCTION_DATABASE_URL.
@@ -21,6 +20,7 @@ jobs:
     name: Diff against staging
     runs-on: ubuntu-latest
     environment: Preview
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -35,15 +35,7 @@ jobs:
         env:
           DATABASE_URL_FROM_ENV: "1"
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-        run: |
-          set +e
-          out="$(pnpm db:diff:check:staging 2>&1)"
-          code=$?
-          printf '%s\n' "$out"
-          if [[ "$code" -ne 0 ]]; then
-            echo "::warning::Staging schema differs from schema.prisma (advisory only; does not block merge). See job log for SQL."
-          fi
-          exit 0
+        run: pnpm db:diff:check:staging
 
   production:
     name: Diff against production

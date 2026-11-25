@@ -275,7 +275,7 @@ npm run db:verify:production     # again: "Pending migrations: none ... OK"
 
 `baseline`, `migrate` and `backfill` change the database. They ask you to type the target host first and refuse to run without a terminal (from a script, CI, or an agent).
 
-**Pull requests** run both diffs (`.github/workflows/schema-diff.yml`). A ruleset on `main` requires the **Diff against production** job (that name must match), so the migration is applied before merge. The staging job is advisory only: it prints any SQL and always exits successfully (with a warning annotation when schemas differ), so it does not block or redden the merge button. The workflow reads `STAGING_DATABASE_URL` from the Preview environment and `PRODUCTION_DATABASE_URL` from the Production environment.
+**Pull requests** run both diffs (`.github/workflows/schema-diff.yml`). A ruleset on `main` requires the **Diff against production** job (that name must match), so the migration is applied before merge. The staging job may fail (red) when schemas differ — that is intentional — but `continue-on-error` keeps it from failing the workflow or blocking merge. The workflow reads `STAGING_DATABASE_URL` from the Preview environment and `PRODUCTION_DATABASE_URL` from the Production environment.
 
 If `verify` says MISMATCH, the database drifted from the migrations. Stop and compare the printed SQL before migrating.
 
