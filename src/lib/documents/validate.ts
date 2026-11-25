@@ -288,7 +288,13 @@ export function judgeFile(
     const checks = rules.documents[candidate.docType]?.checks ?? [];
     const failure = runChecks(checks, extracted.fields, profileForSlot(state.profile, candidate), now);
     if (!failure) {
-      const coveredMonths = monthsIn(extracted.fields.months ?? extracted.fields.periodEnd);
+      // Payslips use payMonths; `months` is the bank-statement field and can list
+      // every calendar month in a range even when payMonths only closed two slips.
+      const coveredMonths = monthsIn(
+        candidate.docType === "payslip"
+          ? (extracted.fields.payMonths ?? extracted.fields.periodEnd)
+          : (extracted.fields.months ?? extracted.fields.periodEnd),
+      );
       return {
         kind: "accept",
         slotId: candidate.id,
@@ -447,6 +453,73 @@ export function commitSlot(
     ...state,
     slots,
     status: done ? "complete" : "gathering",
+    activeStage: activeStageOf(slots),
+  };
+}
+
+/**
+ * Three uploaded payslip slots can still miss a month (e.g. Aug closed twice).
+ * Reopen a duplicate-month slot so income stays active until the window is covered.
+ */
+export function repairPayslipMonthCoverage(state: DossierState, now = new Date()): DossierState {
+  const window = priorCalendarMonths(now);
+  const borrowers = [
+    ...new Set(
+      state.slots.filter((slot) => slot.docType === "payslip").map((slot) => slot.borrower || "1"),
+    ),
+  ];
+  let slots = state.slots;
+  let changed = false;
+  for (const borrower of borrowers) {
+    const mine = slots.filter(
+      (slot) => slot.docType === "payslip" && (slot.borrower || "1") === borrower,
+    );
+    if (!mine.length || mine.some((slot) => slot.status === "missing")) continue;
+    const held = [
+      ...new Set(
+        mine
+          .filter((slot) => slot.status === "uploaded")
+          .flatMap((slot) => slot.coveredMonths ?? []),
+      ),
+    ].filter((month) => window.includes(month));
+    // No month metadata yet (older rows / tests) — do not reopen blindly.
+    if (!held.length) continue;
+    if (window.every((month) => held.includes(month))) continue;
+    const seen = new Set<string>();
+    let reopenId = "";
+    for (const slot of mine) {
+      if (slot.status !== "uploaded") continue;
+      const month = slot.coveredMonths?.[0] ?? "";
+      if (month && seen.has(month)) {
+        reopenId = slot.id;
+        break;
+      }
+      if (month) seen.add(month);
+    }
+    if (!reopenId) {
+      reopenId = [...mine].reverse().find((slot) => slot.status === "uploaded")?.id ?? "";
+    }
+    if (!reopenId) continue;
+    changed = true;
+    slots = slots.map((slot) =>
+      slot.id === reopenId
+        ? {
+            ...slot,
+            status: "missing" as const,
+            remoteId: "",
+            filename: "",
+            failCount: 0,
+            lastReason: "",
+            coveredMonths: [],
+          }
+        : slot,
+    );
+  }
+  if (!changed) return state;
+  return {
+    ...state,
+    slots,
+    status: dossierDone(slots) ? "complete" : "gathering",
     activeStage: activeStageOf(slots),
   };
 }

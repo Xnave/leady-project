@@ -130,7 +130,7 @@ export const chat: ChatCopy = {
         const saved = `We already have the ${heldMany ? "payslips" : "payslip"} for ${held}${whose}.`;
         const ask = missingMany
           ? `We still need the payslips for ${missing}.`
-          : `We only need the full ${missing} payslip, including every page.`;
+          : `We still need the ${missing} payslip.`;
         return `${saved} ${ask}`;
       },
       ownedBy: (label, who) => `${label} for ${who}`,
