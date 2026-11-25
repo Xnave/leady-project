@@ -46,6 +46,72 @@ export function isUploadableFile(mime: string, filename: string): boolean {
   return extOk || mimeOk;
 }
 
+/** Mime from a known document extension, or "" when the name does not help. */
+export function mimeFromFilename(filename: string): string {
+  const ext = fileExtension(filename);
+  return SUPPORTED_DOCUMENT_TYPES.find((type) => type.ext === ext)?.mime ?? "";
+}
+
+/** Mime from magic bytes (PDF / JPEG / PNG), or "" when unknown. */
+export function mimeFromBytes(bytes: Uint8Array): string {
+  if (
+    bytes.length >= 5 &&
+    bytes[0] === 0x25 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x44 &&
+    bytes[3] === 0x46 &&
+    bytes[4] === 0x2d
+  ) {
+    return "application/pdf";
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  return "";
+}
+
+function headerMime(contentType: string | undefined): string {
+  const raw = (contentType ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+  if (!raw || raw === "application/octet-stream") return "";
+  return canonicalMime(raw);
+}
+
+/**
+ * Fill in mime/filename when WhatsApp/Zernio only sent `type=file` + a media URL.
+ * Prefers Content-Type, then magic bytes, then the filename extension.
+ */
+export function refineDocumentMeta(opts: {
+  mime: string;
+  filename: string;
+  contentType?: string;
+  bytes?: Uint8Array;
+}): { mime: string; filename: string } {
+  let mime = canonicalMime(opts.mime || "application/octet-stream");
+  let filename = opts.filename.trim() || "file";
+  if (!mime || mime === "application/octet-stream") {
+    mime =
+      headerMime(opts.contentType) ||
+      (opts.bytes ? mimeFromBytes(opts.bytes) : "") ||
+      mimeFromFilename(filename) ||
+      "application/octet-stream";
+  }
+  filename = uploadFileName(filename === "file" ? "file" : filename, mime);
+  return { mime, filename };
+}
+
 export function isImageFile(mime: string, filename: string): boolean {
   if (!isUploadableFile(mime, filename)) return false;
   const ext = fileExtension(filename);
