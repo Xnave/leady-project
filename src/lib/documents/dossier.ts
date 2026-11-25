@@ -380,10 +380,16 @@ export async function loadDocumentsTurnState(args: {
     }),
   ]);
   const state = dossier ? stateOf(dossier) : null;
+  // WhatsApp type=file often lands as octet-stream/"file" until we download. Only
+  // short-circuit when there is nothing to fetch/sniff (collectJobs refines from the bytes).
   const unsupportedOnly =
     stored === 0 &&
     inbound.files.length > 0 &&
-    inbound.files.every((file) => !isUploadableFile(file.attachment.mime, file.attachment.filename));
+    inbound.files.every((file) => {
+      const { mime, filename, url, bytesEnc } = file.attachment;
+      if (url?.trim() || bytesEnc) return false;
+      return !isUploadableFile(mime, filename);
+    });
   const wouldAnswer = state
     ? applyCustomerAnswers(state.profile, inbound.newestText, new Date(), {
         bare: bareAnswerAllowed(state.profile, lastAgent?.text ?? ""),
@@ -771,7 +777,16 @@ async function rejectUnsupportedFiles(opts: IngestLines & { row: DossierRow | nu
   const open = !opts.row || (opts.row.status !== "blocked" && opts.row.status !== "complete");
   const flagged = capabilityState<DocumentsTurnState>(opts.ctx, "documents")?.unsupportedOnly === true;
   if (!open || !flagged || opts.files.length === 0) return null;
-  if (!opts.files.every((file) => !isUploadableFile(file.attachment.mime, file.attachment.filename))) return null;
+  // A downloadable URL can still refine octet-stream → pdf/jpeg in collectJobs.
+  if (
+    !opts.files.every((file) => {
+      const { mime, filename, url, bytesEnc } = file.attachment;
+      if (url?.trim() || bytesEnc) return false;
+      return !isUploadableFile(mime, filename);
+    })
+  ) {
+    return null;
+  }
   let row = opts.row;
   if (!row) {
     row = await prisma.dossier.create({
