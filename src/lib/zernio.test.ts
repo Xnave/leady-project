@@ -168,6 +168,55 @@ describe("parseZernioMessageReceived", () => {
     expect(parsed?.text).toBe("");
   });
 
+  it("infers jpeg from a WhatsApp image that only has type and a relative media url", () => {
+    const parsed = parseZernioMessageReceived({
+      event: "message.received",
+      id: "evt_img",
+      account: { id: "acc_1", platform: "whatsapp" },
+      message: {
+        direction: "incoming",
+        text: "",
+        platformMessageId: "msg_img",
+        conversationId: "conv_1",
+        sender: { phoneNumber: "+972500000000" },
+        attachments: [
+          {
+            id: "1603925975101334",
+            type: "image",
+            mimeType: "image/jpeg",
+            url: "/api/v1/whatsapp/media/1603925975101334?accountId=acc_1",
+          },
+        ],
+      },
+    });
+    expect(parsed?.attachments).toEqual([
+      {
+        url: "https://zernio.com/api/v1/whatsapp/media/1603925975101334?accountId=acc_1",
+        mime: "image/jpeg",
+        filename: "file.jpg",
+      },
+    ]);
+  });
+
+  it("infers jpeg when Zernio only sends type=image", () => {
+    const parsed = parseZernioMessageReceived({
+      event: "message.received",
+      id: "evt_img2",
+      account: { id: "acc_1", platform: "whatsapp" },
+      message: {
+        direction: "incoming",
+        text: "",
+        platformMessageId: "msg_img2",
+        conversationId: "conv_1",
+        sender: { phoneNumber: "+972500000000" },
+        attachments: [{ type: "image", url: "https://zernio.com/api/v1/whatsapp/media/1" }],
+      },
+    });
+    expect(parsed?.attachments).toEqual([
+      { url: "https://zernio.com/api/v1/whatsapp/media/1", mime: "image/jpeg", filename: "file.jpg" },
+    ]);
+  });
+
   it("keeps a file WhatsApp could not carry, so the agent can name the limit", () => {
     const parsed = parseZernioMessageReceived({
       event: "message.received",
