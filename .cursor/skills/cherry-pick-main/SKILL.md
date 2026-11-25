@@ -4,7 +4,9 @@ description: >-
   Lands a commit on Zapidly main via PR (never direct push), waits for Diff
   against production, merges, and confirms Vercel production deploy. Use when
   the repo is leady-project and the user asks to cherry-pick to main, hotfix
-  main, push a commit to main, or land a fix and deploy.
+  main, push a commit to main, or land a fix and deploy. Kept in personal
+  skills so it stays available on feature branches that do not have the
+  project copy yet.
 ---
 
 # Cherry-pick to main + deploy
@@ -36,7 +38,7 @@ Return the PR URL and the merge commit SHA when done.
 | No Prisma schema/migrations | Proceed. Local check optional: on the cherry-pick branch, `npm run db:diff:check:production` should print `OK: no schema diff.` |
 | Adds/changes migrations | Stop. Apply with `npm run db:verify:production` then `npm run db:migrate:production` (needs a TTY confirm). Only open/merge the PR after production matches `schema.prisma`. |
 
-**Staging** (`Diff against staging`) is advisory: the job always exits 0 and emits a warning annotation when schemas differ. Only **Diff against production** can block. If the UI still looks red on an old PR, merge via API/`gh pr merge` when production is green, or land the staging soft-fail workflow fix first.
+**Staging** (`Diff against staging`) is allowed to fail (red) via `continue-on-error` on the job. That does **not** block merge — only **Diff against production** can. `mergeStateStatus: UNSTABLE` with production green means staging failed and you can still merge (UI or `gh pr merge` / API).
 
 `BLOCKED` with *Required status check "Diff against production" is expected* means that native job has not succeeded on the PR head SHA yet — wait or fix CI; do not push to `main`.
 
