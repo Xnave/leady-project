@@ -307,23 +307,56 @@ function asTrimmedString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+/** WhatsApp media kinds Zernio puts on attachments when mime/filename are missing. */
+const ZERNIO_TYPE_MIME: Record<string, string> = {
+  image: "image/jpeg",
+  sticker: "image/webp",
+  audio: "audio/ogg",
+  video: "video/mp4",
+  document: "application/octet-stream",
+};
+
+const MIME_DEFAULT_EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/png": "png",
+  "application/pdf": "pdf",
+};
+
+function absoluteZernioUrl(url: string): string {
+  if (!url) return "";
+  if (url.startsWith("https://") || url.startsWith("http://")) return url;
+  if (url.startsWith("/")) return `https://zernio.com${url}`;
+  return url;
+}
+
 function attachmentFrom(raw: unknown): ZernioAttachment | null {
   if (!raw || typeof raw !== "object") return null;
   const item = raw as Record<string, unknown>;
-  const url =
-    asTrimmedString(item.url) ||
-    asTrimmedString(item.link) ||
-    asTrimmedString(item.downloadUrl);
-  const filename =
-    asTrimmedString(item.filename) ||
-    asTrimmedString(item.fileName) ||
-    asTrimmedString(item.name) ||
-    "file";
-  const mime =
+  const mediaType = asTrimmedString(item.type).toLowerCase();
+  const url = absoluteZernioUrl(
+    asTrimmedString(item.url) || asTrimmedString(item.link) || asTrimmedString(item.downloadUrl),
+  );
+  let mime =
     asTrimmedString(item.mime) ||
     asTrimmedString(item.mimeType) ||
+    asTrimmedString(item.mime_type) ||
     asTrimmedString(item.contentType) ||
+    asTrimmedString(item.content_type) ||
+    ZERNIO_TYPE_MIME[mediaType] ||
     "application/octet-stream";
+  let filename =
+    asTrimmedString(item.filename) ||
+    asTrimmedString(item.fileName) ||
+    asTrimmedString(item.file_name) ||
+    asTrimmedString(item.name) ||
+    "";
+  const hasExt = filename.includes(".") && !filename.endsWith(".");
+  if (!filename || filename === "file" || !hasExt) {
+    const ext = MIME_DEFAULT_EXT[mime.toLowerCase()] || (mediaType === "image" ? "jpg" : "");
+    if (ext) filename = `${filename && filename !== "file" ? filename : "file"}.${ext}`;
+    else if (!filename) filename = "file";
+  }
   const size = asFileSize(item.size ?? item.fileSize ?? item.file_size ?? item.bytes ?? item.contentLength);
   if (!url) {
     if (!size || size <= ZERNIO_UPLOAD_BYTES) return null;
