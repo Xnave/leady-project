@@ -37,7 +37,7 @@ import {
 import { applyCustomerAnswers, applyExtractedBiometric, borrowerFileWho, borrowersOf, declinesExistingLoans, factsFromClient, factsOpen, firstHomeOf, loansOf, missingTheDocument, nextQuestion, openQuestions, retractsLastFile, secondBorrowerOf, sharedBorrowerEmployment, splitWhoOf, type OpenQuestion } from "./facts";
 import { docLabel, type BlankFormDef, type Profile, type RulesDocument, type Slot } from "./rules";
 import { checklistSlots, nextCollectionStageId, releasedStageId } from "./mortgage-rules";
-import { exceedsWhatsAppImage, isImageFile, isUploadableFile, smartUploadName, uploadDay, ZERNIO_UPLOAD_BYTES, ZERNIO_UPLOAD_LABEL } from "./file-types";
+import { exceedsWhatsAppImage, isImageFile, isUploadableFile, refineDocumentMeta, smartUploadName, uploadDay, ZERNIO_UPLOAD_BYTES, ZERNIO_UPLOAD_LABEL } from "./file-types";
 import { phoneKey, smartNpvApiKey, storedClientByPhone } from "./client-sync";
 import { senderPhone } from "@/lib/demo-phone";
 import { filesToPdf, photoDone } from "./images";
@@ -187,18 +187,24 @@ function announcedLimit(attachment: StoredAttachment): string | null {
   return null;
 }
 
-async function downloadUrl(url: string, mime: string): Promise<Buffer> {
+async function downloadUrl(
+  url: string,
+  mime: string,
+): Promise<{ bytes: Buffer; contentType: string }> {
   // Zernio media URLs need the API key; public CDN / Smart NPV links do not.
   const res = isZernioMediaUrl(url) ? await fetchZernioMedia(url) : await fetch(url);
   if (res.status === 413) throw new OversizedFile(ZERNIO_UPLOAD_LABEL);
   if (!res.ok) throw new Error(`attachment ${res.status}`);
+  const contentType = res.headers.get("content-type") ?? "";
   const declared = Number(res.headers.get("content-length"));
-  if (Number.isFinite(declared) && exceedsWhatsAppImage(mime, declared)) throw new OversizedFile("5MB");
+  const probeMime = refineDocumentMeta({ mime, filename: "file", contentType }).mime;
+  if (Number.isFinite(declared) && exceedsWhatsAppImage(probeMime || mime, declared)) throw new OversizedFile("5MB");
   if (Number.isFinite(declared) && declared > MAX_BYTES) throw new Error("too_large");
   const bytes = Buffer.from(await res.arrayBuffer());
-  if (exceedsWhatsAppImage(mime, bytes.length)) throw new OversizedFile("5MB");
+  const refined = refineDocumentMeta({ mime: probeMime || mime, filename: "file", contentType, bytes });
+  if (exceedsWhatsAppImage(refined.mime, bytes.length)) throw new OversizedFile("5MB");
   if (bytes.length > MAX_BYTES) throw new Error("too_large");
-  return bytes;
+  return { bytes, contentType };
 }
 
 function stateOf(row: {
@@ -1468,21 +1474,65 @@ async function collectJobs(opts: IngestLines & { row: DossierRow; files: Inbound
   }
   for (const file of opts.files) {
     const { attachment } = file;
-    if (jobs.some((job) => job.messageId === file.messageId && job.filename === attachment.filename)) continue;
-    if (!isUploadableFile(attachment.mime, attachment.filename)) {
-      opts.lines.push(opts.chat.documents.rejected(attachment.filename, reasonText(opts.chat, "unsupported_type")));
+    let mime = attachment.mime;
+    let filename = attachment.filename;
+    if (jobs.some((job) => job.messageId === file.messageId && job.filename === filename)) continue;
+    // Download first when metadata is thin (WhatsApp type=file often arrives as octet-stream / "file").
+    let bytes: Buffer | null = null;
+    if (attachment.bytesEnc || attachment.url) {
+      try {
+        if (attachment.bytesEnc) {
+          bytes = decryptBytes(attachment.bytesEnc);
+          ({ mime, filename } = refineDocumentMeta({ mime, filename, bytes }));
+        } else if (attachment.url) {
+          const downloaded = await downloadUrl(attachment.url, mime);
+          bytes = downloaded.bytes;
+          ({ mime, filename } = refineDocumentMeta({
+            mime,
+            filename,
+            contentType: downloaded.contentType,
+            bytes,
+          }));
+        }
+      } catch (err) {
+        const oversized = err instanceof OversizedFile;
+        const reason = oversized || (err instanceof Error && err.message === "too_large") ? "too_large" : "unreadable";
+        warnDocuments("documents.download_failed", {
+          filename,
+          mime,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        opts.lines.push(
+          err instanceof OversizedFile
+            ? opts.chat.documents.overSize(err.limit)
+            : opts.chat.documents.rejected(filename, reasonText(opts.chat, reason)),
+        );
+        await markRejected({
+          tenantId: opts.ctx.tenantId,
+          leadId: opts.ctx.lead.id,
+          dossierId: opts.row.id,
+          messageId: file.messageId,
+          filename,
+          mime,
+          reason,
+        });
+        continue;
+      }
+    }
+    if (!isUploadableFile(mime, filename)) {
+      opts.lines.push(opts.chat.documents.rejected(filename, reasonText(opts.chat, "unsupported_type")));
       await markRejected({
         tenantId: opts.ctx.tenantId,
         leadId: opts.ctx.lead.id,
         dossierId: opts.row.id,
         messageId: file.messageId,
-        filename: attachment.filename,
-        mime: attachment.mime,
+        filename,
+        mime,
         reason: "unsupported_type",
       });
       continue;
     }
-    const limit = announcedLimit(attachment);
+    const limit = announcedLimit({ ...attachment, mime, filename });
     if (limit) {
       opts.lines.push(opts.chat.documents.overSize(limit));
       await markRejected({
@@ -1490,45 +1540,14 @@ async function collectJobs(opts: IngestLines & { row: DossierRow; files: Inbound
         leadId: opts.ctx.lead.id,
         dossierId: opts.row.id,
         messageId: file.messageId,
-        filename: attachment.filename,
-        mime: attachment.mime,
+        filename,
+        mime,
         reason: "too_large",
       });
       continue;
     }
-    let bytes: Buffer | null = null;
-    try {
-      bytes = attachment.bytesEnc
-        ? decryptBytes(attachment.bytesEnc)
-        : attachment.url
-          ? await downloadUrl(attachment.url, attachment.mime)
-          : null;
-    } catch (err) {
-      const oversized = err instanceof OversizedFile;
-      const reason = oversized || (err instanceof Error && err.message === "too_large") ? "too_large" : "unreadable";
-      warnDocuments("documents.download_failed", {
-        filename: attachment.filename,
-        mime: attachment.mime,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      opts.lines.push(
-        err instanceof OversizedFile
-          ? opts.chat.documents.overSize(err.limit)
-          : opts.chat.documents.rejected(attachment.filename, reasonText(opts.chat, reason)),
-      );
-      await markRejected({
-        tenantId: opts.ctx.tenantId,
-        leadId: opts.ctx.lead.id,
-        dossierId: opts.row.id,
-        messageId: file.messageId,
-        filename: attachment.filename,
-        mime: attachment.mime,
-        reason,
-      });
-      continue;
-    }
     if (!bytes) continue;
-    jobs.push({ messageId: file.messageId, filename: attachment.filename, mime: attachment.mime, bytes });
+    jobs.push({ messageId: file.messageId, filename, mime, bytes });
   }
   return jobs;
 }

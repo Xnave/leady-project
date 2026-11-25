@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { chat as en } from "@/lib/copy/en";
 import { chat as he } from "@/lib/copy/he";
-import { exceedsWhatsAppImage, inlineContentDisposition, isImageFile, isUploadableFile, presignedExpiry, presignedUrlStale, smartUploadName, supportedTypeLabels, uploadFileName, WHATSAPP_IMAGE_BYTES, ZERNIO_UPLOAD_BYTES } from "./file-types";
+import { exceedsWhatsAppImage, inlineContentDisposition, isImageFile, isUploadableFile, mimeFromBytes, presignedExpiry, presignedUrlStale, refineDocumentMeta, smartUploadName, supportedTypeLabels, uploadFileName, WHATSAPP_IMAGE_BYTES, ZERNIO_UPLOAD_BYTES } from "./file-types";
 
 describe("supported document types", () => {
   it("allows pdf, png, jpg, and jpeg only", () => {
@@ -11,6 +11,24 @@ describe("supported document types", () => {
     expect(isUploadableFile("image/png", "scan.png")).toBe(true);
     expect(isUploadableFile("image/heic", "scan.heic")).toBe(false);
     expect(isUploadableFile("application/zip", "docs.zip")).toBe(false);
+  });
+
+  it("recovers pdf/jpeg from Content-Type or magic bytes when WhatsApp sent octet-stream", () => {
+    expect(mimeFromBytes(Buffer.from("%PDF-1.7\n"))).toBe("application/pdf");
+    expect(
+      refineDocumentMeta({
+        mime: "application/octet-stream",
+        filename: "file",
+        contentType: "application/pdf",
+      }),
+    ).toEqual({ mime: "application/pdf", filename: "file.pdf" });
+    expect(
+      refineDocumentMeta({
+        mime: "application/octet-stream",
+        filename: "file",
+        bytes: Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+      }),
+    ).toEqual({ mime: "image/jpeg", filename: "file.jpg" });
   });
 
   it("names the uploaded file with an allowed extension", () => {

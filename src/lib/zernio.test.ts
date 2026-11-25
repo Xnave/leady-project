@@ -206,6 +206,66 @@ describe("parseZernioMessageReceived", () => {
     ]);
   });
 
+  it("keeps a WhatsApp PDF name and mime when type is file", () => {
+    const parsed = parseZernioMessageReceived({
+      event: "message.received",
+      id: "evt_pdf",
+      account: { id: "acc_1", platform: "whatsapp" },
+      message: {
+        direction: "incoming",
+        text: "",
+        platformMessageId: "msg_pdf",
+        conversationId: "conv_1",
+        sender: { phoneNumber: "+972500000000" },
+        attachments: [
+          {
+            id: "2401949377216490",
+            type: "file",
+            mimeType: "application/pdf",
+            name: "payslips_2026-08_2026-10.pdf",
+            url: "/api/v1/whatsapp/media/2401949377216490?accountId=acc_1",
+          },
+        ],
+      },
+    });
+    expect(parsed?.attachments).toEqual([
+      {
+        url: "https://zernio.com/api/v1/whatsapp/media/2401949377216490?accountId=acc_1",
+        mime: "application/pdf",
+        filename: "payslips_2026-08_2026-10.pdf",
+      },
+    ]);
+  });
+
+  it("infers pdf from the filename when type=file has no mime", () => {
+    const parsed = parseZernioMessageReceived({
+      event: "message.received",
+      id: "evt_pdf2",
+      account: { id: "acc_1", platform: "whatsapp" },
+      message: {
+        direction: "incoming",
+        text: "",
+        platformMessageId: "msg_pdf2",
+        conversationId: "conv_1",
+        sender: { phoneNumber: "+972500000000" },
+        attachments: [
+          {
+            type: "file",
+            name: "payslips_2026-08_2026-10.pdf",
+            url: "https://zernio.com/api/v1/whatsapp/media/1",
+          },
+        ],
+      },
+    });
+    expect(parsed?.attachments).toEqual([
+      {
+        url: "https://zernio.com/api/v1/whatsapp/media/1",
+        mime: "application/pdf",
+        filename: "payslips_2026-08_2026-10.pdf",
+      },
+    ]);
+  });
+
   it("infers jpeg when Zernio only sends type=image", () => {
     const parsed = parseZernioMessageReceived({
       event: "message.received",
