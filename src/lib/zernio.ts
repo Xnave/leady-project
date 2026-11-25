@@ -61,6 +61,28 @@ export function zernioWebhookSecret(): string {
   return env("ZERNIO_WEBHOOK_SECRET");
 }
 
+/** True for Zernio-hosted WhatsApp/Instagram media URLs that require the API key. */
+export function isZernioMediaUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "zernio.com" || host.endsWith(".zernio.com");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Authenticated GET for Zernio media. Bare `fetch(url)` returns 401 — WhatsApp
+ * attachment downloads must send `Authorization: Bearer <ZERNIO_API_KEY>`.
+ */
+export async function fetchZernioMedia(url: string): Promise<Response> {
+  const key = zernioApiKey();
+  if (!key) throw new Error("Set ZERNIO_API_KEY or zerino_api_key in .env");
+  const headers = new Headers();
+  headers.set("Authorization", `Bearer ${key}`);
+  return fetch(url, { headers });
+}
+
 export class ZernioApiError extends Error {
   status: number;
   code?: string;

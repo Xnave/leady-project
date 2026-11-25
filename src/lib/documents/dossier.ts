@@ -19,7 +19,7 @@ import { capabilityState } from "@/lib/flow/registry";
 import { loadTurnContext, type ConnectionView } from "@/lib/conversations";
 import { reopenConversation } from "@/lib/flow/rotate-conversation";
 import type { TurnContext } from "@/lib/flow/types";
-import { sendZernioInboxMessage } from "@/lib/zernio";
+import { fetchZernioMedia, isZernioMediaUrl, sendZernioInboxMessage } from "@/lib/zernio";
 import { blankFormFilePath, blankFormHref } from "./blank-form";
 import { extractDocument, type DocExtraction } from "./extract";
 import {
@@ -182,7 +182,8 @@ function announcedLimit(attachment: StoredAttachment): string | null {
 }
 
 async function downloadUrl(url: string, mime: string): Promise<Buffer> {
-  const res = await fetch(url);
+  // Zernio media URLs need the API key; public CDN / Smart NPV links do not.
+  const res = isZernioMediaUrl(url) ? await fetchZernioMedia(url) : await fetch(url);
   if (res.status === 413) throw new OversizedFile(ZERNIO_UPLOAD_LABEL);
   if (!res.ok) throw new Error(`attachment ${res.status}`);
   const declared = Number(res.headers.get("content-length"));
