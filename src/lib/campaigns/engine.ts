@@ -13,6 +13,9 @@ import {
   followsSource,
   startedAtRange,
   estimateCostUsd,
+  CAMPAIGN_SEND_GAP_DEFAULT_MS,
+  CAMPAIGN_SEND_GAP_MAX_MS,
+  CAMPAIGN_SEND_GAP_MIN_MS,
   campaignSendWindow,
   DUE_CAMPAIGNS_PER_TICK,
   FREQUENCY_CAP_DAYS,
@@ -307,7 +310,7 @@ export type AudiencePerson = { id: string; name: string; contactId: string | nul
 
 const AUDIENCE_PAGE = 20;
 
-function paramWho(r: Recipient, businessName: string) {
+function paramWho(r: { name: string; mapped?: unknown }, businessName: string) {
   return { name: r.name, businessName, mapped: r.mapped };
 }
 
@@ -345,12 +348,44 @@ async function audienceRows(campaign: CampaignForRun, now: Date): Promise<
 > {
   const audience = parseAudience(campaign.audience);
   if (!audience) return { ok: false, error: "bad_audience" };
-  const recipients = await resolveAudience(campaign.tenantId, audience, now, campaign.id);
+  // Preview must include people already frozen onto this campaign. Passing the
+  // campaign id would exclude them and leave an empty list after confirm.
+  const recipients = await resolveAudience(campaign.tenantId, audience, now);
   if (recipients === "audience_too_large") return { ok: false, error: "audience_too_large" };
   const states = await recipientStates(campaign.tenantId, campaign.id, recipients, now);
   const specs = parseParamSpecs(campaign.params);
   const biz = await businessName(campaign.tenantId);
   return { ok: true, recipients, states, specs, biz };
+}
+
+function pageOf(rows: AudiencePerson[], cursor: string | undefined, take: number) {
+  const start = cursor ? Math.max(0, rows.findIndex((r) => r.id === cursor) + 1) : 0;
+  const people = rows.slice(start, start + take);
+  const last = people.at(-1);
+  return { people, nextCursor: last && start + people.length < rows.length ? last.id : null };
+}
+
+/** Confirmed recipients already stored on the campaign. Null while it is still a draft. */
+async function frozenAudiencePeople(
+  campaign: CampaignForRun,
+  reason?: "not_allowlisted" | null,
+): Promise<AudiencePerson[] | null> {
+  const total = await prisma.campaignSend.count({ where: { campaignId: campaign.id, tenantId: campaign.tenantId } });
+  if (!total) return null;
+  const rows = await prisma.campaignSend.findMany({
+    where: {
+      campaignId: campaign.id,
+      tenantId: campaign.tenantId,
+      ...(reason ? { skipReason: reason } : {}),
+    },
+    orderBy: { createdAt: "asc" },
+    select: { contactId: true, leadId: true, name: true },
+  });
+  return rows.flatMap((row) => {
+    const id = row.contactId ?? row.leadId;
+    if (!id) return [];
+    return [{ id, name: row.name || id, contactId: row.contactId, leadId: row.leadId }];
+  });
 }
 
 /** One page of the audience. `not_allowlisted` is the people the test list is blocking. */
@@ -359,9 +394,12 @@ export async function pageAudience(
   opts: { cursor?: string; take?: number; reason?: "not_allowlisted" | null },
   now = new Date(),
 ): Promise<{ people: AudiencePerson[]; nextCursor: string | null } | { error: "bad_audience" | "audience_too_large" }> {
+  const take = Math.min(Math.max(opts.take ?? AUDIENCE_PAGE, 1), 50);
+  const frozen = await frozenAudiencePeople(campaign, opts.reason);
+  if (frozen) return pageOf(frozen, opts.cursor, take);
+
   const loaded = await audienceRows(campaign, now);
   if (!loaded.ok) return { error: loaded.error };
-  const take = Math.min(Math.max(opts.take ?? AUDIENCE_PAGE, 1), 50);
   const rows: AudiencePerson[] = [];
   loaded.recipients.forEach((r, i) => {
     const reason = skipReasonFor(loaded.states[i], now) ?? (resolveParams(loaded.specs, paramWho(r, loaded.biz)) ? null : "missing_param");
@@ -370,27 +408,79 @@ export async function pageAudience(
     if (!id) return;
     rows.push({ id, name: r.name || id, contactId: r.contactId, leadId: r.leadId });
   });
-  const start = opts.cursor ? Math.max(0, rows.findIndex((r) => r.id === opts.cursor) + 1) : 0;
-  const people = rows.slice(start, start + take);
-  const last = people.at(-1);
-  return { people, nextCursor: last && start + people.length < rows.length ? last.id : null };
+  return pageOf(rows, opts.cursor, take);
 }
 
-/** The template filled for one person. Returns the text only, not the mapped record. */
+/** The template filled for one person from the campaign's current param mapping. */
 export async function fillAudienceMessage(
   campaign: CampaignForRun,
   who: { contactId?: string | null; leadId?: string | null },
   now = new Date(),
+  /** Unsaved editor mapping. When set, it wins over the stored campaign params. */
+  paramsOverride?: unknown,
 ): Promise<{ text: string } | { error: "bad_audience" | "audience_too_large" | "not_found" | "missing_param" }> {
+  const textOf = campaign.template.text || campaign.template.body || "";
+  const specs = parseParamSpecs(paramsOverride !== undefined ? paramsOverride : campaign.params);
+  const biz = await businessName(campaign.tenantId);
+
+  if (who.contactId) {
+    const contact = await prisma.contact.findFirst({
+      where: { id: who.contactId, tenantId: campaign.tenantId },
+      select: { name: true, mapped: true },
+    });
+    if (contact) {
+      const values = resolveParams(specs, paramWho({ name: contact.name, mapped: contact.mapped }, biz));
+      if (!values) return { error: "missing_param" };
+      return { text: previewText(textOf, values) };
+    }
+  }
+  if (who.leadId) {
+    const lead = await prisma.lead.findFirst({
+      where: { id: who.leadId, tenantId: campaign.tenantId },
+      select: { displayName: true, fields: true, externalUserId: true },
+    });
+    if (lead) {
+      const values = resolveParams(specs, paramWho({ name: leadDisplayName(lead), mapped: lead.fields }, biz));
+      if (!values) return { error: "missing_param" };
+      return { text: previewText(textOf, values) };
+    }
+  }
+
+  const send = await prisma.campaignSend.findFirst({
+    where: {
+      campaignId: campaign.id,
+      tenantId: campaign.tenantId,
+      OR: [
+        ...(who.contactId ? [{ contactId: who.contactId }] : []),
+        ...(who.leadId ? [{ leadId: who.leadId }] : []),
+      ],
+    },
+    select: { contactId: true, leadId: true, name: true },
+  });
+  if (send?.contactId) {
+    const contact = await prisma.contact.findFirst({
+      where: { id: send.contactId, tenantId: campaign.tenantId },
+      select: { name: true, mapped: true },
+    });
+    const values = resolveParams(specs, paramWho({ name: contact?.name || send.name, mapped: contact?.mapped }, biz));
+    if (!values) return { error: "missing_param" };
+    return { text: previewText(textOf, values) };
+  }
+  if (send) {
+    const values = resolveParams(specs, paramWho({ name: send.name }, biz));
+    if (!values) return { error: "missing_param" };
+    return { text: previewText(textOf, values) };
+  }
+
   const loaded = await audienceRows(campaign, now);
   if (!loaded.ok) return { error: loaded.error };
   const hit = loaded.recipients.find(
     (r) => (who.contactId && r.contactId === who.contactId) || (who.leadId && r.leadId === who.leadId),
   );
   if (!hit) return { error: "not_found" };
-  const values = resolveParams(loaded.specs, paramWho(hit, loaded.biz));
+  const values = resolveParams(specs, paramWho(hit, biz));
   if (!values) return { error: "missing_param" };
-  return { text: previewText(campaign.template.text || campaign.template.body || "", values) };
+  return { text: previewText(textOf, values) };
 }
 
 // ─── Worker ─────────────────────────────────────────────────────────────────
@@ -610,7 +700,7 @@ async function openCampaignTask(tenantId: string, row: ClockRow, reason: keyof t
  */
 export async function ensureCampaignThread(
   tenantId: string,
-  row: { id: string; phone: string; name: string; leadId: string | null },
+  row: { id: string; phone: string; name: string; leadId: string | null; contactId?: string | null },
   text: string,
 ): Promise<{ leadId: string; conversationId: string } | null> {
   const channel = await prisma.channelConnection.findFirst({
@@ -670,6 +760,9 @@ export async function ensureCampaignThread(
   }
   if (row.leadId !== lead.id) {
     await prisma.campaignSend.updateMany({ where: { id: row.id, tenantId }, data: { leadId: lead.id } });
+  }
+  if (row.contactId) {
+    await prisma.contact.updateMany({ where: { id: row.contactId, tenantId, leadId: null }, data: { leadId: lead.id } });
   }
   return { leadId: lead.id, conversationId: conversation.id };
 }
@@ -946,7 +1039,6 @@ export async function sendCampaignChunk(tenantId: string, campaignId: string, li
   });
   if (!campaign || campaign.status !== "sending") return finish();
   if (!inSendWindow(now, campaign.tenant.timezone || "Asia/Jerusalem", campaignSendWindow(campaign.sendWindow))) return finish();
-  const settings = settingsFromRow(await prisma.tenantCampaignSettings.findUnique({ where: { tenantId } }));
 
   const rows = await prisma.campaignSend.findMany({
     where: { campaignId, tenantId, status: "queued", startedAt: null },
@@ -1021,7 +1113,8 @@ export async function sendCampaignChunk(tenantId: string, campaignId: string, li
         result.processMs += Date.now() - rowStarted;
       }
     }
-    if (i < rows.length - 1) await sleep(settings.sendGapMs);
+    const gap = campaign.sendGapMs ?? CAMPAIGN_SEND_GAP_DEFAULT_MS;
+    if (i < rows.length - 1) await sleep(Math.min(CAMPAIGN_SEND_GAP_MAX_MS, Math.max(CAMPAIGN_SEND_GAP_MIN_MS, gap)));
   }
   await sendDueReminders(tenantId, campaign, Math.max(0, limit - result.attempted), now, dryRun, result);
   result.queuedLeft = await prisma.campaignSend.count({ where: { campaignId, status: "queued", startedAt: null } });

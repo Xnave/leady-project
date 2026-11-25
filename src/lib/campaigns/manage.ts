@@ -7,6 +7,9 @@ import { freezeAudience, fillAudienceMessage, pageAudience, parseAudience, parse
 import {
   audienceSchema,
   DECLARATION_VERSION,
+  CAMPAIGN_SEND_GAP_DEFAULT_MS,
+  CAMPAIGN_SEND_GAP_MAX_MS,
+  CAMPAIGN_SEND_GAP_MIN_MS,
   documentsFollowUps,
   followUpStepSchema,
   GOALS,
@@ -41,8 +44,12 @@ export const campaignInputSchema = z.object({
   sendWindow: sendWindowSchema.nullable().default(null),
   /** Empty keeps a single send. A reminder template becomes one reminder, then one advisor task. */
   followUps: z.array(followUpStepSchema).max(4).default([]),
-  /** Shorthand for the documents sequence: reminder template, 48 hours, then a task. */
+  /** Shorthand for the documents sequence: reminder template, then a task. */
   reminderTemplateId: z.string().min(1).nullable().default(null),
+  /** Hours of silence before the reminder, and again before the task. */
+  followUpHours: z.number().int().min(1).max(24 * 30).default(48),
+  /** Milliseconds between recipients. Defaults to 30 seconds. */
+  sendGapMs: z.number().int().min(CAMPAIGN_SEND_GAP_MIN_MS).max(CAMPAIGN_SEND_GAP_MAX_MS).default(CAMPAIGN_SEND_GAP_DEFAULT_MS),
 });
 export type CampaignInput = z.infer<typeof campaignInputSchema>;
 
@@ -84,7 +91,7 @@ export function expectedParamCount(body: string): number {
 }
 
 function stepsOf(input: CampaignInput) {
-  if (input.reminderTemplateId) return documentsFollowUps(input.reminderTemplateId);
+  if (input.reminderTemplateId) return documentsFollowUps(input.reminderTemplateId, input.followUpHours * 60 * 60 * 1000);
   return input.followUps.filter((step) => step.onSilence === "escalate" || step.templateId);
 }
 
@@ -124,6 +131,7 @@ function data(input: CampaignInput) {
     batchSize: input.batchSize,
     scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : null,
     sendWindow: input.sendWindow ?? Prisma.DbNull,
+    sendGapMs: input.sendGapMs,
     followUps: stepsOf(input),
   };
 }
@@ -150,14 +158,14 @@ export async function updateCampaign(tenantId: string, id: string, raw: unknown)
   if (denied) return { error: denied };
   const current = await prisma.campaign.findFirst({ where: { id, tenantId }, select: { status: true } });
   if (!current) return { error: "not_found" };
-  if (current.status !== "draft") return { error: "not_draft" };
+  if (!["draft", "paused", "scheduled", "sending"].includes(current.status)) return { error: "not_draft" };
   const parsed = campaignInputSchema.safeParse(raw);
   if (!parsed.success) return { error: "invalid", detail: parsed.error.issues.map((i) => i.path.join(".")).join(", ") };
   const bad = await checkTemplate(tenantId, parsed.data);
   if (bad) return { error: bad };
   const badAudience = await checkAudience(tenantId, parsed.data);
   if (badAudience) return { error: badAudience };
-  const res = await prisma.campaign.updateMany({ where: { id, tenantId, status: "draft" }, data: data(parsed.data) });
+  const res = await prisma.campaign.updateMany({ where: { id, tenantId, status: current.status }, data: data(parsed.data) });
   if (res.count === 0) return { error: "not_draft" };
   return { ok: true };
 }
@@ -184,10 +192,11 @@ export async function previewRecipient(
   tenantId: string,
   id: string,
   who: { contactId?: string | null; leadId?: string | null },
+  paramsOverride?: unknown,
 ) {
   const campaign = await prisma.campaign.findFirst({ where: { id, tenantId }, include: { template: templateText } });
   if (!campaign) return { error: "not_found" as const };
-  return fillAudienceMessage(campaign, who);
+  return fillAudienceMessage(campaign, who, new Date(), paramsOverride);
 }
 
 function digits(value: string): string {
@@ -351,6 +360,7 @@ export async function listCampaigns(tenantId: string) {
     waitReason: r.waitReason,
     templateTitle: r.template.title,
     scheduledAt: r.scheduledAt?.toISOString() ?? null,
+    sendWindow: r.sendWindow,
     createdAt: r.createdAt.toISOString(),
     metrics: metrics.get(r.id) ?? emptyMetrics(),
   }));
@@ -369,7 +379,7 @@ export async function campaignDetail(tenantId: string, id: string) {
     prisma.campaignSend.findMany({
       where: { campaignId: id, tenantId },
       orderBy: [{ sentAt: { sort: "desc", nulls: "last" } }, { createdAt: "asc" }],
-      take: 100,
+      take: 5000,
       select: { id: true, name: true, phone: true, status: true, skipReason: true, error: true, sentAt: true, leadId: true },
     }),
   ]);

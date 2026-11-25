@@ -9,6 +9,9 @@ import {
   CHUNK_SIZE,
   averageRowMs,
   inSendWindow,
+  documentsFollowUps,
+  FOLLOW_UP_DELAY_MS,
+  nextCampaignPass,
   summarizeRunTiming,
   nextStatus,
   resolveParams,
@@ -53,6 +56,43 @@ describe("inSendWindow", () => {
     expect(inSendWindow(il("2026-11-06T12:00:00"), TZ, custom)).toBe(false);
     expect(inSendWindow(il("2026-11-05T09:00:00"), TZ)).toBe(true);
     expect(inSendWindow(il("2026-11-05T19:30:00"), TZ)).toBe(true);
+  });
+});
+
+describe("documentsFollowUps", () => {
+  it("waits 48 hours by default, and uses a chosen wait for both steps", () => {
+    expect(documentsFollowUps("tpl").map((s) => s.delayMs)).toEqual([FOLLOW_UP_DELAY_MS, FOLLOW_UP_DELAY_MS]);
+    const day = 24 * 60 * 60 * 1000;
+    expect(documentsFollowUps("tpl", day)).toEqual([
+      { templateId: "tpl", delayMs: day, onSilence: "send" },
+      { templateId: null, delayMs: day, onSilence: "escalate" },
+    ]);
+  });
+});
+
+describe("nextCampaignPass", () => {
+  const pass = (now: string, extra?: { status?: string; scheduledAt?: string; dailyCeiling?: boolean }) =>
+    nextCampaignPass(il(now), {
+      status: extra?.status ?? "sending",
+      scheduledAt: extra?.scheduledAt ? il(extra.scheduledAt) : null,
+      tz: TZ,
+      dailyCeiling: extra?.dailyCeiling,
+    });
+
+  it("uses the next five-minute tick inside the window", () => {
+    expect(pass("2026-11-05T10:07:00")?.toISOString()).toBe(il("2026-11-05T10:10:00").toISOString());
+  });
+
+  it("waits for the next open morning after hours, and skips Saturday", () => {
+    expect(pass("2026-11-05T20:00:00")?.toISOString()).toBe(il("2026-11-06T09:00:00").toISOString());
+    expect(pass("2026-11-07T12:00:00")?.toISOString()).toBe(il("2026-11-08T09:00:00").toISOString());
+  });
+
+  it("does not pass a future start, a pause, or today's limit", () => {
+    expect(pass("2026-11-05T10:00:00", { scheduledAt: "2026-11-06T10:03:00" })?.toISOString()).toBe(il("2026-11-06T10:05:00").toISOString());
+    expect(pass("2026-11-05T10:00:00", { status: "paused" })).toBeNull();
+    expect(pass("2026-11-05T10:00:00", { status: "draft" })).toBeNull();
+    expect(pass("2026-11-05T10:00:00", { dailyCeiling: true })?.toISOString()).toBe(il("2026-11-06T09:00:00").toISOString());
   });
 });
 

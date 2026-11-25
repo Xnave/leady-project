@@ -188,6 +188,8 @@ describe("campaignInputSchema", () => {
     expect(parsed.brief).toBe("");
     expect(parsed.batchSize).toBeNull();
     expect(parsed.sendWindow).toBeNull();
+    expect(parsed.followUpHours).toBe(48);
+    expect(parsed.sendGapMs).toBe(30_000);
     expect(parsed.audience).toMatchObject({ includeNoStartedAt: true, startedYearsAgoMin: null, confidence: [] });
     expect(parsed.params[1]).toMatchObject({ source: "mapped", key: "transaction_bank", value: "", fallback: "" });
   });

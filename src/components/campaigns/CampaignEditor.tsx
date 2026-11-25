@@ -3,9 +3,19 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "@/components/crm/Icon";
+import { Toast } from "@/components/Toast";
 import type { EditorSource, EditorTemplate, MappedTag } from "@/lib/campaigns/page-data";
 import type { Audience, ParamSpec, SendWindow } from "@/lib/campaigns/rules";
-import { DECLARATION_VERSION, DEFAULT_SEND_WINDOW, documentsFollowUps, PARAM_SOURCES, parseFollowUps } from "@/lib/campaigns/rules";
+import {
+  CAMPAIGN_SEND_GAP_DEFAULT_MS,
+  CAMPAIGN_SEND_GAP_MAX_MS,
+  CAMPAIGN_SEND_GAP_MIN_MS,
+  DECLARATION_VERSION,
+  DEFAULT_SEND_WINDOW,
+  documentsFollowUps,
+  PARAM_SOURCES,
+  parseFollowUps,
+} from "@/lib/campaigns/rules";
 import { fillUi, type UiCopy, type UiLang } from "@/lib/ui";
 
 type Copy = UiCopy["campaigns"]["run"];
@@ -21,6 +31,7 @@ export type EditorInitial = {
   scheduledAt: string | null;
   sendWindow: SendWindow | null;
   followUps?: unknown;
+  sendGapMs?: number | null;
 };
 
 type Preview = { total: number; eligible: number; skipped: Record<string, number>; sample: string[]; costUsd: number };
@@ -144,12 +155,14 @@ function MessageBody({
 function PersonDialog({
   mode,
   campaignId,
+  params,
   copy,
   onClose,
   onAllowed,
 }: {
   mode: "preview" | "allow";
   campaignId: string;
+  params: ParamSpec[];
   copy: Copy;
   onClose: () => void;
   onAllowed: () => void;
@@ -228,7 +241,7 @@ function PersonDialog({
       const res = await fetch(`/api/campaigns/runs/${encodeURIComponent(campaignId)}/preview-recipient`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ contactId: person.contactId, leadId: person.leadId }),
+        body: JSON.stringify({ contactId: person.contactId, leadId: person.leadId, params }),
       });
       const out = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
       if (out.error === "missing_param") setError(f.previewMissing);
@@ -300,18 +313,21 @@ export function CampaignEditor({
   data,
   pickedLeadIds,
   initial,
+  live = false,
 }: {
   copy: Copy;
   lang: UiLang;
   data: { templates: EditorTemplate[]; sources: EditorSource[]; mappedTags: MappedTag[]; hasClientSource: boolean; businessName: string; whatsappPhone: string | null };
   pickedLeadIds: string[];
   initial: EditorInitial | null;
+  /** An already scheduled campaign: save the setup, without the first-send confirmation. */
+  live?: boolean;
 }) {
   const router = useRouter();
   const f = copy.form;
   const initialLeads = initial?.audience.kind === "leads" ? initial.audience.leadIds : pickedLeadIds;
   const initialClients = initial?.audience.kind === "clients" ? initial.audience : null;
-  const customAtStart = Boolean(initial?.scheduledAt || initial?.sendWindow);
+  const hadCustomWhen = Boolean(initial?.scheduledAt || initial?.sendWindow);
 
   const [id, setId] = useState(initial?.id ?? "");
   const [name, setName] = useState(initial?.name ?? "");
@@ -319,12 +335,21 @@ export function CampaignEditor({
   const [reminderTemplateId, setReminderTemplateId] = useState(
     () => parseFollowUps(initial?.followUps).find((step) => step.onSilence === "send")?.templateId ?? "",
   );
+  const [followHours, setFollowHours] = useState(() => {
+    const step = parseFollowUps(initial?.followUps).find((s) => s.onSilence === "send");
+    return step ? String(Math.max(1, Math.round(step.delayMs / 3_600_000))) : "48";
+  });
+  const [gapSeconds, setGapSeconds] = useState(() => {
+    const stored = initial?.sendGapMs;
+    const seconds = stored == null || stored < CAMPAIGN_SEND_GAP_MIN_MS ? CAMPAIGN_SEND_GAP_DEFAULT_MS / 1000 : Math.round(stored / 1000);
+    return String(Math.min(CAMPAIGN_SEND_GAP_MAX_MS / 1000, Math.max(CAMPAIGN_SEND_GAP_MIN_MS / 1000, seconds)));
+  });
   const [audienceKind, setAudienceKind] = useState<"clients" | "leads">(initialLeads.length ? "leads" : "clients");
   const [sourceId, setSourceId] = useState(initialClients?.sourceId ?? (data.sources.length === 1 ? data.sources[0].id : "all"));
   const [params, setParams] = useState<ParamSpec[]>(initial?.params ?? []);
   const [selectedSlot, setSelectedSlot] = useState(0);
   const [days, setDays] = useState<DayDraft[]>(() => daysFromWindow(initial?.sendWindow ?? DEFAULT_SEND_WINDOW));
-  const [customWhen, setCustomWhen] = useState(customAtStart);
+  const [customWhen, setCustomWhen] = useState(false);
   const [schedule, setSchedule] = useState(toLocalInput(initial?.scheduledAt ?? null));
   const [busy, setBusy] = useState<"" | "save" | "check" | "confirm">("");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -332,10 +357,7 @@ export function CampaignEditor({
   const [declared, setDeclared] = useState(false);
   const [dirty, setDirty] = useState(!initial);
   const [picker, setPicker] = useState<null | { mode: "preview" | "allow"; campaignId: string }>(null);
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    if (customAtStart && detailsRef.current) detailsRef.current.open = true;
-  }, [customAtStart]);
+  const [toast, setToast] = useState<string | null>(null);
 
   const template = data.templates.find((t) => t.id === templateId);
   const paramCount = template?.paramCount ?? 0;
@@ -383,15 +405,24 @@ export function CampaignEditor({
             confidence: [],
             includeNoStartedAt: true,
           };
+    const hours = Math.round(Number(followHours));
+    const followUpHours = Number.isInteger(hours) && hours >= 1 && hours <= 24 * 30 ? hours : 48;
+    const rawGap = Math.round(Number(gapSeconds) * 1000);
+    const gapMs = Number.isInteger(rawGap)
+      ? Math.min(CAMPAIGN_SEND_GAP_MAX_MS, Math.max(CAMPAIGN_SEND_GAP_MIN_MS, rawGap))
+      : CAMPAIGN_SEND_GAP_DEFAULT_MS;
+    const keepWhen = hadCustomWhen || customWhen;
     return {
       name,
       templateId,
       reminderTemplateId: reminderTemplateId || null,
-      followUps: reminderTemplateId ? documentsFollowUps(reminderTemplateId) : [],
+      followUpHours,
+      followUps: reminderTemplateId ? documentsFollowUps(reminderTemplateId, followUpHours * 60 * 60 * 1000) : [],
       audience,
       params: specs,
-      scheduledAt: customWhen && schedule ? new Date(schedule).toISOString() : null,
-      sendWindow: customWhen ? windowFromDays(days) : null,
+      scheduledAt: keepWhen && schedule ? new Date(schedule).toISOString() : null,
+      sendWindow: keepWhen ? windowFromDays(days) : null,
+      sendGapMs: gapMs,
     };
   }
 
@@ -412,7 +443,8 @@ export function CampaignEditor({
       }
       const savedId = id || out.id || "";
       setDirty(false);
-      setMessage({ ok: true, text: f.saved });
+      setMessage(null);
+      setToast(f.saved);
       if (!id && savedId) {
         setId(savedId);
         router.replace(`/campaigns/${encodeURIComponent(savedId)}`);
@@ -547,18 +579,33 @@ export function CampaignEditor({
           </div>
         ) : null}
 
-        <label>
-          {f.followUp}
-          <select value={reminderTemplateId} onChange={(e) => (setReminderTemplateId(e.target.value), touch())}>
-            <option value="">{f.followUpNone}</option>
-            {data.templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.title}
-              </option>
-            ))}
-          </select>
-          <span className="muted campaign-hint">{f.followUpHint}</span>
-        </label>
+        <div className="campaign-follow">
+          <label>
+            {f.followUp}
+            <select value={reminderTemplateId} onChange={(e) => (setReminderTemplateId(e.target.value), touch())}>
+              <option value="">{f.followUpNone}</option>
+              {data.templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          {reminderTemplateId ? (
+            <label>
+              {f.followUpAfter}
+              <input
+                type="number"
+                min={1}
+                max={24 * 30}
+                step={1}
+                value={followHours}
+                onChange={(e) => (setFollowHours(e.target.value), touch())}
+              />
+            </label>
+          ) : null}
+          <span className="muted campaign-hint">{fillUi(f.followUpHint, { hours: followHours || "48" })}</span>
+        </div>
 
         <fieldset>
           <legend>{f.audience}</legend>
@@ -591,13 +638,12 @@ export function CampaignEditor({
           ) : null}
         </fieldset>
 
-        <details
-          ref={detailsRef}
-          className="campaign-advanced"
-          onToggle={(event) => setCustomWhen(event.currentTarget.open)}
-        >
+        <details className="campaign-advanced" onToggle={(event) => setCustomWhen(event.currentTarget.open)}>
           <summary>
-            <span>{f.advanced}</span>
+            <span className="campaign-advanced-title">
+              <span>{f.advanced}</span>
+              <span className="campaign-advanced-chevron" aria-hidden="true" />
+            </span>
             <span className="muted">{summary}</span>
           </summary>
           <label>
@@ -631,17 +677,29 @@ export function CampaignEditor({
             ))}
           </fieldset>
           <p className="muted campaign-hint">{f.hoursHint}</p>
+          <label>
+            {f.sendGap}
+            <input
+              type="number"
+              min={CAMPAIGN_SEND_GAP_MIN_MS / 1000}
+              max={CAMPAIGN_SEND_GAP_MAX_MS / 1000}
+              step={1}
+              value={gapSeconds}
+              onChange={(e) => (setGapSeconds(e.target.value), touch())}
+            />
+          </label>
         </details>
 
-        {message ? <p className={message.ok ? "muted" : "campaign-error"}>{message.text}</p> : null}
+        {message && !message.ok ? <p className="campaign-error">{message.text}</p> : null}
+        {toast ? <Toast text={toast} onDone={() => setToast(null)} /> : null}
         <div className="field-form-actions">
           <button type="submit" className="btn-secondary" disabled={busy !== ""} aria-busy={busy === "save"}>
-            {busy === "save" ? f.saving : f.saveDraft}
+            {busy === "save" ? f.saving : live ? f.save : f.saveDraft}
           </button>
         </div>
       </form>
 
-      {id ? (
+      {id && !live ? (
         <section className="card campaign-card">
           <h2>{copy.confirm.title}</h2>
           <button type="button" className="btn-secondary" disabled={busy !== ""} onClick={() => void check()}>
@@ -700,6 +758,7 @@ export function CampaignEditor({
         <PersonDialog
           mode={picker.mode}
           campaignId={picker.campaignId}
+          params={specs}
           copy={copy}
           onClose={() => setPicker(null)}
           onAllowed={() => void check(picker.campaignId)}

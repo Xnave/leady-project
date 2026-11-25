@@ -14,6 +14,10 @@ export const FREQUENCY_CAP_DAYS = 7;
 export const OPEN_CONVERSATION_DAYS = 3;
 /** Default pause between two sends inside a run. A tenant can override it. */
 export const SEND_GAP_MS = 250;
+/** Campaign pause between recipients. The owner sets this; the tenant pace does not. */
+export const CAMPAIGN_SEND_GAP_MIN_MS = 20_000;
+export const CAMPAIGN_SEND_GAP_MAX_MS = 5 * 60 * 1000;
+export const CAMPAIGN_SEND_GAP_DEFAULT_MS = 30_000;
 /** Default upper bound per worker run, on top of the daily ceiling and batch size. A tenant can override it. */
 export const MAX_SENDS_PER_RUN = 300;
 /** How many recipients one durable chunk claims. */
@@ -138,6 +142,32 @@ export function inSendWindow(at: Date, tz: string, window: SendWindow = DEFAULT_
   if (!day) return false;
   const minute = p.hour * 60 + p.minute;
   return minute >= day.startMinute && minute < day.endMinute;
+}
+
+const CAMPAIGN_TICK_MS = 5 * 60 * 1000;
+
+/**
+ * Next time the worker will walk this campaign. Ticks are every five minutes,
+ * and only inside the send window. A paused, draft, finished, or canceled
+ * campaign has no next pass. After the daily limit, the next pass is tomorrow's window.
+ */
+export function nextCampaignPass(
+  now: Date,
+  opts: { status: string; scheduledAt: Date | null; tz: string; window?: SendWindow; dailyCeiling?: boolean },
+): Date | null {
+  if (opts.status !== "scheduled" && opts.status !== "sending") return null;
+  const window = opts.window ?? DEFAULT_SEND_WINDOW;
+  let start = opts.scheduledAt && opts.scheduledAt > now ? opts.scheduledAt : now;
+  if (opts.dailyCeiling) {
+    const tomorrow = startOfZonedDay(new Date(startOfZonedDay(now, opts.tz).getTime() + 26 * 3600 * 1000), opts.tz);
+    if (tomorrow > start) start = tomorrow;
+  }
+  const snapped = Math.ceil(start.getTime() / CAMPAIGN_TICK_MS) * CAMPAIGN_TICK_MS;
+  for (let i = 0; i < 8 * 24 * 12; i++) {
+    const at = new Date(snapped + i * CAMPAIGN_TICK_MS);
+    if (inSendWindow(at, opts.tz, window)) return at;
+  }
+  return null;
 }
 
 // ─── Who is skipped ─────────────────────────────────────────────────────────
@@ -387,10 +417,10 @@ export function parseFollowUps(raw: unknown): FollowUpStep[] {
 }
 
 /** Reminder, then one task, for the documents sequence. A campaign with no reminder stays a single send. */
-export function documentsFollowUps(reminderTemplateId: string): FollowUpStep[] {
+export function documentsFollowUps(reminderTemplateId: string, delayMs = FOLLOW_UP_DELAY_MS): FollowUpStep[] {
   return [
-    { templateId: reminderTemplateId, delayMs: FOLLOW_UP_DELAY_MS, onSilence: "send" },
-    { templateId: null, delayMs: FOLLOW_UP_DELAY_MS, onSilence: "escalate" },
+    { templateId: reminderTemplateId, delayMs, onSilence: "send" },
+    { templateId: null, delayMs, onSilence: "escalate" },
   ];
 }
 

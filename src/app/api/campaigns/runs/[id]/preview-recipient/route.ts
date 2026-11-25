@@ -7,11 +7,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const access = await campaignAccessOr403();
   if (access instanceof Response) return access;
   const { id } = await params;
-  const body = (await req.json().catch(() => ({}))) as { contactId?: unknown; leadId?: unknown };
-  const res = await previewRecipient(access.tenantId, id, {
-    contactId: typeof body.contactId === "string" ? body.contactId : null,
-    leadId: typeof body.leadId === "string" ? body.leadId : null,
-  });
+  const body = (await req.json().catch(() => ({}))) as { contactId?: unknown; leadId?: unknown; params?: unknown };
+  const res = await previewRecipient(
+    access.tenantId,
+    id,
+    {
+      contactId: typeof body.contactId === "string" ? body.contactId : null,
+      leadId: typeof body.leadId === "string" ? body.leadId : null,
+    },
+    Array.isArray(body.params) ? body.params : undefined,
+  );
   if ("error" in res) return NextResponse.json(res, { status: errorStatus(res.error) });
   return NextResponse.json(res);
 }

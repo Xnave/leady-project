@@ -747,6 +747,8 @@ model Campaign {
   materializedAt DateTime?
   /// Null uses the Israeli default. Otherwise `{ days: [{ weekday, startMinute, endMinute }] }`; a missing weekday is closed.
   sendWindow     Json?
+  /// Pause between two sends, in milliseconds. Null uses the tenant setting.
+  sendGapMs      Int?
   /// Steps after the opener. [] is one send. Each step is { templateId, delayMs, onSilence: "send" | "escalate" }.
   followUps      Json              @default("[]")
   /// Wall-clock milliseconds of the last worker run, including prepare, send, and the gaps between sends.

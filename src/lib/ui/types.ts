@@ -1008,6 +1008,7 @@ export type UiCopy = {
     whatsappFrom: string;
     noWhatsApp: string;
     templatesTitle: string;
+    statusHeading: string;
     templatesEmpty: string;
     newTemplate: string;
     fieldTitle: string;
@@ -1029,6 +1030,7 @@ export type UiCopy = {
     cancel: string;
     submitted: string;
     refresh: string;
+    close: string;
     submittedBy: string;
     status: Record<"DRAFT" | "PENDING" | "APPROVED" | "REJECTED" | "IN_APPEAL" | "PAUSED" | "DISABLED" | "PENDING_DELETION" | "FAILED", string>;
     issues: Record<
@@ -1050,7 +1052,7 @@ export type UiCopy = {
       listEmpty: string;
       newCampaign: string;
       back: string;
-      cols: { name: string; template: string; status: string; when: string; sent: string; skipped: string; failed: string };
+      cols: { name: string; template: string; status: string; when: string; nextRun: string; sent: string; skipped: string; failed: string; edit: string };
       statuses: Record<"draft" | "scheduled" | "sending" | "paused" | "done" | "canceled", string>;
       pauseReasons: Record<"owner" | "batch_done" | "template_not_approved" | "addon_off" | "no_whatsapp" | "no_declaration" | "audience_too_large", string>;
       waitReasons: Record<"quiet_hours" | "daily_ceiling" | "waiting_for_clients" | "waiting_follow_up", string>;
@@ -1074,6 +1076,9 @@ export type UiCopy = {
         template: string;
         followUp: string;
         followUpHint: string;
+        /** "{hours}" */
+        followUpAfter: string;
+        sendGap: string;
         followUpNone: string;
         noApproved: string;
         audience: string;
@@ -1106,6 +1111,7 @@ export type UiCopy = {
         close: string;
         more: string;
         saveDraft: string;
+        save: string;
         saving: string;
         saved: string;
       };
@@ -1144,11 +1150,21 @@ export type UiCopy = {
         declaredBy: string;
         /** "{n}" */
         batchOf: string;
-        audience: string;
+        nextRunNone: string;
+        source: string;
+        /** "{sent}" "{total}" */
+        sentOf: string;
+        filterName: string;
+        filterStatus: string;
+        filterAll: string;
+        cols: { n: string; name: string; phone: string; status: string; when: string };
+        noMatches: string;
         lastRun: string;
+        lastRunHint: string;
         /** "{sec}" */
         lastRunValue: string;
         sendTook: string;
+        sendTookHint: string;
         avgRow: string;
         /** "{ms}" */
         avgRowValue: string;

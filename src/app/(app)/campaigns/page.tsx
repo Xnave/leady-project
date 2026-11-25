@@ -4,6 +4,7 @@ import { CampaignTemplates } from "@/components/campaigns/CampaignTemplates";
 import { absTime } from "@/components/crm/format";
 import { listCampaigns } from "@/lib/campaigns/manage";
 import { campaignPageAccess } from "@/lib/campaigns/page-data";
+import { campaignSendWindow, nextCampaignPass } from "@/lib/campaigns/rules";
 import { termsAccepted } from "@/lib/campaigns/settings";
 import { footerPhone, tenantWhatsAppAccount } from "@/lib/campaigns/store";
 import { getUiLang } from "@/lib/cookies";
@@ -55,6 +56,9 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
   }
 
   const campaigns = await listCampaigns(tenantId);
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { timezone: true } });
+  const tz = tenant?.timezone || "Asia/Jerusalem";
+  const now = new Date();
   return (
     <div>
       <PageHeader
@@ -83,13 +87,23 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
                 <th>{run.cols.template}</th>
                 <th>{run.cols.status}</th>
                 <th>{run.cols.when}</th>
+                <th>{run.cols.nextRun}</th>
                 <th>{run.cols.sent}</th>
                 <th>{run.cols.skipped}</th>
                 <th>{run.cols.failed}</th>
+                <th>{run.cols.edit}</th>
               </tr>
             </thead>
             <tbody>
-              {campaigns.map((c) => (
+              {campaigns.map((c) => {
+                const next = nextCampaignPass(now, {
+                  status: c.status,
+                  scheduledAt: c.scheduledAt ? new Date(c.scheduledAt) : null,
+                  tz,
+                  window: campaignSendWindow(c.sendWindow),
+                  dailyCeiling: c.waitReason === "daily_ceiling",
+                });
+                return (
                 <tr key={c.id}>
                   <td>
                     <Link href={`/campaigns/${encodeURIComponent(c.id)}`}>{c.name}</Link>
@@ -101,11 +115,25 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
                     </span>
                   </td>
                   <td className="muted">{c.scheduledAt ? absTime(c.scheduledAt, lang) : "-"}</td>
+                  <td className="muted">{next ? absTime(next.toISOString(), lang) : run.detail.nextRunNone}</td>
                   <td>{c.metrics.sent}</td>
                   <td>{c.metrics.skipped}</td>
                   <td>{c.metrics.failed}</td>
+                  <td>
+                    {["draft", "paused", "scheduled", "sending"].includes(c.status) ? (
+                      <Link
+                        className="btn-secondary"
+                        href={`/campaigns/${encodeURIComponent(c.id)}${c.status === "draft" ? "" : "?edit=1"}`}
+                      >
+                        {run.cols.edit}
+                      </Link>
+                    ) : (
+                      run.detail.nextRunNone
+                    )}
+                  </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

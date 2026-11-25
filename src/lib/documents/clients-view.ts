@@ -1,5 +1,6 @@
 /**
- * Clients screen (documents). One row per lead with a document file (Dossier).
+ * Clients screen (documents). One row per lead with a document file (Dossier),
+ * plus people a campaign already messaged who do not have a file yet.
  * A matching CRM contact only adds its details (`Contact.mapped`) to the file.
  * Demo-simulator and test-phone people are hidden unless asked for.
  */
@@ -101,6 +102,108 @@ type LeadLite = {
 };
 
 type ContactLite = { id: string; name: string; phone: string; leadId: string | null };
+
+type SentCampaign = {
+  leadId: string | null;
+  contactId: string | null;
+  name: string;
+  phone: string;
+  sentAt: Date | null;
+  reminderSentAt: Date | null;
+  startedAt: Date | null;
+  escalatedAt: Date | null;
+};
+
+/** How a sent campaign looks on the clients list, before a document file exists. */
+function campaignInvite(send: SentCampaign): { state: CaseState; invite: InviteView } {
+  const status: InviteView["status"] = send.escalatedAt
+    ? "escalated"
+    : send.startedAt
+      ? "started"
+      : send.reminderSentAt
+        ? "reminded"
+        : "invited";
+  return {
+    state: "invited",
+    invite: {
+      status,
+      stop: "",
+      openerAt: send.sentAt?.toISOString() ?? null,
+      reminderAt: send.reminderSentAt?.toISOString() ?? null,
+      startedAt: send.startedAt?.toISOString() ?? null,
+    },
+  };
+}
+
+/** Sent campaigns whose lead has no document file yet. Links the CRM contact when it is still loose. */
+async function campaignRows(
+  tenantId: string,
+  covered: Set<string>,
+  config: DocumentConfig | null,
+): Promise<ClientRowDTO[]> {
+  const sends = await prisma.campaignSend.findMany({
+    where: { tenantId, status: "sent", leadId: { not: null } },
+    orderBy: { sentAt: "desc" },
+    select: {
+      leadId: true,
+      contactId: true,
+      name: true,
+      phone: true,
+      sentAt: true,
+      reminderSentAt: true,
+      startedAt: true,
+      escalatedAt: true,
+    },
+  });
+  const latest = new Map<string, SentCampaign>();
+  for (const send of sends) {
+    if (!send.leadId || covered.has(send.leadId) || latest.has(send.leadId)) continue;
+    latest.set(send.leadId, send);
+  }
+  if (!latest.size) return [];
+  const contactIds = [...latest.values()].flatMap((send) => (send.contactId ? [send.contactId] : []));
+  const [leads, contacts] = await Promise.all([
+    prisma.lead.findMany({ where: { tenantId, id: { in: [...latest.keys()] } }, select: LEAD_SELECT }),
+    contactIds.length
+      ? prisma.contact.findMany({
+          where: { tenantId, id: { in: contactIds } },
+          select: { id: true, name: true, phone: true, leadId: true },
+        })
+      : [],
+  ]);
+  const leadById = new Map(leads.map((lead) => [lead.id, lead]));
+  const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
+  const rows: ClientRowDTO[] = [];
+  for (const [leadId, send] of latest) {
+    const lead = leadById.get(leadId);
+    if (!lead) continue;
+    const contact = send.contactId ? contactById.get(send.contactId) : undefined;
+    if (contact && !contact.leadId) {
+      await prisma.contact.updateMany({ where: { id: contact.id, tenantId, leadId: null }, data: { leadId } });
+    }
+    const view = campaignInvite(send);
+    rows.push({
+      key: lead.id,
+      leadId: lead.id,
+      name: contact?.name || send.name || leadDisplayName(lead) || formatPhoneDisplay(leadPhone(lead)),
+      phone: formatPhoneDisplay(contact?.phone || send.phone || leadPhone(lead)),
+      test: isTestPerson(lead, config),
+      state: view.state,
+      taskKind: null,
+      invite: view.invite,
+      waveLabel: "",
+      waveIndex: 0,
+      waveCount: 0,
+      segments: [],
+      done: 0,
+      total: 0,
+      nextWaveReady: false,
+      lastActivity: (send.startedAt ?? send.sentAt)?.toISOString() ?? null,
+      stuckDays: 0,
+    });
+  }
+  return rows;
+}
 
 function leadPhone(lead: LeadLite): string {
   const fields = (lead.fields ?? {}) as Record<string, unknown>;
@@ -277,6 +380,8 @@ export async function listClientCases(opts: {
       now,
     })];
   });
+  const covered = new Set(cases.map((row) => row.leadId));
+  caseRows.push(...(await campaignRows(tenantId, covered, config)));
   const hiddenTest = opts.showTest ? 0 : caseRows.filter((row) => row.test).length;
   if (!opts.showTest) caseRows = caseRows.filter((row) => !row.test);
   caseRows = caseRows.filter((row) => matchesQuery(row, opts.q));
@@ -423,10 +528,30 @@ export async function loadClientCase(opts: {
   const lead = await prisma.lead.findFirst({ where: { tenantId, id: opts.key }, select: LEAD_SELECT });
   if (!lead) return null;
   // CRM details, when the same person was also synced as a contact.
+  const sent = await prisma.campaignSend.findFirst({
+    where: { tenantId, leadId: lead.id, status: "sent" },
+    orderBy: { sentAt: "desc" },
+    select: {
+      contactId: true,
+      name: true,
+      phone: true,
+      sentAt: true,
+      reminderSentAt: true,
+      startedAt: true,
+      escalatedAt: true,
+      leadId: true,
+    },
+  });
   const contact = await prisma.contact.findFirst({
-    where: { tenantId, leadId: lead.id },
+    where: {
+      tenantId,
+      OR: [{ leadId: lead.id }, ...(sent?.contactId ? [{ id: sent.contactId }] : [])],
+    },
     select: { id: true, name: true, phone: true, leadId: true, startedAt: true, mapped: true, source: { select: { kind: true, label: true } } },
   });
+  if (contact && !contact.leadId) {
+    await prisma.contact.updateMany({ where: { id: contact.id, tenantId, leadId: null }, data: { leadId: lead.id } });
+  }
 
   const contactView = contact ? crmDetails(contact, lang) : null;
   const [config, dossier, conversations, task] = await Promise.all([
@@ -460,10 +585,10 @@ export async function loadClientCase(opts: {
     contact: contactView,
     lastLeadMessageAt: lead?.lastLeadMessageAt?.toISOString() ?? null,
     hasConversation: conversations > 0,
-    invite: null,
+    invite: sent ? campaignInvite(sent).invite : null,
   };
   if (!dossier) {
-    const state: CaseState = taskView ? "needs_you" : "not_started";
+    const state: CaseState = taskView ? "needs_you" : sent ? "invited" : "not_started";
     return { ...base, state, task: taskView, waves: [], nextWave: null, catalog: [], log: [], stuckDays: 0 };
   }
 

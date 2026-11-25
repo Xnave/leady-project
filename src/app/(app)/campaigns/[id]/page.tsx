@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { CampaignActions } from "@/components/campaigns/CampaignActions";
 import { CampaignEditor, type EditorInitial } from "@/components/campaigns/CampaignEditor";
-import { RunTimingFacts } from "@/components/campaigns/RunTiming";
+import { CampaignRecipients } from "@/components/campaigns/CampaignRecipients";
 import { absTime } from "@/components/crm/format";
 import { parseAudience, parseParamSpecs } from "@/lib/campaigns/engine";
 import { campaignSendWindow } from "@/lib/campaigns/rules";
@@ -11,14 +11,23 @@ import { campaignDetail } from "@/lib/campaigns/manage";
 import { campaignPageAccess, editorData } from "@/lib/campaigns/page-data";
 import { previewText } from "@/lib/campaigns/templates";
 import { getUiLang } from "@/lib/cookies";
-import { formatPhoneDisplay } from "@/lib/leads";
+import { prisma } from "@/lib/db";
 import { fillUi, uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
 
-export default async function CampaignPage({ params }: { params: Promise<{ id: string }> }) {
+const EDITABLE = ["draft", "paused", "scheduled", "sending"];
+
+export default async function CampaignPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ edit?: string }>;
+}) {
   const { tenantId } = await campaignPageAccess();
   const { id } = await params;
+  const { edit } = await searchParams;
   const detail = await campaignDetail(tenantId, id);
   if (!detail) notFound();
   const lang = await getUiLang();
@@ -33,7 +42,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
     </p>
   );
 
-  if (c.status === "draft") {
+  if (c.status === "draft" || (edit === "1" && EDITABLE.includes(c.status))) {
     const audience = parseAudience(c.audience);
     const initial: EditorInitial | null = audience
       ? {
@@ -45,6 +54,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
           scheduledAt: c.scheduledAt?.toISOString() ?? null,
           sendWindow: c.sendWindow == null ? null : campaignSendWindow(c.sendWindow),
           followUps: c.followUps,
+          sendGapMs: c.sendGapMs,
         }
       : null;
     return (
@@ -57,6 +67,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
           data={await editorData(tenantId, lang)}
           pickedLeadIds={[]}
           initial={initial}
+          live={c.status !== "draft"}
         />
         <CampaignActions id={c.id} status={c.status} copy={run} />
       </div>
@@ -68,62 +79,73 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
   const pause = c.status === "paused" && c.pauseReason ? run.pauseReasons[c.pauseReason as keyof typeof run.pauseReasons] : "";
   const wait = (c.status === "scheduled" || c.status === "sending") && c.waitReason ? run.waitReasons[c.waitReason as keyof typeof run.waitReasons] : "";
   const audience = parseAudience(c.audience);
+  const sources = audience?.kind === "clients" ? await prisma.clientSource.findMany({ where: { tenantId }, select: { id: true, label: true, kind: true } }) : [];
+  const sourceLabel = (() => {
+    if (audience?.kind === "leads") return fillUi(run.form.leadsPicked, { n: audience.leadIds.length });
+    if (audience?.kind !== "clients") return "-";
+    if (!audience.sourceId || audience.sourceId === "all") return run.form.sourceAll;
+    const found = sources.find((s) => s.id === audience.sourceId);
+    return found?.label || found?.kind || run.form.sourceAll;
+  })();
+  const total = m.sent + m.queued + m.sending + m.failed + m.skipped + m.unknown;
+  const share = (n: number) => (total === 0 ? 0 : (n / total) * 100);
+  const metricLabel = (key: keyof typeof m) => (key === "sending" ? run.statuses.sending : run.sendStatuses[key]);
 
   return (
     <div>
-      <PageHeader title={c.name} blurb={c.template.title} />
+      <PageHeader title={c.name} />
       {back}
       <section className="card campaign-card">
-        <p>
+        <div className="campaign-summary">
           <span className={`badge${c.status === "paused" ? " badge-warn" : ""}`}>{status}</span>
-          {c.scheduledAt ? <span className="muted"> · {absTime(c.scheduledAt.toISOString(), lang)}</span> : null}
-          {c.batchSize ? <span className="muted"> · {fillUi(run.detail.batchOf, { n: c.batchSize })}</span> : null}
-        </p>
+          {c.scheduledAt ? <span className="muted">{absTime(c.scheduledAt.toISOString(), lang)}</span> : null}
+          {c.batchSize ? <span className="muted">{fillUi(run.detail.batchOf, { n: c.batchSize })}</span> : null}
+          <span className="muted">
+            {run.detail.source}: {sourceLabel}
+          </span>
+          <CampaignActions id={c.id} status={c.status} copy={run} />
+          {EDITABLE.includes(c.status) ? (
+            <Link className="btn-secondary" href={`/campaigns/${encodeURIComponent(c.id)}?edit=1`}>
+              {run.cols.edit}
+            </Link>
+          ) : null}
+        </div>
         {pause ? <p className="campaign-error">{pause}</p> : null}
         {wait ? <p className="muted">{wait}</p> : null}
-        <CampaignActions id={c.id} status={c.status} copy={run} />
-        <dl className="campaign-admin-facts">
-          {c.lastRunMs != null ? (
-            <RunTimingFacts
-              copy={run.detail}
-              run={{ lastRunMs: c.lastRunMs, lastSendMs: c.lastSendMs, lastProcessMs: c.lastProcessMs, lastRowCount: c.lastRowCount }}
-            />
-          ) : null}
-          <dt>{run.detail.audience}</dt>
-          <dd>
-            {audience?.kind === "leads"
-              ? fillUi(run.form.leadsPicked, { n: audience.leadIds.length })
-              : audience?.kind === "clients"
-                ? `${run.form.audienceClients}${audience.startedYearsAgoMin != null || audience.startedYearsAgoMax != null ? ` · ${audience.startedYearsAgoMin ?? 0}-${audience.startedYearsAgoMax ?? "∞"}` : ""}`
-                : "-"}
-          </dd>
-          {c.declaration ? (
-            <>
-              <dt>{run.detail.declaredBy}</dt>
-              <dd>
-                {c.declaration.actorLabel} · {absTime(c.declaration.createdAt.toISOString(), lang)} · v{c.declaration.textVersion}
-              </dd>
-            </>
-          ) : null}
-        </dl>
       </section>
 
       <section className="card campaign-card">
         <h2>{run.detail.metrics}</h2>
-        <dl className="campaign-admin-facts">
-          {(["sent", "queued", "sending", "failed", "skipped", "unknown"] as const).map((k) => (
-            <span key={k} className="client-source-stat">
-              <dt>{run.sendStatuses[k]}</dt>
-              <dd>{m[k]}</dd>
-            </span>
+        <p className="campaign-progress-label">
+          <strong>{fillUi(run.detail.sentOf, { sent: m.sent, total })}</strong>
+        </p>
+        <div className="campaign-bar" role="img" aria-label={fillUi(run.detail.sentOf, { sent: m.sent, total })}>
+          <span className="is-sent" style={{ width: `${share(m.sent)}%` }} />
+          <span className="is-skipped" style={{ width: `${share(m.skipped)}%` }} />
+          <span className="is-failed" style={{ width: `${share(m.failed)}%` }} />
+        </div>
+        <div className="campaign-metrics">
+          {(["sent", "queued", "sending", "skipped", "failed", "unknown"] as const).map((key) => (
+            <div key={key} className="campaign-metric">
+              <span>{metricLabel(key)}</span>
+              <b>{m[key]}</b>
+            </div>
           ))}
-          {Object.entries(detail.skipReasons).map(([reason, n]) => (
-            <span key={reason} className="client-source-stat">
-              <dt>· {run.skipReasons[reason as keyof typeof run.skipReasons] ?? reason}</dt>
-              <dd>{n}</dd>
-            </span>
-          ))}
-        </dl>
+        </div>
+        {Object.keys(detail.skipReasons).length ? (
+          <ul className="campaign-issues">
+            {Object.entries(detail.skipReasons).map(([reason, n]) => (
+              <li key={reason}>
+                {run.skipReasons[reason as keyof typeof run.skipReasons] ?? reason}: {n}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <p>
+          <Link className="campaign-template-open" href="/campaigns?tab=templates">
+            {c.template.title}
+          </Link>
+        </p>
         <div className="campaign-confirm">
           <p className="campaign-template-text">{previewText(c.template.text, [])}</p>
         </div>
@@ -131,32 +153,25 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
 
       <section className="card campaign-card">
         <h2>{run.detail.recent}</h2>
-        {detail.recent.length === 0 ? (
-          <p className="muted">{run.detail.noSends}</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <tbody>
-                {detail.recent.map((s) => (
-                  <tr key={s.id}>
-                    <td>
-                      {s.leadId ? <Link href={`/leads/${encodeURIComponent(s.leadId)}`}>{s.name || "-"}</Link> : s.name || "-"}
-                    </td>
-                    <td dir="ltr" className="muted">
-                      {s.phone.startsWith("none:") ? "-" : formatPhoneDisplay(s.phone)}
-                    </td>
-                    <td>
-                      {run.sendStatuses[s.status as keyof typeof run.sendStatuses] ?? s.status}
-                      {s.skipReason ? ` · ${run.skipReasons[s.skipReason as keyof typeof run.skipReasons] ?? s.skipReason}` : ""}
-                      {s.status === "failed" && s.error ? <span className="muted"> · {s.error.slice(0, 80)}</span> : null}
-                    </td>
-                    <td className="muted">{s.sentAt ? absTime(s.sentAt.toISOString(), lang) : ""}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <CampaignRecipients
+          campaignId={c.id}
+          lang={lang}
+          rows={detail.recent.map((s) => ({
+            id: s.id,
+            name: s.name,
+            phone: s.phone,
+            status: s.status,
+            skipReason: s.skipReason,
+            error: s.error,
+            sentAt: s.sentAt?.toISOString() ?? null,
+            leadId: s.leadId,
+          }))}
+          labels={{ name: run.detail.filterName, status: run.detail.filterStatus, all: run.detail.filterAll, cols: run.detail.cols }}
+          statusLabels={{ ...run.sendStatuses, sending: run.statuses.sending }}
+          skipLabels={run.skipReasons}
+          empty={run.detail.noSends}
+          noMatches={run.detail.noMatches}
+        />
       </section>
     </div>
   );
