@@ -476,27 +476,6 @@ export function ClientCase({ data, ui, lang, now, backHref }: {
         </div>
       </div>
     );
-  } else if (data.task?.kind === "invite_no_start" || data.task?.kind === "invite_send_unknown") {
-    banner = (
-      <div className="cl-callout needs">
-        <div className="cl-callout-text">
-          <h2>{data.task.kind === "invite_no_start" ? d.inviteNoStartTitle : d.inviteUnknownTitle}</h2>
-          {data.task.summary ? <p>{data.task.summary}</p> : null}
-        </div>
-        <div className="cl-callout-actions">
-          <button
-            type="button"
-            className="btn"
-            disabled={busy !== null}
-            aria-busy={busy === "handled"}
-            onClick={() => void run("handled", `/api/leads/${data.leadId}/documents/invite-handled`, undefined, d.inviteHandledDone)}
-          >
-            {d.inviteHandled}
-          </button>
-          {canChat ? <button type="button" className="btn-ghost" onClick={openChat}>{t.openChat}</button> : null}
-        </div>
-      </div>
-    );
   } else if (data.state === "stopped" && data.invite) {
     const byClient = data.invite.stop === "client_stop";
     banner = (

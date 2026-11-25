@@ -1,8 +1,6 @@
 /**
- * Clients screen (documents). One row per lead with a document file (Dossier),
- * plus each CRM client the auto-invite messaged (ContactInvite) who has no file
- * yet. The file drives the status; before it exists, the invite does. Campaign
- * contacts synced from the CRM are a separate list and do not appear here.
+ * Clients screen (documents). One row per lead with a document file (Dossier).
+ * A matching CRM contact only adds its details (`Contact.mapped`) to the file.
  * Demo-simulator and test-phone people are hidden unless asked for.
  */
 import type { Prisma } from "@prisma/client";
@@ -19,7 +17,7 @@ import {
 import { docLabel, stageLabel, type RulesDocument } from "./rules";
 import { nextCollectionStageId, releasedStageId } from "./mortgage-rules";
 import { isOutstanding, type DossierState, type SlotState } from "./validate";
-import { CLIENT_TASK_REASONS, CHECKLIST_REVIEW_REASON, INVITE_TASK_REASONS } from "./review-task";
+import { CLIENT_TASK_REASONS, CHECKLIST_REVIEW_REASON } from "./review-task";
 import { getConnector } from "@/lib/client-sources/registry";
 
 export const CLIENT_TABS = ["needs", "invited", "collecting", "done", "all"] as const;
@@ -51,40 +49,9 @@ export type InviteView = {
 
 function taskKindOf(reason: string): TaskKind {
   if (reason === CHECKLIST_REVIEW_REASON) return "review";
-  if ((INVITE_TASK_REASONS as readonly string[]).includes(reason)) return reason as TaskKind;
   return "advisor";
 }
 
-type InviteRow = {
-  status: string;
-  stopReason: string;
-  openerAt: Date | null;
-  reminderAt: Date | null;
-  startedAt: Date | null;
-  createdAt: Date;
-};
-
-const INVITE_SELECT = { status: true, stopReason: true, openerAt: true, reminderAt: true, startedAt: true, createdAt: true } as const;
-
-function inviteView(row: InviteRow): InviteView {
-  const status: InviteView["status"] =
-    row.status === "sending_opener" || row.status === "sending_reminder"
-      ? "sending"
-      : (["invited", "reminded", "started", "escalated", "unknown", "stopped"] as const).find((s) => s === row.status) ?? "invited";
-  return {
-    status,
-    stop: status !== "stopped" ? "" : row.stopReason === "client_stop" ? "client_stop" : "rejected",
-    openerAt: row.openerAt?.toISOString() ?? null,
-    reminderAt: row.reminderAt?.toISOString() ?? null,
-    startedAt: row.startedAt?.toISOString() ?? null,
-  };
-}
-
-/** Before a file exists the invite decides the state; an open task always wins. */
-function inviteState(invite: InviteView, hasTask: boolean): CaseState {
-  if (hasTask) return "needs_you";
-  return invite.status === "stopped" ? "stopped" : "invited";
-}
 export type Segment = "ok" | "missing" | "issue";
 
 export type ClientRowDTO = {
@@ -219,40 +186,6 @@ function caseRow(opts: {
   };
 }
 
-/** An invited client with no file yet: who was messaged, and where the invite stands. */
-function inviteOnlyRow(opts: {
-  lead: LeadLite;
-  contact: ContactLite;
-  invite: InviteView;
-  inviteAt: Date;
-  task: { reason: string } | undefined;
-  config: DocumentConfig | null;
-}): ClientRowDTO {
-  const { lead, contact, invite, task } = opts;
-  const lastActivity = [lead.lastLeadMessageAt, lead.lastOutboundAt]
-    .filter((d): d is Date => d != null)
-    .sort((a, b) => b.getTime() - a.getTime())[0] ?? opts.inviteAt;
-  return {
-    key: lead.id,
-    leadId: lead.id,
-    name: contact.name || leadDisplayName(lead) || formatPhoneDisplay(leadPhone(lead)),
-    phone: formatPhoneDisplay(contact.phone || leadPhone(lead)),
-    test: isTestPerson(lead, opts.config),
-    state: inviteState(invite, Boolean(task)),
-    taskKind: task ? taskKindOf(task.reason) : null,
-    invite,
-    waveLabel: "",
-    waveIndex: 0,
-    waveCount: 0,
-    segments: [],
-    done: 0,
-    total: 0,
-    nextWaveReady: false,
-    lastActivity: lastActivity.toISOString(),
-    stuckDays: 0,
-  };
-}
-
 function tabOf(row: ClientRowDTO): Exclude<ClientTab, "all"> {
   if (row.state === "needs_you") return "needs";
   if (row.state === "invited" || row.state === "stopped") return "invited";
@@ -307,19 +240,11 @@ export async function listClientCases(opts: {
 }): Promise<{ rows: ClientRowDTO[]; counts: ClientCounts; total: number; hiddenTest: number; testOnly: boolean }> {
   const { tenantId, lang } = opts;
   const now = new Date();
-  const [config, cases, invites] = await Promise.all([
+  const [config, cases] = await Promise.all([
     loadDocumentConfig(tenantId),
     loadCases(tenantId),
-    // Only invites that reached a send have a lead; one stopped before sending was never messaged.
-    prisma.contactInvite.findMany({
-      where: { tenantId, contact: { leadId: { not: null } } },
-      select: { ...INVITE_SELECT, contact: { select: { id: true, name: true, phone: true, leadId: true } } },
-    }),
   ]);
-  const inviteByLead = new Map(invites.map((row) => [row.contact.leadId ?? "", row]));
-  const withFile = new Set(cases.map((row) => row.leadId));
-  const invitedOnly = invites.filter((row) => row.contact.leadId && !withFile.has(row.contact.leadId));
-  const leadIds = [...withFile, ...invitedOnly.map((row) => row.contact.leadId!)];
+  const leadIds = cases.map((row) => row.leadId);
   const [leads, contacts, tasks] = await Promise.all([
     prisma.lead.findMany({ where: { tenantId, id: { in: leadIds } }, select: LEAD_SELECT }),
     prisma.contact.findMany({
@@ -340,31 +265,18 @@ export async function listClientCases(opts: {
   let caseRows = cases.flatMap((dossier) => {
     const lead = leadById.get(dossier.leadId);
     if (!lead) return [];
-    const invite = inviteByLead.get(lead.id);
     return [caseRow({
       dossier,
       lead,
       contact: contactByLead.get(lead.id),
       task: taskByLead.get(lead.id),
-      invite: invite ? inviteView(invite) : null,
+      invite: null,
       rules: config?.rules ?? null,
       config,
       lang,
       now,
     })];
   });
-  for (const row of invitedOnly) {
-    const lead = leadById.get(row.contact.leadId!);
-    if (!lead) continue;
-    caseRows.push(inviteOnlyRow({
-      lead,
-      contact: row.contact,
-      invite: inviteView(row),
-      inviteAt: row.openerAt ?? row.createdAt,
-      task: taskByLead.get(lead.id),
-      config,
-    }));
-  }
   const hiddenTest = opts.showTest ? 0 : caseRows.filter((row) => row.test).length;
   if (!opts.showTest) caseRows = caseRows.filter((row) => !row.test);
   caseRows = caseRows.filter((row) => matchesQuery(row, opts.q));
@@ -486,7 +398,7 @@ function simpleFields(value: Prisma.JsonValue): Record<string, string> {
  * (status id, archived, deal year) are left out; the deal date has its own row.
  */
 function crmDetails(
-  contact: { dealDate: Date | null; mapped: Prisma.JsonValue; source: { kind: string; label: string } },
+  contact: { startedAt: Date | null; mapped: Prisma.JsonValue; source: { kind: string; label: string } },
   lang: "en" | "he",
 ): NonNullable<ClientCaseDTO["contact"]> {
   const connector = getConnector(contact.source.kind);
@@ -496,7 +408,7 @@ function crmDetails(
     .filter((def) => !/\((?:קוד|code)\)|\bid\b/i.test(def.label[lang]))
     .map((def) => ({ key: def.key, label: def.label[lang], value: values[def.key] }));
   return {
-    dealDate: contact.dealDate?.toISOString() ?? null,
+    dealDate: contact.startedAt?.toISOString() ?? null,
     fields,
   };
 }
@@ -513,24 +425,22 @@ export async function loadClientCase(opts: {
   // CRM details, when the same person was also synced as a contact.
   const contact = await prisma.contact.findFirst({
     where: { tenantId, leadId: lead.id },
-    select: { id: true, name: true, phone: true, leadId: true, dealDate: true, mapped: true, source: { select: { kind: true, label: true } } },
+    select: { id: true, name: true, phone: true, leadId: true, startedAt: true, mapped: true, source: { select: { kind: true, label: true } } },
   });
 
   const contactView = contact ? crmDetails(contact, lang) : null;
-  const [config, dossier, conversations, inviteRow, task] = await Promise.all([
+  const [config, dossier, conversations, task] = await Promise.all([
     loadDocumentConfig(tenantId),
     lead
       ? prisma.dossier.findFirst({ where: { tenantId, leadId: lead.id }, orderBy: { createdAt: "desc" } })
       : null,
     lead ? prisma.conversation.count({ where: { tenantId, leadId: lead.id } }) : 0,
-    prisma.contactInvite.findFirst({ where: { tenantId, contact: { leadId: lead.id } }, select: INVITE_SELECT }),
     prisma.hitlTask.findFirst({
       where: { tenantId, leadId: lead.id, status: "open", reason: { in: [...CLIENT_TASK_REASONS] } },
       orderBy: { createdAt: "desc" },
       select: { id: true, reason: true, payload: true, createdAt: true },
     }),
   ]);
-  const invite = inviteRow ? inviteView(inviteRow) : null;
   const payload = (task?.payload ?? {}) as { summary?: unknown };
   const taskView = task
     ? {
@@ -550,10 +460,10 @@ export async function loadClientCase(opts: {
     contact: contactView,
     lastLeadMessageAt: lead?.lastLeadMessageAt?.toISOString() ?? null,
     hasConversation: conversations > 0,
-    invite,
+    invite: null,
   };
   if (!dossier) {
-    const state: CaseState = invite ? inviteState(invite, Boolean(taskView)) : taskView ? "needs_you" : "not_started";
+    const state: CaseState = taskView ? "needs_you" : "not_started";
     return { ...base, state, task: taskView, waves: [], nextWave: null, catalog: [], log: [], stuckDays: 0 };
   }
 

@@ -169,7 +169,7 @@ function contact(i: number, patch: Record<string, unknown> = {}) {
     leadId: null,
     mapped: {},
     skipped: false,
-    dealDate: NOW,
+    startedAt: NOW,
     source: { kind: "smartnpv" },
     ...patch,
   };

@@ -1419,7 +1419,7 @@ export const en: UiCopy = {
         audience_too_large: "The audience is larger than 20,000. Narrow it and confirm again.",
       },
       waitReasons: {
-        quiet_hours: "Waiting for sending hours (weekdays 9:00-20:00, Friday until 14:00, not on Saturday)",
+        quiet_hours: "Waiting for sending hours (weekdays 9:00-20:00, Friday until 13:00, not on Saturday)",
         daily_ceiling: "Daily limit for this number reached. Continues tomorrow.",
         waiting_for_clients: "Waiting for new clients from the source. Continues on the next run.",
         waiting_follow_up: "The first message went out. A reminder, then a task, follows if nobody replies.",
@@ -1461,7 +1461,7 @@ export const en: UiCopy = {
         includeNoDate: "Also clients with no start date",
         params: "Template values",
         paramLabel: "Value for {{{n}}}",
-        paramSources: { first_name: "Client's first name", full_name: "Client's full name", business_name: "Business name", text: "Fixed text" },
+        paramSources: { first_name: "Client's first name", full_name: "Client's full name", borrower_first_name: "Borrower's first name", business_name: "Business name", text: "Fixed text" },
         paramValue: "Text",
         paramFallback: "If missing, use",
         goal: "Goal of the reply",

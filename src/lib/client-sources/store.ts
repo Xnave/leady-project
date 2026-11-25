@@ -215,9 +215,9 @@ export function prismaSyncStore(tenantId: string, sourceId: string): SyncStore {
               name: r.name,
               raw: r.raw as Prisma.InputJsonValue,
               mapped: r.mapped as Prisma.InputJsonValue,
-              dealDate: r.startedAt.date,
-              dealDateSource: r.startedAt.source,
-              dealDateConfidence: r.startedAt.confidence,
+              startedAt: r.startedAt.date,
+              startedAtSource: r.startedAt.source,
+              startedAtConfidence: r.startedAt.confidence,
               sourceUpdatedAt: r.sourceUpdatedAt,
               skipped: r.skipped,
               syncedAt,
@@ -349,29 +349,9 @@ export async function runSourceSyncInline(tenantId: string, sourceId: string, mo
     const page = await syncSourcePage(tenantId, sourceId, cursor, updatedSince);
     counts = addCounts(counts, page.counts);
     cursor = page.nextCursor;
-    if (!cursor) return inviteAfterInlineSync(tenantId, await finishSourceSync(tenantId, sourceId, counts, mode, true));
+    if (!cursor) return finishSourceSync(tenantId, sourceId, counts, mode, true);
   }
-  return inviteAfterInlineSync(tenantId, await finishSourceSync(tenantId, sourceId, counts, mode, false));
-}
-
-/**
- * Same trigger as production, without Inngest. In production every finished
- * sync that created contacts sends `documents/invites.requested`
- * (`clientSourceSync`), and `documents-invites-hourly` runs the pass again each
- * hour for reminders, advisor tasks and clients synced outside send hours.
- * This function only exists for the local fallback, where the sync runs in the
- * request (`requestSourceSync`), so a "sync now" in dev invites the same way.
- */
-async function inviteAfterInlineSync(tenantId: string, stats: SyncStats): Promise<SyncStats> {
-  if (stats.created > 0) {
-    try {
-      const { runInvitesForTenant } = await import("@/lib/documents/invite/run");
-      await runInvitesForTenant(tenantId, new Date());
-    } catch (err) {
-      console.warn(JSON.stringify({ msg: "client_sources.inline_invite_failed", tenantId, error: String(err) }));
-    }
-  }
-  return stats;
+  return finishSourceSync(tenantId, sourceId, counts, mode, false);
 }
 
 export type TestResult =

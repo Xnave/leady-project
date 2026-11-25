@@ -26,7 +26,7 @@ Client campaigns PR 3 (ClickUp `z8rp3ff7x6`). It builds on PR 1 (templates, add-
   - lead marked lost or not relevant
   - archived client (the connector's `archivedField`), checked again at send time
   - a template value would be empty
-- **Sending hours** in the tenant's timezone. A window is a list of open days, each `{ weekday, startMinute, endMinute }` from local midnight. A weekday that is missing is closed. Null uses the Israeli default: Sunday to Thursday 09:00-20:00, Friday 09:00-14:00, Saturday closed. Outside the window the campaign waits. It is not paused.
+- **Sending hours** in the tenant's timezone. A window is a list of open days, each `{ weekday, startMinute, endMinute }` from local midnight. A weekday that is missing is closed. Null uses the Israeli default: Sunday to Thursday 09:00-20:00, Friday 09:00-13:00, Saturday closed. Outside the window the campaign waits. It is not paused.
 - **Budget:** the smallest of:
   - the tenant's daily ceiling, counting `sent` rows from every campaign today
   - what is left of the batch, counting `sent` rows

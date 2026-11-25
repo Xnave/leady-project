@@ -52,6 +52,8 @@ export type Recipient = {
   contactId: string | null;
   leadId: string | null;
   archived: boolean;
+  /** CRM mapped payload, when this recipient is a contact. Leads have none. */
+  mapped?: unknown;
 };
 
 export function parseAudience(raw: unknown): Audience | null {
@@ -111,8 +113,8 @@ export async function resolveAudience(
     const range = startedAtRange(audience, now);
     const hasRange = range.gte != null || range.lte != null;
     const dated = {
-      dealDate: { not: null, ...(range.gte ? { gte: range.gte } : {}), ...(range.lte ? { lte: range.lte } : {}) },
-      ...(audience.confidence.length ? { dealDateConfidence: { in: audience.confidence } } : {}),
+      startedAt: { not: null, ...(range.gte ? { gte: range.gte } : {}), ...(range.lte ? { lte: range.lte } : {}) },
+      ...(audience.confidence.length ? { startedAtConfidence: { in: audience.confidence } } : {}),
     };
     const exclude = [
       ...(taken.contactIds.length ? [{ id: { notIn: taken.contactIds } }] : []),
@@ -122,13 +124,13 @@ export async function resolveAudience(
     // A stored client that now matches a skip rule (e.g. archived) is never an audience member.
     const where =
       audience.includeNoStartedAt && !hasRange
-        ? { tenantId, skipped: false, ...source, OR: [dated, { dealDate: null }], ...(exclude.length ? { AND: exclude } : {}) }
+        ? { tenantId, skipped: false, ...source, OR: [dated, { startedAt: null }], ...(exclude.length ? { AND: exclude } : {}) }
         : { tenantId, skipped: false, ...source, ...dated, ...(exclude.length ? { AND: exclude } : {}) };
     const found = await prisma.contact.findMany({
       where,
       select: { id: true, phone: true, phoneStatus: true, name: true, leadId: true, mapped: true, source: { select: { kind: true } } },
       // Dated records first, so the one-per-phone merge keeps the client with a deal date.
-      orderBy: { dealDate: { sort: "desc", nulls: "last" } },
+      orderBy: { startedAt: { sort: "desc", nulls: "last" } },
       take: AUDIENCE_CAP + 1,
     });
     // A full page means at least one more client matched. Confirm refuses. A later refresh keeps the first page.
@@ -144,6 +146,7 @@ export async function resolveAudience(
         contactId: c.id,
         leadId: c.leadId,
         archived: field ? isArchivedValue(mapped[field]) : false,
+        mapped,
       });
     }
   } else {
@@ -295,6 +298,10 @@ type CampaignForRun = {
   template: { category: string };
 };
 
+function paramWho(r: Recipient, businessName: string) {
+  return { name: r.name, businessName, mapped: r.mapped };
+}
+
 async function businessName(tenantId: string): Promise<string> {
   const t = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
   return t?.name ?? "";
@@ -313,7 +320,7 @@ export async function previewCampaign(campaign: CampaignForRun, now = new Date()
   const sample: string[] = [];
   let eligible = 0;
   recipients.forEach((r, i) => {
-    const reason = skipReasonFor(states[i], now) ?? (resolveParams(specs, { name: r.name, businessName: biz }) ? null : "missing_param");
+    const reason = skipReasonFor(states[i], now) ?? (resolveParams(specs, paramWho(r, biz)) ? null : "missing_param");
     if (reason) skipped[reason] = (skipped[reason] ?? 0) + 1;
     else {
       eligible += 1;
@@ -779,8 +786,8 @@ export async function freezeAudience(
   const rows = toSendRows(
     campaign,
     recipients,
-    (r) => structuralSkip(r, resolveParams(specs, { name: r.name, businessName: campaign.tenant.name })),
-    (r) => resolveParams(specs, { name: r.name, businessName: campaign.tenant.name }),
+    (r) => structuralSkip(r, resolveParams(specs, paramWho(r, campaign.tenant.name))),
+    (r) => resolveParams(specs, paramWho(r, campaign.tenant.name)),
   );
   await insertSendRows(tx, rows);
   return null;
@@ -800,8 +807,8 @@ async function appendAudience(campaign: CampaignForRun & { tenant: { name: strin
   const rows = toSendRows(
     campaign,
     recipients,
-    (r) => structuralSkip(r, resolveParams(specs, { name: r.name, businessName: campaign.tenant.name })),
-    (r) => resolveParams(specs, { name: r.name, businessName: campaign.tenant.name }),
+    (r) => structuralSkip(r, resolveParams(specs, paramWho(r, campaign.tenant.name))),
+    (r) => resolveParams(specs, paramWho(r, campaign.tenant.name)),
   );
   await insertSendRows(prisma, rows);
 }
@@ -816,8 +823,8 @@ async function materialize(campaign: CampaignForRun & { tenant: { name: string }
   const rows = toSendRows(
     campaign,
     resolved,
-    (r, i) => skipReasonFor(states[i], now) ?? (resolveParams(specs, { name: r.name, businessName: campaign.tenant.name }) ? null : "missing_param"),
-    (r) => resolveParams(specs, { name: r.name, businessName: campaign.tenant.name }),
+    (r, i) => skipReasonFor(states[i], now) ?? (resolveParams(specs, paramWho(r, campaign.tenant.name)) ? null : "missing_param"),
+    (r) => resolveParams(specs, paramWho(r, campaign.tenant.name)),
   );
   await insertSendRows(prisma, rows);
   await markRunnable(campaign.tenantId, campaign.id, { materializedAt: now });

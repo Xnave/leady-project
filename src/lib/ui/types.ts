@@ -1094,7 +1094,7 @@ export type UiCopy = {
         params: string;
         /** "{n}" */
         paramLabel: string;
-        paramSources: Record<"first_name" | "full_name" | "business_name" | "text", string>;
+        paramSources: Record<"first_name" | "full_name" | "borrower_first_name" | "business_name" | "text", string>;
         paramValue: string;
         paramFallback: string;
         goal: string;

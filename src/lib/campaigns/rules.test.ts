@@ -31,9 +31,9 @@ describe("inSendWindow", () => {
     expect(inSendWindow(il("2026-11-08T10:00:00"), TZ)).toBe(true); // Sunday
   });
 
-  it("stops at 14:00 on Friday and never sends on Saturday", () => {
-    expect(inSendWindow(il("2026-11-06T13:59:00"), TZ)).toBe(true);
-    expect(inSendWindow(il("2026-11-06T14:00:00"), TZ)).toBe(false);
+  it("stops at 13:00 on Friday and never sends on Saturday", () => {
+    expect(inSendWindow(il("2026-11-06T12:59:00"), TZ)).toBe(true);
+    expect(inSendWindow(il("2026-11-06T13:00:00"), TZ)).toBe(false);
     expect(inSendWindow(il("2026-11-07T12:00:00"), TZ)).toBe(false);
   });
 
@@ -166,6 +166,13 @@ describe("resolveParams", () => {
   it("uses the fallback, and refuses an empty value", () => {
     expect(resolveParams([{ source: "first_name", value: "", fallback: "לקוח יקר" }], { name: "", businessName: "x" })).toEqual(["לקוח יקר"]);
     expect(resolveParams([{ source: "first_name", value: "", fallback: "" }], { name: " ", businessName: "x" })).toBeNull();
+  });
+
+  it("uses the checklist borrower, then the contact's first name", () => {
+    const mapped = { checklist: { borrowers: [{ slot: "2", fullName: "אחר" }, { slot: "1", fullName: "נועה ברק" }] } };
+    expect(resolveParams([{ source: "borrower_first_name", value: "", fallback: "" }], { name: "דנה לוי", businessName: "x", mapped })).toEqual(["נועה"]);
+    expect(resolveParams([{ source: "borrower_first_name", value: "", fallback: "לקוח" }], { name: "דנה לוי", businessName: "x" })).toEqual(["דנה"]);
+    expect(resolveParams([{ source: "borrower_first_name", value: "", fallback: "" }], { name: " ", businessName: "x" })).toBeNull();
   });
 });
 

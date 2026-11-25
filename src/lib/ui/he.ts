@@ -1419,7 +1419,7 @@ export const he: UiCopy = {
         audience_too_large: "הקהל גדול מ-20,000. צריך לצמצם ולאשר מחדש.",
       },
       waitReasons: {
-        quiet_hours: "ממתין לשעות השליחה (א'-ה' 9:00-20:00, שישי עד 14:00, לא בשבת)",
+        quiet_hours: "ממתין לשעות השליחה (א'-ה' 9:00-20:00, שישי עד 13:00, לא בשבת)",
         daily_ceiling: "הגעת למגבלה היומית של המספר. ממשיך מחר.",
         waiting_for_clients: "ממתין ללקוחות חדשים מהמקור. ממשיך בהרצה הבאה.",
         waiting_follow_up: "ההודעה הראשונה יצאה. אם אין תשובה נשלחת תזכורת, ואחר כך נפתחת משימה.",
@@ -1461,7 +1461,7 @@ export const he: UiCopy = {
         includeNoDate: "גם לקוחות בלי תאריך התחלה",
         params: "ערכים לתבנית",
         paramLabel: "ערך ל-{{{n}}}",
-        paramSources: { first_name: "שם פרטי של הלקוח", full_name: "שם מלא של הלקוח", business_name: "שם העסק", text: "טקסט קבוע" },
+        paramSources: { first_name: "שם פרטי של הלקוח", full_name: "שם מלא של הלקוח", borrower_first_name: "שם פרטי של הלווה", business_name: "שם העסק", text: "טקסט קבוע" },
         paramValue: "טקסט",
         paramFallback: "אם חסר, להשתמש ב-",
         goal: "מטרת התשובה",

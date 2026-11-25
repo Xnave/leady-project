@@ -234,7 +234,7 @@ export function estimateCostUsd(recipients: number, category: string): number {
 
 // ─── Template variables ─────────────────────────────────────────────────────
 
-export const PARAM_SOURCES = ["first_name", "full_name", "business_name", "text"] as const;
+export const PARAM_SOURCES = ["first_name", "full_name", "borrower_first_name", "business_name", "text"] as const;
 export type ParamSource = (typeof PARAM_SOURCES)[number];
 
 export const paramSchema = z.object({
@@ -250,13 +250,31 @@ export function firstName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] ?? "";
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+/** First token of borrower slot 1 on the checklist, else the contact's own first name. */
+export function borrowerFirstName(mapped: unknown, contactName: string): string {
+  const borrowers = asRecord(asRecord(mapped).checklist).borrowers;
+  const list = Array.isArray(borrowers) ? borrowers : [];
+  const slot = list.find((item) => asRecord(item).slot === "1") ?? list[0];
+  const full = asRecord(slot).fullName;
+  const fromChecklist = typeof full === "string" ? (full.trim().split(/\s+/)[0] ?? "") : "";
+  return fromChecklist || firstName(contactName);
+}
+
 /** Values for {{1}}..{{n}} in order, or null when one would be empty (Meta rejects empty params). */
-export function resolveParams(specs: ParamSpec[], who: { name: string; businessName: string }): string[] | null {
+export function resolveParams(
+  specs: ParamSpec[],
+  who: { name: string; businessName: string; mapped?: unknown },
+): string[] | null {
   const out: string[] = [];
   for (const spec of specs) {
     let v = "";
     if (spec.source === "first_name") v = firstName(who.name);
     else if (spec.source === "full_name") v = who.name.trim();
+    else if (spec.source === "borrower_first_name") v = borrowerFirstName(who.mapped, who.name);
     else if (spec.source === "business_name") v = who.businessName.trim();
     else v = spec.value.trim();
     if (!v) v = spec.fallback.trim();
