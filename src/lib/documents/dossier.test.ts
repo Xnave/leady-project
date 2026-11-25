@@ -33,6 +33,12 @@ describe("selectIngestMessages", () => {
     expect(files).toEqual([]);
   });
 
+  it("skips a WhatsApp file that was stored under the refined file.pdf name", () => {
+    const trigger = message("trigger", "2026-11-02T10:01:00Z", "file");
+    const files = pendingFiles([trigger], [{ messageId: "trigger", filename: "file.pdf" }]);
+    expect(files).toEqual([]);
+  });
+
   it("drops the oldest messages past the window and still keeps the trigger", () => {
     const trigger = message("trigger", "2026-11-02T12:00:00Z");
     const older = Array.from({ length: 21 }, (_, index) =>
@@ -172,7 +178,7 @@ describe("rejectionDetail", () => {
       };
     }
     expect(documentFileAsk(state, MORTGAGE_RULES, "he", copyFor("he").chat, now)).toBe(
-      "התלושים של אוגוסט וספטמבר כבר אצלנו. נצטרך רק את תלוש אוקטובר המלא, כולל כל העמודים.",
+      "התלושים של אוגוסט וספטמבר כבר אצלנו. נצטרך רק את תלוש אוקטובר.",
     );
   });
 

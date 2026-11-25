@@ -7,6 +7,7 @@ import { requiredSlots } from "./rules";
 import {
   commitSlot,
   extraPayslipSlotIds,
+  repairPayslipMonthCoverage,
   freshDossier,
   judgeFile,
   reopenReturnedSlots,
@@ -130,6 +131,60 @@ describe("document checks", () => {
     state = recordMonths(state, judged.slotId, ["2026-10"], "remote", "b.pdf");
     expect(state.slots[0]?.status).toBe("uploaded");
     expect(state.status).toBe("complete");
+  });
+
+  it("covers payslip months from payMonths, not a bank-statement months list", () => {
+    const state = freshDossier({
+      smartClientId: "c1",
+      profile,
+      slots: [
+        { id: "payslip#1#0", docType: "payslip", stage: "income", index: 0, borrower: "1" },
+        { id: "payslip#1#1", docType: "payslip", stage: "income", index: 1, borrower: "1" },
+        { id: "payslip#1#2", docType: "payslip", stage: "income", index: 2, borrower: "1" },
+      ],
+    });
+    const judged = judgeFile(state, MORTGAGE_RULES, {
+      docType: "payslip",
+      fields: {
+        fullName: "Test",
+        periodEnd: "2026-09-30",
+        payMonths: "2026-08, 2026-09",
+        // Model sometimes also fills the statement field with a wider range.
+        months: "2026-08, 2026-09, 2026-10",
+      },
+    }, NOW);
+    expect(judged.kind).toBe("accept");
+    if (judged.kind !== "accept") return;
+    expect(judged.coveredMonths).toEqual(["2026-08", "2026-09"]);
+  });
+
+  it("reopens a duplicate payslip month so October stays collectible", () => {
+    let state = freshDossier({
+      smartClientId: "c1",
+      profile,
+      slots: [
+        { id: "payslip#1#0", docType: "payslip", stage: "income", index: 0, borrower: "1" },
+        { id: "payslip#1#1", docType: "payslip", stage: "income", index: 1, borrower: "1" },
+        { id: "payslip#1#2", docType: "payslip", stage: "income", index: 2, borrower: "1" },
+        {
+          id: "bank_statement#a#0",
+          docType: "bank_statement",
+          stage: "banking",
+          index: 0,
+          months: ["2026-08", "2026-09", "2026-10"],
+        },
+      ],
+    });
+    state = commitSlot(state, "payslip#1#0", "r0", "a.pdf");
+    state = { ...state, slots: state.slots.map((slot) => slot.id === "payslip#1#0" ? { ...slot, coveredMonths: ["2026-08"] } : slot) };
+    state = commitSlot(state, "payslip#1#1", "r1", "a.pdf");
+    state = { ...state, slots: state.slots.map((slot) => slot.id === "payslip#1#1" ? { ...slot, coveredMonths: ["2026-09"] } : slot) };
+    state = commitSlot(state, "payslip#1#2", "r2", "b.pdf");
+    state = { ...state, slots: state.slots.map((slot) => slot.id === "payslip#1#2" ? { ...slot, coveredMonths: ["2026-08"] } : slot) };
+    expect(state.activeStage).toBe("banking");
+    state = repairPayslipMonthCoverage(state, NOW);
+    expect(state.slots.find((slot) => slot.id === "payslip#1#2")?.status).toBe("missing");
+    expect(state.activeStage).toBe("income");
   });
 
   it("uses a human statement request rather than exposing individual month ids", () => {

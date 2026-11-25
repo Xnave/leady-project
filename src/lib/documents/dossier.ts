@@ -56,6 +56,7 @@ import {
   priorCalendarMonths,
   recentPayslipMonths,
   recordMonths,
+  repairPayslipMonthCoverage,
   reopenReturnedSlots,
   slotDisplayLabel,
   type DossierState,
@@ -254,16 +255,49 @@ function finishedKey(messageId: string, filename: string): string {
   return `${messageId}\0${filename}`;
 }
 
+/**
+ * WhatsApp webhooks often store `filename: "file"`; collectJobs then renames to
+ * `file.pdf` on the LeadDocument. Treat those as the same attachment.
+ */
+function sameAttachmentName(metaName: string, storedName: string): boolean {
+  if (metaName === storedName) return true;
+  const metaBase = metaName.replace(/\.[^.]+$/, "") || metaName;
+  const storedBase = storedName.replace(/\.[^.]+$/, "") || storedName;
+  if (metaName === "file" || metaBase === "file") {
+    return storedBase === "file" || storedName === "file";
+  }
+  return metaBase === storedBase;
+}
+
 /** Attachments that do not yet have a rejected or uploaded row for that message. */
 export function pendingFiles(
   messages: { id: string; metadata: unknown }[],
   finished: { messageId: string; filename: string }[],
 ): InboundFile[] {
   const done = new Set(finished.map((row) => finishedKey(row.messageId, row.filename)));
+  const finishedByMessage = new Map<string, string[]>();
+  for (const row of finished) {
+    const list = finishedByMessage.get(row.messageId) ?? [];
+    list.push(row.filename);
+    finishedByMessage.set(row.messageId, list);
+  }
   const files: InboundFile[] = [];
   for (const message of messages) {
+    const claimed = new Set<number>();
+    const storedNames = finishedByMessage.get(message.id) ?? [];
     for (const attachment of attachmentsOf(message.metadata)) {
-      if (done.has(finishedKey(message.id, attachment.filename))) continue;
+      if (done.has(finishedKey(message.id, attachment.filename))) {
+        const exact = storedNames.findIndex((name, index) => !claimed.has(index) && name === attachment.filename);
+        if (exact >= 0) claimed.add(exact);
+        continue;
+      }
+      const fuzzy = storedNames.findIndex(
+        (name, index) => !claimed.has(index) && sameAttachmentName(attachment.filename, name),
+      );
+      if (fuzzy >= 0) {
+        claimed.add(fuzzy);
+        continue;
+      }
       files.push({ messageId: message.id, attachment });
     }
   }
@@ -872,22 +906,22 @@ export function refreshDossier(state: DossierState, rules: RulesDocument, text: 
   // The extra-loan answer can already be on the profile before this refresh.
   // Slot shape is then unchanged, and the old status would stay "gathering"
   // with nothing left to ask, so the customer would get no reply.
-  if (same && loansSame) {
-    return {
-      ...state,
-      profile: withLoans,
-      slots,
-      status: done ? "complete" : "gathering",
-      activeStage: activeStageOf(slots),
-    };
-  }
-  return {
-    ...state,
-    profile: withLoans,
-    slots,
-    status: done ? "complete" : "gathering",
-    activeStage: activeStageOf(slots),
-  };
+  const nextState: DossierState = same && loansSame
+    ? {
+        ...state,
+        profile: withLoans,
+        slots,
+        status: done ? "complete" : "gathering",
+        activeStage: activeStageOf(slots),
+      }
+    : {
+        ...state,
+        profile: withLoans,
+        slots,
+        status: done ? "complete" : "gathering",
+        activeStage: activeStageOf(slots),
+      };
+  return repairPayslipMonthCoverage(nextState);
 }
 
 type DocumentChat = ReturnType<typeof copyFor>["chat"];
@@ -2530,7 +2564,19 @@ export async function runDocumentsIngest(
 
   const jobs = await collectJobs({ ctx, chat, lines, row, files: inbound.files });
   let acceptedAny = false;
+  const stageAtTurnStart = state.activeStage;
   for (const job of jobs) {
+    // A file that closed the current stage must not pull the next file into the
+    // newly opened stage on this same turn (payslip → bank statement mix-ups).
+    if (acceptedAny && state.activeStage && state.activeStage !== stageAtTurnStart) {
+      warnDocuments("documents.stage_advanced_skip_remaining", {
+        conversationId: ctx.conversation.id,
+        fromStage: stageAtTurnStart,
+        toStage: state.activeStage,
+        remaining: jobs.length,
+      });
+      break;
+    }
     if (!isUploadableFile(job.mime, job.filename)) {
       lines.push(chat.documents.rejected(job.filename, reasonText(chat, "unsupported_type")));
       await markRejected({
@@ -2722,7 +2768,13 @@ export async function runDocumentsIngest(
     state = uploaded.state;
     if (uploaded.accepted && judged.accepted.docType === "payslip") {
       const front = state.slots.find((slot) => slot.id === judged.accepted?.slotId);
-      const months = [...(judged.accepted.payMonths ?? [])].sort();
+      // Prefer payMonths; fall back to coveredMonths so receipt and slots stay aligned.
+      const months = [
+        ...new Set([
+          ...(judged.accepted.payMonths ?? []),
+          ...(judged.accepted.payMonths?.length ? [] : judged.accepted.coveredMonths ?? []),
+        ]),
+      ].sort();
       const extra = extraPayslipSlotIds(state, judged.accepted.slotId, months);
       for (const slotId of extra) {
         state = commitSlot(state, slotId, front?.remoteId ?? "", front?.filename || job.filename);
