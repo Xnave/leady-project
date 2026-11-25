@@ -81,8 +81,10 @@ export async function sendOnChannel(opts: {
   text: string;
   zernioAccountId?: string;
   zernioConversationId?: string;
+  /** Demo impersonation. Already decided from the lead loaded for this turn. */
+  replyHereOnly?: boolean;
 }): Promise<void> {
-  if (opts.to.startsWith("demo-")) return;
+  if (opts.replyHereOnly || opts.to.startsWith("demo-")) return;
 
   const zernio =
     opts.apiBase.includes("zernio.com") || Boolean(opts.zernioAccountId && opts.zernioConversationId);

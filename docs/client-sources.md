@@ -11,17 +11,17 @@ Client campaigns PR 2 (ClickUp `z8rp3ff7x5`). A tenant's **own CRM** is synced i
 | Smart NPV connector | `src/lib/client-sources/smartnpv.ts` (field catalog, paging, deal date). HTTP goes through `fetchSmartClientList` in `src/lib/documents/smart-npv.ts`, the one module that talks to Smart NPV and only to `www.snpv.co.il`. |
 | Generic sync (pure, store injected) | `src/lib/client-sources/sync.ts` |
 | Prisma store, encryption, public view | `src/lib/client-sources/store.ts` |
-| Inngest | `client-source-sync` (event `client-sources/sync.requested`, one step per page, one run per source) and `client-sources-daily` (04:00 Asia/Jerusalem, incremental) in `src/inngest/functions.ts` |
+| Inngest | `client-source-sync` (event `client-sources/sync.requested`, one step per page, one run per source) and `client-sources-hourly` (hourly incremental) in `src/inngest/functions.ts` |
 | Admin screen | `/admin/client-sources/[tenantId]` (link on each tenant row in `/admin`) |
-| Clients tab | `/clients`, owner/admin, shown only when the tenant has a source |
+| Clients tab | Not here: `/clients` is the documents screen and lists document files only ([documents.md](documents.md#clients-screen)). Contacts are a campaign audience. |
 
 ## Adding a CRM
 
-Write a connector (`kind`, `credentialsSchema`, `credentialFields`, `parseConfig`, `authenticate`, `fetchClients`, `fieldCatalog`, `derive`) and add it to `CONNECTORS` in `registry.ts`. Keep only the fields in `fieldCatalog`; never store id numbers, birthdays, income or amounts. Test it with a fake `fetch`, like `smartnpv.test.ts`.
+Write a connector (`kind`, `credentialsSchema`, `credentialFields`, `parseConfig`, `authenticate`, `fetchClients`, `fieldCatalog`, `derive`) and add it to `CONNECTORS` in `registry.ts`. `Contact.mapped` is what readers use. `Contact.raw` is the CRM row when `storeRaw` is on. Mark phone keys with `phoneKey`. Test it with a fake `fetch`, like `smartnpv.test.ts`.
 
 ## Credentials
 
-Stored AES-256-GCM encrypted (`src/lib/crypto.ts`) on `ClientSource.credentialsEnc`. They are decrypted only inside `store.ts` to call the connector. API responses carry `credentialKeys` (names) only. Error text is masked with `safeErrorMessage` before it is stored or returned.
+Stored AES-256-GCM encrypted (`src/lib/crypto.ts`) on `ClientSource.credentialsEnc`. They are decrypted only inside `store.ts` to call the connector. The Smart NPV key lives on that source. Document upload reads it from there. API responses carry `credentialKeys` (names) only. Error text is masked with `safeErrorMessage` before it is stored or returned.
 
 The Documents capability uses the tenant's Smart NPV client-source credentials for lookup and upload. Manage the connection and test it only from Admin → Client Sources; Documents settings contain document rules and test-phone behavior, not connector credentials.
 
@@ -46,7 +46,9 @@ The Documents capability uses the tenant's Smart NPV client-source credentials f
 }
 ```
 
-`keep` limits the sync to clients relevant for campaigns. Every part that is set must match: the start date is `min` to `max` years ago (a client with no start date fails), and each field rule's value is in its list (an empty list is ignored). Both are off by default. A **new** client that fails is not stored and is counted as `outOfScope`. A client **already stored** is never removed when it stops matching: it keeps syncing, so its history (campaign sends, opt-outs) stays attached. The status ids are tenant-specific; read them from the admin "test" result (`status_id`, `status_title`). A saved config may still say `dealYearsAgo`; it is read as `startedYearsAgo`.
+`keep` limits the sync to clients relevant for campaigns. Every part that is set must match: the start date is `min` to `max` years ago (a client with no start date fails), and each field rule's value is in its list (an empty list is ignored). Both are off by default. A **new** client that fails is not stored and is counted as `outOfScope`. A client **already stored** is never removed when it stops matching. With `freezeAfterFirstSync` off it keeps updating. Smart NPV turns that flag on, so a stored contact stays as first synced. `storeRaw` defaults on. The status ids are tenant-specific; read them from the admin "test" result (`status_id`, `status_title`). A saved config may still say `dealYearsAgo`; it is read as `startedYearsAgo`.
+
+`ClientSource.syncSince` is set to now on the first connect. It means "sync contacts from this moment." Smart NPV uses the Asia/Jerusalem calendar day and asks the list from the start of that day. Moving `syncSince` earlier and running a full sync is how older contacts get stored.
 
 `skip` works the same way for stored clients: a **new** client matching a skip rule is not stored (counted as skipped), and a client **already stored** keeps updating with `skipped = true`, so audiences leave it out while its history stays. It flips back when the rule stops matching.
 
@@ -58,8 +60,8 @@ Sessions are cached per source while a process is warm, keyed on a hash of the c
 
 ## Sync modes
 
-- **full** (Admin → Client Sources "sync now"): every client, created since 2000.
-- **incremental** (daily cron): clients modified since the last successful sync, minus one day.
+- **full** (admin "sync now"): clients from `syncSince`. It does not move that timestamp. With no `syncSince`, Smart NPV falls back to 1 January 2000.
+- **incremental** (hourly cron): clients modified since the last successful sync, minus one day, and not before `syncSince`.
 - **test** (admin): first page only, writes nothing, returns counts and field names.
 
 Connector setup, connection tests, and manual syncs are managed only from Admin → Client Sources. The Clients tab is read-only. Local manual syncs run inline so failures appear in the `npm run dev` terminal. Production manual syncs are queued through Inngest.

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { decryptBytes } from "@/lib/crypto";
+import { currentDownloadUrl } from "@/lib/documents/download-link";
 import { inlineContentDisposition } from "@/lib/documents/file-types";
 import { prisma } from "@/lib/db";
 import { requireTenantId } from "@/lib/tenant";
@@ -21,6 +22,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       },
     });
   }
-  if (doc.downloadUrl?.startsWith("https://")) return NextResponse.redirect(doc.downloadUrl);
+  const url = await currentDownloadUrl(doc);
+  if (url) return NextResponse.redirect(url);
   return NextResponse.json({ error: "not_found" }, { status: 404 });
 }

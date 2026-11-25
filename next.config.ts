@@ -2,6 +2,12 @@ import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  logging: {
+    incomingRequests: {
+      // Inngest dev syncs this path every few seconds. Function runs keep ?fnId= and still log.
+      ignore: [/^\/api\/inngest$/],
+    },
+  },
   serverExternalPackages: ["@prisma/client"],
   // Parent ~/yarn.lock made Next treat ~ as the app root and skip this project's .env
   outputFileTracingRoot: path.join(__dirname),

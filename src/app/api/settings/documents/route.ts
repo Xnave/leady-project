@@ -35,6 +35,9 @@ export async function POST(req: Request) {
     baseUrl?: string;
     rules?: unknown;
     testPhones?: string;
+    unrecognizedIntro?: string;
+    autoInvite?: boolean;
+    clientDisplayName?: string;
   } | null;
   const existing = await loadInstanceConfig({ tenantId, capabilityId: "documents" });
   const existingPhones = Array.isArray(existing.testPhones)
@@ -46,6 +49,8 @@ export async function POST(req: Request) {
       { ...(body ?? {}), apiKey: "" },
       "",
       existingPhones,
+      typeof existing.unrecognizedIntro === "string" ? existing.unrecognizedIntro : "",
+      existing,
     );
   } catch (err) {
     const message = err instanceof FlowConfigError ? err.errors.join("\n") : "Invalid documents config";

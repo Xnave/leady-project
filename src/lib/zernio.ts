@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { ZERNIO_UPLOAD_BYTES } from "@/lib/documents/file-types";
 
 const API = "https://zernio.com/api/v1";
 
@@ -313,7 +314,6 @@ function attachmentFrom(raw: unknown): ZernioAttachment | null {
     asTrimmedString(item.url) ||
     asTrimmedString(item.link) ||
     asTrimmedString(item.downloadUrl);
-  if (!url) return null;
   const filename =
     asTrimmedString(item.filename) ||
     asTrimmedString(item.fileName) ||
@@ -324,7 +324,18 @@ function attachmentFrom(raw: unknown): ZernioAttachment | null {
     asTrimmedString(item.mimeType) ||
     asTrimmedString(item.contentType) ||
     "application/octet-stream";
-  return { url, mime, filename };
+  const size = asFileSize(item.size ?? item.fileSize ?? item.file_size ?? item.bytes ?? item.contentLength);
+  if (!url) {
+    if (!size || size <= ZERNIO_UPLOAD_BYTES) return null;
+    return { url: "", mime, filename, size };
+  }
+  return { url, mime, filename, ...(size ? { size } : {}) };
+}
+
+function asFileSize(value: unknown): number | undefined {
+  const size = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+  if (!Number.isFinite(size) || size <= 0) return undefined;
+  return size;
 }
 
 /** Read every file on a Zernio message. Text-only messages return an empty list. */
@@ -344,6 +355,7 @@ export type ZernioAttachment = {
   url: string;
   mime: string;
   filename: string;
+  size?: number;
 };
 
 export type ZernioInbound = {

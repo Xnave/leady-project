@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createHttpSmartClient,
+  createdDay,
   mapSmartProfile,
   SmartNpvAuthError,
   slotNeedsUpload,
@@ -211,5 +212,31 @@ describe("createHttpSmartClient", () => {
       if (previous === undefined) delete process.env.VERCEL;
       else process.env.VERCEL = previous;
     }
+  });
+
+  it("loads one client by uuid and keeps the created date on a list row", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      expect(url).toContain("type=uuid");
+      expect(url).toContain(`uuid=${CLIENT.uuid}`);
+      return new Response(
+        JSON.stringify({
+          response: true,
+          responseClientFields: { ...CLIENT, created: "11/11/2026" },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    const client = createHttpSmartClient({
+      baseUrl: "https://www.snpv.co.il",
+      apiKey: "secret",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const found = await client.findClient({ clientId: CLIENT.uuid });
+    expect(found?.clientId).toBe(CLIENT.uuid);
+    expect(found?.phone1).toBe("0500000000");
+    expect(found?.phone2).toBe("0521111111");
+    expect(found?.createdOn).toBe("2026-11-11");
+    expect(createdDay("2026-11-10")).toBe("2026-11-10");
+    expect(createdDay("")).toBe("");
   });
 });

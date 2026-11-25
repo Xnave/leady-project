@@ -46,8 +46,8 @@ describe("digest template catalog (what Meta reviews)", () => {
   it("builds Zernio's create body with body, footer and quick-reply button", () => {
     const body = templateCreateBody(DIGEST_TEMPLATES.hospitality, "acc1");
     expect(body).toMatchObject({ accountId: "acc1", name: "zapidly_digest_hospitality_v1", category: "UTILITY", language: "he" });
-    expect(body.components[0]).toMatchObject({ type: "BODY", example: { body_text: [DIGEST_TEMPLATES.hospitality.example] } });
-    expect(body.components[2]).toEqual({ type: "BUTTONS", buttons: [{ type: "QUICK_REPLY", text: "הצג רשימה מלאה" }] });
+    expect(body.components[0]).toMatchObject({ type: "body", example: { body_text: [DIGEST_TEMPLATES.hospitality.example] } });
+    expect(body.components[2]).toEqual({ type: "buttons", buttons: [{ type: "quick_reply", text: "הצג רשימה מלאה" }] });
   });
 });
 

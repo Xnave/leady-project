@@ -1,10 +1,32 @@
 import { copyFor, replyLang } from "@/lib/copy";
+import { fillIntro, introVars } from "@/lib/flow/intro-fields";
 import { hasAgentReplied, looksLikeBareHello } from "@/lib/flow/intro";
 import type { TurnContext } from "@/lib/flow/types";
 import { personaOf } from "./context";
 import { introIntroducesAgent } from "./prompt";
 
-type GreetCtx = Pick<TurnContext, "tenant" | "agent" | "messages">;
+type GreetCtx = Pick<TurnContext, "tenant" | "agent" | "messages"> &
+  Partial<Pick<TurnContext, "capabilityState" | "lead">>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function sameLanguage(text: string, lang: "en" | "he"): boolean {
+  return /[֐-׿]/.test(text) === (lang === "he");
+}
+
+/** First message for a phone that is not in the client table. Later messages keep the normal intro path. */
+function unrecognizedTemplate(ctx: GreetCtx, lang: "en" | "he"): string {
+  if (hasAgentReplied(ctx as TurnContext)) return "";
+  const documents = ctx.capabilityState?.documents;
+  if (!isRecord(documents) || documents.unrecognized !== true) return "";
+  const custom = typeof documents.unrecognizedIntro === "string" ? documents.unrecognizedIntro.trim() : "";
+  const template = custom && sameLanguage(custom, lang)
+    ? custom
+    : copyFor(lang).chat.documents.unrecognizedIntro;
+  return fillIntro(template, introVars(ctx));
+}
 
 const LEADING_HELLO = /^(שלום|היי|הי|אהלן|hello|hi|hey)[\s!,.]*/i;
 
@@ -15,10 +37,13 @@ function sentences(text: string): string[] {
     .filter(Boolean);
 }
 
-/** The owner's intro, only when it is written in the customer's language. */
+/** The owner's intro, only when it is written in the customer's language. Tokens such as {{name}} are filled. */
 function ownerIntro(ctx: GreetCtx, lang: "en" | "he"): string {
+  const unrecognized = unrecognizedTemplate(ctx, lang);
+  if (unrecognized) return unrecognized;
   const intro = (ctx.tenant?.intro ?? "").trim();
-  return /[֐-׿]/.test(intro) === (lang === "he") ? intro : "";
+  if (!intro || !sameLanguage(intro, lang)) return "";
+  return fillIntro(intro, introVars(ctx));
 }
 
 function personaLine(ctx: GreetCtx, lang: "en" | "he"): string {
@@ -32,6 +57,7 @@ function personaLine(ctx: GreetCtx, lang: "en" | "he"): string {
  * ("היי! אני בקי, העוזרת הווירטואלית של Taxtica.") or, if it doesn't introduce anyone, the persona line.
  */
 export function openingLine(ctx: GreetCtx, lang: "en" | "he"): string {
+  if (unrecognizedTemplate(ctx, lang)) return personaGreeting(ctx, lang);
   const intro = ownerIntro(ctx, lang);
   if (intro && introIntroducesAgent(intro)) {
     const parts = sentences(intro);

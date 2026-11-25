@@ -44,6 +44,7 @@ export type OpenQuestion =
   | { kind: "accounts" }
   | { kind: "more_loans" }
   | { kind: "more_photos" }
+  | { kind: "id_appendix"; name: string; slot: "1" | "2" }
   | { kind: "id_biometric"; name: string; slot: "1" | "2" }
   | { kind: "id_back"; name: string; slot: "1" | "2" };
 
@@ -217,12 +218,13 @@ export function secondBorrowerOf(profile: Profile): "yes" | "no" | "unknown" {
   return "unknown";
 }
 
-/** Case-level reason to hand the income list to the advisor. Empty when the two lists still apply. */
+/**
+ * Case-level reason to hand the income list to the advisor. Empty when the lists still apply.
+ * Employment `both` stays on the borrower and currently gathers the self-employed list.
+ */
 export function advisorReason(profile: Profile): string {
   if (firstHomeOf(profile) === "false") return "לא דירה ראשונה";
-  const flagged = borrowersOf(profile).filter(
-    (borrower) => borrower.employment === "both" || borrower.employment === "other",
-  );
+  const flagged = borrowersOf(profile).filter((borrower) => borrower.employment === "other");
   if (!flagged.length) return "";
   return flagged
     .map((borrower) => `${borrower.fullName || borrower.slot}: ${borrower.employmentLabel || "אחר"}`)
@@ -275,6 +277,16 @@ export function blankBorrower(slot: "1" | "2" = "2"): BorrowerFact {
   };
 }
 
+/**
+ * A client stored from the tenant's CRM lists every borrower, so a file with
+ * only borrower 1 has no second borrower to ask about.
+ */
+export function trustSourceBorrowerCount(profile: Profile): Profile {
+  if (secondBorrowerOf(profile) !== "unknown") return profile;
+  if (!borrowersOf(profile).length) return profile;
+  return { ...profile, secondBorrower: "no" };
+}
+
 /** A file with nobody on it still has borrower 1, so the personal questions are asked. */
 export function ensureBorrowers(profile: Profile): Profile {
   if (borrowersOf(profile).length > 0) return profile;
@@ -293,13 +305,16 @@ export function openQuestions(profile: Profile): OpenQuestion[] {
       questions.push({ kind: "employment", name: borrower.fullName, slot: borrower.slot });
     }
   }
-  if (firstHomeOf(current) === "unknown") questions.push({ kind: "first_home" });
+  // First home is not asked: it changes no file until the source's transaction types are mapped.
   if (current.imageBatchSlot) {
     const back = current.idBackPending === "1" || current.idBackPending === "2" ? current.idBackPending : "";
-    const borrower = borrowers.find((item) => item.slot === back);
+    const appendix = current.appendixPending === "1" || current.appendixPending === "2" ? current.appendixPending : "";
+    const borrower = borrowers.find((item) => item.slot === (back || appendix));
     questions.push(back
       ? { kind: "id_back", name: borrower?.fullName ?? "", slot: back }
-      : { kind: "more_photos" });
+      : appendix
+        ? { kind: "id_appendix", name: borrower?.fullName ?? "", slot: appendix }
+        : { kind: "more_photos" });
   }
   if (advisorReason(current)) return withIdSide(questions, current, borrowers);
   if (loansOf(current) === "unknown") questions.push({ kind: "loans" });

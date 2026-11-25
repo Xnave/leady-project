@@ -1,6 +1,6 @@
 # Documents capability
 
-A lead sends files on WhatsApp, Instagram, or `/demo`. The agent matches the sender to a Smart NPV client, opens a checklist from JSON rules, checks each file, and uploads an accepted file once. The checklist is data on the tenant's `documents` capability instance. A new document type that uses a check the engine already knows is a JSON edit. A new kind of check is a code change in one place.
+A lead sends files on WhatsApp, Instagram, or `/demo`. The agent matches the sender to a Smart NPV client, opens a checklist from JSON rules, checks each file, and uploads an accepted file once. The checklist is data on the tenant's `documents` capability instance. The Smart NPV key, the connection test, and the client sync live on the tenant's Smart NPV client source. A sender matches a stored contact by the primary phone and the phone keys on `Contact.mapped`. A new document type that uses a check the engine already knows is a JSON edit. A new kind of check is a code change in one place.
 
 File formats (PDF, PNG, JPG, JPEG) are not document types. They live only in `src/lib/documents/file-types.ts`.
 
@@ -90,7 +90,7 @@ Ops paste the rules JSON in the document settings on the agent. Blank rules on f
 | `accounts` | One `{ id }` per `banks_accounts` row that has an id. An empty list still opens one statement. The agent does not ask whether accounts exist. |
 | `accountsKnown` | `known` when those rows exist. An empty list stays `unknown` and still opens one statement. |
 | `firstHome` | `true`, `false`, or `unknown`. Smart NPV's `transaction_type` does not set this. Unknown still opens the income list; `false` removes income and banking and flags the advisor. |
-| `advisorFlag` | Set for employment `both` (code `5`), a customer answer of אחר, or `firstHome: false`. The dossier opens one advisor task. |
+| `advisorFlag` | Set for a customer answer of אחר, or `firstHome: false`. The dossier opens one advisor task. Employment `both`, including code `5`, does not set this. |
 | `secondBorrower` | `no` after the customer says they are the only borrower. Absent while that question is still open and the file has one person. A second Smart NPV person skips the question. |
 | `nationalId` | Borrower id (`id_1`, or `id_2` when the sender's id matches borrower 2). |
 | `fullName` | That borrower's name. |
@@ -103,10 +103,10 @@ Employment codes, from the guide table copied in `haiku-code/cia-knowledge` `snp
 | 1, 2 | שכיר/ה, מגזר ציבורי | Three payslips. |
 | 3 | שכיר/ה בעל שליטה | Three payslips and the controlling-shareholder accountant form. |
 | 0 | עצמאי/ת, only the string `"0"` | Tax assessment for `taxYear` and the accountant letter for `accountantYear`. Both are required. |
-| 5 | שכיר ועצמאי | Advisor flag. No payslips and no accountant letter. |
+| 5 | שכיר ועצמאי | Employment stays `both`. Gathering currently uses the same list as code `0`. |
 | 4, 6, 7, 8, 9, empty | לא מועסק/ת, מלגה, קצבה, פנסיונר/ית, אישור מוסד תורני, or blank | The agent asks: salaried, self-employed, controlling shareholder, or other. Other flags the advisor. |
 
-Uploads to Smart NPV send `file_name` and `file` only, so they arrive with no category. A `document_type_id` on a file already stored there does not close a slot. The file sent there is a PDF named `<borrower>_<Hebrew label>_<yyyy-mm-dd>_<version>.pdf`. A customer PDF is uploaded on its own. Photos are held until the customer says there are no more, then embedded into one PDF. The held pages are retired only after that PDF is stored. A document type may declare `blankForm` (`file` under `docs/`, `once: "conversation"`). That PDF is sent once on the conversation, using the Zernio ids already on the turn. The next customer file fills that type when the reader cannot tell it is a different open document. A slot with a year accepts a file only when the file carries that year. A file with no year leaves those slots open. A file with one borrower asks whether there is a second before any document slot opens. After each accepted loan balance the customer is asked whether another is needed. No file slot opens until the borrower count, employment, first home, and loans are answered. A bank statement must cover the three calendar months before this month; one file may cover several of them, and the reply names the document and those months. `collectionStages` names the waves. Stage `1` is the list above. The advisor releases the next id from the checklist, which reopens the latest thread if it is closed and sends one agent message. A save with no API key, or a lead whose phone is in `testPhones`, keeps the file in the CRM and does not call Smart NPV. A real upload stores the download link from `get_uploaded_documents` when the file name matches.
+Uploads to Smart NPV send `file_name` and `file` only, so they arrive with no category. A `document_type_id` on a file already stored there does not close a slot. The file sent there is a PDF named `<borrower>_<Hebrew label>_<yyyy-mm-dd>_<version>.pdf`. A customer PDF is uploaded on its own. Photos are held until the customer says there are no more, then embedded into one PDF. The held pages are retired only after that PDF is stored. A document type may declare `blankForm` (`file` under `docs/`, `once: "conversation"`). That PDF is sent once, on the turn that asks for that document. A WhatsApp turn sends the PDF file through Zernio. A turn with no channel puts a link in the reply. The next customer file fills that type when the reader cannot tell it is a different open document. A slot with a year accepts a file only when the file carries that year. A file with no year leaves those slots open. A file with one borrower asks whether there is a second before any document slot opens. After each accepted loan balance the customer is asked whether another is needed. No file slot opens until the borrower count, employment, first home, and loans are answered. A bank statement must cover the three calendar months before this month; one file may cover several of them, and the reply names the document and those months. `collectionStages` names the waves. Stage `1` is the list above. The advisor releases the next id from the checklist, which reopens the latest thread if it is closed and sends one agent message. Release is never automatic and is refused while the checklist review task is open: something outside the app has to happen first. A save with no API key, or a lead whose phone is in `testPhones`, keeps the file in the CRM and does not call Smart NPV. A real upload stores the download link from `get_uploaded_documents` when the file name matches.
 
 A new profile key means extending `mapSmartProfile` and then using it from JSON. Do not read Smart NPV fields from the rules file.
 
@@ -137,13 +137,13 @@ Add an entry under `documents`, then a `requirements` row that names it. Labels 
 { "docType": "payslip", "stage": "income", "count": 3 }
 ```
 
-`count` defaults to 1. `each: "borrower"` opens the row once per person (`payslip#1#0`). `each: "account"` opens one statement per known account, and `empty: "one"` still opens one when none are listed. `year` is `taxYear` or `accountantYear`. `months` is how many prior calendar months a statement must cover. `when` omitted means the requirement always opens. Stage order is the `stages` array. The agent asks for the next outstanding document only. A rejected payslip says which detail failed: the employee name, or the month that was read and the three months that are needed. One file that contains several recent payslip months closes one slot per month. A file name never changes the reply language. A ספח is accepted once it is recognized, including when it is already in the ID photo. Whether an ID card is biometric is read from the card. When it is, the other side is requested and both sides are uploaded as one PDF.
+`count` defaults to 1. `each: "borrower"` opens the row once per person (`payslip#1#0`). `each: "account"` opens one statement per known account for a single borrower, and one household statement when two borrowers are on the file. `empty: "one"` still opens one when none are listed. `year` is `taxYear` or `accountantYear`. `months` is how many prior calendar months a statement must cover. `when` omitted means the requirement always opens. Stage order is the `stages` array. The agent asks for the next outstanding document only. A rejected payslip says which detail failed: the employee name, or the month that was read and the three months that are needed. One file that contains several recent payslip months closes one slot per month. A file name never changes the reply language. A ספח is accepted once it is recognized, including when it is already in the ID photo. When the photos do not include it, the agent asks for it before anything is sent, and the card and the ספח go to Smart NPV as one PDF. Whether an ID card is biometric is read from the card. When it is, the other side is requested and both sides are in that same PDF.
 
 ```json
 { "op": "eq", "key": "employment", "value": "employed" }
 ```
 
-Condition ops: `eq`, `neq`, `gt` (number), `truthy`, and `all` / `any` with an `of` list. `checklistSlots` expands the saved `requirements`. On a borrower row, `when` reads that person's `employment`. The default rows open three payslips for salaried borrowers and for a controlling shareholder, plus the shareholder letter for code `3`. A borrower whose code is the string `0` needs both the tax assessment for `taxYear` and the accountant letter for `accountantYear`. Each of those slots names its year, and a file fills one only when the extracted year matches. Income and banking rows stay closed when `firstHome` is false or `advisorFlag` is set.
+Condition ops: `eq`, `neq`, `gt` (number), `truthy`, and `all` / `any` with an `of` list. `checklistSlots` expands the saved `requirements`. On a borrower row, `when` reads that person's `employment`. The default rows open three payslips for salaried borrowers and for a controlling shareholder, plus the shareholder letter for code `3`. A borrower whose code is the string `0`, and a borrower whose employment is `both` (code `5` or a customer answer), needs both the tax assessment for `taxYear` and the accountant letter for `accountantYear`. Each of those slots names its year, and a file fills one only when the extracted year matches. Income and banking rows stay closed when `firstHome` is false or `advisorFlag` is set.
 
 Update `MORTGAGE_RULES` when the default checklist should include the type for tenants that have not saved their own rules. A tenant that already saved rules keeps the saved JSON until ops save again.
 
@@ -191,3 +191,21 @@ After `maxRejectTries` rejects on one slot (default 5), the agent starts a cool-
 npx vitest run src/lib/documents/rules.test.ts src/lib/documents/validate.test.ts
 npx vitest run src/lib/flow/architecture.test.ts
 ```
+
+## Clients screen
+
+`/clients` (`src/components/clients/`, data in `src/lib/documents/clients-view.ts`) lists every lead with a `Dossier`, plus every contact the auto-invite messaged (`ContactInvite` whose contact has a lead) that has no file yet. Other synced contacts are not shown; a matching contact only adds its CRM details (`Contact.mapped`) to the file view. Tabs: needs you (an open `document_checklist_complete`, `document_review`, `invite_no_start` or `invite_send_unknown` task), invited (no file yet: invited, reminded, replied, or stopped), collecting (`gathering` or `needs_id`), done (`complete`), all. The file shows the invite timeline (sent, reminder, replied). An invite task is closed with "handled" (`POST /api/leads/[id]/documents/invite-handled`), which sends nothing. The tab shows when the documents capability is on or a file exists. Leads whose id starts with `demo-`, and phones in `testPhones` when a key is set, are hidden behind a toggle. A keyless tenant shows a test-mode strip instead.
+
+Advisor actions, all under `/api/leads/[id]/documents/`:
+
+| Route | Effect |
+|---|---|
+| `approve` | Closes the open review task. Sends nothing. |
+| `return` | Reopens the named slots with the advisor's note, sends the customer the list, closes an open review as declined. Works without a task. |
+| `request` | Adds `requested: true` slots for catalog types on the current wave and sends one message naming them. Requested slots survive `mergeSlots`. Closes an open review, which opens again when the files arrive. |
+| `next-stage` | Releases the next collection wave. Refused (409) while the review is open. |
+
+Local demo data: `npm run db:seed:clients` (`scripts/seed-clients-demo.ts`) seeds the dev tenant with 7 clients, one per state, and no Smart NPV key, so nothing leaves the machine. Re-running resets them. It refuses any database that is not local. It needs one conversation in the tenant (send a message in `/demo` once).
+
+The lead list marks a lead whose document file was matched in Smart NPV (a `Dossier` with a `smartClientId`) with a client chip. Campaign contacts do not get the chip.
+

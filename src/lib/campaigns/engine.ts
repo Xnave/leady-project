@@ -111,8 +111,8 @@ export async function resolveAudience(
     const range = startedAtRange(audience, now);
     const hasRange = range.gte != null || range.lte != null;
     const dated = {
-      startedAt: { not: null, ...(range.gte ? { gte: range.gte } : {}), ...(range.lte ? { lte: range.lte } : {}) },
-      ...(audience.confidence.length ? { startedAtConfidence: { in: audience.confidence } } : {}),
+      dealDate: { not: null, ...(range.gte ? { gte: range.gte } : {}), ...(range.lte ? { lte: range.lte } : {}) },
+      ...(audience.confidence.length ? { dealDateConfidence: { in: audience.confidence } } : {}),
     };
     const exclude = [
       ...(taken.contactIds.length ? [{ id: { notIn: taken.contactIds } }] : []),
@@ -122,13 +122,13 @@ export async function resolveAudience(
     // A stored client that now matches a skip rule (e.g. archived) is never an audience member.
     const where =
       audience.includeNoStartedAt && !hasRange
-        ? { tenantId, skipped: false, ...source, OR: [dated, { startedAt: null }], ...(exclude.length ? { AND: exclude } : {}) }
+        ? { tenantId, skipped: false, ...source, OR: [dated, { dealDate: null }], ...(exclude.length ? { AND: exclude } : {}) }
         : { tenantId, skipped: false, ...source, ...dated, ...(exclude.length ? { AND: exclude } : {}) };
     const found = await prisma.contact.findMany({
       where,
-      select: { id: true, phone: true, phoneStatus: true, name: true, leadId: true, fields: true, source: { select: { kind: true } } },
+      select: { id: true, phone: true, phoneStatus: true, name: true, leadId: true, mapped: true, source: { select: { kind: true } } },
       // Dated records first, so the one-per-phone merge keeps the client with a deal date.
-      orderBy: { startedAt: { sort: "desc", nulls: "last" } },
+      orderBy: { dealDate: { sort: "desc", nulls: "last" } },
       take: AUDIENCE_CAP + 1,
     });
     // A full page means at least one more client matched. Confirm refuses. A later refresh keeps the first page.
@@ -136,14 +136,14 @@ export async function resolveAudience(
     const contacts = found.slice(0, AUDIENCE_CAP);
     for (const c of contacts) {
       const field = getConnector(c.source.kind)?.archivedField;
-      const fields = (c.fields ?? {}) as Record<string, unknown>;
+      const mapped = (c.mapped ?? {}) as Record<string, unknown>;
       out.push({
         phone: c.phone,
         phoneStatus: (c.phoneStatus as Recipient["phoneStatus"]) || "missing",
         name: c.name,
         contactId: c.id,
         leadId: c.leadId,
-        archived: field ? isArchivedValue(fields[field]) : false,
+        archived: field ? isArchivedValue(mapped[field]) : false,
       });
     }
   } else {
@@ -829,13 +829,13 @@ async function archivedByContact(tenantId: string, contactIds: string[]): Promis
   if (!ids.length) return new Map();
   const contacts = await prisma.contact.findMany({
     where: { tenantId, id: { in: ids } },
-    select: { id: true, fields: true, source: { select: { kind: true } } },
+    select: { id: true, mapped: true, source: { select: { kind: true } } },
   });
   const out = new Map<string, boolean>();
   for (const c of contacts) {
     const field = getConnector(c.source.kind)?.archivedField;
-    const fields = (c.fields ?? {}) as Record<string, unknown>;
-    out.set(c.id, field ? isArchivedValue(fields[field]) : false);
+    const mapped = (c.mapped ?? {}) as Record<string, unknown>;
+    out.set(c.id, field ? isArchivedValue(mapped[field]) : false);
   }
   return out;
 }

@@ -9,6 +9,7 @@ const PNG = Buffer.from(
 describe("image documents", () => {
   it("treats an explicit last-photo reply as done", () => {
     expect(photoDone("אין עוד")).toBe(true);
+    expect(photoDone("לאא")).toBe(true);
     expect(photoDone("that's all")).toBe(true);
     expect(photoDone("יש עוד תמונה")).toBe(false);
   });

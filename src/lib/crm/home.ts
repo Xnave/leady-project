@@ -41,6 +41,8 @@ export type HomeData = {
   week: { newLeads: number; agentReplies: number; won: number; handoffs: number };
   upcoming: HomeUpcoming[];
   recent: HomeRecent[];
+  /** Leads shown above that have a document file: their rows open it on the Clients screen. */
+  clientFileIds: string[];
 };
 
 export async function loadHomeData(o: { tenantId: string; ui: UiCopy; lang: UiLang; now?: Date }): Promise<HomeData> {
@@ -111,11 +113,17 @@ export async function loadHomeData(o: { tenantId: string; ui: UiCopy; lang: UiLa
     };
   });
 
+  const shownIds = [...new Set([...queue.rows.map((r) => r.id), ...upcoming.map((u) => u.leadId), ...recent.map((r) => r.id)])];
+  const files = shownIds.length
+    ? await prisma.dossier.findMany({ where: { tenantId, leadId: { in: shownIds } }, select: { leadId: true }, distinct: ["leadId"] })
+    : [];
+
   return {
     needs: queue.rows,
     counts: queue.counts,
     week: { newLeads, agentReplies, won, handoffs },
     upcoming,
     recent,
+    clientFileIds: files.map((f) => f.leadId),
   };
 }

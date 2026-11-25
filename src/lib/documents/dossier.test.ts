@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { copyFor } from "@/lib/copy";
 import { chat as he } from "@/lib/copy/he";
-import { acceptsIdBack, blankFormAlreadyUploaded, checklistFile, customerRejection, documentFileAsk, documentsReplyLang, escalateAnswer, groupChecklistRows, idBackOutcome, pendingFiles, payslipFieldLabel, readIdBack, rejectionDetail, releaseHeldSlot, reopenNamedSlot, selectIngestMessages, type ChecklistPiece } from "./dossier";
-import { applyCustomerAnswers, blankBorrower, borrowerFileWho, factsFromClient } from "./facts";
+import { acceptsIdBack, blankFormAlreadyUploaded, blankFormDue, checklistFile, customerRejection, documentAskText, documentFileAsk, documentsReplyLang, escalateAnswer, groupChecklistRows, idBackOutcome, idBatchNeedsAppendix, pendingFiles, payslipFieldLabel, readIdBack, refreshDossier, rejectionDetail, releaseHeldSlot, reopenNamedSlot, selectIngestMessages, type ChecklistPiece } from "./dossier";
+import { applyCustomerAnswers, blankBorrower, borrowerFileWho, factsFromClient, nextQuestion } from "./facts";
 import { checklistSlots, MORTGAGE_RULES } from "./mortgage-rules";
 import { commitSlot, freshDossier } from "./validate";
 
@@ -138,7 +138,7 @@ describe("rejectionDetail", () => {
       if (firstIdentity) state = commitSlot(state, slot.id, "remote", "id.jpg");
     }
     const ask = documentFileAsk(state, MORTGAGE_RULES, "he", copyFor("he").chat);
-    expect(ask).toBe("אפשר לשלוח צילום ברור של תעודת הזהות עם הספח של הלווה העצמאי.");
+    expect(ask).toBe("שלח/י לי בבקשה צילום ברור של תעודת הזהות עם הספח של הלווה העצמאי.");
   });
 
   it("asks only for the payslip month that is not already saved", () => {
@@ -212,7 +212,7 @@ describe("rejectionDetail", () => {
 
   it("asks for a closer photo of the card when the ID number was not read", () => {
     expect(he.documents.askIdCard).toContain("עם הספח");
-    expect(he.documents.askIdBack).toBe("אפשר לשלוח גם צילום של גב תעודת הזהות.");
+    expect(he.documents.askIdBack).toBe("שלח/י לי בבקשה גם צילום של גב תעודת הזהות.");
     expect(he.documents.askPayslips).toContain("3 החודשים האחרונים");
     expect(he.documents.reasons.id_number).toContain("מספר תעודת הזהות");
   });
@@ -329,6 +329,32 @@ describe("customerRejection", () => {
     expect(text).toContain("אוגוסט");
   });
 
+  it("names the ID number that does not match the file", () => {
+    const text = customerRejection({
+      reason: "matches_profile",
+      field: "nationalId",
+      docType: "id_card",
+      fields: { nationalId: "1 2345678 9", fullName: "ישראל ישראלי" },
+      lang: "he",
+    });
+    expect(text).toContain("ישראל ישראלי");
+    expect(text).toContain("123456789");
+    expect(text).toContain("מספר תעודת הזהות");
+    expect(text).not.toContain("הפרטים במסמך");
+  });
+
+  it("names an ID mismatch in English without a stored number", () => {
+    const text = customerRejection({
+      reason: "matches_profile",
+      field: "nationalId",
+      docType: "id_card",
+      fields: { nationalId: "123456789" },
+      lang: "en",
+    });
+    expect(text).toContain("123456789");
+    expect(text).toContain("doesn't match the number on file");
+  });
+
   it("asks for payslips when the file is not a payslip", () => {
     const text = customerRejection({
       reason: "unrecognized",
@@ -339,6 +365,109 @@ describe("customerRejection", () => {
     });
     expect(text).toContain("תלוש שכר");
     expect(text).not.toContain("הצד הקדמי");
+  });
+
+  it("keeps the ID card until the appendix can go in the same file", () => {
+    const answered = applyCustomerAnswers(
+      applyCustomerAnswers(factsFromClient({}), "לא").profile,
+      "שכיר",
+    ).profile;
+    const profile = {
+      ...answered,
+      firstHome: "true" as const,
+      loans: "none" as const,
+      imageBatchSlot: "id_card#1#0",
+    };
+    const state = freshDossier({
+      smartClientId: "c",
+      profile,
+      slots: checklistSlots(profile, MORTGAGE_RULES),
+    });
+    expect(idBatchNeedsAppendix(state)).toBe(true);
+    const waiting = { ...state.profile, appendixPending: "1" };
+    const question = nextQuestion(waiting);
+    expect(question?.kind).toBe("id_appendix");
+    if (question?.kind === "id_appendix") {
+      expect(documentAskText(question, "he", copyFor("he").chat)).toBe(he.documents.askIdAppendix);
+    }
+    expect(idBatchNeedsAppendix({ ...state, profile: { ...state.profile, appendixSeen: "1" } })).toBe(false);
+    const released = releaseHeldSlot(
+      { ...state, profile: { ...state.profile, appendixPending: "1" } },
+      MORTGAGE_RULES,
+      "id_card#1#0",
+    );
+    expect(released.profile.appendixPending).toBe("");
+  });
+});
+
+describe("refreshDossier", () => {
+  it("closes the checklist when the extra-loan answer is already stored", () => {
+    const open = {
+      ...factsFromClient({
+        id_1: "123456782",
+        firstname_1: "Dana",
+        lastname_1: "Levi",
+        status_report_1: "1",
+        banks_accounts: [{ uuid: "acct-1" }],
+        liabilities: [{ balance: "1" }],
+      }),
+      firstHome: "true" as const,
+      secondBorrower: "no" as const,
+      loanMore: "pending" as const,
+    };
+    const slots = freshDossier({
+      smartClientId: "c",
+      profile: open,
+      slots: checklistSlots(open, MORTGAGE_RULES),
+    }).slots.map((slot) => ({ ...slot, status: "uploaded" as const, remoteId: "r", filename: "f.pdf" }));
+    const next = refreshDossier({
+      status: "gathering",
+      smartClientId: "c",
+      profile: { ...open, loanMore: "no" },
+      slots,
+      activeStage: "banking",
+    }, MORTGAGE_RULES, "");
+    expect(next.status).toBe("complete");
+    expect(slots.length).toBeGreaterThan(0);
+  });
+});
+
+describe("blankFormDue", () => {
+  function mixedState(uploadBefore = "") {
+    const profile = {
+      ...factsFromClient({
+        id_1: "111111111",
+        firstname_1: "Dana",
+        lastname_1: "Levi",
+        status_report_1: "2",
+        id_2: "222222222",
+        firstname_2: "Noam",
+        lastname_2: "Levi",
+        status_report_2: "0",
+        banks_accounts: [{ uuid: "a" }],
+      }),
+      firstHome: "true" as const,
+      loans: "none" as const,
+    };
+    let state = freshDossier({
+      smartClientId: "c",
+      profile,
+      slots: checklistSlots(profile, MORTGAGE_RULES),
+    });
+    if (!uploadBefore) return state;
+    for (const slot of state.slots) {
+      if (slot.docType === uploadBefore) break;
+      state = commitSlot(state, slot.id, "remote", "file.pdf");
+    }
+    return state;
+  }
+
+  it("waits until the accountant letter is the document being asked", () => {
+    expect(blankFormDue(mixedState(), MORTGAGE_RULES)).toBe("");
+    expect(blankFormDue(mixedState("accountant_letter"), MORTGAGE_RULES)).toBe("accountant_letter");
+    const offered = mixedState("accountant_letter");
+    offered.profile.formsOffered = ["accountant_letter"];
+    expect(blankFormDue(offered, MORTGAGE_RULES)).toBe("");
   });
 });
 

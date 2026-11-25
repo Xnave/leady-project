@@ -49,14 +49,14 @@ These are the files the advisor asks the lead for. None of them appeared in the 
 | Need | Read it from | Do not read it from |
 |---|---|---|
 | Which borrower | `id_1`. A second borrower when `id_2` is different, or when `phone_2` is set and `id_2` is empty. | A copied `id_1` in `id_2`. |
-| Employment | `status_report_1` / `status_report_2`, using the מעמד תעסוקתי table. `1`, `2`, and `3` are the salaried list. The string `"0"` is self-employed. `5` is both and flags the advisor. `4` and `6`–`9`, and empty, ask the client. | An empty value as code `0`. Workplace, income, and gender. |
+| Employment | `status_report_1` / `status_report_2`, using [snpv_lookups.md](snpv_lookups.md) מעמד תעסוקתי. `0` is self-employed. `5` stays both and currently gathers the self-employed list. `1` and `2` are the salaried list. `3` is the controlling-shareholder list. `4` and `6`–`9`, and empty, ask the client. A customer answer of other still flags the advisor. | An empty value as code `0`. Workplace, income, and gender. |
 | First home | Ask the lead. `false` flags the advisor and drops income and banking. | `transaction_type`. In the same lookup file, `1` is שיפוצים. |
 | Bank accounts | One statement slot per `banks_accounts` row that has its own id. Zero rows still open one statement. The agent does not ask whether accounts exist. | A fixed count of three files. |
 | Loans | `liabilities` nonempty, or `current_mortgage` above 0, means loans are known. Otherwise unknown, so ask. | An empty `liabilities` array as "no loans". |
 
 ## Still unresolved
 
-- Confirm the מעמד תעסוקתי table on this account: it is a third-party copy of the logged-in guide. Empty `status_report` still needs one client opened on screen, in case this account sends code `0` as an empty string.
+- Code `0` on an existing client: update returns success and the next read is empty. A client created with `status_report_1` `"0"` reads back `"0"`. Empty on an update is still unknown, not self-employed. The code table is [snpv_lookups.md](snpv_lookups.md).
 - Confirm `transaction_type` the same way. The lookup file says empty is מחזור, and `1` is שיפוצים. Neither is first-home.
 - Whether uploaded id 1 is תעודת זהות on this account. It does not close a slot either way.
 - The uploaded ids for payslips, statements, tax assessments, the ID appendix, loan balances, and the accountant letter.

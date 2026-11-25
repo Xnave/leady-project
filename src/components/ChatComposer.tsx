@@ -10,6 +10,7 @@ type Labels = {
   send: string;
   sending: string;
   sendFailed: string;
+  fileTooLarge?: string;
   attach?: string;
 };
 
@@ -61,8 +62,11 @@ export function ChatComposer({
           file: attached,
         }),
       });
-      const data = (await res.json()) as { error?: string; leadId?: string };
-      if (!res.ok) throw new Error(data.error ?? labels.sendFailed);
+      const data = (await res.json().catch(() => ({}))) as { error?: string; leadId?: string };
+      if (!res.ok) {
+        const tooLarge = Boolean(file) && res.status === 413;
+        throw new Error(tooLarge ? (labels.fileTooLarge ?? labels.sendFailed) : (data.error ?? labels.sendFailed));
+      }
       setText("");
       setFile(null);
       if (data.leadId && data.leadId !== leadId) {
@@ -103,7 +107,7 @@ export function ChatComposer({
       <button type="submit" disabled={pending || disabled || (!text.trim() && !file)}>
         {pending ? labels.sending : labels.send}
       </button>
-      {error ? <p className="muted">{error}</p> : null}
+      {error ? <p className="muted" role="alert">{error}</p> : null}
     </form>
   );
 }
@@ -166,7 +170,7 @@ export function StaffChatComposer({
       <button type="submit" disabled={pending || disabled}>
         {pending ? labels.sending : labels.send}
       </button>
-      {error ? <p className="muted">{error}</p> : null}
+      {error ? <p className="muted" role="alert">{error}</p> : null}
     </form>
   );
 }

@@ -26,8 +26,9 @@ export function collectionYears(now: Date = new Date()): { taxYear: number; acco
  * Israeli mortgage file. Identity is always open. Income and banking
  * come from each borrower's employment and known loans. A statement is
  * one file per listed account, or one file when the file lists none.
- * A person who is both salaried and self-employed, or a purchase that is
- * not a first home, does not get those lists.
+ * Employment `both` stays `both` and currently gathers the self-employed
+ * list. A purchase that is not a first home, or employment `other`, does
+ * not get those lists.
  */
 export const MORTGAGE_RULES: RulesDocument = {
   ...collectionYears(),
@@ -168,11 +169,13 @@ function stageOneRequirements(): Requirement[] {
 }
 
 function borrowerScope(profile: Profile, borrower: BorrowerFact): Profile {
-  const employment = borrower.employmentSource === "customer"
+  const stored = borrower.employmentSource === "customer"
     ? borrower.employment
     : borrower.statusReport === "3"
       ? "controlling_shareholder"
       : borrower.employment;
+  // Gathering only. The borrower row keeps `both` so a later policy can ask for both lists.
+  const employment = stored === "both" ? "self_employed" : stored;
   return {
     ...profile,
     employment,
@@ -227,6 +230,18 @@ export function expandRequirements(profile: Profile, rules: RulesDocument): Slot
     if (!conditionMatches(requirement.when, normalized)) continue;
     if (requirement.each === "account") {
       const accounts = accountsOf(normalized);
+      // A couple shares one household. One statement covers them, even when the file lists two accounts.
+      if (borrowers.length > 1) {
+        slots.push({
+          id: `${requirement.docType}#household#0`,
+          docType: requirement.docType,
+          stage: requirement.stage,
+          index: 0,
+          collectionStage: requirement.collectionStage ?? "1",
+          ...dated,
+        });
+        continue;
+      }
       const list = accounts.length ? accounts : requirement.empty === "one" ? [{ id: "account" }] : [];
       for (const account of list) {
         slots.push({

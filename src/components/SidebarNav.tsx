@@ -10,10 +10,10 @@ import type { UiCopy, UiLang, UiTheme } from "@/lib/ui";
 
 type NavKey = keyof UiCopy["nav"];
 
-const OWNER_ITEMS: { href: string; key: NavKey; countKey?: "leads" }[] = [
+const OWNER_ITEMS: { href: string; key: NavKey; countKey?: keyof NavCounts }[] = [
   { href: "/", key: "home" },
   { href: "/leads", key: "leads", countKey: "leads" },
-  { href: "/clients", key: "clients" },
+  { href: "/clients", key: "clients", countKey: "clients" },
   { href: "/onboard", key: "setup" },
   { href: "/settings/agent", key: "agent" },
   { href: "/channels", key: "channels" },

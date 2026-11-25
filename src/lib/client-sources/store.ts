@@ -146,7 +146,9 @@ export async function saveClientSource(
   };
   const row = existing
     ? await prisma.clientSource.update({ where: { id: existing.id }, data })
-    : await prisma.clientSource.create({ data: { tenantId, kind: input.kind, credentialsEnc: credentialsEnc!, ...data } });
+    : await prisma.clientSource.create({
+        data: { tenantId, kind: input.kind, credentialsEnc: credentialsEnc!, syncSince: new Date(), ...data },
+      });
   const count = await prisma.contact.count({ where: { tenantId, sourceId: row.id } });
   return { source: publicSource(row, count) };
 }
@@ -211,10 +213,11 @@ export function prismaSyncStore(tenantId: string, sourceId: string): SyncStore {
               phone: r.phone,
               phoneStatus: r.phoneStatus,
               name: r.name,
-              fields: r.fields as Prisma.InputJsonValue,
-              startedAt: r.startedAt.date,
-              startedAtSource: r.startedAt.source,
-              startedAtConfidence: r.startedAt.confidence,
+              raw: r.raw as Prisma.InputJsonValue,
+              mapped: r.mapped as Prisma.InputJsonValue,
+              dealDate: r.startedAt.date,
+              dealDateSource: r.startedAt.source,
+              dealDateConfidence: r.startedAt.confidence,
               sourceUpdatedAt: r.sourceUpdatedAt,
               skipped: r.skipped,
               syncedAt,
@@ -263,9 +266,16 @@ export async function beginSourceSync(
   sourceId: string,
   mode: SyncMode,
 ): Promise<{ updatedSince: string | null }> {
-  const row = await prisma.clientSource.findFirst({ where: { id: sourceId, tenantId }, select: { lastSyncAt: true, status: true } });
+  const row = await prisma.clientSource.findFirst({
+    where: { id: sourceId, tenantId },
+    select: { lastSyncAt: true, status: true, syncSince: true },
+  });
   if (!row) throw new Error("source_not_found");
-  await prisma.clientSource.update({ where: { id: sourceId }, data: { status: "syncing", lastError: "" } });
+  const syncSince = row.syncSince ?? new Date();
+  await prisma.clientSource.update({
+    where: { id: sourceId },
+    data: { status: "syncing", lastError: "", ...(row.syncSince ? {} : { syncSince }) },
+  });
   const since = mode === "incremental" && row.lastSyncAt && row.status !== "error" ? row.lastSyncAt : null;
   return { updatedSince: since?.toISOString() ?? null };
 }
@@ -287,6 +297,7 @@ export async function syncSourcePage(
       store: prismaSyncStore(tenantId, sourceId),
       cursor,
       updatedSince: updatedSince ? new Date(updatedSince) : null,
+      syncSince: loaded.row.syncSince,
       now: new Date(),
     });
     return { counts: page.counts, nextCursor: page.nextCursor };
@@ -338,9 +349,29 @@ export async function runSourceSyncInline(tenantId: string, sourceId: string, mo
     const page = await syncSourcePage(tenantId, sourceId, cursor, updatedSince);
     counts = addCounts(counts, page.counts);
     cursor = page.nextCursor;
-    if (!cursor) return finishSourceSync(tenantId, sourceId, counts, mode, true);
+    if (!cursor) return inviteAfterInlineSync(tenantId, await finishSourceSync(tenantId, sourceId, counts, mode, true));
   }
-  return finishSourceSync(tenantId, sourceId, counts, mode, false);
+  return inviteAfterInlineSync(tenantId, await finishSourceSync(tenantId, sourceId, counts, mode, false));
+}
+
+/**
+ * Same trigger as production, without Inngest. In production every finished
+ * sync that created contacts sends `documents/invites.requested`
+ * (`clientSourceSync`), and `documents-invites-hourly` runs the pass again each
+ * hour for reminders, advisor tasks and clients synced outside send hours.
+ * This function only exists for the local fallback, where the sync runs in the
+ * request (`requestSourceSync`), so a "sync now" in dev invites the same way.
+ */
+async function inviteAfterInlineSync(tenantId: string, stats: SyncStats): Promise<SyncStats> {
+  if (stats.created > 0) {
+    try {
+      const { runInvitesForTenant } = await import("@/lib/documents/invite/run");
+      await runInvitesForTenant(tenantId, new Date());
+    } catch (err) {
+      console.warn(JSON.stringify({ msg: "client_sources.inline_invite_failed", tenantId, error: String(err) }));
+    }
+  }
+  return stats;
 }
 
 export type TestResult =
@@ -363,6 +394,7 @@ export async function testClientSource(tenantId: string, sourceId: string): Prom
       config: loaded.config,
       store: prismaSyncStore(tenantId, sourceId),
       updatedSince: null,
+      syncSince: loaded.row.syncSince,
       now: new Date(),
       dryRun: true,
       maxPages: 1,

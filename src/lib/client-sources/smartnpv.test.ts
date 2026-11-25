@@ -44,6 +44,9 @@ describe("mapSmartNpvRow", () => {
     expect(rec.fields).not.toHaveProperty("salary_1");
     expect(rec.fields).not.toHaveProperty("last_date_execution");
     expect(rec.fields.transaction_bank).toBe("12");
+    expect(rec.fields.phone_1).toBe("972501234567");
+    expect(rec.fields.checklist).toMatchObject({ fullName: "דנה לוי" });
+    expect(rec.raw).toBe(ROW);
     expect(rec.updatedAt?.toISOString()).toBe("2024-04-03T00:00:00.000Z");
   });
 
@@ -82,6 +85,34 @@ describe("smartnpv connector", () => {
     await c.fetchClients(session, config, { cursor: null, updatedSince: new Date("2026-11-04T08:00:00Z") });
     expect(calls[0].searchParams.get("range_type")).toBe("2");
     expect(calls[0].searchParams.get("from")).toBe("03/11/2026");
+  });
+
+  it("starts a full sync at the Jerusalem day of syncSince", async () => {
+    const { impl, calls } = fakeFetch([[]]);
+    const c = createSmartNpvConnector({ fetchImpl: impl, sleep: noSleep });
+    const config = c.parseConfig({});
+    expect(config.freezeAfterFirstSync).toBe(true);
+    expect(config.storeRaw).toBe(true);
+    await c.fetchClients(await c.authenticate({ apiKey: "secret-key-123" }, config), config, {
+      cursor: null,
+      updatedSince: null,
+      syncSince: new Date("2026-11-11T22:00:00Z"),
+    });
+    expect(calls[0].searchParams.get("range_type")).toBe("1");
+    expect(calls[0].searchParams.get("from")).toBe("12/11/2026");
+  });
+
+  it("does not look back earlier than syncSince", async () => {
+    const { impl, calls } = fakeFetch([[]]);
+    const c = createSmartNpvConnector({ fetchImpl: impl, sleep: noSleep });
+    const config = c.parseConfig({});
+    await c.fetchClients(await c.authenticate({ apiKey: "secret-key-123" }, config), config, {
+      cursor: null,
+      updatedSince: new Date("2026-11-04T08:00:00Z"),
+      syncSince: new Date("2026-11-11T22:00:00Z"),
+    });
+    expect(calls[0].searchParams.get("range_type")).toBe("2");
+    expect(calls[0].searchParams.get("from")).toBe("12/11/2026");
   });
 
   it("stops when the reported count is reached even on a full page", async () => {

@@ -167,9 +167,9 @@ function contact(i: number, patch: Record<string, unknown> = {}) {
     phoneStatus: "ok",
     name: `N${i}`,
     leadId: null,
-    fields: {},
+    mapped: {},
     skipped: false,
-    startedAt: NOW,
+    dealDate: NOW,
     source: { kind: "smartnpv" },
     ...patch,
   };
@@ -240,7 +240,7 @@ describe("sendCampaignChunk", () => {
 
   it("skips a client archived after the row was queued", async () => {
     db.campaignSend[0].contactId = "contact-archived";
-    db.contact = [{ id: "contact-archived", tenantId: "t1", fields: { archive: "1" }, source: { kind: "smartnpv" } }];
+    db.contact = [{ id: "contact-archived", tenantId: "t1", mapped: { archive: "1" }, source: { kind: "smartnpv" } }];
     const res = await sendCampaignChunk("t1", "c1", 10, NOW);
     expect(res).toMatchObject({ sent: 2, skipped: 1 });
     expect(db.campaignSend[0]).toMatchObject({ status: "skipped", skipReason: "archived_client" });
@@ -495,7 +495,7 @@ describe("freezeAudience", () => {
     db.campaignSend = [];
     db.contact = [
       contact(1, { phone: "", phoneStatus: "missing", name: "No Phone" }),
-      contact(2, { id: "kept", phone: "972501111111", fields: { archive: "1" }, name: "Dana" }),
+      contact(2, { id: "kept", phone: "972501111111", mapped: { archive: "1" }, name: "Dana" }),
     ];
     expect(await freezeAudience(prisma as never, campaign, NOW)).toBeNull();
     expect(db.campaignSend).toEqual([

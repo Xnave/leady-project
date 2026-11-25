@@ -47,7 +47,7 @@ function snapshot(over: Partial<FactSnapshot> = {}): FactSnapshot {
 describe("customer turn", () => {
   it("does not treat a question, filler, or unclear line as a change", () => {
     const current = snapshot();
-    for (const text of ["בעצם", "זה לא נטען", "זה לא ברור", "אפשר לשלוח רישיון במקום?", "אם יש לי הלוואות זה משנה?"]) {
+    for (const text of ["בעצם", "זה לא נטען", "זה לא ברור", "תוכל/י לשלוח רישיון במקום?", "אם יש לי הלוואות זה משנה?"]) {
       expect(fallbackIntents(text, current)).toEqual([]);
     }
     const none = snapshot({ loans: "none" });

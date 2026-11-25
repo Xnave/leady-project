@@ -179,9 +179,9 @@ export function templateCreateBody(t: Omit<DigestTemplate, "sector">, accountId:
     category: t.category,
     language: t.language,
     components: [
-      { type: "BODY", text: t.body, example: { body_text: [t.example] } },
-      { type: "FOOTER", text: t.footer },
-      { type: "BUTTONS", buttons: [{ type: "QUICK_REPLY", text: t.button }] },
+      { type: "body", text: t.body, example: { body_text: [t.example] } },
+      { type: "footer", text: t.footer },
+      { type: "buttons", buttons: [{ type: "quick_reply", text: t.button }] },
     ],
   };
 }

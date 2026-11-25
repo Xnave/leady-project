@@ -1,4 +1,5 @@
 import { persistInboundIfNew } from "@/lib/conversations";
+import { safeRecordInviteReply } from "@/lib/documents/invite/run";
 import { runTurnNow, tryDispatchNudgeEvent, tryDispatchOwnerAlertEvents, tryEnqueueAgentTurn } from "@/lib/flow/run-turn";
 import { adminBypass } from "@/lib/admin";
 import { prisma } from "@/lib/db";
@@ -27,7 +28,8 @@ export async function POST(req: Request) {
     from,
     text,
   });
-  if (inserted) {
+  const stopped = inserted ? (await safeRecordInviteReply(tenantId, from, text)) === "stopped" : false;
+  if (inserted && !stopped) {
     const enqueued = await tryEnqueueAgentTurn({
       tenantId,
       conversationId: inserted.conversationId,

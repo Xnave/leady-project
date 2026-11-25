@@ -45,10 +45,10 @@ export function clientWhere(tenantId: string, f: ClientListFilters): Prisma.Cont
     if (digits.length >= 3) or.push({ phone: { contains: digits.replace(/^0/, "") } });
     and.push({ OR: or });
   }
-  if (f.confidence === "none") and.push({ startedAt: null });
-  else if (f.confidence) and.push({ startedAtConfidence: f.confidence });
-  if (f.dealFrom != null) and.push({ startedAt: { gte: new Date(Date.UTC(f.dealFrom, 0, 1)) } });
-  if (f.dealTo != null) and.push({ startedAt: { lt: new Date(Date.UTC(f.dealTo + 1, 0, 1)) } });
+  if (f.confidence === "none") and.push({ dealDate: null });
+  else if (f.confidence) and.push({ dealDateConfidence: f.confidence });
+  if (f.dealFrom != null) and.push({ dealDate: { gte: new Date(Date.UTC(f.dealFrom, 0, 1)) } });
+  if (f.dealTo != null) and.push({ dealDate: { lt: new Date(Date.UTC(f.dealTo + 1, 0, 1)) } });
   return { AND: and };
 }
 
@@ -58,7 +58,7 @@ export async function listClients(tenantId: string, f: ClientListFilters) {
     prisma.contact.count({ where }),
     prisma.contact.findMany({
       where,
-      orderBy: [{ startedAt: { sort: "desc", nulls: "last" } }, { name: "asc" }],
+      orderBy: [{ dealDate: { sort: "desc", nulls: "last" } }, { name: "asc" }],
       skip: (f.page - 1) * CLIENTS_PAGE_SIZE,
       take: CLIENTS_PAGE_SIZE,
       select: {
@@ -66,10 +66,10 @@ export async function listClients(tenantId: string, f: ClientListFilters) {
         name: true,
         phone: true,
         phoneStatus: true,
-        fields: true,
-        startedAt: true,
-        startedAtSource: true,
-        startedAtConfidence: true,
+        mapped: true,
+        dealDate: true,
+        dealDateSource: true,
+        dealDateConfidence: true,
         leadId: true,
         source: { select: { kind: true } },
       },

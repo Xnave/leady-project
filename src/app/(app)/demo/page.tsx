@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ChannelBadge } from "@/components/ChannelBadge";
 import { DemoChat } from "@/components/DemoChat";
+import { DemoImpersonate } from "@/components/DemoImpersonate";
+import { phoneFromDemoSender } from "@/lib/demo-phone";
 import { LeadProfilePanel } from "@/components/LeadProfilePanel";
 import { prisma } from "@/lib/db";
 import { normalizeCatalogId } from "@/lib/flow/catalog";
@@ -95,7 +97,9 @@ export default async function DemoPage({
   const fields = { ...crmFields, ...sessionFields };
   const igHandle =
     lead?.channel.provider === "instagram" ? leadInstagramUsername(fields) : "";
+  const impersonated = lead ? phoneFromDemoSender(lead.externalUserId) : "";
   const phone =
+    impersonated ||
     (fields.phone ? String(fields.phone) : "") ||
     (lead?.channel.provider === "whatsapp" ? lead.externalUserId : "");
   const waUrl = lead?.channel.provider === "whatsapp" ? whatsappChatUrl(phone) : "";
@@ -114,6 +118,7 @@ export default async function DemoPage({
     send: ui.common.send,
     sending: ui.common.sending,
     sendFailed: ui.chat.sendFailed,
+    fileTooLarge: ui.chat.fileTooLarge,
     dropFile: ui.documentsUi.dropFile,
   };
   const threadLabels = {
@@ -134,6 +139,17 @@ export default async function DemoPage({
           <Link href="/demo?new=1" className="btn-secondary">
             {ui.common.newChat}
           </Link>
+          <DemoImpersonate
+            labels={{
+              impersonate: ui.demo.impersonate,
+              impersonatePhone: ui.demo.impersonatePhone,
+              impersonateHint: ui.demo.impersonateHint,
+              impersonateRecent: ui.demo.impersonateRecent,
+              impersonateInvalid: ui.demo.impersonateInvalid,
+              close: ui.common.close,
+              sending: ui.common.sending,
+            }}
+          />
           <ul className="lead-list">
             {leads.map((item) => {
               const last = item.conversations[0]?.messages[0];

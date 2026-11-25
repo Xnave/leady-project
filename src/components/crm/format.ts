@@ -19,9 +19,11 @@ function rtf(lang: Lang) {
 export function relTime(iso: string, lang: Lang, now = new Date()): string {
   const min = Math.max(0, Math.round((now.getTime() - new Date(iso).getTime()) / MIN));
   const f = rtf(lang);
-  if (min < 60) return f.format(-min, "minute");
-  if (min < DAY) return f.format(-Math.round(min / 60), "hour");
-  return f.format(-Math.round(min / DAY), "day");
+  // Hebrew ICU appends the number to dual forms: "לפני שעתיים (2)".
+  const clean = (text: string) => text.replace(/\s*\(\d+\)$/, "");
+  if (min < 60) return clean(f.format(-min, "minute"));
+  if (min < DAY) return clean(f.format(-Math.round(min / 60), "hour"));
+  return clean(f.format(-Math.round(min / DAY), "day"));
 }
 
 /** A future moment as calendar days from today: "today", "tomorrow", "in 3 days". Past clamps to today. */

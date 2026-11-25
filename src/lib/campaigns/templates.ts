@@ -150,12 +150,12 @@ export function templateCreateBody(opts: {
   const n = templateVariables(draft.body).length;
   const components: Record<string, unknown>[] = [
     n > 0
-      ? { type: "BODY", text: composed.text, example: { body_text: [draft.examples.slice(0, n).map((e) => e.trim())] } }
-      : { type: "BODY", text: composed.text },
+      ? { type: "body", text: composed.text, example: { body_text: [draft.examples.slice(0, n).map((e) => e.trim())] } }
+      : { type: "body", text: composed.text },
   ];
-  if (composed.footer) components.push({ type: "FOOTER", text: composed.footer });
+  if (composed.footer) components.push({ type: "footer", text: composed.footer });
   if (composed.buttons.length > 0) {
-    components.push({ type: "BUTTONS", buttons: composed.buttons.map((text) => ({ type: "QUICK_REPLY", text })) });
+    components.push({ type: "buttons", buttons: composed.buttons.map((text) => ({ type: "quick_reply", text })) });
   }
   return {
     accountId: opts.accountId,

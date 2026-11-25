@@ -199,6 +199,17 @@ describe("keep rules", () => {
     expect(result.counts.outOfScope).toBe(0);
     expect(result.counts.updated).toBe(5);
   });
+
+  it("leaves a stored contact untouched when freezeAfterFirstSync is on", async () => {
+    const { store, contacts } = memoryStore();
+    await runSync(input(undefined, store, { freezeAfterFirstSync: true }));
+    expect(contacts.get("c2")?.name).toBe("Avi Cohen");
+    const renamed = FAKE_CLIENTS.map((c) => (c.externalId === "c2" ? { ...c, name: "Avi Renamed" } : c));
+    const result = await runSync(input(createFakeConnector({ clients: renamed }), store, { freezeAfterFirstSync: true }));
+    expect(contacts.get("c2")?.name).toBe("Avi Cohen");
+    expect(result.counts.created).toBe(0);
+    expect(result.counts.skipped).toBe(5);
+  });
 });
 
 describe("safeErrorMessage", () => {

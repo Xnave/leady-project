@@ -91,6 +91,8 @@ npx vitest run src/lib/flow/architecture.test.ts
 npx vitest run src/lib/flow/interpreter.test.ts
 npm run typecheck
 npm run db:migrate -- --name <change>       # after schema changes (writes a migration)
+npm run db:diff:check:staging                # prints a staging schema diff; CI does not fail on it
+npm run db:diff:check:production             # fails when production differs from schema.prisma
 ```
 
 Dev: `npm run dev` (demo turn is sync; Inngest only for nudges).

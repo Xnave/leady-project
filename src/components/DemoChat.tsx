@@ -18,6 +18,7 @@ type ComposerLabels = {
   send: string;
   sending: string;
   sendFailed: string;
+  fileTooLarge?: string;
   dropFile?: string;
 };
 
@@ -117,7 +118,14 @@ export function DemoChat({
         leadId?: string;
         messages?: Msg[];
       };
-      if (!res.ok) throw new Error(data.error ?? composerLabels.sendFailed);
+      if (!res.ok) {
+        const tooLarge = Boolean(sending) && res.status === 413;
+        throw new Error(
+          tooLarge
+            ? (composerLabels.fileTooLarge ?? composerLabels.sendFailed)
+            : (data.error ?? composerLabels.sendFailed),
+        );
+      }
       if (data.messages?.length) {
         shownKey.current = threadKey(data.leadId ?? leadId, data.messages);
         setMessages(data.messages);
@@ -215,7 +223,7 @@ export function DemoChat({
         <button type="submit" disabled={pending || disabled || !ready || !text.trim()}>
           {pending ? composerLabels.sending : composerLabels.send}
         </button>
-        {error ? <p className="muted">{error}</p> : null}
+        {error ? <p className="muted" role="alert">{error}</p> : null}
       </form>
     </div>
   );
