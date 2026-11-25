@@ -1,8 +1,9 @@
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { normalizeClientPhone } from "@/lib/client-sources/phone";
 import { prisma } from "@/lib/db";
 import { uiCopy, type UiLang } from "@/lib/ui";
-import { freezeAudience, parseAudience, parseParamSpecs, previewCampaign, type Preview } from "./engine";
+import { freezeAudience, fillAudienceMessage, pageAudience, parseAudience, parseParamSpecs, previewCampaign, type Preview } from "./engine";
 import {
   audienceSchema,
   DECLARATION_VERSION,
@@ -165,6 +166,70 @@ export async function previewFor(tenantId: string, id: string): Promise<Preview 
   const campaign = await prisma.campaign.findFirst({ where: { id, tenantId }, include: { template: { select: { category: true } } } });
   if (!campaign) return { error: "not_found" };
   return previewCampaign(campaign);
+}
+
+const templateText = { select: { category: true, text: true, body: true } } as const;
+
+export async function audiencePage(
+  tenantId: string,
+  id: string,
+  opts: { cursor?: string; reason?: "not_allowlisted" | null },
+) {
+  const campaign = await prisma.campaign.findFirst({ where: { id, tenantId }, include: { template: templateText } });
+  if (!campaign) return { error: "not_found" as const };
+  return pageAudience(campaign, opts);
+}
+
+export async function previewRecipient(
+  tenantId: string,
+  id: string,
+  who: { contactId?: string | null; leadId?: string | null },
+) {
+  const campaign = await prisma.campaign.findFirst({ where: { id, tenantId }, include: { template: templateText } });
+  if (!campaign) return { error: "not_found" as const };
+  return fillAudienceMessage(campaign, who);
+}
+
+function digits(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+/** Remember one audience phone on the tenant test list. The caller sends an id, not the number. */
+export async function allowAudiencePhone(
+  tenantId: string,
+  who: { contactId?: string | null; leadId?: string | null },
+): Promise<{ ok: true } | { error: "not_found" | "no_phone" }> {
+  let phone = "";
+  if (who.contactId) {
+    const row = await prisma.contact.findFirst({
+      where: { id: who.contactId, tenantId },
+      select: { phone: true, phoneStatus: true },
+    });
+    if (!row) return { error: "not_found" };
+    if (row.phoneStatus !== "ok") return { error: "no_phone" };
+    phone = digits(row.phone);
+  } else if (who.leadId) {
+    const row = await prisma.lead.findFirst({
+      where: { id: who.leadId, tenantId },
+      select: { externalUserId: true, fields: true, channel: { select: { provider: true } } },
+    });
+    if (!row) return { error: "not_found" };
+    const fromWhatsApp = row.channel.provider === "whatsapp" ? digits(row.externalUserId) : "";
+    if (fromWhatsApp.length >= 10) phone = fromWhatsApp;
+    else {
+      const raw = (row.fields as { phone?: unknown } | null)?.phone;
+      const normalized = normalizeClientPhone(raw, "972");
+      if (normalized.status !== "ok") return { error: "no_phone" };
+      phone = normalized.phone;
+    }
+  } else return { error: "not_found" };
+  if (phone.length < 10) return { error: "no_phone" };
+  await prisma.campaignAllowPhone.upsert({
+    where: { tenantId_phone: { tenantId, phone } },
+    create: { tenantId, phone },
+    update: {},
+  });
+  return { ok: true };
 }
 
 export function declarationText(lang: UiLang): string {

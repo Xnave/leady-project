@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   allowList,
+  mergeAllowList,
   audienceSchema,
   followsSource,
   startedAtRange,
@@ -119,6 +120,16 @@ describe("allowList", () => {
     expect(allowList({ production: true, list: "972501234567", only: "" })).toBeNull();
     expect(allowList({ production: true, list: "972501234567", only: "1" })).toEqual(new Set(["972501234567"]));
   });
+
+  it("unions env phones with phones the owner stored", () => {
+    const env = allowList({ production: false, list: "972501111111", only: "" });
+    const merged = mergeAllowList(env, ["972-50-222-2222"]);
+    expect(merged?.has("972501111111")).toBe(true);
+    expect(merged?.has("972502222222")).toBe(true);
+    expect(skipReasonFor({ ...ok, phone: "972502222222", allowListed: merged?.has("972502222222") ?? null }, now)).toBeNull();
+    expect(skipReasonFor({ ...ok, phone: "972503333333", allowListed: merged?.has("972503333333") ?? null }, now)).toBe("not_allowlisted");
+    expect(mergeAllowList(null, ["972501111111"])).toBeNull();
+  });
 });
 
 describe("sendBudget", () => {
@@ -173,6 +184,20 @@ describe("resolveParams", () => {
     expect(resolveParams([{ source: "borrower_first_name", value: "", fallback: "" }], { name: "דנה לוי", businessName: "x", mapped })).toEqual(["נועה"]);
     expect(resolveParams([{ source: "borrower_first_name", value: "", fallback: "לקוח" }], { name: "דנה לוי", businessName: "x" })).toEqual(["דנה"]);
     expect(resolveParams([{ source: "borrower_first_name", value: "", fallback: "" }], { name: " ", businessName: "x" })).toBeNull();
+  });
+
+  it("reads a mapped catalog field, and refuses an empty one", () => {
+    expect(
+      resolveParams([{ source: "mapped", key: "transaction_bank", value: "", fallback: "" }], {
+        name: "דנה",
+        businessName: "x",
+        mapped: { transaction_bank: " לאומי " },
+      }),
+    ).toEqual(["לאומי"]);
+    expect(resolveParams([{ source: "mapped", key: "transaction_bank", value: "", fallback: "" }], { name: "דנה", businessName: "x", mapped: {} })).toBeNull();
+    expect(
+      resolveParams([{ source: "mapped", key: "transaction_bank", value: "", fallback: "בנק" }], { name: "דנה", businessName: "x", mapped: {} }),
+    ).toEqual(["בנק"]);
   });
 });
 

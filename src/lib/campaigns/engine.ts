@@ -5,8 +5,10 @@ import { getConnector } from "@/lib/client-sources/registry";
 import { isProductionRuntime } from "@/lib/dev-auth-bypass";
 import { leadDisplayName } from "@/lib/leads";
 import { listWhatsAppTemplates, sendWhatsAppTemplate, zernioConfigured } from "@/lib/zernio";
+import { previewText } from "./templates";
 import {
   allowList,
+  mergeAllowList,
   audienceSchema,
   followsSource,
   startedAtRange,
@@ -182,12 +184,15 @@ export async function resolveAudience(
   return [...byPhone.values(), ...noPhone];
 }
 
-function currentAllowList(): Set<string> | null {
-  return allowList({
+async function currentAllowList(tenantId: string): Promise<Set<string> | null> {
+  const base = allowList({
     production: isProductionRuntime(),
     list: process.env.CAMPAIGN_ALLOWLIST ?? "",
     only: process.env.CAMPAIGN_ALLOWLIST_ONLY ?? "",
   });
+  if (!base) return null;
+  const rows = await prisma.campaignAllowPhone.findMany({ where: { tenantId }, select: { phone: true } });
+  return mergeAllowList(base, rows.map((row) => row.phone));
 }
 
 /** Everything the skip rules need, fetched in bulk for a set of recipients. */
@@ -258,7 +263,7 @@ export async function recipientStates(
     : [[], [], []];
   const leadById = new Map(leads.map((l) => [l.id, l]));
   const busy = new Set([...openTasks.map((t) => t.leadId), ...liveRequests.map((r) => r.leadId)]);
-  const allow = currentAllowList();
+  const allow = await currentAllowList(tenantId);
 
   return recipients.map((r) => {
     const related = [...new Set([r.leadId, ...(leadIdsForPhone.get(r.phone) ?? [])].filter((x): x is string => Boolean(x)))];
@@ -295,8 +300,12 @@ type CampaignForRun = {
   tenantId: string;
   audience: unknown;
   params: unknown;
-  template: { category: string };
+  template: { category: string; text?: string; body?: string };
 };
+
+export type AudiencePerson = { id: string; name: string; contactId: string | null; leadId: string | null };
+
+const AUDIENCE_PAGE = 20;
 
 function paramWho(r: Recipient, businessName: string) {
   return { name: r.name, businessName, mapped: r.mapped };
@@ -328,6 +337,60 @@ export async function previewCampaign(campaign: CampaignForRun, now = new Date()
     }
   });
   return { total: recipients.length, eligible, skipped, sample, costUsd: estimateCostUsd(eligible, campaign.template.category) };
+}
+
+async function audienceRows(campaign: CampaignForRun, now: Date): Promise<
+  | { ok: false; error: "bad_audience" | "audience_too_large" }
+  | { ok: true; recipients: Recipient[]; states: RecipientState[]; specs: ParamSpec[]; biz: string }
+> {
+  const audience = parseAudience(campaign.audience);
+  if (!audience) return { ok: false, error: "bad_audience" };
+  const recipients = await resolveAudience(campaign.tenantId, audience, now, campaign.id);
+  if (recipients === "audience_too_large") return { ok: false, error: "audience_too_large" };
+  const states = await recipientStates(campaign.tenantId, campaign.id, recipients, now);
+  const specs = parseParamSpecs(campaign.params);
+  const biz = await businessName(campaign.tenantId);
+  return { ok: true, recipients, states, specs, biz };
+}
+
+/** One page of the audience. `not_allowlisted` is the people the test list is blocking. */
+export async function pageAudience(
+  campaign: CampaignForRun,
+  opts: { cursor?: string; take?: number; reason?: "not_allowlisted" | null },
+  now = new Date(),
+): Promise<{ people: AudiencePerson[]; nextCursor: string | null } | { error: "bad_audience" | "audience_too_large" }> {
+  const loaded = await audienceRows(campaign, now);
+  if (!loaded.ok) return { error: loaded.error };
+  const take = Math.min(Math.max(opts.take ?? AUDIENCE_PAGE, 1), 50);
+  const rows: AudiencePerson[] = [];
+  loaded.recipients.forEach((r, i) => {
+    const reason = skipReasonFor(loaded.states[i], now) ?? (resolveParams(loaded.specs, paramWho(r, loaded.biz)) ? null : "missing_param");
+    if (opts.reason && reason !== opts.reason) return;
+    const id = r.contactId ?? r.leadId;
+    if (!id) return;
+    rows.push({ id, name: r.name || id, contactId: r.contactId, leadId: r.leadId });
+  });
+  const start = opts.cursor ? Math.max(0, rows.findIndex((r) => r.id === opts.cursor) + 1) : 0;
+  const people = rows.slice(start, start + take);
+  const last = people.at(-1);
+  return { people, nextCursor: last && start + people.length < rows.length ? last.id : null };
+}
+
+/** The template filled for one person. Returns the text only, not the mapped record. */
+export async function fillAudienceMessage(
+  campaign: CampaignForRun,
+  who: { contactId?: string | null; leadId?: string | null },
+  now = new Date(),
+): Promise<{ text: string } | { error: "bad_audience" | "audience_too_large" | "not_found" | "missing_param" }> {
+  const loaded = await audienceRows(campaign, now);
+  if (!loaded.ok) return { error: loaded.error };
+  const hit = loaded.recipients.find(
+    (r) => (who.contactId && r.contactId === who.contactId) || (who.leadId && r.leadId === who.leadId),
+  );
+  if (!hit) return { error: "not_found" };
+  const values = resolveParams(loaded.specs, paramWho(hit, loaded.biz));
+  if (!values) return { error: "missing_param" };
+  return { text: previewText(campaign.template.text || campaign.template.body || "", values) };
 }
 
 // ─── Worker ─────────────────────────────────────────────────────────────────

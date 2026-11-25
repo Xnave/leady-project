@@ -1085,24 +1085,16 @@ export type UiCopy = {
         source: string;
         sourceAll: string;
         sourceHint: string;
-        yearsMin: string;
-        yearsMax: string;
-        yearsHint: string;
-        confidence: string;
-        confidenceHint: string;
-        includeNoDate: string;
-        params: string;
-        /** "{n}" */
-        paramLabel: string;
-        paramSources: Record<"first_name" | "full_name" | "borrower_first_name" | "business_name" | "text", string>;
+        paramSources: Record<"first_name" | "full_name" | "borrower_first_name" | "business_name" | "text" | "mapped", string>;
         paramValue: string;
         paramFallback: string;
-        goal: string;
-        goals: Record<"handoff" | "book", string>;
-        brief: string;
-        briefHint: string;
-        batch: string;
-        batchHint: string;
+        tags: string;
+        previewPerson: string;
+        previewTitle: string;
+        previewEmpty: string;
+        previewPick: string;
+        previewMissing: string;
+        advanced: string;
         schedule: string;
         scheduleHint: string;
         hours: string;
@@ -1111,6 +1103,8 @@ export type UiCopy = {
         dayClosed: string;
         from: string;
         until: string;
+        close: string;
+        more: string;
         saveDraft: string;
         saving: string;
         saved: string;
@@ -1129,6 +1123,11 @@ export type UiCopy = {
         cost: string;
         costHint: string;
         preview: string;
+        allowAdd: string;
+        allowTitle: string;
+        allowHint: string;
+        allowAction: string;
+        allowEmpty: string;
         rulesNote: string;
         confirm: string;
         confirming: string;
@@ -1145,7 +1144,6 @@ export type UiCopy = {
         declaredBy: string;
         /** "{n}" */
         batchOf: string;
-        goal: string;
         audience: string;
         lastRun: string;
         /** "{sec}" */

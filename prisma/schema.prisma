@@ -61,6 +61,7 @@ model Tenant {
   campaignSends        CampaignSend[]
   suppressions         Suppression[]
   ownerDeclarations    OwnerDeclaration[]
+  campaignAllowPhones  CampaignAllowPhone[]
 }
 
 /**
@@ -812,6 +813,19 @@ model CampaignSend {
   @@index([tenantId, sentAt])
   @@index([campaignId, status])
   @@index([leadId])
+}
+
+/// Phones the owner added to the test allow-list. Used only while the allow-list is enforced.
+model CampaignAllowPhone {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Digits only, same shape as Contact.phone.
+  phone     String
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
 }
 
 /// People who must not get campaign messages from this tenant (opt-out, manual).

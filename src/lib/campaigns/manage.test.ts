@@ -84,7 +84,7 @@ vi.mock("./engine", () => ({
   },
 }));
 
-const { actOnCampaign, confirmCampaign, updateCampaign } = await import("./manage");
+const { actOnCampaign, campaignInputSchema, confirmCampaign, updateCampaign } = await import("./manage");
 const actor = { actorUserId: "owner@x", actorLabel: "owner@x" };
 
 beforeEach(() => {
@@ -166,6 +166,30 @@ describe("confirmCampaign", () => {
     expect(res).toEqual({ error: "not_draft" });
     expect(campaignRow.name).toBe("Refinance");
     expect(campaignRow.status).toBe("scheduled");
+  });
+});
+
+describe("campaignInputSchema", () => {
+  it("accepts the simple composer payload and fills the hidden defaults", () => {
+    const parsed = campaignInputSchema.parse({
+      name: "Docs",
+      templateId: "tpl",
+      audience: {
+        kind: "clients",
+        sourceId: "all",
+        startedYearsAgoMin: null,
+        startedYearsAgoMax: null,
+        confidence: [],
+        includeNoStartedAt: true,
+      },
+      params: [{ source: "first_name" }, { source: "mapped", key: "transaction_bank" }],
+    });
+    expect(parsed.goal).toBe("handoff");
+    expect(parsed.brief).toBe("");
+    expect(parsed.batchSize).toBeNull();
+    expect(parsed.sendWindow).toBeNull();
+    expect(parsed.audience).toMatchObject({ includeNoStartedAt: true, startedYearsAgoMin: null, confidence: [] });
+    expect(parsed.params[1]).toMatchObject({ source: "mapped", key: "transaction_bank", value: "", fallback: "" });
   });
 });
 

@@ -50,9 +50,9 @@ function dayWindow(weekday: number, startHour: number, endHour: number): DayWind
   return { weekday, startMinute: startHour * 60, endMinute: endHour * 60 };
 }
 
-/** Israeli week, used when a campaign stores no window: Sun–Thu 09:00–20:00, Friday 09:00–14:00, Saturday closed. */
+/** Israeli week, used when a campaign stores no window: Sun–Thu 09:00–20:00, Friday 09:00–13:00, Saturday closed. */
 export const DEFAULT_SEND_WINDOW: SendWindow = {
-  days: [0, 1, 2, 3, 4].map((weekday) => dayWindow(weekday, 9, 20)).concat([dayWindow(5, 9, 14)]),
+  days: [0, 1, 2, 3, 4].map((weekday) => dayWindow(weekday, 9, 20)).concat([dayWindow(5, 9, 13)]),
 };
 
 const dayWindowSchema = z
@@ -209,6 +209,20 @@ export function allowList(env: { production: boolean; list: string; only: string
   );
 }
 
+/**
+ * Env phones plus phones the owner added for this tenant.
+ * Null stays null: production with the test-send switch off is not filtered.
+ */
+export function mergeAllowList(base: Set<string> | null, extra: readonly string[]): Set<string> | null {
+  if (!base) return null;
+  const out = new Set(base);
+  for (const raw of extra) {
+    const phone = raw.replace(/\D/g, "");
+    if (phone) out.add(phone);
+  }
+  return out;
+}
+
 // ─── How many may go out ────────────────────────────────────────────────────
 
 export function sendBudget(opts: {
@@ -234,17 +248,26 @@ export function estimateCostUsd(recipients: number, category: string): number {
 
 // ─── Template variables ─────────────────────────────────────────────────────
 
-export const PARAM_SOURCES = ["first_name", "full_name", "borrower_first_name", "business_name", "text"] as const;
+export const PARAM_SOURCES = ["first_name", "full_name", "borrower_first_name", "business_name", "text", "mapped"] as const;
 export type ParamSource = (typeof PARAM_SOURCES)[number];
 
 export const paramSchema = z.object({
   source: z.enum(PARAM_SOURCES),
   /** Fixed text for `text`; ignored otherwise. */
   value: z.string().max(200).default(""),
-  /** Used when the recipient has no name. */
+  /** Used when the recipient has no value. */
   fallback: z.string().max(200).default(""),
+  /** Catalog field key when `source` is `mapped`. */
+  key: z.string().max(80).default(""),
 });
 export type ParamSpec = z.infer<typeof paramSchema>;
+
+export type ParamInput = {
+  source: ParamSource;
+  value?: string;
+  fallback?: string;
+  key?: string;
+};
 
 export function firstName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] ?? "";
@@ -265,8 +288,16 @@ export function borrowerFirstName(mapped: unknown, contactName: string): string 
 }
 
 /** Values for {{1}}..{{n}} in order, or null when one would be empty (Meta rejects empty params). */
+function mappedValue(mapped: unknown, key: string): string {
+  if (!key) return "";
+  const raw = asRecord(mapped)[key];
+  if (typeof raw === "string") return raw.trim();
+  if (typeof raw === "number" && Number.isFinite(raw)) return String(raw);
+  return "";
+}
+
 export function resolveParams(
-  specs: ParamSpec[],
+  specs: ParamInput[],
   who: { name: string; businessName: string; mapped?: unknown },
 ): string[] | null {
   const out: string[] = [];
@@ -276,8 +307,9 @@ export function resolveParams(
     else if (spec.source === "full_name") v = who.name.trim();
     else if (spec.source === "borrower_first_name") v = borrowerFirstName(who.mapped, who.name);
     else if (spec.source === "business_name") v = who.businessName.trim();
-    else v = spec.value.trim();
-    if (!v) v = spec.fallback.trim();
+    else if (spec.source === "mapped") v = mappedValue(who.mapped, spec.key ?? "");
+    else v = (spec.value ?? "").trim();
+    if (!v) v = (spec.fallback ?? "").trim();
     if (!v) return null;
     out.push(v.slice(0, 200));
   }

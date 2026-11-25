@@ -5544,6 +5544,89 @@ button.rules-chip:hover { border-color: var(--accent-bright); background: var(--
 .campaign-checks { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .campaign-declaration { align-items: flex-start; font-weight: 600; }
 .campaign-actions { justify-content: flex-start; flex-wrap: wrap; }
+.campaign-chip,
+.campaign-tag,
+.campaign-person,
+.campaign-advanced summary {
+  cursor: pointer;
+}
+.campaign-chip,
+.campaign-tag {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  transition: background-color 200ms ease, border-color 200ms ease;
+}
+.campaign-chip { display: inline-flex; align-items: center; margin: 0 4px; vertical-align: middle; }
+.campaign-chip[aria-pressed="true"],
+.campaign-tag[aria-pressed="true"] {
+  border-color: var(--accent, var(--line-strong));
+  background: color-mix(in srgb, var(--accent, var(--line)) 14%, var(--card));
+}
+.campaign-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.campaign-chip:focus-visible,
+.campaign-tag:focus-visible,
+.campaign-person:focus-visible,
+.campaign-advanced summary:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+.campaign-advanced { border-top: 1px solid var(--line); padding-top: 8px; }
+.campaign-advanced summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 44px;
+  justify-content: center;
+}
+.campaign-advanced summary span:first-child { font-weight: 700; }
+.campaign-hours {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: end;
+}
+.campaign-hours input[type="time"] { min-height: 44px; width: 100%; }
+.cl-sheet:has(.campaign-people-sheet) { height: min(720px, 86dvh); }
+.campaign-people-sheet { overflow: hidden; min-height: 0; }
+.campaign-people-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.campaign-people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.campaign-person {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  transition: background-color 200ms ease, border-color 200ms ease;
+}
+.campaign-person[aria-pressed="true"] {
+  border-color: var(--accent, var(--line-strong));
+  background: color-mix(in srgb, var(--accent, var(--line)) 14%, var(--card));
+}
+.campaign-person:hover,
+.campaign-tag:hover,
+.campaign-chip:hover { border-color: var(--line-strong); }
+.campaign-allow { margin-inline-start: 8px; min-height: 44px; }
+@media (max-width: 760px) {
+  .campaign-hours { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .campaign-chip,
+  .campaign-tag,
+  .campaign-person { transition: none; }
+}
 /* ==========================================================================
    Clients - CRM clients and their document collection
    List on the inline-start side, one client's file beside it. Below 769px
@@ -6202,6 +6285,7 @@ input:focus-visible + .cl-pick-box { box-shadow: var(--ring); }
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     border-width: 1px 0 0;
   }
+  .cl-sheet:has(.campaign-people-sheet) { height: 88dvh; }
   .cl-sheet-grip { display: block; align-self: center; width: 40px; height: 4px; border-radius: 2px; background: var(--line-strong); margin-block-end: var(--space-1); }
   .cl-sheet-body { padding: var(--space-2) var(--space-4) var(--space-4); }
   .cl-chat-sheet { width: 100vw; }

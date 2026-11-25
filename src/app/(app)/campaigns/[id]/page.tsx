@@ -42,9 +42,6 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
           templateId: c.templateId,
           audience,
           params: parseParamSpecs(c.params),
-          goal: c.goal === "book" ? "book" : "handoff",
-          brief: c.brief,
-          batchSize: c.batchSize,
           scheduledAt: c.scheduledAt?.toISOString() ?? null,
           sendWindow: c.sendWindow == null ? null : campaignSendWindow(c.sendWindow),
           followUps: c.followUps,
@@ -56,9 +53,8 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
         {back}
         <CampaignEditor
           copy={run}
-          confidenceNames={ui.clientSources.confidence}
           lang={lang}
-          data={await editorData(tenantId)}
+          data={await editorData(tenantId, lang)}
           pickedLeadIds={[]}
           initial={initial}
         />
@@ -87,8 +83,6 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
         {wait ? <p className="muted">{wait}</p> : null}
         <CampaignActions id={c.id} status={c.status} copy={run} />
         <dl className="campaign-admin-facts">
-          <dt>{run.detail.goal}</dt>
-          <dd>{run.form.goals[c.goal === "book" ? "book" : "handoff"]}</dd>
           {c.lastRunMs != null ? (
             <RunTimingFacts
               copy={run.detail}

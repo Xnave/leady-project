@@ -14,7 +14,7 @@ export default async function NewCampaignPage({ searchParams }: { searchParams: 
   if (!termsAccepted(settings)) redirect("/campaigns?tab=templates");
   const lang = await getUiLang();
   const ui = uiCopy(lang);
-  const [data, leadIds] = await Promise.all([editorData(tenantId), pickedLeadIds(tenantId, (await searchParams).leads)]);
+  const [data, leadIds] = await Promise.all([editorData(tenantId, lang), pickedLeadIds(tenantId, (await searchParams).leads)]);
 
   return (
     <div>
@@ -24,7 +24,7 @@ export default async function NewCampaignPage({ searchParams }: { searchParams: 
           {ui.campaigns.run.back}
         </Link>
       </p>
-      <CampaignEditor copy={ui.campaigns.run} confidenceNames={ui.clientSources.confidence} lang={lang} data={data} pickedLeadIds={leadIds} initial={null} />
+      <CampaignEditor copy={ui.campaigns.run} lang={lang} data={data} pickedLeadIds={leadIds} initial={null} />
     </div>
   );
 }

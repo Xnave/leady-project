@@ -1,7 +1,9 @@
+import { redirect } from "next/navigation";
+import { getConnector } from "@/lib/client-sources/registry";
 import { prisma } from "@/lib/db";
 import { formatPhoneDisplay } from "@/lib/leads";
 import { requireTenantRoleForPage } from "@/lib/tenant-role";
-import { redirect } from "next/navigation";
+import type { UiLang } from "@/lib/ui";
 import { loadCampaignSettings, tenantWhatsAppAccount } from "./store";
 import { expectedParamCount } from "./manage";
 
@@ -13,10 +15,26 @@ export async function campaignPageAccess() {
   return { ...access, settings };
 }
 
-export type EditorTemplate = { id: string; title: string; text: string; category: string; paramCount: number; examples: string[] };
+export type EditorTemplate = { id: string; title: string; text: string; body: string; category: string; paramCount: number; examples: string[] };
 export type EditorSource = { id: string; label: string; kind: string };
+export type MappedTag = { key: string; label: string };
 
-export async function editorData(tenantId: string) {
+function mappedTags(kinds: string[], lang: UiLang): MappedTag[] {
+  const seen = new Set<string>();
+  const tags: MappedTag[] = [];
+  for (const kind of kinds) {
+    const connector = getConnector(kind);
+    if (!connector) continue;
+    for (const field of connector.fieldCatalog) {
+      if (field.type !== "text" || !field.agentVisible || field.phoneKey || seen.has(field.key)) continue;
+      seen.add(field.key);
+      tags.push({ key: field.key, label: field.label[lang] });
+    }
+  }
+  return tags;
+}
+
+export async function editorData(tenantId: string, lang: UiLang) {
   const [templates, sources, tenant, account] = await Promise.all([
     prisma.whatsAppTemplate.findMany({
       where: { tenantId, status: "APPROVED" },
@@ -37,12 +55,14 @@ export async function editorData(tenantId: string) {
         id: t.id,
         title: t.title,
         text: t.text,
+        body: t.body,
         category: t.category,
         paramCount: expectedParamCount(t.body),
         examples: Array.isArray(t.examples) ? t.examples.filter((e): e is string => typeof e === "string") : [],
       }),
     ),
     sources,
+    mappedTags: mappedTags(sources.map((s) => s.kind), lang),
     hasClientSource: sources.length > 0,
     businessName: tenant?.name ?? "",
     whatsappPhone: account ? formatPhoneDisplay(account.phone) || account.phone : null,

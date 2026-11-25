@@ -272,6 +272,17 @@ describe("sendCampaignChunk", () => {
     expect((await sendCampaignChunk("t1", "c1", 10, NOW)).attempted).toBe(0);
   });
 
+  it("sends to a phone the owner added to the test list", async () => {
+    isProductionRuntime.mockReturnValue(false);
+    process.env.CAMPAIGN_ALLOWLIST = "";
+    db.campaignSend = [db.campaignSend[0]];
+    db.campaignAllowPhone = [{ tenantId: "t1", phone: "972501111111" }];
+    const res = await sendCampaignChunk("t1", "c1", 10, NOW);
+    delete process.env.CAMPAIGN_ALLOWLIST;
+    expect(res).toMatchObject({ sent: 1, skipped: 0 });
+    expect(sendWhatsAppTemplate).toHaveBeenCalledTimes(1);
+  });
+
   it("writes the opener after Zernio accepts it, and a dry-run writes nothing", async () => {
     db.channelConnection = [{ id: "ch", tenantId: "t1", provider: "whatsapp", enabled: true, agentId: "agent-1" }];
     db.campaignSend = [db.campaignSend[0]];

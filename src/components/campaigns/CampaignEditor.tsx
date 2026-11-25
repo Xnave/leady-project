@@ -1,16 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState, type FormEvent } from "react";
-import type { EditorSource, EditorTemplate } from "@/lib/campaigns/page-data";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Icon } from "@/components/crm/Icon";
+import type { EditorSource, EditorTemplate, MappedTag } from "@/lib/campaigns/page-data";
 import type { Audience, ParamSpec, SendWindow } from "@/lib/campaigns/rules";
 import { DECLARATION_VERSION, DEFAULT_SEND_WINDOW, documentsFollowUps, PARAM_SOURCES, parseFollowUps } from "@/lib/campaigns/rules";
-import { previewText } from "@/lib/campaigns/templates";
 import { fillUi, type UiCopy, type UiLang } from "@/lib/ui";
 
 type Copy = UiCopy["campaigns"]["run"];
-type Confidence = "high" | "medium_high" | "medium" | "low";
-const CONFIDENCES: Confidence[] = ["high", "medium_high", "medium", "low"];
+type Builtin = Exclude<(typeof PARAM_SOURCES)[number], "mapped">;
+const BUILTIN: Builtin[] = ["first_name", "full_name", "borrower_first_name", "business_name", "text"];
 
 export type EditorInitial = {
   id: string;
@@ -18,26 +18,19 @@ export type EditorInitial = {
   templateId: string;
   audience: Audience;
   params: ParamSpec[];
-  goal: "handoff" | "book";
-  brief: string;
-  batchSize: number | null;
   scheduledAt: string | null;
   sendWindow: SendWindow | null;
   followUps?: unknown;
 };
 
 type Preview = { total: number; eligible: number; skipped: Record<string, number>; sample: string[]; costUsd: number };
+type Person = { id: string; name: string; contactId: string | null; leadId: string | null };
 
 function toLocalInput(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-function numOrNull(v: string): number | null {
-  const n = Number(v);
-  return v.trim() === "" || !Number.isFinite(n) ? null : n;
 }
 
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
@@ -66,23 +59,251 @@ function daysFromWindow(window: SendWindow): DayDraft[] {
       weekday,
       open: Boolean(day),
       start: minutesToTime(day?.startMinute ?? 9 * 60),
-      end: minutesToTime(day?.endMinute ?? (weekday === 5 ? 14 * 60 : 20 * 60)),
+      end: minutesToTime(day?.endMinute ?? 20 * 60),
     };
   });
 }
 
+function windowFromDays(days: DayDraft[]): SendWindow {
+  return {
+    days: days.flatMap((d) => {
+      if (!d.open) return [];
+      const startMinute = timeToMinutes(d.start);
+      const endMinute = timeToMinutes(d.end);
+      if (startMinute == null || endMinute == null || startMinute >= endMinute) return [{ weekday: d.weekday, startMinute: -1, endMinute: -1 }];
+      return [{ weekday: d.weekday, startMinute, endMinute }];
+    }),
+  };
+}
+
+function windowSummary(window: SendWindow, names: Copy["form"]["weekdays"], closed: string): string {
+  const byDay = new Map(window.days.map((d) => [d.weekday, d]));
+  const parts: string[] = [];
+  let i = 0;
+  while (i < WEEKDAYS.length) {
+    const day = byDay.get(i);
+    const name = names[WEEKDAYS[i]];
+    if (!day) {
+      parts.push(`${name} ${closed}`);
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (j + 1 < WEEKDAYS.length) {
+      const next = byDay.get(j + 1);
+      if (!next || next.startMinute !== day.startMinute || next.endMinute !== day.endMinute) break;
+      j += 1;
+    }
+    const label = i === j ? name : `${name}–${names[WEEKDAYS[j]]}`;
+    parts.push(`${label} ${minutesToTime(day.startMinute)}–${minutesToTime(day.endMinute)}`);
+    i = j + 1;
+  }
+  return parts.join(", ");
+}
+
+function chipName(spec: ParamSpec | undefined): string {
+  if (!spec) return "first_name";
+  if (spec.source === "mapped") return spec.key || "mapped";
+  return spec.source;
+}
+
+function MessageBody({
+  body,
+  specs,
+  selected,
+  onSelect,
+}: {
+  body: string;
+  specs: ParamSpec[];
+  selected: number;
+  onSelect: (index: number) => void;
+}) {
+  const parts = body.split(/(\{\{\d+\}\})/g);
+  return (
+    <p className="campaign-template-text">
+      {parts.map((part, index) => {
+        const match = /^\{\{(\d+)\}\}$/.exec(part);
+        if (!match) return <span key={index}>{part}</span>;
+        const slot = Number(match[1]) - 1;
+        return (
+          <button
+            key={index}
+            type="button"
+            className="campaign-chip"
+            aria-pressed={selected === slot}
+            onClick={() => onSelect(slot)}
+          >
+            {`{{${chipName(specs[slot])}}}`}
+          </button>
+        );
+      })}
+    </p>
+  );
+}
+
+function PersonDialog({
+  mode,
+  campaignId,
+  copy,
+  onClose,
+  onAllowed,
+}: {
+  mode: "preview" | "allow";
+  campaignId: string;
+  copy: Copy;
+  onClose: () => void;
+  onAllowed: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const f = copy.form;
+  const [people, setPeople] = useState<Person[]>([]);
+  const [cursor, setCursor] = useState("");
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [pickedId, setPickedId] = useState("");
+  const [filled, setFilled] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function load(from: string) {
+    setBusy(true);
+    setError("");
+    const query = new URLSearchParams();
+    if (mode === "allow") query.set("reason", "not_allowlisted");
+    if (from) query.set("cursor", from);
+    try {
+      const res = await fetch(`/api/campaigns/runs/${encodeURIComponent(campaignId)}/audience?${query}`);
+      const out = (await res.json().catch(() => ({}))) as { people?: Person[]; nextCursor?: string | null; error?: string };
+      if (!res.ok) {
+        setError(copy.errors.failed);
+        return;
+      }
+      setPeople(out.people ?? []);
+      setCursor(from);
+      setNextCursor(out.nextCursor ?? null);
+      setPickedId("");
+      setFilled("");
+    } catch {
+      setError(copy.errors.failed);
+    } finally {
+      setLoaded(true);
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    void load("");
+    // The first page is the dialog's initial view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaignId, mode]);
+
+  async function pick(person: Person) {
+    if (mode === "allow") {
+      setBusy(true);
+      setError("");
+      try {
+        const res = await fetch("/api/campaigns/allowlist", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ contactId: person.contactId, leadId: person.leadId }),
+        });
+        if (!res.ok) {
+          setError(copy.errors.failed);
+          return;
+        }
+        onAllowed();
+        await load(cursor);
+      } catch {
+        setError(copy.errors.failed);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/campaigns/runs/${encodeURIComponent(campaignId)}/preview-recipient`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ contactId: person.contactId, leadId: person.leadId }),
+      });
+      const out = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
+      if (out.error === "missing_param") setError(f.previewMissing);
+      else if (!res.ok || !out.text) setError(copy.errors.failed);
+      else {
+        setPickedId(person.id);
+        setFilled(out.text);
+      }
+    } catch {
+      setError(copy.errors.failed);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const title = mode === "allow" ? copy.confirm.allowTitle : f.previewTitle;
+  return (
+    <dialog
+      ref={ref}
+      className="cl-sheet"
+      aria-labelledby="campaign-people-title"
+      onClose={onClose}
+      onClick={(event) => {
+        if (event.target === ref.current) ref.current?.close();
+      }}
+    >
+      <div className="cl-sheet-body campaign-people-sheet">
+        <header className="cl-sheet-head">
+          <h2 id="campaign-people-title">{title}</h2>
+          <button type="button" className="btn-icon" aria-label={f.close} onClick={() => ref.current?.close()}>
+            <Icon name="x" />
+          </button>
+        </header>
+        <p className="muted cl-sheet-hint">{mode === "allow" ? copy.confirm.allowHint : f.previewPick}</p>
+        {filled ? <p className="campaign-template-text campaign-confirm">{filled}</p> : null}
+        {error ? <p className="campaign-error">{error}</p> : null}
+        <div className="campaign-people-scroll">
+          {loaded && people.length === 0 && !busy ? <p className="muted">{mode === "allow" ? copy.confirm.allowEmpty : f.previewEmpty}</p> : null}
+          <ul className="campaign-people">
+            {people.map((person) => (
+              <li key={person.id}>
+                <button
+                  type="button"
+                  className="campaign-person"
+                  aria-pressed={person.id === pickedId}
+                  disabled={busy}
+                  onClick={() => void pick(person)}
+                >
+                  <span>{person.name}</span>
+                  {mode === "allow" ? <span>{copy.confirm.allowAction}</span> : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {nextCursor ? (
+            <button type="button" className="btn-secondary" disabled={busy} onClick={() => void load(nextCursor)}>
+              {f.more}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </dialog>
+  );
+}
+
 export function CampaignEditor({
   copy,
-  confidenceNames,
   lang,
   data,
   pickedLeadIds,
   initial,
 }: {
   copy: Copy;
-  confidenceNames: Record<Confidence, string>;
   lang: UiLang;
-  data: { templates: EditorTemplate[]; sources: EditorSource[]; hasClientSource: boolean; businessName: string; whatsappPhone: string | null };
+  data: { templates: EditorTemplate[]; sources: EditorSource[]; mappedTags: MappedTag[]; hasClientSource: boolean; businessName: string; whatsappPhone: string | null };
   pickedLeadIds: string[];
   initial: EditorInitial | null;
 }) {
@@ -90,6 +311,7 @@ export function CampaignEditor({
   const f = copy.form;
   const initialLeads = initial?.audience.kind === "leads" ? initial.audience.leadIds : pickedLeadIds;
   const initialClients = initial?.audience.kind === "clients" ? initial.audience : null;
+  const customAtStart = Boolean(initial?.scheduledAt || initial?.sendWindow);
 
   const [id, setId] = useState(initial?.id ?? "");
   const [name, setName] = useState(initial?.name ?? "");
@@ -99,28 +321,31 @@ export function CampaignEditor({
   );
   const [audienceKind, setAudienceKind] = useState<"clients" | "leads">(initialLeads.length ? "leads" : "clients");
   const [sourceId, setSourceId] = useState(initialClients?.sourceId ?? (data.sources.length === 1 ? data.sources[0].id : "all"));
-  const [yearsMin, setYearsMin] = useState(initialClients?.startedYearsAgoMin?.toString() ?? "");
-  const [yearsMax, setYearsMax] = useState(initialClients?.startedYearsAgoMax?.toString() ?? "");
-  const [confidence, setConfidence] = useState<Confidence[]>(initialClients?.confidence ?? []);
-  const [includeNoDate, setIncludeNoDate] = useState(initialClients?.includeNoStartedAt ?? false);
   const [params, setParams] = useState<ParamSpec[]>(initial?.params ?? []);
-  const [goal, setGoal] = useState<"handoff" | "book">(initial?.goal ?? "handoff");
-  const [brief, setBrief] = useState(initial?.brief ?? "");
-  const [batch, setBatch] = useState(initial?.batchSize?.toString() ?? "");
+  const [selectedSlot, setSelectedSlot] = useState(0);
   const [days, setDays] = useState<DayDraft[]>(() => daysFromWindow(initial?.sendWindow ?? DEFAULT_SEND_WINDOW));
+  const [customWhen, setCustomWhen] = useState(customAtStart);
   const [schedule, setSchedule] = useState(toLocalInput(initial?.scheduledAt ?? null));
   const [busy, setBusy] = useState<"" | "save" | "check" | "confirm">("");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [declared, setDeclared] = useState(false);
   const [dirty, setDirty] = useState(!initial);
+  const [picker, setPicker] = useState<null | { mode: "preview" | "allow"; campaignId: string }>(null);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (customAtStart && detailsRef.current) detailsRef.current.open = true;
+  }, [customAtStart]);
 
   const template = data.templates.find((t) => t.id === templateId);
   const paramCount = template?.paramCount ?? 0;
   const specs: ParamSpec[] = useMemo(
-    () => Array.from({ length: paramCount }, (_, i) => params[i] ?? { source: i === 0 ? "first_name" : "business_name", value: "", fallback: "" }),
+    () =>
+      Array.from({ length: paramCount }, (_, i) => params[i] ?? { source: i === 0 ? "first_name" : "business_name", value: "", fallback: "", key: "" }),
     [params, paramCount],
   );
+  const slot = Math.min(selectedSlot, Math.max(0, paramCount - 1));
+  const active = specs[slot];
 
   const touch = () => {
     setDirty(true);
@@ -137,6 +362,7 @@ export function CampaignEditor({
     const next = [...specs];
     next[i] = { ...next[i], ...patch };
     setParams(next);
+    setSelectedSlot(i);
     touch();
   }
 
@@ -152,10 +378,10 @@ export function CampaignEditor({
         : {
             kind: "clients",
             sourceId,
-            startedYearsAgoMin: numOrNull(yearsMin),
-            startedYearsAgoMax: numOrNull(yearsMax),
-            confidence,
-            includeNoStartedAt: includeNoDate,
+            startedYearsAgoMin: null,
+            startedYearsAgoMax: null,
+            confidence: [],
+            includeNoStartedAt: true,
           };
     return {
       name,
@@ -164,19 +390,8 @@ export function CampaignEditor({
       followUps: reminderTemplateId ? documentsFollowUps(reminderTemplateId) : [],
       audience,
       params: specs,
-      goal,
-      brief,
-      batchSize: numOrNull(batch),
-      scheduledAt: schedule ? new Date(schedule).toISOString() : null,
-      sendWindow: {
-        days: days.flatMap((d) => {
-          if (!d.open) return [];
-          const startMinute = timeToMinutes(d.start);
-          const endMinute = timeToMinutes(d.end);
-          if (startMinute == null || endMinute == null || startMinute >= endMinute) return [{ weekday: d.weekday, startMinute: -1, endMinute: -1 }];
-          return [{ weekday: d.weekday, startMinute, endMinute }];
-        }),
-      },
+      scheduledAt: customWhen && schedule ? new Date(schedule).toISOString() : null,
+      sendWindow: customWhen ? windowFromDays(days) : null,
     };
   }
 
@@ -211,12 +426,12 @@ export function CampaignEditor({
     }
   }
 
-  async function check() {
-    const savedId = dirty ? await save() : id;
-    if (!savedId) return;
+  async function check(savedId?: string) {
+    const target = savedId ?? (dirty ? await save() : id);
+    if (!target) return;
     setBusy("check");
     try {
-      const res = await fetch(`/api/campaigns/runs/${encodeURIComponent(savedId)}/preview`, { method: "POST" });
+      const res = await fetch(`/api/campaigns/runs/${encodeURIComponent(target)}/preview`, { method: "POST" });
       const out = (await res.json().catch(() => ({}))) as Preview & { error?: string };
       if (!res.ok) setMessage({ ok: false, text: errorText(out.error) });
       else setPreview(out);
@@ -246,15 +461,14 @@ export function CampaignEditor({
     }
   }
 
-  const sampleName = preview?.sample[0] ?? "";
-  const previewValues = specs.map((s, i) => {
-    if (s.source === "first_name") return sampleName.split(/\s+/)[0] || s.fallback || template?.examples[i] || "";
-    if (s.source === "full_name") return sampleName || s.fallback || template?.examples[i] || "";
-    if (s.source === "business_name") return data.businessName;
-    return s.value;
-  });
+  async function openPicker(mode: "preview" | "allow") {
+    const savedId = dirty || !id ? await save() : id;
+    if (savedId) setPicker({ mode, campaignId: savedId });
+  }
 
   if (!data.templates.length) return <p className="muted">{f.noApproved}</p>;
+
+  const summary = windowSummary(customWhen ? windowFromDays(days) : DEFAULT_SEND_WINDOW, f.weekdays, f.dayClosed);
 
   return (
     <div className="campaign-page">
@@ -265,7 +479,15 @@ export function CampaignEditor({
         </label>
         <label>
           {f.template}
-          <select value={templateId} onChange={(e) => (setTemplateId(e.target.value), setParams([]), touch())}>
+          <select
+            value={templateId}
+            onChange={(e) => {
+              setTemplateId(e.target.value);
+              setParams([]);
+              setSelectedSlot(0);
+              touch();
+            }}
+          >
             {data.templates.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.title}
@@ -273,6 +495,58 @@ export function CampaignEditor({
             ))}
           </select>
         </label>
+        {template ? (
+          <div className="campaign-confirm">
+            <MessageBody body={template.body || template.text} specs={specs} selected={slot} onSelect={setSelectedSlot} />
+            {paramCount > 0 ? (
+              <>
+                <p className="campaign-hint">{f.tags}</p>
+                <div className="campaign-tags">
+                  {BUILTIN.map((source) => (
+                    <button
+                      key={source}
+                      type="button"
+                      className="campaign-tag"
+                      aria-pressed={active?.source === source}
+                      onClick={() => setSpec(slot, { source, key: "" })}
+                    >
+                      {f.paramSources[source]}
+                    </button>
+                  ))}
+                  {data.mappedTags.map((tag) => (
+                    <button
+                      key={tag.key}
+                      type="button"
+                      className="campaign-tag"
+                      aria-pressed={active?.source === "mapped" && active.key === tag.key}
+                      onClick={() => setSpec(slot, { source: "mapped", key: tag.key })}
+                    >
+                      {tag.label}
+                    </button>
+                  ))}
+                </div>
+                {active && active.source !== "business_name" ? (
+                  <div className="campaign-row">
+                    {active.source === "text" ? (
+                      <label>
+                        {f.paramValue}
+                        <input value={active.value} maxLength={200} onChange={(e) => setSpec(slot, { value: e.target.value })} />
+                      </label>
+                    ) : null}
+                    <label>
+                      {f.paramFallback}
+                      <input value={active.fallback} maxLength={200} onChange={(e) => setSpec(slot, { fallback: e.target.value })} />
+                    </label>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+            <button type="button" className="btn-secondary" disabled={busy !== ""} onClick={() => void openPicker("preview")}>
+              {f.previewPerson}
+            </button>
+          </div>
+        ) : null}
+
         <label>
           {f.followUp}
           <select value={reminderTemplateId} onChange={(e) => (setReminderTemplateId(e.target.value), touch())}>
@@ -313,123 +587,52 @@ export function CampaignEditor({
                 </select>
               </label>
               <p className="muted campaign-hint">{f.sourceHint}</p>
-              <div className="campaign-row">
-                <label>
-                  {f.yearsMin}
-                  <input type="number" min={0} max={60} step={0.5} value={yearsMin} onChange={(e) => (setYearsMin(e.target.value), touch())} />
-                </label>
-                <label>
-                  {f.yearsMax}
-                  <input type="number" min={0} max={60} step={0.5} value={yearsMax} onChange={(e) => (setYearsMax(e.target.value), touch())} />
-                </label>
-              </div>
-              <p className="muted campaign-hint">{f.yearsHint}</p>
-              <p className="campaign-hint">{f.confidence}</p>
-              <div className="campaign-checks">
-                {CONFIDENCES.map((c) => (
-                  <label key={c} className="choice">
-                    <input
-                      type="checkbox"
-                      checked={confidence.includes(c)}
-                      onChange={(e) => (setConfidence(e.target.checked ? [...confidence, c] : confidence.filter((x) => x !== c)), touch())}
-                    />
-                    {confidenceNames[c]}
-                  </label>
-                ))}
-              </div>
-              <p className="muted campaign-hint">{f.confidenceHint}</p>
-              {yearsMin === "" && yearsMax === "" ? (
-                <label className="choice">
-                  <input type="checkbox" checked={includeNoDate} onChange={(e) => (setIncludeNoDate(e.target.checked), touch())} />
-                  {f.includeNoDate}
-                </label>
-              ) : null}
             </>
           ) : null}
         </fieldset>
 
-        {paramCount > 0 ? (
-          <fieldset>
-            <legend>{f.params}</legend>
-            {specs.map((s, i) => (
-              <div key={i} className="campaign-row">
-                <label>
-                  {fillUi(f.paramLabel, { n: i + 1 })}
-                  <select value={s.source} onChange={(e) => setSpec(i, { source: e.target.value as ParamSpec["source"] })}>
-                    {PARAM_SOURCES.map((src) => (
-                      <option key={src} value={src}>
-                        {f.paramSources[src]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {s.source === "text" ? (
-                  <label>
-                    {f.paramValue}
-                    <input value={s.value} maxLength={200} onChange={(e) => setSpec(i, { value: e.target.value })} />
-                  </label>
-                ) : s.source !== "business_name" ? (
-                  <label>
-                    {f.paramFallback}
-                    <input value={s.fallback} maxLength={200} onChange={(e) => setSpec(i, { fallback: e.target.value })} />
-                  </label>
-                ) : null}
-              </div>
-            ))}
-          </fieldset>
-        ) : null}
-
-        <label>
-          {f.goal}
-          <select value={goal} onChange={(e) => (setGoal(e.target.value as "handoff" | "book"), touch())}>
-            <option value="handoff">{f.goals.handoff}</option>
-            <option value="book">{f.goals.book}</option>
-          </select>
-        </label>
-        <label>
-          {f.brief}
-          <textarea rows={3} maxLength={2000} value={brief} onChange={(e) => (setBrief(e.target.value), touch())} />
-        </label>
-        <p className="muted campaign-hint">{f.briefHint}</p>
-        <div className="campaign-row">
-          <label>
-            {f.batch}
-            <input type="number" min={1} step={1} value={batch} onChange={(e) => (setBatch(e.target.value), touch())} />
-          </label>
+        <details
+          ref={detailsRef}
+          className="campaign-advanced"
+          onToggle={(event) => setCustomWhen(event.currentTarget.open)}
+        >
+          <summary>
+            <span>{f.advanced}</span>
+            <span className="muted">{summary}</span>
+          </summary>
           <label>
             {f.schedule}
             <input type="datetime-local" value={schedule} onChange={(e) => (setSchedule(e.target.value), touch())} />
           </label>
-        </div>
-        <p className="muted campaign-hint">
-          {f.batchHint} {f.scheduleHint}
-        </p>
-        <fieldset>
-          <legend>{f.hours}</legend>
-          {days.map((d) => (
-            <div key={d.weekday} className="campaign-row">
-              <label className="choice">
-                <input type="checkbox" checked={d.open} onChange={(e) => setDay(d.weekday, { open: e.target.checked })} />
-                {f.weekdays[WEEKDAYS[d.weekday]]}
-              </label>
-              {d.open ? (
-                <>
-                  <label>
-                    {f.from}
-                    <input type="time" value={d.start} onChange={(e) => setDay(d.weekday, { start: e.target.value })} />
-                  </label>
-                  <label>
-                    {f.until}
-                    <input type="time" value={d.end} onChange={(e) => setDay(d.weekday, { end: e.target.value })} />
-                  </label>
-                </>
-              ) : (
-                <span className="muted">{f.dayClosed}</span>
-              )}
-            </div>
-          ))}
-        </fieldset>
-        <p className="muted campaign-hint">{f.hoursHint}</p>
+          <p className="muted campaign-hint">{f.scheduleHint}</p>
+          <fieldset>
+            <legend>{f.hours}</legend>
+            {days.map((d) => (
+              <div key={d.weekday} className="campaign-hours">
+                <label className="choice">
+                  <input type="checkbox" checked={d.open} onChange={(e) => setDay(d.weekday, { open: e.target.checked })} />
+                  {f.weekdays[WEEKDAYS[d.weekday]]}
+                </label>
+                {d.open ? (
+                  <>
+                    <label>
+                      {f.from}
+                      <input type="time" value={d.start} onChange={(e) => setDay(d.weekday, { start: e.target.value })} />
+                    </label>
+                    <label>
+                      {f.until}
+                      <input type="time" value={d.end} onChange={(e) => setDay(d.weekday, { end: e.target.value })} />
+                    </label>
+                  </>
+                ) : (
+                  <span className="muted">{f.dayClosed}</span>
+                )}
+              </div>
+            ))}
+          </fieldset>
+          <p className="muted campaign-hint">{f.hoursHint}</p>
+        </details>
+
         {message ? <p className={message.ok ? "muted" : "campaign-error"}>{message.text}</p> : null}
         <div className="field-form-actions">
           <button type="submit" className="btn-secondary" disabled={busy !== ""} aria-busy={busy === "save"}>
@@ -460,27 +663,18 @@ export function CampaignEditor({
                     {Object.entries(preview.skipped).map(([reason, n]) => (
                       <li key={reason}>
                         {copy.skipReasons[reason as keyof Copy["skipReasons"]] ?? reason}: {n}
+                        {reason === "not_allowlisted" ? (
+                          <button type="button" className="btn-secondary campaign-allow" disabled={busy !== ""} onClick={() => void openPicker("allow")}>
+                            {copy.confirm.allowAdd}
+                          </button>
+                        ) : null}
                       </li>
                     ))}
                   </ul>
                 </div>
               ) : null}
-              {preview.sample.length ? (
-                <p className="muted">
-                  {copy.confirm.sample}: {preview.sample.join(", ")}
-                </p>
-              ) : null}
               <p>{fillUi(copy.confirm.cost, { usd: preview.costUsd.toFixed(2) })}</p>
               <p className="muted campaign-hint">{copy.confirm.costHint}</p>
-              {template ? (
-                <div className="campaign-confirm">
-                  <p className="campaign-hint">
-                    {copy.confirm.preview}
-                    {data.whatsappPhone ? ` · ${data.whatsappPhone}` : ""}
-                  </p>
-                  <p className="campaign-template-text">{previewText(template.text, previewValues)}</p>
-                </div>
-              ) : null}
               <p className="muted campaign-hint">{copy.confirm.rulesNote}</p>
               <label className="choice campaign-declaration">
                 <input type="checkbox" checked={declared} onChange={(e) => setDeclared(e.target.checked)} />
@@ -500,6 +694,16 @@ export function CampaignEditor({
             </>
           ) : null}
         </section>
+      ) : null}
+
+      {picker ? (
+        <PersonDialog
+          mode={picker.mode}
+          campaignId={picker.campaignId}
+          copy={copy}
+          onClose={() => setPicker(null)}
+          onAllowed={() => void check(picker.campaignId)}
+        />
       ) : null}
     </div>
   );
