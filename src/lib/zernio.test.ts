@@ -1,5 +1,13 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { createZernioProfile, parseZernioInboxContact, parseZernioMessageReceived, sendZernioInboxMessage, zernioProfileName } from "./zernio";
+import {
+  createZernioProfile,
+  fetchZernioMedia,
+  isZernioMediaUrl,
+  parseZernioInboxContact,
+  parseZernioMessageReceived,
+  sendZernioInboxMessage,
+  zernioProfileName,
+} from "./zernio";
 
 describe("zernioProfileName", () => {
   it("includes tenant id suffix for uniqueness", () => {
@@ -273,5 +281,32 @@ describe("parseZernioMessageReceived", () => {
         message: { text: "hi", sender: { id: "1" }, conversationId: "c1" },
       }),
     ).toBeNull();
+  });
+});
+
+describe("fetchZernioMedia", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.ZERNIO_API_KEY;
+  });
+
+  it("recognizes Zernio media hosts that need the API key", () => {
+    expect(isZernioMediaUrl("https://zernio.com/api/v1/whatsapp/media/1?accountId=a")).toBe(true);
+    expect(isZernioMediaUrl("https://cdn.example.com/id.jpg")).toBe(false);
+  });
+
+  it("sends the API key when fetching Zernio media", async () => {
+    process.env.ZERNIO_API_KEY = "sk_test_key";
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer sk_test_key");
+      return new Response(new Uint8Array([1, 2, 3]), {
+        status: 200,
+        headers: { "content-type": "image/jpeg" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+    const res = await fetchZernioMedia("https://zernio.com/api/v1/whatsapp/media/1");
+    expect(res.ok).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledOnce();
   });
 });
