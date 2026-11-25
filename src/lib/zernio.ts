@@ -335,6 +335,8 @@ const ZERNIO_TYPE_MIME: Record<string, string> = {
   sticker: "image/webp",
   audio: "audio/ogg",
   video: "video/mp4",
+  // Webhooks often send type=file with no mime; inbox later shows application/pdf + name.
+  file: "application/octet-stream",
   document: "application/octet-stream",
 };
 
@@ -343,6 +345,13 @@ const MIME_DEFAULT_EXT: Record<string, string> = {
   "image/jpg": "jpg",
   "image/png": "png",
   "application/pdf": "pdf",
+};
+
+const EXT_MIME: Record<string, string> = {
+  pdf: "application/pdf",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
 };
 
 function absoluteZernioUrl(url: string): string {
@@ -359,24 +368,29 @@ function attachmentFrom(raw: unknown): ZernioAttachment | null {
   const url = absoluteZernioUrl(
     asTrimmedString(item.url) || asTrimmedString(item.link) || asTrimmedString(item.downloadUrl),
   );
-  let mime =
-    asTrimmedString(item.mime) ||
-    asTrimmedString(item.mimeType) ||
-    asTrimmedString(item.mime_type) ||
-    asTrimmedString(item.contentType) ||
-    asTrimmedString(item.content_type) ||
-    ZERNIO_TYPE_MIME[mediaType] ||
-    "application/octet-stream";
   let filename =
     asTrimmedString(item.filename) ||
     asTrimmedString(item.fileName) ||
     asTrimmedString(item.file_name) ||
     asTrimmedString(item.name) ||
     "";
-  const hasExt = filename.includes(".") && !filename.endsWith(".");
+  const ext = filename.includes(".") && !filename.endsWith(".")
+    ? filename.slice(filename.lastIndexOf(".") + 1).toLowerCase()
+    : "";
+  let mime =
+    asTrimmedString(item.mime) ||
+    asTrimmedString(item.mimeType) ||
+    asTrimmedString(item.mime_type) ||
+    asTrimmedString(item.contentType) ||
+    asTrimmedString(item.content_type) ||
+    "";
+  if (!mime || mime.toLowerCase() === "application/octet-stream") {
+    mime = (ext && EXT_MIME[ext]) || ZERNIO_TYPE_MIME[mediaType] || "application/octet-stream";
+  }
+  const hasExt = Boolean(ext);
   if (!filename || filename === "file" || !hasExt) {
-    const ext = MIME_DEFAULT_EXT[mime.toLowerCase()] || (mediaType === "image" ? "jpg" : "");
-    if (ext) filename = `${filename && filename !== "file" ? filename : "file"}.${ext}`;
+    const fallbackExt = MIME_DEFAULT_EXT[mime.toLowerCase()] || (mediaType === "image" ? "jpg" : "");
+    if (fallbackExt) filename = `${filename && filename !== "file" ? filename : "file"}.${fallbackExt}`;
     else if (!filename) filename = "file";
   }
   const size = asFileSize(item.size ?? item.fileSize ?? item.file_size ?? item.bytes ?? item.contentLength);
