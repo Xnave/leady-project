@@ -1328,10 +1328,12 @@ export const he: UiCopy = {
       prior_calendar_months: "לא אחד משלושת החודשים הקודמים",
       min_items: "אין מספיק פריטים",
       wrong_type: "מסמך לא מתאים",
+      unrecognized: "לא זוהה סוג מסמך",
       unreadable: "לא ניתן לקרוא את הקובץ",
       no_model: "אין מודל מוגדר",
       extract_failed: "בדיקת הקובץ נכשלה",
       too_large: "הקובץ גדול מדי",
+      unsupported_type: "סוג קובץ לא נתמך (נדרש PDF, PNG או JPG)",
     },
   },
   campaigns: {

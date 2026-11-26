@@ -671,10 +671,12 @@ export async function loadClientCase(opts: {
     waves: state.status === "needs_id" ? [] : caseWaves,
     nextWave,
     catalog,
-    log: log.map((doc) => {
-      const validation = (doc.validation ?? {}) as { reason?: unknown; note?: unknown };
+    log: log.flatMap((doc) => {
+      const validation = (doc.validation ?? {}) as { reason?: unknown; note?: unknown; merged?: unknown };
+      // Photos that were merged into the saved PDF are not failures — omit them from the log.
+      if (doc.status === "rejected" && validation.merged === true) return [];
       const viewable = doc.status !== "rejected" && (doc.downloadUrl || doc.remoteId.startsWith("local:"));
-      return {
+      return [{
         id: doc.id,
         label: rules && doc.docType ? docLabel(rules, doc.docType, lang) : doc.docType,
         filename: doc.filename,
@@ -685,7 +687,7 @@ export async function loadClientCase(opts: {
         at: doc.createdAt.toISOString(),
         href: viewable ? `/api/leads/${lead.id}/documents/${doc.id}` : "",
         mime: doc.mime || "application/pdf",
-      };
+      }];
     }),
     stuckDays: caseState === "collecting" || caseState === "waiting_id"
       ? daysSince(lead.lastLeadMessageAt ?? dossier.updatedAt, now)

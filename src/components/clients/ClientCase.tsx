@@ -29,7 +29,12 @@ async function post(url: string, body?: unknown): Promise<boolean> {
 
 function reasonText(reason: string, ui: UiCopy): string {
   if (!reason) return "";
-  return ui.documentsUi.reasons[reason as keyof typeof ui.documentsUi.reasons] ?? reason;
+  return ui.documentsUi.reasons[reason] ?? reason;
+}
+
+/** Advisor return notes are free text; snake_case keys are system reject reasons. */
+function isSystemReasonKey(reason: string): boolean {
+  return /^[a-z][a-z0-9_]*$/.test(reason);
 }
 
 /* ---------------------------------------------------------------- viewer */
@@ -710,7 +715,11 @@ export function ClientCase({ data, ui, lang, now, backHref }: {
             <ol>
               {data.log.map((item) => {
                 const status = d.logStatus[item.status as keyof typeof d.logStatus] ?? item.status;
-                const returned = item.reason && !(item.reason in ui.documentsUi.reasons) ? fillUi(d.returnedNote, { note: item.reason }) : reasonText(item.reason, ui);
+                const returned = !item.reason
+                  ? ""
+                  : item.reason in ui.documentsUi.reasons || isSystemReasonKey(item.reason)
+                    ? reasonText(item.reason, ui)
+                    : fillUi(d.returnedNote, { note: item.reason });
                 return (
                   <li key={item.id} className={`cl-log-item ${item.status}`}>
                     <span className="cl-log-dot" aria-hidden="true" />

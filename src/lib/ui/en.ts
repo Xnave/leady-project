@@ -1328,10 +1328,12 @@ export const en: UiCopy = {
       prior_calendar_months: "Not one of the three previous months",
       min_items: "Not enough items",
       wrong_type: "Wrong document",
+      unrecognized: "Couldn't tell which document this is",
       unreadable: "Couldn't read the file",
       no_model: "No model configured",
       extract_failed: "The file check failed",
       too_large: "File is too large",
+      unsupported_type: "Unsupported file type (need PDF, PNG, or JPG)",
     },
   },
   campaigns: {
