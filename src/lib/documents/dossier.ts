@@ -7,6 +7,7 @@ import { hasAgentReplied } from "@/lib/flow/intro";
 import { withFirstMessageIntro } from "@/lib/persona/greeting";
 import { safeRefreshLeadState } from "@/lib/crm/refresh";
 import { loadInstanceConfig } from "@/lib/capability-instances";
+import { loadClientSourceCredentials } from "@/lib/client-sources/store";
 import {
   DEFAULT_MAX_REJECT_TRIES,
   DEFAULT_REJECT_COOLDOWN_MINUTES,
@@ -155,11 +156,16 @@ export function nationalIdFromText(text: string): string {
 
 async function readConfig(tenantId: string): Promise<DocumentConfig | null> {
   try {
-    const raw = await loadInstanceConfig({ tenantId, capabilityId: "documents" });
-    if (!raw.baseUrl && !raw.apiKeyEnc && !raw.rules) return null;
+    const [raw, credentials] = await Promise.all([
+      loadInstanceConfig({ tenantId, capabilityId: "documents" }),
+      loadClientSourceCredentials(tenantId, "smartnpv"),
+    ]);
+    if (!raw.baseUrl && !raw.rules) return null;
+    const apiKey = credentials && typeof credentials === "object" && "apiKey" in credentials
+      ? String((credentials as { apiKey?: unknown }).apiKey ?? "")
+      : "";
     return parseDocumentConfig(
-      { ...raw, baseUrl: SMART_NPV_HOST },
-      typeof raw.apiKeyEnc === "string" ? raw.apiKeyEnc : "",
+      { ...raw, baseUrl: SMART_NPV_HOST, apiKey },
     );
   } catch {
     return null;
@@ -3039,6 +3045,19 @@ function monthsNamedIn(filename: string): string[] {
 }
 
 /** "3 תלושי שכר אוגוסט-אוקטובר" */
+/** Front, other side, and appendix named together so the checklist shows what is in the pack. */
+export function identityFieldLabel(group: ChecklistPiece[], lang: "en" | "he"): string {
+  const order = ["id_card", "id_card_back", "id_appendix"] as const;
+  const byType = new Map(group.map((slot) => [slot.docType, slot.label]));
+  const labels = order.map((type) => byType.get(type)).filter((label): label is string => Boolean(label));
+  if (!labels.length) return group[0]?.label ?? "";
+  if (labels.length === 1) return labels[0] ?? "";
+  const last = labels.at(-1) ?? "";
+  return lang === "he"
+    ? `${labels.slice(0, -1).join(", ")} ו${last}`
+    : `${labels.slice(0, -1).join(", ")} and ${last}`;
+}
+
 export function payslipFieldLabel(
   count: number,
   months: string[],
@@ -3091,14 +3110,16 @@ export function groupChecklistRows(
     }
     const uploaded = group.every((slot) => slot.status === "uploaded");
     const payslip = group.every((slot) => slot.docType === "payslip");
+    const identity = group.every((slot) => IDENTITY_TYPES.has(slot.docType));
     const stored = [...new Set(group.flatMap((slot) => slot.coveredMonths))].sort();
     const named = stored.length
       ? stored
       : [...new Set(group.flatMap((slot) => monthsNamedIn(slot.sourceFilename)))].sort();
-    const idLabel = group.find((slot) => slot.docType === "id_card")?.label;
     const base = payslip
       ? payslipFieldLabel(group.length, named, lang, now)
-      : idLabel || first.label;
+      : identity
+        ? identityFieldLabel(group, lang)
+        : first.label;
     const who = first.who.trim();
     const label = who ? copyFor(lang).chat.documents.ownedBy(base, who) : base;
     return {

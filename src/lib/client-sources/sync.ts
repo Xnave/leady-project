@@ -6,7 +6,7 @@ import {
   type AnyClientConnector,
   type BaseSourceConfig,
   type ClientRecord,
-  type DealDate,
+  type StartedAt,
 } from "./types";
 
 /**
@@ -24,7 +24,7 @@ export type ContactUpsert = {
   mapped: Record<string, unknown>;
   /** The CRM row, or {} when storeRaw is off. */
   raw: Record<string, unknown>;
-  dealDate: DealDate;
+  startedAt: StartedAt;
   sourceUpdatedAt: Date | null;
   /**
    * Lead with the same phone, if any. Kept by a later sync while the phone is
@@ -84,15 +84,15 @@ function yearsBetween(from: Date, to: Date): number {
 }
 
 /** True when the client passes every keep rule that is set. No rules = everyone is kept. */
-export function isKept(fields: Record<string, unknown>, dealDate: DealDate, config: BaseSourceConfig, now: Date): boolean {
+export function isKept(fields: Record<string, unknown>, startedAt: StartedAt, config: BaseSourceConfig, now: Date): boolean {
   const keep = config.keep ?? { fields: [] };
   for (const rule of keep.fields) {
     if (rule.in.length && !rule.in.includes(fieldText(fields[rule.field]))) return false;
   }
-  const window = keep.dealYearsAgo;
+  const window = keep.startedYearsAgo;
   if (window && (window.min != null || window.max != null)) {
-    if (!dealDate.date) return false;
-    const years = yearsBetween(dealDate.date, now);
+    if (!startedAt.date) return false;
+    const years = yearsBetween(startedAt.date, now);
     if (window.min != null && years < window.min) return false;
     if (window.max != null && years > window.max) return false;
   }
@@ -131,12 +131,12 @@ export function prepareContacts(
       name: record.name.slice(0, 200),
       mapped,
       raw: config.storeRaw && record.raw ? record.raw : {},
-      dealDate: derived.dealDate,
+      startedAt: derived.startedAt,
       sourceUpdatedAt: record.updatedAt,
       leadId: null,
       skipped: isSkipped(record, config),
     };
-    (!row.skipped && isKept(mapped, derived.dealDate, config, now) ? rows : onlyIfStored).push(row);
+    (!row.skipped && isKept(mapped, derived.startedAt, config, now) ? rows : onlyIfStored).push(row);
   }
   return { rows, onlyIfStored, counts };
 }
@@ -271,6 +271,18 @@ export async function runSync(
 
 /** Error text safe to store and show: secret values are masked, length is capped. */
 export function safeErrorMessage(err: unknown, secrets: string[]): string {
+  const error = err && typeof err === "object" ? err as { name?: unknown; code?: unknown; message?: unknown } : null;
+  const name = typeof error?.name === "string" ? error.name : "";
+  const code = typeof error?.code === "string" ? error.code : "";
+  const raw = typeof error?.message === "string" ? error.message : String(err);
+  if (/Invalid `prisma\.[\w.]+\(\)` invocation:/i.test(raw)) {
+    return "Previous sync failed in the database. Click Sync now to retry and write a fresh diagnostic to the server logs.";
+  }
+  if (name === "PrismaClientValidationError") return "Database rejected the contact sync data (Prisma validation error).";
+  if (name.startsWith("PrismaClient") || code.startsWith("P")) {
+    return code ? `Database operation failed (${code}).` : "Database operation failed.";
+  }
+
   let message = err instanceof ConnectorAuthError ? `auth: ${err.message}` : err instanceof Error ? err.message : String(err);
   for (const secret of secrets) {
     if (secret && secret.length >= 4) message = message.split(secret).join("***");

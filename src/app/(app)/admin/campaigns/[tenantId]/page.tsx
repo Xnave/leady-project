@@ -18,7 +18,15 @@ export default async function AdminCampaignsPage({ params }: { params: Promise<{
   if (!tenant) notFound();
   const lang = await getUiLang();
   const ui = uiCopy(lang);
-  const [settings, account] = await Promise.all([loadCampaignSettings(tenantId), tenantWhatsAppAccount(tenantId)]);
+  const [settings, account, latest] = await Promise.all([
+    loadCampaignSettings(tenantId),
+    tenantWhatsAppAccount(tenantId),
+    prisma.campaign.findFirst({
+      where: { tenantId, lastRunMs: { not: null } },
+      orderBy: { updatedAt: "desc" },
+      select: { lastRunMs: true, lastSendMs: true, lastProcessMs: true, lastRowCount: true },
+    }),
+  ]);
 
   return (
     <div>
@@ -34,6 +42,11 @@ export default async function AdminCampaignsPage({ params }: { params: Promise<{
         lang={lang}
         initial={settings}
         whatsappPhone={account?.phone ?? null}
+        lastRun={
+          latest?.lastRunMs != null
+            ? { lastRunMs: latest.lastRunMs, lastSendMs: latest.lastSendMs, lastProcessMs: latest.lastProcessMs, lastRowCount: latest.lastRowCount }
+            : null
+        }
       />
     </div>
   );

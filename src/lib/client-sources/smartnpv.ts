@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { factsFromClient } from "@/lib/documents/facts";
 import { fetchSmartClientList, SmartNpvAuthError } from "@/lib/documents/smart-npv";
-import { baseConfigSchema, dealDateStepSchema } from "./config";
-import { deriveDealDate, parseClientDate, type DealDateStep } from "./dates";
+import { baseConfigSchema, startedAtStepSchema, withStartedAtAliases } from "./config";
+import { deriveStartedAt, parseClientDate, type StartedAtStep } from "./dates";
 import { normalizeClientPhone } from "./phone";
 import {
   ConnectorAuthError,
@@ -21,11 +21,12 @@ import {
  * Every `clients/list` row is the full client. The mapped payload keeps the
  * catalog, the checklist, and the phone keys. The raw row is stored only when
  * the source's storeRaw setting is on. A stored contact is not rewritten:
- * freezeAfterFirstSync defaults on.
+ * freezeAfterFirstSync defaults on. Id numbers, birthdays, income and amounts
+ * stay out of the catalog.
  */
 
 /** Default ladder from the client-campaigns design. Tenants override it in config. */
-export const SMARTNPV_DEFAULT_DEAL_DATE: DealDateStep[] = [
+export const SMARTNPV_DEFAULT_STARTED_AT: StartedAtStep[] = [
   { field: "last_date_execution", offsetMonths: 0, confidence: "high" },
   // Statuses that mean "deal completed" are tenant-specific; empty = this rung is off.
   { field: "archive_time", offsetMonths: 0, confidence: "medium_high", whenField: "status_id", whenIn: [] },
@@ -37,13 +38,15 @@ export const SMARTNPV_DEFAULT_DEAL_DATE: DealDateStep[] = [
 const credentialsSchema = z.object({ apiKey: z.string().trim().min(8) });
 export type SmartNpvCredentials = z.infer<typeof credentialsSchema>;
 
-const configSchema = baseConfigSchema.extend({
-  pageSize: z.number().int().min(10).max(500).default(100),
-  /** Pause between pages, to stay polite to the CRM. */
-  pageDelayMs: z.number().int().min(0).max(5000).default(300),
-  dealDate: z.array(dealDateStepSchema).min(1).default(SMARTNPV_DEFAULT_DEAL_DATE),
-  freezeAfterFirstSync: z.boolean().default(true),
-});
+const configSchema = withStartedAtAliases(
+  baseConfigSchema.extend({
+    pageSize: z.number().int().min(10).max(500).default(100),
+    /** Pause between pages, to stay polite to the CRM. */
+    pageDelayMs: z.number().int().min(0).max(5000).default(300),
+    startedAt: z.array(startedAtStepSchema).min(1).default(SMARTNPV_DEFAULT_STARTED_AT),
+    freezeAfterFirstSync: z.boolean().default(true),
+  }),
+);
 export type SmartNpvConfig = z.infer<typeof configSchema> & BaseSourceConfig;
 
 type SmartNpvSession = { apiKey: string; fetchImpl: typeof fetch };
@@ -64,7 +67,7 @@ export const SMARTNPV_FIELDS: ClientFieldDef[] = [
   { key: "modified", label: L("עודכן", "Modified"), type: "date", agentVisible: false },
   { key: "phone_1", label: L("טלפון", "Phone"), type: "text", agentVisible: false, phoneKey: true },
   { key: "phone_2", label: L("טלפון נוסף", "Other phone"), type: "text", agentVisible: false, phoneKey: true },
-  { key: "deal_year", label: L("שנת עסקה", "Deal year"), type: "number", agentVisible: true, derived: true },
+  { key: "started_year", label: L("שנה שהפך ללקוח", "Year became a client"), type: "number", agentVisible: true, derived: true },
 ];
 
 const RAW_KEYS = SMARTNPV_FIELDS.filter((f) => !f.derived).map((f) => f.key);
@@ -148,6 +151,7 @@ export function createSmartNpvConnector(opts: { fetchImpl?: typeof fetch; sleep?
     parseConfig: (raw) => configSchema.parse(raw ?? {}) as SmartNpvConfig,
     sessionTtlSeconds: null,
     fieldCatalog: SMARTNPV_FIELDS,
+    archivedField: "archive",
 
     async authenticate(credentials) {
       const parsed = credentialsSchema.safeParse(credentials);
@@ -186,10 +190,10 @@ export function createSmartNpvConnector(opts: { fetchImpl?: typeof fetch; sleep?
     },
 
     derive(record, config) {
-      const dealDate = deriveDealDate(record.fields, config.dealDate);
+      const startedAt = deriveStartedAt(record.fields, config.startedAt);
       const fields: Record<string, unknown> = {};
-      if (dealDate.date) fields.deal_year = dealDate.date.getUTCFullYear();
-      return { dealDate, fields };
+      if (startedAt.date) fields.started_year = startedAt.date.getUTCFullYear();
+      return { startedAt, fields };
     },
   };
 }

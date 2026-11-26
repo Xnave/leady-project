@@ -57,7 +57,11 @@ model Tenant {
   leadDocuments        LeadDocument[]
   campaignSettings     TenantCampaignSettings?
   whatsAppTemplates    WhatsAppTemplate[]
-  contactInvites       ContactInvite[]
+  campaigns            Campaign[]
+  campaignSends        CampaignSend[]
+  suppressions         Suppression[]
+  ownerDeclarations    OwnerDeclaration[]
+  campaignAllowPhones  CampaignAllowPhone[]
 }
 
 /**
@@ -203,6 +207,7 @@ model Lead {
   stageEvents   LeadStageEvent[]
   notes         LeadNote[]
   contacts      Contact[]
+  campaignSends CampaignSend[]
   dossiers      Dossier[]
   leadDocuments LeadDocument[]
 
@@ -625,54 +630,27 @@ model Contact {
   raw                Json         @default("{}")
   /** Catalog columns, checklist facts, and phone keys. Every reader uses this. */
   mapped             Json         @default("{}")
-  dealDate           DateTime?
-  /** Source field the deal date came from, "" when none matched. */
-  dealDateSource     String       @default("")
+  /// When this person became a client. One date, the first connector field that parses.
+  startedAt           DateTime?
+  /** Source field the date came from, "" when none matched. */
+  startedAtSource     String       @default("")
   /** high | medium_high | medium | low | "" */
-  dealDateConfidence String       @default("")
+  startedAtConfidence String       @default("")
   sourceUpdatedAt    DateTime?
   /** Stored client that now matches a skip rule (e.g. archived): still synced, left out of audiences. */
   skipped            Boolean      @default(false)
   leadId             String?
   lead               Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  invite             ContactInvite?
   syncedAt           DateTime     @default(now())
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
   @@unique([tenantId, sourceId, externalId])
   @@index([tenantId, phone])
-  @@index([tenantId, dealDate])
+  @@index([tenantId, startedAt])
+  campaignSends      CampaignSend[]
+
   @@index([leadId])
-}
-
-/**
- * Documents auto-invite for one synced contact: our outreach, kept apart from
- * the CRM mirror on `Contact`. The row is created when the opener send is
- * claimed, so "at most one opener" is the unique contactId.
- */
-model ContactInvite {
-  id                   String    @id @default(cuid())
-  tenantId             String
-  tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contactId            String    @unique
-  contact              Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  /** sending_opener | invited | sending_reminder | reminded | started | escalated | stopped | unknown */
-  status               String
-  /** Why it stopped: client_stop | rejected:<reason> | no_name | in_conversation | stale_claim | <send error>. */
-  stopReason           String    @default("")
-  /** Set when a send is claimed, before Zernio is called. A stale claim is never resent. */
-  claimedAt            DateTime?
-  openerAt             DateTime?
-  reminderAt           DateTime?
-  escalatedAt          DateTime?
-  startedAt            DateTime?
-  /** Zernio conversation the opener opened. */
-  zernioConversationId String    @default("")
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-
-  @@index([tenantId, status])
 }
 
 /// Client campaigns add-on (business-initiated WhatsApp templates to the tenant's own
@@ -689,6 +667,10 @@ model TenantCampaignSettings {
   adPrefixOffAt     DateTime?
   /// Unique recipients per day from the tenant's number. Meta starts new portfolios at 250.
   dailySendCeiling  Int       @default(200)
+  /// Upper bound of sends in one worker run, on top of the daily ceiling and the batch. Hard max 1000.
+  maxSendsPerRun    Int       @default(300)
+  /// Pause between two sends inside a run, in milliseconds. Allowed 0-5000.
+  sendGapMs         Int       @default(250)
   termsVersion      String    @default("")
   termsAcceptedAt   DateTime?
   termsAcceptedBy   String    @default("")
@@ -726,7 +708,158 @@ model WhatsAppTemplate {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  campaigns      Campaign[]
+
   @@unique([tenantId, name, language])
   @@index([tenantId, status])
   @@index([accountId, name, language])
+}
+
+/// One campaign: an approved template sent to an audience. Owners create and
+/// confirm it; the send worker (`campaign-run`) does the rest.
+model Campaign {
+  id            String            @id @default(cuid())
+  tenantId      String
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name          String
+  templateId    String
+  template      WhatsAppTemplate  @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  /// draft | scheduled | sending | paused | done | canceled
+  status        String            @default("draft")
+  /// Why it is paused: owner | batch_done | template_not_approved | addon_off | no_whatsapp.
+  pauseReason   String            @default("")
+  /// "scheduled" now; "smart" comes with PR 5.
+  trigger       String            @default("scheduled")
+  /// handoff | book
+  goal          String            @default("handoff")
+  brief         String            @default("")
+  /// { kind: "clients", ... filters } | { kind: "leads", leadIds: [...] }
+  audience      Json              @default("{}")
+  /// One entry per template variable: { source, fallback, value? }.
+  params        Json              @default("[]")
+  /// Sends per batch; the campaign pauses after each batch until the owner resumes. Null = no batches.
+  batchSize     Int?
+  /// Sent count when the current batch started. Sampled on the next run when resetBatch is set.
+  batchStartAt  Int               @default(0)
+  /// Resume asks the next run to sample batchStartAt after the previous run has finished.
+  resetBatch    Boolean           @default(false)
+  /// Set when confirm turns the audience into CampaignSend rows. The worker fills it in only if confirm did not.
+  materializedAt DateTime?
+  /// Null uses the Israeli default. Otherwise `{ days: [{ weekday, startMinute, endMinute }] }`; a missing weekday is closed.
+  sendWindow     Json?
+  /// Pause between two sends, in milliseconds. Null uses the tenant setting.
+  sendGapMs      Int?
+  /// Steps after the opener. [] is one send. Each step is { templateId, delayMs, onSilence: "send" | "escalate" }.
+  followUps      Json              @default("[]")
+  /// Wall-clock milliseconds of the last worker run, including prepare, send, and the gaps between sends.
+  lastRunMs      Int?
+  /// Wall-clock milliseconds of the send chunks, including the pause between recipients.
+  lastSendMs     Int?
+  /// Work on recipients in those chunks, excluding the pause between them.
+  lastProcessMs  Int?
+  /// Recipients those chunks decided (sent, failed, or skipped).
+  lastRowCount   Int?
+  /// Last time the worker stopped early and why (quiet_hours, daily_ceiling), for the screen.
+  waitReason    String            @default("")
+  scheduledAt   DateTime?
+  confirmedAt   DateTime?
+  confirmedBy   String            @default("")
+  createdBy     String            @default("")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  sends       CampaignSend[]
+  declaration OwnerDeclaration?
+
+  @@index([tenantId, status])
+  @@index([status, scheduledAt])
+}
+
+/// One recipient of one campaign. Unique on campaign + phone, so a retry or a
+/// person who is both a client and a lead is sent to once.
+model CampaignSend {
+  id                     String    @id @default(cuid())
+  tenantId               String
+  tenant                 Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaignId             String
+  campaign               Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  /// Digits with country code, no "+".
+  phone                  String
+  name                   String    @default("")
+  contactId              String?
+  contact                Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  leadId                 String?
+  lead                   Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  /// queued | sending | sent | failed | skipped | unknown. A claim that never recorded a result is unknown and is not retried.
+  status                 String    @default("queued")
+  skipReason             String    @default("")
+  error                  String    @default("")
+  /// Template variable values actually sent.
+  params                 Json      @default("[]")
+  providerConversationId String    @default("")
+  sentAt                 DateTime?
+  /// Set when this phone replies, or sends a stop word. Later steps do not send.
+  startedAt              DateTime?
+  /// The one reminder was claimed. A claim with no reminderSentAt becomes unknown.
+  reminderClaimedAt      DateTime?
+  reminderSentAt         DateTime?
+  /// Silence after the reminder opened one advisor task, or an unknown send did.
+  escalatedAt            DateTime?
+  /// When the opener was stored on the lead's conversation. Null until Zernio has accepted the send and that write succeeds.
+  threadRecordedAt       DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@unique([campaignId, phone])
+  @@index([tenantId, phone, sentAt])
+  @@index([tenantId, sentAt])
+  @@index([campaignId, status])
+  @@index([leadId])
+}
+
+/// Phones the owner added to the test allow-list. Used only while the allow-list is enforced.
+model CampaignAllowPhone {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Digits only, same shape as Contact.phone.
+  phone     String
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+/// People who must not get campaign messages from this tenant (opt-out, manual).
+model Suppression {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  phone     String
+  /// opt_out | manual
+  reason    String
+  source    String   @default("")
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, phone])
+}
+
+/// The owner's responsibility declaration, ticked when confirming a campaign.
+/// No campaign sends without one.
+model OwnerDeclaration {
+  id             String   @id @default(cuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaignId     String   @unique
+  campaign       Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  actorUserId    String
+  actorLabel     String
+  textVersion    String
+  /// The declaration exactly as shown, in the language shown.
+  text           String
+  language       String
+  recipientCount Int
+  createdAt      DateTime @default(now())
+
+  @@index([tenantId])
 }

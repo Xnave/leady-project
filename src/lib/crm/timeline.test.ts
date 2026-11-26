@@ -70,3 +70,19 @@ describe("groupTimelineByDay", () => {
     expect(groupTimelineByDay(items, "Asia/Jerusalem").map((g) => g.day)).toEqual(["2026-09-25", "2026-09-24"]);
   });
 });
+
+describe("campaign sends on the timeline", () => {
+  it("shows a sent template with its campaign name and text", () => {
+    const at = new Date("2026-11-05T09:00:00Z");
+    const items = buildLeadTimeline({
+      stageEvents: [],
+      notes: [],
+      decisions: [],
+      requests: [],
+      handoffs: [],
+      conversations: [],
+      campaignSends: [{ id: "s1", campaignName: "Refinance", templateText: "היי דנה", sentAt: at }],
+    });
+    expect(items).toEqual([{ id: "campaign-s1", at, kind: "campaign", data: { campaign: "Refinance", text: "היי דנה" } }]);
+  });
+});

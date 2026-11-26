@@ -257,11 +257,6 @@ export const clientSourceSync = inngest.createFunction(
       const { finishSourceSync } = await import("@/lib/client-sources/store");
       return finishSourceSync(tenantId, sourceId, counts, mode, complete);
     });
-    if (stats.created > 0) {
-      // New clients: invite them now (the runner sends nothing while the owner's switch is off).
-      const { documentInvitesEvent } = await import("@/lib/documents/invite/run");
-      await step.sendEvent("invite-new-clients", documentInvitesEvent(tenantId));
-    }
     return stats;
   },
 );
@@ -285,37 +280,78 @@ export const clientSourcesHourly = inngest.createFunction(
 );
 
 /**
- * Documents auto-invite for one tenant: openers to new source clients,
- * reminders, and advisor tasks. No retries: every send is claimed on the row
- * first, so a retry could not double-send, but an unknown result is better
- * handed to the advisor than re-run.
+ * Every 5 minutes: queue a run for each campaign that is due. The event id is
+ * per campaign per 5-minute slot, shared with confirm and resume, so a kick and
+ * a tick in the same window queue one run.
  */
-export const documentInvites = inngest.createFunction(
-  { id: "documents-invites", retries: 0, concurrency: [{ key: "event.data.tenantId", limit: 1 }] },
-  { event: "documents/invites.requested" },
-  async ({ event, step }) => {
-    const { tenantId } = event.data as { tenantId: string };
+export const campaignsTick = inngest.createFunction(
+  { id: "campaigns-tick", retries: 1 },
+  { cron: "*/5 * * * *" },
+  async ({ step }) => {
     const nowIso = await step.run("now", () => new Date().toISOString());
-    return step.run("invite", async () => {
-      const { runInvitesForTenant } = await import("@/lib/documents/invite/run");
-      return runInvitesForTenant(tenantId, new Date(nowIso));
+    const due = await step.run("due", async () => {
+      const { dueCampaigns } = await import("@/lib/campaigns/engine");
+      return dueCampaigns(new Date(nowIso));
     });
+    if (!due.length) return { campaigns: 0 };
+    const now = new Date(nowIso);
+    const { campaignRunEvent } = await import("@/lib/campaigns/run-event");
+    await step.sendEvent(
+      "run-campaigns",
+      due.map((c) => campaignRunEvent(c.tenantId, c.id, now)),
+    );
+    return { campaigns: due.length };
   },
 );
 
-/** Hourly pass: reminders, advisor tasks, and clients synced outside send hours. */
-export const documentInvitesHourly = inngest.createFunction(
-  { id: "documents-invites-hourly", retries: 1 },
-  { cron: "30 * * * *" },
-  async ({ step }) => {
-    const tenants = await step.run("tenants", async () => {
-      const { tenantsWithAutoInvite } = await import("@/lib/documents/invite/run");
-      return tenantsWithAutoInvite();
+/**
+ * One campaign run. One run per tenant at a time, so the daily ceiling for the
+ * tenant's number is counted against settled numbers. Each chunk is a durable
+ * step; inside it every row is claimed (queued → sending) before the send, so
+ * a retried chunk skips rows it already sent.
+ */
+export const campaignRun = inngest.createFunction(
+  {
+    id: "campaign-run",
+    retries: 2,
+    concurrency: [{ key: "event.data.tenantId", limit: 1 }],
+  },
+  { event: "campaigns/run.requested" },
+  async ({ event, step }) => {
+    const { tenantId, campaignId } = event.data as { tenantId: string; campaignId: string };
+    const prep = await step.run("prepare", async () => {
+      const { prepareCampaignRun } = await import("@/lib/campaigns/engine");
+      return prepareCampaignRun(tenantId, campaignId);
     });
-    if (!tenants.length) return { tenants: 0 };
-    const { documentInvitesEvent } = await import("@/lib/documents/invite/run");
-    await step.sendEvent("invite-tenants", tenants.map((t) => documentInvitesEvent(t)));
-    return { tenants: tenants.length };
+    if (!prep.go) return { skipped: prep.reason };
+    const started = await step.run("started", () => Date.now());
+    const { CHUNK_SIZE, runStepCeiling, summarizeRunTiming } = await import("@/lib/campaigns/rules");
+    const steps = runStepCeiling(prep.budget);
+    let left = prep.budget;
+    let sent = 0;
+    const timings: { elapsedMs: number; processMs: number; rows: number }[] = [];
+    for (let i = 0; left > 0 && i < steps; i++) {
+      const chunk = await step.run(`chunk-${i}`, async () => {
+        const { sendCampaignChunk } = await import("@/lib/campaigns/engine");
+        return sendCampaignChunk(tenantId, campaignId, Math.min(CHUNK_SIZE, left));
+      });
+      sent += chunk.sent;
+      timings.push({ elapsedMs: chunk.elapsedMs, processMs: chunk.processMs, rows: chunk.rows });
+      left -= chunk.attempted + chunk.skipped;
+      if ((chunk.queuedLeft === 0 && chunk.followUpsLeft === 0) || chunk.attempted + chunk.skipped === 0) break;
+    }
+    const status = await step.run("finish", async () => {
+      const { finishCampaignRun } = await import("@/lib/campaigns/engine");
+      return finishCampaignRun(tenantId, campaignId);
+    });
+    await step.run("record-duration", async () => {
+      const { prisma } = await import("@/lib/db");
+      await prisma.campaign.updateMany({
+        where: { id: campaignId, tenantId },
+        data: summarizeRunTiming(Date.now() - started, timings),
+      });
+    });
+    return { sent, status };
   },
 );
 
@@ -330,6 +366,6 @@ export const documentInvitesHourly = inngest.createFunction(
 //     }),
 // );
 
-export const inngestFunctions = [runAgentTurn, nudgeIfSilent, crmDigest, ownerAlert, clientSourceSync, clientSourcesHourly, documentInvites, documentInvitesHourly
+export const inngestFunctions = [runAgentTurn, nudgeIfSilent, crmDigest, ownerAlert, clientSourceSync, clientSourcesHourly, campaignsTick, campaignRun
     // , purgeRapidDemos
 ];

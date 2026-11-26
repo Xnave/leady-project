@@ -268,11 +268,11 @@ describe("groupChecklistRows", () => {
   it("shows the ID card, the other side, and the appendix as one field", () => {
     const rows = groupChecklistRows([
       piece({ id: "id_card#1#0", docType: "id_card", label: "תעודת זהות", href: "/id.pdf" }),
-      piece({ id: "id_card_back#1#0", docType: "id_card_back", label: "הצד השני", href: "/back.pdf" }),
-      piece({ id: "id_appendix#1#0", docType: "id_appendix", label: "ספח", href: "/id.pdf" }),
+      piece({ id: "id_card_back#1#0", docType: "id_card_back", label: "הצד השני של תעודת הזהות", href: "/back.pdf" }),
+      piece({ id: "id_appendix#1#0", docType: "id_appendix", label: "ספח תעודת זהות", href: "/id.pdf" }),
     ], "he", now);
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.label).toBe("תעודת זהות");
+    expect(rows[0]?.label).toBe("תעודת זהות, הצד השני של תעודת הזהות וספח תעודת זהות");
     expect(rows[0]?.files.map((file) => file.href)).toEqual(["/id.pdf", "/back.pdf"]);
   });
 

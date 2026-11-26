@@ -5,6 +5,8 @@ import { isFollowUpReason, isPipelineStage } from "@/lib/crm/types";
 import { loadWonLabel } from "@/lib/crm/won-label";
 import { logCrmPerf } from "@/lib/perf";
 import { requireTenantIdForPage } from "@/lib/tenant";
+import { canManageTenant } from "@/lib/tenant-role";
+import { campaignsEnabled } from "@/lib/campaigns/store";
 import { uiCopy } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
@@ -64,6 +66,8 @@ export default async function LeadsPage({
     ms: Date.now() - started,
   });
 
+  const canSendCampaign = (await canManageTenant()) && (await campaignsEnabled(tenantId));
+
   return (
     <LeadsList
       initialRows={data.rows}
@@ -80,6 +84,7 @@ export default async function LeadsPage({
       ui={ui}
       lang={lang}
       nowIso={new Date().toISOString()}
+      canSendCampaign={canSendCampaign}
     />
   );
 }

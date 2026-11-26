@@ -59,8 +59,8 @@ describe("runSync", () => {
     expect(contacts.get("c2")?.phone).toBe("972527654321");
     expect(contacts.get("c3")?.phoneStatus).toBe("missing");
     expect(contacts.get("c4")?.phoneStatus).toBe("invalid");
-    expect(contacts.get("c1")?.dealDate).toEqual({ date: new Date("2019-03-10T00:00:00Z"), source: "signed_at", confidence: "high" });
-    expect(contacts.get("c2")?.dealDate.confidence).toBe("low");
+    expect(contacts.get("c1")?.startedAt).toEqual({ date: new Date("2019-03-10T00:00:00Z"), source: "signed_at", confidence: "high" });
+    expect(contacts.get("c2")?.startedAt.confidence).toBe("low");
   });
 
   it("a repeat sync updates in place and creates no duplicates", async () => {
@@ -161,8 +161,8 @@ describe("runSync", () => {
   it("uses the tenant's deal-date ladder", async () => {
     const { store, contacts } = memoryStore();
     await runSync(input(undefined, store, { dealDate: [{ field: "opened_at", offsetMonths: 0, confidence: "medium" }] }));
-    expect(contacts.get("c1")?.dealDate.date).toBeNull();
-    expect(contacts.get("c2")?.dealDate).toEqual({ date: new Date("2017-01-15T00:00:00Z"), source: "opened_at", confidence: "medium" });
+    expect(contacts.get("c1")?.startedAt.date).toBeNull();
+    expect(contacts.get("c2")?.startedAt).toEqual({ date: new Date("2017-01-15T00:00:00Z"), source: "opened_at", confidence: "medium" });
   });
 });
 

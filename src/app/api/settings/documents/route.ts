@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadInstanceConfig, upsertCapabilityInstance } from "@/lib/capability-instances";
+import { hasClientSourceCredentials } from "@/lib/client-sources/store";
 import { syncTalkCapability } from "@/lib/documents/enable";
 import { parseDocumentConfig, publicDocumentConfig } from "@/lib/flow/document-config";
 import { FlowConfigError } from "@/lib/flow/types";
@@ -16,8 +17,11 @@ export async function GET() {
     prisma.agent.findFirst({ where: { tenantId }, select: { flow: true } }),
   ]);
   const talk = (agent?.flow as FlowDefinition | undefined)?.stages?.talk as TalkStage | undefined;
+  const hasKey = await hasClientSourceCredentials(tenantId, "smartnpv");
   return NextResponse.json({
     ...publicDocumentConfig(config),
+    hasKey,
+    testOnly: !hasKey,
     enabled: Boolean(talk?.type === "talk" && talk.capabilities?.includes("documents")),
   });
 }
@@ -29,12 +33,9 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as {
     enabled?: boolean;
     baseUrl?: string;
-    apiKey?: string;
     rules?: unknown;
     testPhones?: string;
     unrecognizedIntro?: string;
-    autoInvite?: boolean;
-    clientDisplayName?: string;
   } | null;
   const existing = await loadInstanceConfig({ tenantId, capabilityId: "documents" });
   const existingPhones = Array.isArray(existing.testPhones)
@@ -43,8 +44,8 @@ export async function POST(req: Request) {
   let config;
   try {
     config = parseDocumentConfig(
-      body ?? {},
-      typeof existing.apiKeyEnc === "string" ? existing.apiKeyEnc : "",
+      { ...(body ?? {}), apiKey: "" },
+      "",
       existingPhones,
       typeof existing.unrecognizedIntro === "string" ? existing.unrecognizedIntro : "",
       existing,
@@ -62,5 +63,6 @@ export async function POST(req: Request) {
     config,
   });
   await syncTalkCapability({ tenantId, capabilityId: "documents", enabled });
-  return NextResponse.json({ ok: true, hasKey: Boolean(config.apiKeyEnc), testOnly: config.testOnly });
+  const hasKey = await hasClientSourceCredentials(tenantId, "smartnpv");
+  return NextResponse.json({ ok: true, hasKey, testOnly: !hasKey });
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSmartNpvConnector, mapSmartNpvRow, SMARTNPV_DEFAULT_DEAL_DATE } from "./smartnpv";
+import { createSmartNpvConnector, mapSmartNpvRow, SMARTNPV_DEFAULT_STARTED_AT } from "./smartnpv";
 import { ConnectorAuthError } from "./types";
 
 const ROW = {
@@ -151,11 +151,11 @@ describe("smartnpv connector", () => {
   it("derives deal_date from the default ladder", () => {
     const c = createSmartNpvConnector();
     const config = c.parseConfig({});
-    expect(config.dealDate).toEqual(SMARTNPV_DEFAULT_DEAL_DATE);
+    expect(config.startedAt).toEqual(SMARTNPV_DEFAULT_STARTED_AT);
     const out = c.derive(mapSmartNpvRow(ROW)!, config, new Date());
     // last_date_execution empty, archive_time gated off by default → contract date + 3 months
-    expect(out.dealDate).toEqual({ date: new Date("2018-05-10T00:00:00Z"), source: "client_contract_date", confidence: "medium" });
-    expect(out.fields.deal_year).toBe(2018);
+    expect(out.startedAt).toEqual({ date: new Date("2018-05-10T00:00:00Z"), source: "client_contract_date", confidence: "medium" });
+    expect(out.fields.started_year).toBe(2018);
   });
 
   it("follows the tenant's own ladder and completed statuses", () => {
@@ -167,13 +167,13 @@ describe("smartnpv connector", () => {
       ],
     });
     const archived = mapSmartNpvRow({ ...ROW, archive_time: "20/08/2019 12:00" })!;
-    expect(c.derive(archived, config, new Date()).dealDate).toEqual({
+    expect(c.derive(archived, config, new Date()).startedAt).toEqual({
       date: new Date("2019-08-20T00:00:00Z"),
       source: "archive_time",
       confidence: "medium_high",
     });
     const open = mapSmartNpvRow({ ...ROW, status_id: "2", archive_time: "20/08/2019" })!;
-    expect(c.derive(open, config, new Date()).dealDate).toEqual({
+    expect(c.derive(open, config, new Date()).startedAt).toEqual({
       date: new Date("2018-07-01T00:00:00Z"),
       source: "created",
       confidence: "low",

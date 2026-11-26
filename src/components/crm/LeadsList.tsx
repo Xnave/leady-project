@@ -38,6 +38,8 @@ type Props = {
   lang: "he" | "en";
   /** The server's request time, so relative times hydrate identically. */
   nowIso: string;
+  /** Owner/admin with the campaigns add-on: offer "send campaign" for the selection. */
+  canSendCampaign?: boolean;
 };
 
 const SEARCH_DEBOUNCE_MS = 250;
@@ -50,7 +52,7 @@ export function LeadsList(props: Props) {
   );
 }
 
-function LeadsListInner({ initialRows, counts, total, tab, stage, reason, channel, q, page, pageSize, wonLabel, ui, lang, nowIso }: Props) {
+function LeadsListInner({ initialRows, counts, total, tab, stage, reason, channel, q, page, pageSize, wonLabel, ui, lang, nowIso, canSendCampaign }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -258,6 +260,11 @@ function LeadsListInner({ initialRows, counts, total, tab, stage, reason, channe
             setSel(new Set());
           }}
           onClear={() => setSel(new Set())}
+          onCampaign={
+            canSendCampaign
+              ? () => router.push(`/campaigns/new?leads=${selected.map((r) => encodeURIComponent(r.id)).join(",")}`)
+              : undefined
+          }
         />
       ) : null}
       <ListMenus

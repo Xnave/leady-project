@@ -1,0 +1,10 @@
+-- AlterTable
+ALTER TABLE "Campaign" ADD COLUMN "sendWindow" JSONB,
+ADD COLUMN "lastRunMs" INTEGER,
+ADD COLUMN "lastSendMs" INTEGER,
+ADD COLUMN "lastProcessMs" INTEGER,
+ADD COLUMN "lastRowCount" INTEGER;
+
+-- AlterTable
+ALTER TABLE "TenantCampaignSettings" ADD COLUMN "maxSendsPerRun" INTEGER NOT NULL DEFAULT 300,
+ADD COLUMN "sendGapMs" INTEGER NOT NULL DEFAULT 250;

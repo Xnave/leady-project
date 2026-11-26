@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Select } from "@/components/Select";
-import { absTime } from "@/components/crm/format";
+import { Icon } from "@/components/crm/Icon";
 import {
   composeTemplate,
   previewText,
@@ -57,7 +57,11 @@ export function CampaignTemplates({
   const [touched, setTouched] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const formRef = useRef<HTMLElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   const languageOptions = useMemo(() => LANGUAGES.map((l) => ({ value: l, label: copy.languageNames[l] })), [copy]);
 
@@ -79,6 +83,15 @@ export function CampaignTemplates({
   useEffect(() => {
     if (accepted) void load();
   }, [accepted, load]);
+
+  const open = templates?.find((t) => t.id === openId) ?? null;
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open && !dialog.open) dialog.showModal();
+    if (!open && dialog.open) dialog.close();
+  }, [open]);
 
   const draft = { title, category, language, body, examples };
   const composed = useMemo(
@@ -153,6 +166,7 @@ export function CampaignTemplates({
       setExamples([]);
       setTouched(false);
       setNotice(copy.submitted);
+      setCreating(false);
     } catch {
       setError(copy.errors.failed);
     } finally {
@@ -183,11 +197,73 @@ export function CampaignTemplates({
   const shownIssues = touched ? issues : [];
   const previewBody = previewText(composed.text, examples);
 
+  function showForm() {
+    setCreating(true);
+    requestAnimationFrame(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
+
+  function oneLine(text: string) {
+    const flat = text.replace(/\s+/g, " ").trim();
+    return flat.length > 90 ? `${flat.slice(0, 89)}…` : flat;
+  }
+
   return (
     <div className="campaign-page">
       <p className="muted">{fillUi(copy.whatsappFrom, { phone: whatsappPhone })}</p>
+      {notice ? <p className="muted">{notice}</p> : null}
 
       <section className="card campaign-card">
+        <header className="digest-card-head">
+          <h2>{copy.templatesTitle}</h2>
+          <div className="field-form-actions">
+            <button type="button" className="btn" onClick={showForm}>
+              {copy.newTemplate}
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => void load()}>
+              {copy.refresh}
+            </button>
+          </div>
+        </header>
+        {templates === null ? (
+          <p className="muted">…</p>
+        ) : templates.length === 0 ? (
+          <p className="muted">{copy.templatesEmpty}</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{copy.fieldTitle}</th>
+                  <th>{copy.statusHeading}</th>
+                  <th>{copy.fieldBody}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {templates.map((t) => (
+                  <tr key={t.id}>
+                    <td>
+                      <button type="button" className="campaign-template-open" onClick={() => setOpenId(t.id)}>
+                        {t.title}
+                      </button>
+                    </td>
+                    <td>
+                      <span className={`badge ${STATUS_TONE[t.status] ?? ""}`}>
+                        {copy.status[t.status as keyof Copy["status"]] ?? t.status}
+                      </span>
+                    </td>
+                    <td className="muted" dir={t.language === "he" ? "rtl" : "ltr"}>
+                      {oneLine(t.text || t.body)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {creating ? (
+      <section className="card campaign-card" ref={formRef}>
         <h2>{copy.newTemplate}</h2>
         <div className="digest-settings-grid">
           <form
@@ -284,43 +360,42 @@ export function CampaignTemplates({
           </figure>
         </div>
       </section>
+      ) : null}
 
-      <section className="card campaign-card">
-        <header className="digest-card-head">
-          <h2>{copy.templatesTitle}</h2>
-          <button type="button" className="btn-ghost" onClick={() => void load()}>
-            {copy.refresh}
-          </button>
-        </header>
-        {templates === null ? (
-          <p className="muted">…</p>
-        ) : templates.length === 0 ? (
-          <p className="muted">{copy.templatesEmpty}</p>
-        ) : (
-          <ul className="campaign-template-list">
-            {templates.map((t) => (
-              <li key={t.id} className="campaign-template">
-                <div className="campaign-template-head">
-                  <strong>{t.title}</strong>
-                  <span className={`badge ${STATUS_TONE[t.status] ?? ""}`}>
-                    {copy.status[t.status as keyof Copy["status"]] ?? t.status}
-                  </span>
-                </div>
-                <p className="muted campaign-template-meta">
-                  {copy.categoryNames[t.category as keyof Copy["categoryNames"]] ?? t.category} · {copy.languageNames[t.language as TemplateLanguage] ?? t.language}
-                  {t.submittedAt
-                    ? ` · ${fillUi(copy.submittedBy, { when: absTime(t.submittedAt, lang), who: t.submittedBy || "-" })}`
-                    : ""}
-                </p>
-                <p className="campaign-template-text" dir={t.language === "he" ? "rtl" : "ltr"}>
-                  {t.text}
-                </p>
-                {t.statusReason ? <p className="campaign-error">{t.statusReason}</p> : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {open ? (
+        <dialog
+          ref={dialogRef}
+          className="cl-sheet"
+          aria-labelledby="template-view-title"
+          onClose={() => setOpenId(null)}
+          onClick={(event) => {
+            if (event.target === dialogRef.current) dialogRef.current?.close();
+          }}
+        >
+          <div className="cl-sheet-body">
+            <header className="cl-sheet-head">
+              <h2 id="template-view-title">{open.title}</h2>
+              <button type="button" className="btn-icon" aria-label={copy.close} onClick={() => dialogRef.current?.close()}>
+                <Icon name="x" />
+              </button>
+            </header>
+            <p className="muted campaign-template-meta">
+              <span className={`badge ${STATUS_TONE[open.status] ?? ""}`}>
+                {copy.status[open.status as keyof Copy["status"]] ?? open.status}
+              </span>
+              {" · "}
+              {copy.categoryNames[open.category as keyof Copy["categoryNames"]] ?? open.category}
+              {" · "}
+              {copy.languageNames[open.language as TemplateLanguage] ?? open.language}
+            </p>
+            <p className="campaign-template-text campaign-confirm" dir={open.language === "he" ? "rtl" : "ltr"}>
+              {open.text || open.body}
+            </p>
+            {open.footer ? <p className="muted">{open.footer}</p> : null}
+            {open.statusReason ? <p className="campaign-error">{open.statusReason}</p> : null}
+          </div>
+        </dialog>
+      ) : null}
     </div>
   );
 }

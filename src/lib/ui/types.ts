@@ -33,7 +33,7 @@ export type CrmCopy = {
   lostReasons: string[]; notRelevantReasons: string[]; reasonPrompt: string;
   stageSet: string; undo: string; openFull: string; close: string; message: string; openLead: string; changeStage: string; moreActions: string; channelFilter: string;
   needsEmptyTitle: string; needsEmpty: string; coldEmptyTitle: string; coldEmpty: string; emptyTitle: string; empty: string; loadFailed: string; retry: string;
-  selected: string; bulkStage: string; bulkSnooze: string; bulkRead: string; bulkUnread: string; clearSelection: string;
+  selected: string; bulkStage: string; bulkSnooze: string; bulkRead: string; bulkUnread: string; bulkCampaign: string; clearSelection: string;
   keysHint: string; search: string;
   digestTitle: string; digestBlurb: string; digestEnabled: string; digestHour: string;
   digestFeatureOff: string; saved: string;
@@ -1008,6 +1008,7 @@ export type UiCopy = {
     whatsappFrom: string;
     noWhatsApp: string;
     templatesTitle: string;
+    statusHeading: string;
     templatesEmpty: string;
     newTemplate: string;
     fieldTitle: string;
@@ -1029,6 +1030,7 @@ export type UiCopy = {
     cancel: string;
     submitted: string;
     refresh: string;
+    close: string;
     submittedBy: string;
     status: Record<"DRAFT" | "PENDING" | "APPROVED" | "REJECTED" | "IN_APPEAL" | "PAUSED" | "DISABLED" | "PENDING_DELETION" | "FAILED", string>;
     issues: Record<
@@ -1044,6 +1046,148 @@ export type UiCopy = {
       string
     >;
     errors: Record<"not_enabled" | "terms_required" | "no_whatsapp" | "provider_unavailable" | "submit_failed" | "failed", string>;
+    run: {
+      tabs: { campaigns: string; templates: string };
+      listTitle: string;
+      listEmpty: string;
+      newCampaign: string;
+      back: string;
+      cols: { name: string; template: string; status: string; when: string; nextRun: string; sent: string; skipped: string; failed: string; edit: string };
+      statuses: Record<"draft" | "scheduled" | "sending" | "paused" | "done" | "canceled", string>;
+      pauseReasons: Record<"owner" | "batch_done" | "template_not_approved" | "addon_off" | "no_whatsapp" | "no_declaration" | "audience_too_large", string>;
+      waitReasons: Record<"quiet_hours" | "daily_ceiling" | "waiting_for_clients" | "waiting_follow_up", string>;
+      skipReasons: Record<
+        | "no_phone"
+        | "invalid_phone"
+        | "suppressed"
+        | "not_allowlisted"
+        | "frequency_cap"
+        | "open_conversation"
+        | "active_case"
+        | "lost_lead"
+        | "archived_client"
+        | "missing_param"
+        | "canceled",
+        string
+      >;
+      sendStatuses: Record<"queued" | "sending" | "sent" | "failed" | "skipped" | "unknown", string>;
+      form: {
+        name: string;
+        template: string;
+        followUp: string;
+        followUpHint: string;
+        /** "{hours}" */
+        followUpAfter: string;
+        sendGap: string;
+        followUpNone: string;
+        noApproved: string;
+        audience: string;
+        audienceClients: string;
+        audienceLeads: string;
+        /** "{n}" */
+        leadsPicked: string;
+        noClientSource: string;
+        source: string;
+        sourceAll: string;
+        sourceHint: string;
+        paramSources: Record<"first_name" | "full_name" | "borrower_first_name" | "business_name" | "text" | "mapped", string>;
+        paramValue: string;
+        paramFallback: string;
+        tags: string;
+        previewPerson: string;
+        previewTitle: string;
+        previewEmpty: string;
+        previewPick: string;
+        previewMissing: string;
+        advanced: string;
+        schedule: string;
+        scheduleHint: string;
+        hours: string;
+        hoursHint: string;
+        weekdays: Record<"sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat", string>;
+        dayClosed: string;
+        from: string;
+        until: string;
+        close: string;
+        more: string;
+        saveDraft: string;
+        save: string;
+        saving: string;
+        saved: string;
+      };
+      confirm: {
+        title: string;
+        check: string;
+        checking: string;
+        /** "{n}" */
+        recipients: string;
+        /** "{n}" of "{total}" */
+        recipientsOf: string;
+        skippedTitle: string;
+        sample: string;
+        /** "${usd}" */
+        cost: string;
+        costHint: string;
+        preview: string;
+        allowAdd: string;
+        allowTitle: string;
+        allowHint: string;
+        allowAction: string;
+        allowEmpty: string;
+        rulesNote: string;
+        confirm: string;
+        confirming: string;
+        /** "{when}" */
+        scheduled: string;
+      };
+      /** Owner responsibility declaration. Versioned in DECLARATION_VERSION; change both together. */
+      declaration: string;
+      actions: { pause: string; resume: string; cancel: string; cancelConfirm: string };
+      detail: {
+        metrics: string;
+        recent: string;
+        noSends: string;
+        declaredBy: string;
+        /** "{n}" */
+        batchOf: string;
+        nextRunNone: string;
+        source: string;
+        /** "{sent}" "{total}" */
+        sentOf: string;
+        filterName: string;
+        filterStatus: string;
+        filterAll: string;
+        cols: { n: string; name: string; phone: string; status: string; when: string };
+        noMatches: string;
+        lastRun: string;
+        lastRunHint: string;
+        /** "{sec}" */
+        lastRunValue: string;
+        sendTook: string;
+        sendTookHint: string;
+        avgRow: string;
+        /** "{ms}" */
+        avgRowValue: string;
+        avgRowNone: string;
+      };
+      errors: Record<
+        | "not_enabled"
+        | "terms_required"
+        | "invalid"
+        | "template_not_found"
+        | "template_not_approved"
+        | "params_mismatch"
+        | "not_found"
+        | "not_draft"
+        | "declaration_required"
+        | "no_recipients"
+        | "bad_transition"
+        | "bad_audience"
+        | "audience_too_large"
+        | "failed",
+        string
+      >;
+    };
     admin: {
       title: string;
       back: string;
@@ -1056,6 +1200,19 @@ export type UiCopy = {
       adPrefixOffBy: string;
       ceiling: string;
       ceilingHint: string;
+      maxSends: string;
+      maxSendsHint: string;
+      sendGap: string;
+      sendGapHint: string;
+      lastRun: string;
+      lastRunNone: string;
+      /** "{sec}" */
+      lastRunValue: string;
+      sendTook: string;
+      avgRow: string;
+      /** "{ms}" */
+      avgRowValue: string;
+      avgRowNone: string;
       whatsapp: string;
       noWhatsApp: string;
       terms: string;
@@ -1063,7 +1220,7 @@ export type UiCopy = {
       save: string;
       saving: string;
       saved: string;
-      errors: Record<"prefix_note_required" | "ceiling_invalid" | "failed", string>;
+      errors: Record<"prefix_note_required" | "ceiling_invalid" | "pace_invalid" | "failed", string>;
     };
   };
 };

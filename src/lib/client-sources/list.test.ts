@@ -28,8 +28,8 @@ describe("clientWhere", () => {
 
   it("filters deal year as a whole-year range and searches phone digits", () => {
     const where = clientWhere("t1", parseClientFilters({ q: "050-12", from: "2016", to: "2018" }));
-    expect(where.AND).toContainEqual({ dealDate: { gte: new Date("2016-01-01T00:00:00Z") } });
-    expect(where.AND).toContainEqual({ dealDate: { lt: new Date("2019-01-01T00:00:00Z") } });
+    expect(where.AND).toContainEqual({ startedAt: { gte: new Date("2016-01-01T00:00:00Z") } });
+    expect(where.AND).toContainEqual({ startedAt: { lt: new Date("2019-01-01T00:00:00Z") } });
     expect(JSON.stringify(where)).toContain('"phone":{"contains":"5012"}');
   });
 });

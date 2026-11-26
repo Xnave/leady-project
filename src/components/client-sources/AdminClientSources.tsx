@@ -238,12 +238,12 @@ export function AdminClientSources({
                 autoComplete="off"
                 dir="ltr"
                 value={credentials[f.key] ?? ""}
-                required={!existing}
+                required={!existing || !existing.hasCredentials}
                 onChange={(e) => setCredentials((c) => ({ ...c, [f.key]: e.target.value }))}
               />
             </label>
           ))}
-          {existing ? <p className="muted">{a.keepCredentials}</p> : null}
+          {existing?.hasCredentials ? <p className="muted">{a.keepCredentials}</p> : null}
         </fieldset>
         <label className="chip-toggle">
           <input

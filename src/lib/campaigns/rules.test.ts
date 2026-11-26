@@ -1,0 +1,319 @@
+import { describe, expect, it } from "vitest";
+import {
+  allowList,
+  mergeAllowList,
+  audienceSchema,
+  followsSource,
+  startedAtRange,
+  estimateCostUsd,
+  CHUNK_SIZE,
+  averageRowMs,
+  inSendWindow,
+  documentsFollowUps,
+  FOLLOW_UP_DELAY_MS,
+  nextCampaignPass,
+  summarizeRunTiming,
+  nextStatus,
+  resolveParams,
+  runStepCeiling,
+  sendBudget,
+  skipReasonFor,
+  startOfZonedDay,
+  type RecipientState,
+} from "./rules";
+
+const TZ = "Asia/Jerusalem";
+// November: Israel is UTC+2.
+const il = (iso: string) => new Date(`${iso}+02:00`);
+
+describe("inSendWindow", () => {
+  it("sends on weekdays 09:00-20:00 local", () => {
+    expect(inSendWindow(il("2026-11-05T08:59:00"), TZ)).toBe(false); // Thursday
+    expect(inSendWindow(il("2026-11-05T09:00:00"), TZ)).toBe(true);
+    expect(inSendWindow(il("2026-11-05T19:59:00"), TZ)).toBe(true);
+    expect(inSendWindow(il("2026-11-05T20:00:00"), TZ)).toBe(false);
+    expect(inSendWindow(il("2026-11-08T10:00:00"), TZ)).toBe(true); // Sunday
+  });
+
+  it("stops at 13:00 on Friday and never sends on Saturday", () => {
+    expect(inSendWindow(il("2026-11-06T12:59:00"), TZ)).toBe(true);
+    expect(inSendWindow(il("2026-11-06T13:00:00"), TZ)).toBe(false);
+    expect(inSendWindow(il("2026-11-07T12:00:00"), TZ)).toBe(false);
+  });
+
+  it("honors each day's range and falls back to the Israeli default", () => {
+    const custom = {
+      days: [
+        { weekday: 4, startMinute: 10 * 60, endMinute: 18 * 60 },
+        { weekday: 5, startMinute: 9 * 60, endMinute: 12 * 60 },
+        { weekday: 6, startMinute: 9 * 60, endMinute: 18 * 60 },
+      ],
+    };
+    expect(inSendWindow(il("2026-11-07T12:00:00"), TZ, custom)).toBe(true);
+    expect(inSendWindow(il("2026-11-05T09:30:00"), TZ, custom)).toBe(false);
+    expect(inSendWindow(il("2026-11-05T10:00:00"), TZ, custom)).toBe(true);
+    expect(inSendWindow(il("2026-11-06T11:30:00"), TZ, custom)).toBe(true);
+    expect(inSendWindow(il("2026-11-06T12:00:00"), TZ, custom)).toBe(false);
+    expect(inSendWindow(il("2026-11-05T09:00:00"), TZ)).toBe(true);
+    expect(inSendWindow(il("2026-11-05T19:30:00"), TZ)).toBe(true);
+  });
+});
+
+describe("documentsFollowUps", () => {
+  it("waits 48 hours by default, and uses a chosen wait for both steps", () => {
+    expect(documentsFollowUps("tpl").map((s) => s.delayMs)).toEqual([FOLLOW_UP_DELAY_MS, FOLLOW_UP_DELAY_MS]);
+    const day = 24 * 60 * 60 * 1000;
+    expect(documentsFollowUps("tpl", day)).toEqual([
+      { templateId: "tpl", delayMs: day, onSilence: "send" },
+      { templateId: null, delayMs: day, onSilence: "escalate" },
+    ]);
+  });
+});
+
+describe("nextCampaignPass", () => {
+  const pass = (now: string, extra?: { status?: string; scheduledAt?: string; dailyCeiling?: boolean }) =>
+    nextCampaignPass(il(now), {
+      status: extra?.status ?? "sending",
+      scheduledAt: extra?.scheduledAt ? il(extra.scheduledAt) : null,
+      tz: TZ,
+      dailyCeiling: extra?.dailyCeiling,
+    });
+
+  it("uses the next five-minute tick inside the window", () => {
+    expect(pass("2026-11-05T10:07:00")?.toISOString()).toBe(il("2026-11-05T10:10:00").toISOString());
+  });
+
+  it("waits for the next open morning after hours, and skips Saturday", () => {
+    expect(pass("2026-11-05T20:00:00")?.toISOString()).toBe(il("2026-11-06T09:00:00").toISOString());
+    expect(pass("2026-11-07T12:00:00")?.toISOString()).toBe(il("2026-11-08T09:00:00").toISOString());
+  });
+
+  it("does not pass a future start, a pause, or today's limit", () => {
+    expect(pass("2026-11-05T10:00:00", { scheduledAt: "2026-11-06T10:03:00" })?.toISOString()).toBe(il("2026-11-06T10:05:00").toISOString());
+    expect(pass("2026-11-05T10:00:00", { status: "paused" })).toBeNull();
+    expect(pass("2026-11-05T10:00:00", { status: "draft" })).toBeNull();
+    expect(pass("2026-11-05T10:00:00", { dailyCeiling: true })?.toISOString()).toBe(il("2026-11-06T09:00:00").toISOString());
+  });
+});
+
+describe("startOfZonedDay", () => {
+  it("is local midnight as a UTC instant", () => {
+    expect(startOfZonedDay(il("2026-11-05T01:30:00"), TZ).toISOString()).toBe("2026-11-04T22:00:00.000Z");
+    expect(startOfZonedDay(il("2026-11-05T23:30:00"), TZ).toISOString()).toBe("2026-11-04T22:00:00.000Z");
+    // Summer time (UTC+3)
+    expect(startOfZonedDay(new Date("2026-07-01T12:00:00Z"), TZ).toISOString()).toBe("2026-06-30T21:00:00.000Z");
+  });
+});
+
+const now = new Date("2026-11-05T10:00:00Z");
+const day = 24 * 3600 * 1000;
+const ok: RecipientState = {
+  phone: "972501234567",
+  phoneStatus: "ok",
+  suppressed: false,
+  allowListed: null,
+  lastCampaignSentAt: null,
+  lastConversationAt: null,
+  conversationOpen: false,
+  activeCase: false,
+  leadStage: null,
+  archived: false,
+};
+
+describe("skipReasonFor", () => {
+  it("lets a clean recipient through", () => {
+    expect(skipReasonFor(ok, now)).toBeNull();
+  });
+
+  it("skips each rule", () => {
+    expect(skipReasonFor({ ...ok, phone: "", phoneStatus: "missing" }, now)).toBe("no_phone");
+    expect(skipReasonFor({ ...ok, phoneStatus: "invalid" }, now)).toBe("invalid_phone");
+    expect(skipReasonFor({ ...ok, suppressed: true }, now)).toBe("suppressed");
+    expect(skipReasonFor({ ...ok, allowListed: false }, now)).toBe("not_allowlisted");
+    expect(skipReasonFor({ ...ok, lastCampaignSentAt: new Date(now.getTime() - 6 * day) }, now)).toBe("frequency_cap");
+    expect(skipReasonFor({ ...ok, conversationOpen: true, lastConversationAt: new Date(now.getTime() - day) }, now)).toBe("open_conversation");
+    expect(skipReasonFor({ ...ok, activeCase: true }, now)).toBe("active_case");
+    expect(skipReasonFor({ ...ok, leadStage: "lost" }, now)).toBe("lost_lead");
+    expect(skipReasonFor({ ...ok, leadStage: "not_relevant" }, now)).toBe("lost_lead");
+    expect(skipReasonFor({ ...ok, archived: true }, now)).toBe("archived_client");
+  });
+
+  it("frees a recipient after the cap and after a conversation goes quiet", () => {
+    expect(skipReasonFor({ ...ok, lastCampaignSentAt: new Date(now.getTime() - 8 * day) }, now)).toBeNull();
+    expect(skipReasonFor({ ...ok, conversationOpen: true, lastConversationAt: new Date(now.getTime() - 5 * day) }, now)).toBeNull();
+  });
+
+  it("suppression wins over everything after the phone", () => {
+    expect(skipReasonFor({ ...ok, suppressed: true, allowListed: false, archived: true }, now)).toBe("suppressed");
+  });
+});
+
+describe("allowList", () => {
+  it("always applies outside production", () => {
+    expect(allowList({ production: false, list: "+972 50-123-4567, 972521111111", only: "" })).toEqual(
+      new Set(["972501234567", "972521111111"]),
+    );
+    expect(allowList({ production: false, list: "", only: "" })).toEqual(new Set());
+  });
+
+  it("applies in production only while the test-send switch is on", () => {
+    expect(allowList({ production: true, list: "972501234567", only: "" })).toBeNull();
+    expect(allowList({ production: true, list: "972501234567", only: "1" })).toEqual(new Set(["972501234567"]));
+  });
+
+  it("unions env phones with phones the owner stored", () => {
+    const env = allowList({ production: false, list: "972501111111", only: "" });
+    const merged = mergeAllowList(env, ["972-50-222-2222"]);
+    expect(merged?.has("972501111111")).toBe(true);
+    expect(merged?.has("972502222222")).toBe(true);
+    expect(skipReasonFor({ ...ok, phone: "972502222222", allowListed: merged?.has("972502222222") ?? null }, now)).toBeNull();
+    expect(skipReasonFor({ ...ok, phone: "972503333333", allowListed: merged?.has("972503333333") ?? null }, now)).toBe("not_allowlisted");
+    expect(mergeAllowList(null, ["972501111111"])).toBeNull();
+  });
+});
+
+describe("sendBudget", () => {
+  it("takes the smallest of daily ceiling, batch and run cap", () => {
+    expect(sendBudget({ dailyCeiling: 200, sentToday: 150, batchSize: null, sentInBatch: 0 })).toEqual({ budget: 50, limitedBy: null });
+    expect(sendBudget({ dailyCeiling: 200, sentToday: 0, batchSize: 25, sentInBatch: 20 })).toEqual({ budget: 5, limitedBy: null });
+    expect(sendBudget({ dailyCeiling: 200, sentToday: 200, batchSize: 25, sentInBatch: 0 }).limitedBy).toBe("daily_ceiling");
+    expect(sendBudget({ dailyCeiling: 200, sentToday: 0, batchSize: 25, sentInBatch: 25 }).limitedBy).toBe("batch");
+    expect(sendBudget({ dailyCeiling: 200, sentToday: 0, batchSize: null, sentInBatch: 0, maxSendsPerRun: 40 })).toEqual({ budget: 40, limitedBy: null });
+    expect(sendBudget({ dailyCeiling: 1000, sentToday: 0, batchSize: null, sentInBatch: 0, maxSendsPerRun: 40 }).budget).toBe(40);
+  });
+
+  it("sizes the step loop from the budget and the chunk", () => {
+    expect(runStepCeiling(300)).toBe(Math.ceil(300 / CHUNK_SIZE));
+    expect(runStepCeiling(1, CHUNK_SIZE)).toBe(1);
+    expect(runStepCeiling(0, CHUNK_SIZE)).toBe(0);
+  });
+
+  it("splits the run, the send, and the average work per recipient", () => {
+    const timing = summarizeRunTiming(2000, [
+      { elapsedMs: 1000, processMs: 400, rows: 2 },
+      { elapsedMs: 500, processMs: 100, rows: 2 },
+    ]);
+    expect(timing).toEqual({ lastRunMs: 2000, lastSendMs: 1500, lastProcessMs: 500, lastRowCount: 4 });
+    expect(averageRowMs(timing.lastProcessMs, timing.lastRowCount)).toBe(125);
+    expect(averageRowMs(0, 0)).toBeNull();
+  });
+});
+
+describe("resolveParams", () => {
+  it("fills names, business and fixed text", () => {
+    expect(
+      resolveParams(
+        [
+          { source: "first_name", value: "", fallback: "" },
+          { source: "business_name", value: "", fallback: "" },
+          { source: "text", value: "משכנתא", fallback: "" },
+          { source: "full_name", value: "", fallback: "" },
+        ],
+        { name: "דנה  לוי", businessName: "ליאור משכנתאות" },
+      ),
+    ).toEqual(["דנה", "ליאור משכנתאות", "משכנתא", "דנה  לוי"]);
+  });
+
+  it("uses the fallback, and refuses an empty value", () => {
+    expect(resolveParams([{ source: "first_name", value: "", fallback: "לקוח יקר" }], { name: "", businessName: "x" })).toEqual(["לקוח יקר"]);
+    expect(resolveParams([{ source: "first_name", value: "", fallback: "" }], { name: " ", businessName: "x" })).toBeNull();
+  });
+
+  it("uses the checklist borrower, then the contact's first name", () => {
+    const mapped = { checklist: { borrowers: [{ slot: "2", fullName: "אחר" }, { slot: "1", fullName: "נועה ברק" }] } };
+    expect(resolveParams([{ source: "borrower_first_name", value: "", fallback: "" }], { name: "דנה לוי", businessName: "x", mapped })).toEqual(["נועה"]);
+    expect(resolveParams([{ source: "borrower_first_name", value: "", fallback: "לקוח" }], { name: "דנה לוי", businessName: "x" })).toEqual(["דנה"]);
+    expect(resolveParams([{ source: "borrower_first_name", value: "", fallback: "" }], { name: " ", businessName: "x" })).toBeNull();
+  });
+
+  it("reads a mapped catalog field, and refuses an empty one", () => {
+    expect(
+      resolveParams([{ source: "mapped", key: "transaction_bank", value: "", fallback: "" }], {
+        name: "דנה",
+        businessName: "x",
+        mapped: { transaction_bank: " לאומי " },
+      }),
+    ).toEqual(["לאומי"]);
+    expect(resolveParams([{ source: "mapped", key: "transaction_bank", value: "", fallback: "" }], { name: "דנה", businessName: "x", mapped: {} })).toBeNull();
+    expect(
+      resolveParams([{ source: "mapped", key: "transaction_bank", value: "", fallback: "בנק" }], { name: "דנה", businessName: "x", mapped: {} }),
+    ).toEqual(["בנק"]);
+  });
+});
+
+describe("audience", () => {
+  it("turns years ago into a deal-date range", () => {
+    const a = audienceSchema.parse({ kind: "clients", dealYearsAgoMin: 4.5, dealYearsAgoMax: 10 });
+    if (a.kind !== "clients") throw new Error("kind");
+    expect(a).toMatchObject({ startedYearsAgoMin: 4.5, startedYearsAgoMax: 10, sourceId: null });
+    expect(followsSource(a)).toBe(false);
+    const following = audienceSchema.parse({ kind: "clients", sourceId: "src-1" });
+    const everySource = audienceSchema.parse({ kind: "clients", sourceId: "all" });
+    expect(followsSource(following)).toBe(true);
+    expect(followsSource(everySource)).toBe(true);
+    const r = startedAtRange(a, new Date("2026-11-05T00:00:00Z"));
+    expect(r.lte?.toISOString().slice(0, 7)).toBe("2022-05");
+    expect(r.gte?.toISOString().slice(0, 7)).toBe("2016-11");
+  });
+
+  it("rejects an empty lead list and unknown kinds", () => {
+    expect(audienceSchema.safeParse({ kind: "leads", leadIds: [] }).success).toBe(false);
+    expect(audienceSchema.safeParse({ kind: "everyone" }).success).toBe(false);
+  });
+});
+
+describe("nextStatus", () => {
+  it("allows only sensible transitions", () => {
+    expect(nextStatus("sending", "pause")).toBe("paused");
+    expect(nextStatus("paused", "resume")).toBe("scheduled");
+    expect(nextStatus("draft", "resume")).toBeNull();
+    expect(nextStatus("done", "cancel")).toBeNull();
+    expect(nextStatus("paused", "cancel")).toBe("canceled");
+  });
+});
+
+describe("follow-ups", () => {
+  const hour = 60 * 60 * 1000;
+  const steps = [
+    { templateId: "rem", delayMs: 48 * hour, onSilence: "send" as const },
+    { templateId: null, delayMs: 48 * hour, onSilence: "escalate" as const },
+  ];
+  const row = {
+    status: "sent",
+    sentAt: new Date("2026-11-01T09:00:00Z"),
+    startedAt: null,
+    escalatedAt: null,
+    reminderClaimedAt: null,
+    reminderSentAt: null,
+  };
+
+  it("waits, then reminds, then escalates, and a reply stops it", async () => {
+    const { dueFollowUp, isStopReply } = await import("./rules");
+    expect(dueFollowUp(row, steps, new Date("2026-11-02T09:00:00Z"))).toBeNull();
+    expect(dueFollowUp(row, steps, new Date("2026-11-03T09:00:00Z"))).toBe("reminder");
+    expect(dueFollowUp({ ...row, reminderSentAt: new Date("2026-11-03T09:00:00Z") }, steps, new Date("2026-11-05T09:00:00Z"))).toBe("escalate");
+    expect(dueFollowUp({ ...row, startedAt: new Date() }, steps, new Date("2026-11-05T09:00:00Z"))).toBeNull();
+    expect(isStopReply("הסר")).toBe(true);
+    expect(isStopReply("הסרה")).toBe(true);
+    expect(isStopReply("Stop!")).toBe(true);
+    expect(isStopReply("unsubscribe")).toBe(true);
+    expect(isStopReply("די")).toBe(false);
+    expect(isStopReply("הפסק")).toBe(false);
+    expect(isStopReply("remove")).toBe(false);
+    expect(isStopReply("בבקשה תסירו אותי")).toBe(false);
+  });
+
+  it("a claim that never recorded a reminder is unknown and not retried", async () => {
+    const { dueFollowUp } = await import("./rules");
+    const claimed = { ...row, reminderClaimedAt: new Date("2026-11-03T09:00:00Z") };
+    expect(dueFollowUp(claimed, steps, new Date("2026-11-03T09:20:00Z"))).toBe("unknown_claim");
+    expect(dueFollowUp({ ...claimed, status: "unknown" }, steps, new Date("2026-11-03T09:20:00Z"))).toBeNull();
+  });
+});
+
+describe("estimateCostUsd", () => {
+  it("prices by category", () => {
+    expect(estimateCostUsd(1000, "MARKETING")).toBe(41);
+    expect(estimateCostUsd(0, "UTILITY")).toBe(0);
+  });
+});

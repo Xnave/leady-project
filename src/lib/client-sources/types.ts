@@ -53,13 +53,14 @@ export type FetchClientsOptions = {
   syncSince?: Date | null;
 };
 
-export type DealDateConfidence = "high" | "medium_high" | "medium" | "low";
+export type StartedAtConfidence = "high" | "medium_high" | "medium" | "low";
 
-export type DealDate = {
+/** The date we measure how long someone has been a client. One per contact, not a deal history. */
+export type StartedAt = {
   date: Date | null;
   /** Field the date came from, "" when nothing matched. */
   source: string;
-  confidence: DealDateConfidence | "";
+  confidence: StartedAtConfidence | "";
 };
 
 /** Settings every connector shares; each connector adds its own on top. */
@@ -73,7 +74,7 @@ export type BaseSourceConfig = {
    * New clients that fail it are not stored; stored ones are never removed.
    */
   keep: {
-    dealYearsAgo?: { min?: number; max?: number };
+    startedYearsAgo?: { min?: number; max?: number };
     fields: { field: string; in: string[] }[];
   };
   /** Store the CRM row on the contact. Off stores an empty raw payload. */
@@ -87,12 +88,6 @@ export type ClientConnector<Credentials = unknown, Session = unknown, Config ext
   label: Localized;
   credentialsSchema: z.ZodType<Credentials>;
   credentialFields: CredentialFieldDef[];
-  /**
-   * Credentials the tenant already saved elsewhere (e.g. the Smart NPV key on the
-   * documents capability). When this returns a value it wins over the source's
-   * own credentials, so one key lives in one place.
-   */
-  sharedCredentials?(tenantId: string): Promise<Credentials | null>;
   /** Fills defaults; throws ZodError on a bad tenant config. */
   parseConfig(raw: unknown): Config;
   /** CRM-specific login. Throw ConnectorAuthError on bad credentials. */
@@ -100,8 +95,10 @@ export type ClientConnector<Credentials = unknown, Session = unknown, Config ext
   /** Throw SessionExpiredError and the sync re-authenticates once and retries. */
   fetchClients(session: Session, config: Config, opts: FetchClientsOptions): Promise<ClientPage>;
   fieldCatalog: ClientFieldDef[];
+  /** Field that marks an archived client file; campaigns skip those. */
+  archivedField?: string;
   /** Derived values computed from a client's raw fields. */
-  derive(record: ClientRecord, config: Config, now: Date): { dealDate: DealDate; fields: Record<string, unknown> };
+  derive(record: ClientRecord, config: Config, now: Date): { startedAt: StartedAt; fields: Record<string, unknown> };
   /** Seconds a session stays valid; null = until the CRM says otherwise. */
   sessionTtlSeconds: number | null;
 };

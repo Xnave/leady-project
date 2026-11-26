@@ -22,13 +22,15 @@ export async function requestSourceSync(
   sourceId: string,
   mode: SyncMode,
 ): Promise<{ queued: true } | { queued: false; inline: true }> {
-  try {
-    await inngest.send(syncEvent(tenantId, sourceId, mode));
-    return { queued: true };
-  } catch (err) {
-    if (isProductionRuntime()) throw err;
-    console.warn(JSON.stringify({ msg: "client_sources.sync_inline_fallback", tenantId, sourceId }));
+  // Run admin-triggered syncs inline during local development so failures and
+  // their full diagnostics land in the same terminal as `npm run dev`.
+  if (!isProductionRuntime()) {
+    console.info(JSON.stringify({ msg: "client_sources.sync_inline", tenantId, sourceId, mode }));
     await runSourceSyncInline(tenantId, sourceId, mode);
     return { queued: false, inline: true };
   }
+
+  await inngest.send(syncEvent(tenantId, sourceId, mode));
+  console.info(JSON.stringify({ msg: "client_sources.sync_queued", tenantId, sourceId, mode, worker: "inngest" }));
+  return { queued: true };
 }

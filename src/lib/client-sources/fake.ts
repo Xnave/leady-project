@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { baseConfigSchema, dealDateStepSchema } from "./config";
-import { deriveDealDate, type DealDateStep } from "./dates";
+import { baseConfigSchema, startedAtStepSchema, withStartedAtAliases } from "./config";
+import { deriveStartedAt, type StartedAtStep } from "./dates";
 import {
   ConnectorAuthError,
   SessionExpiredError,
@@ -18,15 +18,17 @@ import {
 const credentialsSchema = z.object({ token: z.string().min(1) });
 type FakeCredentials = z.infer<typeof credentialsSchema>;
 
-const FAKE_DEAL_DATE: DealDateStep[] = [
+const FAKE_STARTED_AT: StartedAtStep[] = [
   { field: "signed_at", offsetMonths: 0, confidence: "high" },
   { field: "opened_at", offsetMonths: 3, confidence: "low" },
 ];
 
-const configSchema = baseConfigSchema.extend({
-  pageSize: z.number().int().min(1).default(2),
-  dealDate: z.array(dealDateStepSchema).min(1).default(FAKE_DEAL_DATE),
-});
+const configSchema = withStartedAtAliases(
+  baseConfigSchema.extend({
+    pageSize: z.number().int().min(1).default(2),
+    startedAt: z.array(startedAtStepSchema).min(1).default(FAKE_STARTED_AT),
+  }),
+);
 type FakeConfig = z.infer<typeof configSchema> & BaseSourceConfig;
 
 type FakeSession = { id: number };
@@ -60,6 +62,7 @@ export function createFakeConnector(
     parseConfig: (raw) => configSchema.parse(raw ?? {}) as FakeConfig,
     sessionTtlSeconds: 60,
     fieldCatalog: FAKE_FIELDS,
+    archivedField: "archived",
     async authenticate(credentials) {
       opts.onAuthenticate?.();
       if (credentials.token === "wrong") throw new ConnectorAuthError();
@@ -81,7 +84,7 @@ export function createFakeConnector(
       return { clients: page, nextCursor: next < clients.length ? String(next) : null };
     },
     derive(record, config) {
-      return { dealDate: deriveDealDate(record.fields, config.dealDate), fields: {} };
+      return { startedAt: deriveStartedAt(record.fields, config.startedAt), fields: {} };
     },
   };
 }

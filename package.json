@@ -30,6 +30,7 @@
     "db:status:staging": "bash scripts/db-staging.sh status",
     "db:baseline:staging": "bash scripts/db-staging.sh baseline",
     "db:migrate:staging": "bash scripts/db-staging.sh migrate",
+    
     "db:diff:production": "bash scripts/db-production.sh diff",
     "db:diff:check:production": "bash scripts/db-production.sh check",
     "db:verify:production": "bash scripts/db-production.sh verify",
